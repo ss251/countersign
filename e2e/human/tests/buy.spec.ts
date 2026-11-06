@@ -29,6 +29,7 @@ import {
   recordPrivyRequestFailure,
   recordPrivyResponse,
   signIn,
+  waitForModalClosed,
 } from "../lib/privy.ts";
 import {
   afterFunding,
@@ -266,6 +267,7 @@ const runHuman = async (
   const client = arcClient(RPC);
   const email = keys.secret("PRIVY_TEST_EMAIL") ?? "";
   const otp = keys.secret("PRIVY_TEST_OTP") ?? "";
+  rec.guardWith(keys);
   const injected = project === "injected" ? newTestAccount() : undefined;
   const privyFailures: string[] = [];
   let tracing = false;
@@ -335,12 +337,14 @@ const runHuman = async (
         note: (text) => rec.note(text),
       });
       try {
-        await signIn(page, email, otp, () => rec.screenshot(page, "01", "privy-modal"));
+        await signIn(page, email, otp, () =>
+          rec.screenshot(page, "01", "privy-modal", { showPrivy: true }),
+        );
       } catch (error) {
         if (privyFailures.length > 0) throw new SkipRun(`Privy unavailable: ${privyFailures[0]}`);
         throw error;
       }
-      await expect(page.getByRole("dialog")).toBeHidden({ timeout: 30_000 });
+      await waitForModalClosed(page, 30_000);
       await rec.screenshot(page, "01", "signed-in");
     });
 
