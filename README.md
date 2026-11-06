@@ -159,7 +159,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 
 ## End-to-end tests
 
-`bun run e2e` runs the flows in [docs/e2e.md](docs/e2e.md) against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is cut ([D14](docs/decisions.md)) and reports `NOT RUN`; the screens are checked by hand. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md).
+`bun run e2e` runs the flows in [docs/e2e.md](docs/e2e.md) against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is cut ([D14](docs/decisions.md)) and reports `NOT RUN`; the screens are checked by hand. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md). A separate human end-to-end run drives the deployed console in a browser: [docs/e2e-human.md](docs/e2e-human.md).
 
 ## Repository map
 
