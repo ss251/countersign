@@ -1,24 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { RailDeclaration, RailId, Settlement } from "../src/lib/types.ts";
-import {
-  byTime,
-  centres,
-  contractRails,
-  escrowRelease,
-  EXIT,
-  groups,
-  keyOf,
-  markSpots,
-  NARROW,
-  newestOf,
-  newestRelease,
-  otherRailsLines,
-  railOrder,
-  receiptX,
-  tape,
-  WIDE,
-  type Spot,
-} from "../src/routes/home/field.ts";
+import { byTime, contractRails, escrowRelease, newestOf, newestRelease, otherRailsLines, railOrder } from "../src/routes/home/field.ts";
+import { beatProgress, span } from "../src/routes/home/stage.ts";
+import { BEATS, dotAt, drawnAt, litAt, NARROW_LAYOUT, nodeAt, PATH_ORDER, pointOn, settledAt, WEIGHTS, WIDE_LAYOUT } from "../src/routes/home/journey.ts";
 
 // Production's mix on 06 Nov: 6 escrow releases, 3 Gateway and 7 Hedera settlements.
 const MIX: Array<[RailId, Settlement["kind"]]> = [
@@ -43,90 +27,8 @@ const row = (i: number, rail: RailId, kind: Settlement["kind"], at: number): Set
 // Interleaved in time, with bursts: some payments land seconds apart and must stack, not overlap.
 const ROWS = MIX.map(([rail, kind], i) => row(i, rail, kind, 1_793_960_000 + (i % 5 === 0 ? i * 7 : i * 600)));
 const RAILS = (["escrow", "gateway", "hedera"] as RailId[]).map((id) => ({ id }) as RailDeclaration);
-const ORDER = railOrder(RAILS, ROWS);
 
-const where = (p: Spot) => `${p.x.toFixed(3)}|${p.y}|${p.dx}|${p.dy}`;
-
-describe("the landing's evidence field", () => {
-  test("every beat draws one mark per settlement: 16 settlements make 16 marks, never more", () => {
-    for (const narrow of [false, true]) {
-      for (let beat = 0; beat <= EXIT; beat++) {
-        const spots = markSpots(ROWS, ORDER, beat, narrow);
-        expect(spots.size).toBe(ROWS.length);
-        for (const s of ROWS) expect(spots.has(keyOf(s))).toBe(true);
-      }
-    }
-  });
-
-  test("on the tape no two marks share a spot, and every mark stays inside the field", () => {
-    for (const g of [WIDE, NARROW]) {
-      const spots = [...tape(ROWS, g).values()];
-      expect(new Set(spots.map(where)).size).toBe(ROWS.length);
-      for (const p of spots) {
-        expect(p.x).toBeGreaterThanOrEqual(2);
-        expect(p.x).toBeLessThanOrEqual(98);
-      }
-    }
-  });
-
-  test("grouped by rail, each group holds exactly its rail's settlements and no two marks touch", () => {
-    const at = centres(ORDER.length);
-    const spots = groups(ROWS, ORDER, WIDE, at);
-    expect(new Set([...spots.values()].map(where)).size).toBe(ROWS.length);
-    ORDER.forEach((rail, i) => {
-      const mine = ROWS.filter((s) => s.rail === rail).map((s) => spots.get(keyOf(s))!);
-      expect(mine.every((p) => p.x === at[i])).toBe(true);
-    });
-    expect(ORDER).toEqual(["escrow", "gateway", "hedera"]);
-    expect(ROWS.filter((s) => s.rail === "escrow")).toHaveLength(6);
-  });
-
-  test("the newest mark lifts into the receipt's stamp; the rest step back, then leave for the ask box", () => {
-    const newest = newestOf(ROWS)!;
-    for (const narrow of [false, true]) {
-      const lifted = markSpots(ROWS, ORDER, 3, narrow).get(keyOf(newest))!;
-      expect(lifted.x).toBe(receiptX(narrow));
-      expect(lifted.s).toBeGreaterThan(1);
-      expect(lifted.o).toBe(1);
-      const asked = markSpots(ROWS, ORDER, 4, narrow);
-      for (const s of ROWS) if (s !== newest) expect(asked.get(keyOf(s))!.o).toBe(0);
-    }
-    const claim = markSpots(ROWS, ORDER, 0, false);
-    expect([...claim.values()].every((p) => p.o === 0)).toBe(true);
-  });
-
-  test("the exit beat leaves nothing behind: every mark, the lifted one too, is gone before the frame scrolls away", () => {
-    for (const narrow of [false, true]) {
-      const exit = markSpots(ROWS, ORDER, EXIT, narrow);
-      expect([...exit.values()].every((p) => p.o === 0)).toBe(true);
-    }
-  });
-
-  test("with five rails no two marks touch, at 1440 or at 390, grouped or stepped back", () => {
-    // Tonight the hub can declare five rails: no group may run into its neighbour as they multiply.
-    const five: Array<[RailId, number]> = [["escrow", 9], ["gateway", 4], ["hedera", 8], ["whitechain", 6], ["eip3009", 7]];
-    const rows = five.flatMap(([rail, n], r) =>
-      Array.from({ length: n }, (_, j) => row(r * 100 + j, rail, rail === "escrow" ? "released" : "settled", 1_793_960_000 + r * 1000 + j * 60)),
-    );
-    const order = railOrder(five.map(([id]) => ({ id }) as RailDeclaration), rows);
-    expect(order).toHaveLength(5);
-    for (const [narrow, width, height, g] of [[false, 1180, 464, WIDE], [true, 358, 528, NARROW]] as const) {
-      for (const beat of [2, 3]) {
-        const seen = [...markSpots(rows, order, beat, narrow).values()]
-          .filter((p) => p.o > 0)
-          .map((p) => ({ x: (p.x / 100) * width + p.dx, y: (p.y / 100) * height + p.dy, size: g.mark * p.s }));
-        for (let a = 0; a < seen.length; a++) {
-          for (let b = a + 1; b < seen.length; b++) {
-            const [p, q] = [seen[a]!, seen[b]!];
-            const reach = (p.size + q.size) / 2;
-            const apart = Math.abs(p.x - q.x) >= reach || Math.abs(p.y - q.y) >= reach;
-            if (!apart) throw new Error(`beat ${beat} ${narrow ? "390" : "1440"}: marks at ${p.x.toFixed(0)},${p.y.toFixed(0)} and ${q.x.toFixed(0)},${q.y.toFixed(0)} touch`);
-          }
-        }
-      }
-    }
-  });
-
+describe("which payments the landing may follow", () => {
   test("the escrow beat only ever shows an escrow release, never a newer direct-rail payment", () => {
     const later = [...ROWS, row(99, "hedera", "settled", 1_799_999_999)];
     expect(newestOf(later)!.rail).toBe("hedera");
@@ -184,5 +86,64 @@ describe("the escrow claims follow only an escrow contract's release", () => {
     }
     expect(otherRailsLines(undefined)).toEqual([]);
     expect(otherRailsLines(PROD.slice(0, 2))).toEqual([]);
+  });
+});
+
+describe("the journey's drawing follows the scroll, and only forward", () => {
+  const samples = (beat: number) => Array.from({ length: 11 }, (_, i) => [beat, i / 10] as const);
+  const all = Array.from({ length: WEIGHTS.length }, (_, b) => samples(b)).flat();
+
+  test("scroll progress maps onto beats by their weights, ending on the exit", () => {
+    expect(beatProgress(0, WEIGHTS)).toEqual([0, 0]);
+    const [b, t] = beatProgress(1.5 / span(WEIGHTS), WEIGHTS);
+    expect(b).toBe(1);
+    expect(t).toBeCloseTo(0.5);
+    expect(beatProgress(1, WEIGHTS)).toEqual([BEATS.exit, 1]);
+    expect(beatProgress(-3, WEIGHTS)[0]).toBe(0);
+  });
+
+  test("every connection lights once and never goes dark again as you scroll on", () => {
+    let last = litAt(0, 0);
+    for (const [b, t] of all) {
+      const now = litAt(b, t);
+      for (const id of PATH_ORDER) {
+        expect(now[id]).toBeGreaterThanOrEqual(last[id] - 1e-9);
+        expect(now[id]).toBeGreaterThanOrEqual(0);
+        expect(now[id]).toBeLessThanOrEqual(1);
+      }
+      last = now;
+    }
+    for (const id of PATH_ORDER) expect(litAt(BEATS.exit, 0)[id]).toBe(1);
+  });
+
+  test("the rules and the parties are all drawn by the end of the first beat", () => {
+    expect(drawnAt(BEATS.cast, 1)).toBe(1);
+    for (let i = 0; i < 5; i++) expect(nodeAt(BEATS.cast, 1, i)).toBe(1);
+    expect(nodeAt(BEATS.cast, 0, 0)).toBe(0);
+  });
+
+  test("no payment moves before the countersignature, and it is settled only at the seller", () => {
+    expect(dotAt(BEATS.cast, 1)).toBeNull();
+    expect(dotAt(BEATS.limits, 1)).toBeNull();
+    expect(dotAt(BEATS.countersign, 0.5)?.path).toBe("yh");
+    expect(dotAt(BEATS.held, 0.5)?.path).toBe("he");
+    expect(dotAt(BEATS.released, 0.5)?.path).toBe("es");
+    expect(settledAt(BEATS.held, 1)).toBe(false);
+    expect(settledAt(BEATS.released, 0.2)).toBe(false);
+    expect(settledAt(BEATS.released, 1)).toBe(true);
+    expect(settledAt(BEATS.exit, 0)).toBe(true);
+  });
+
+  test("each connection runs between the two parties it names, at 1440 and at 390", () => {
+    const ends = { ah: ["agent", "hub"], yh: ["you", "hub"], hs: ["hub", "seller"], he: ["hub", "escrow"], es: ["escrow", "seller"] } as const;
+    for (const layout of [WIDE_LAYOUT, NARROW_LAYOUT]) {
+      for (const id of PATH_ORDER) {
+        const [from, to] = ends[id];
+        const a = pointOn(layout.paths[id], 0);
+        const z = pointOn(layout.paths[id], 1);
+        expect(a).toEqual(layout.nodes[from]);
+        expect(z).toEqual(layout.nodes[to]);
+      }
+    }
   });
 });

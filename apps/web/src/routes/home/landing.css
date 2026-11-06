@@ -1,1107 +1,938 @@
 /*
- * The landing, v2: scroll as a story (DESIGN-NOTE "The landing, v2"). Two pinned stages and a
- * closing list: one statement per frame, and evidence that stays and changes state between beats.
- * Native scroll only. Movement is transform and opacity only. The dark tokens are scoped to
- * .landing (tokens.css); the one red, green and blue keep their meanings.
+ * The landing (raj/ui-revamp). One story: the hero, the journey on a pinned diagram, the live tape,
+ * the proof. It follows the theme like every other screen.
  */
 
 .landing {
-  /* The content edge: a 16 to 40 px gutter, and never wider than the content width. */
-  --side: max(clamp(16px, 4vw, 40px), calc((100% - var(--content)) / 2));
-  /* One beat's statement. */
-  --beat: clamp(2rem, 1.1rem + 2.4vw, 3.25rem);
-  --move: 560ms;
-  position: relative;
-  min-height: 100dvh;
-  background: var(--paper);
-  color: var(--ink);
+  --gutter: clamp(16px, 5vw, 64px);
+  --wide: 1240px;
+  overflow-x: clip;
 }
 
-.landing a {
-  color: var(--ink);
-  text-underline-offset: 0.22em;
-}
-
-/* Texture, CSS only: a paper grain at 5%, fixed, over everything and under no pointer. */
-.landing::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 4;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
-  opacity: 0.05;
-  pointer-events: none;
-}
-
-/* Almost no chrome: the wordmark and four links, fixed on the paper so nothing passes under bare text. */
-.landing__bar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  padding: var(--sp-5) clamp(16px, 4vw, 40px);
-  background: var(--paper);
-}
-
-.landing__brand {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  text-decoration: none;
-}
-
-.landing__links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--sp-2) var(--sp-5);
-  font-size: var(--t-14);
-}
-
-.landing__links a {
-  position: relative;
-  color: var(--slate);
-  text-decoration: none;
-  transition: color var(--d-1) var(--ease-out);
-}
-
-/* 20px to the eye, 44px to the thumb. */
-.landing__links a::after {
-  content: "";
-  position: absolute;
-  inset: -12px -8px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .landing__links a:hover {
-    color: var(--ink);
-  }
-}
-
-/* A stage pins for `--span` screens (its beats' weights) and is one screen taller, around one sticky frame. */
-.story--pinned {
-  height: calc((var(--span) + 1) * 100svh);
-}
-
-/* Room for each stage's statements, in lines of the beat's type: the evidence starts under it. */
-.story--evidence,
-.story--clears {
-  --lines: 3.5;
-}
-
-.story__frame {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  overflow: hidden;
-}
-
-/*
- * The frame's content box, under the bar and inside the content edge. It lies over the claim, so
- * it and its quiet layers let the pointer through; only a layer on screen with something to press
- * (the receipt, the ask box, the try-out, the release) takes it back.
- */
-.story__box {
-  position: absolute;
-  top: 112px;
-  right: var(--side);
-  bottom: 40px;
-  left: var(--side);
-  pointer-events: none;
-}
-
-/* One statement at a time: the beat's line crossfades in place over 240 ms, rising 8 px. */
-.story__line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  max-width: 20ch;
-  font-size: var(--beat);
-  font-weight: 400;
-  line-height: 1.06;
-  letter-spacing: -0.035em;
-  text-wrap: balance;
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    opacity 240ms var(--ease-out),
-    transform 240ms var(--ease-out);
-}
-
-.story__line.is-on {
-  opacity: 1;
-  transform: none;
-}
-
-/* Beat 0, the claim: the statement low on the field like a signature line, as in round 2. */
-.story__claim {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  align-content: end;
-  padding: 128px var(--side) clamp(40px, 8vh, 88px);
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    opacity 240ms var(--ease-out),
-    transform 240ms var(--ease-out);
-  pointer-events: none;
-}
-
-.story__claim.is-on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.landing__first-inner {
-  position: relative;
-  display: grid;
-  gap: clamp(28px, 5vh, 48px);
-  width: 100%;
-  max-width: var(--content);
-  margin: 0 auto;
-}
-
-.landing__statement {
-  max-width: 12.5ch;
-  font-size: clamp(3.5rem, 1.6rem + 7vw, 7.5rem);
-  font-weight: 400;
-  line-height: 0.96;
-  letter-spacing: -0.045em;
-  text-wrap: balance;
-}
-
-/* Under the statement, one column on its left edge: what countersign is, the hub's own figures, the way in. */
-.landing__under {
-  display: grid;
-  justify-items: start;
-  gap: var(--sp-5);
-}
-
-.landing__what {
-  max-width: 46ch;
-  color: var(--slate);
-  font-size: var(--t-17);
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-
-/* The first screen's number, in one mono line: figures in ink, words in slate, the live dot ahead. */
-.landing__figures {
-  position: relative;
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 0.6em;
-  min-height: 1.5em;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: clamp(0.8125rem, 0.75rem + 0.25vw, 0.9375rem);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.5;
-  text-align: left;
-  transition: color var(--d-1) var(--ease-out);
-}
-
-.landing__figures .tick {
-  color: var(--ink);
-}
-
-/* A figure and its words never part; a narrow screen wraps between figures, at a dot. */
-.landing__fig {
-  white-space: nowrap;
-}
-
-.landing__sep {
-  margin-right: 0.6em;
-}
-
-/* One line to the eye, 44px to the thumb, and still clear of the call to action under it. */
-button.landing__figures::after {
-  content: "";
-  position: absolute;
-  inset: -13px -8px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  button.landing__figures:hover {
-    color: var(--ink);
-  }
-}
-
-.landing__cta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3) var(--sp-6);
-}
-
-.landing__go {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: var(--t-17);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--ink) 40%, transparent);
-}
-
-.landing__cue {
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: var(--t-13);
-}
-
-.landing a.landing__cue {
-  display: inline-flex;
-  align-items: center;
-  color: var(--slate);
-  text-decoration: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .landing__cue:hover,
-  .landing a.landing__cue:hover {
-    color: var(--ink);
-  }
-}
-
-/*
- * Beats 1 to 4: the plane under the statement. Marks and labels are placed in percent of its box
- * (container units) plus px, so they move by transform alone and never touch at any size.
- */
-.story__plane {
-  position: absolute;
-  top: calc(var(--beat) * var(--lines));
-  right: 0;
-  bottom: 104px;
-  left: 0;
-  container-type: size;
-}
-
-.story__field {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* The line the payments stand on, and the first and newest times at its ends. */
-.story__baseline {
-  position: absolute;
-  top: calc(var(--base) * 1%);
-  right: 0;
-  left: 0;
-  border-top: var(--hair) solid var(--line);
-  transition: opacity 240ms var(--ease-out);
-}
-
-.story__end {
-  position: absolute;
-  top: calc(var(--base) * 1% + 10px);
-  left: 0;
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-  transition: opacity 240ms var(--ease-out);
-}
-
-.story__end--last {
-  right: 0;
-  left: auto;
-}
-
-/* One mark per real settlement: a small ink square, never a decoration. */
-.story__mark {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--m);
-  height: var(--m);
-  border-radius: 1px;
-  background: var(--ink);
-  opacity: var(--o);
-  transform: translate(calc(var(--x) * 1cqw + var(--dx) * 1px - 50%), calc(var(--y) * 1cqh + var(--dy) * 1px - 50%))
-    scale(var(--s));
-  transition:
-    transform var(--move) var(--ease-in-out) var(--d),
-    opacity 240ms var(--ease-out) var(--d);
-}
-
-/* Each rail's group is named under its marks: the rail, its chain, its settled count. */
-.story__group {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-  width: 10rem;
-  text-align: center;
-  opacity: var(--o);
-  transform: translate(calc(var(--x) * 1cqw - 50%), calc(var(--base) * 1cqh + var(--dy) * 1px));
-  transition:
-    transform var(--move) var(--ease-in-out),
-    opacity 240ms var(--ease-out);
-}
-
-.story__group-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  font-size: var(--t-14);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.story__group-chain,
-.story__group-n {
-  color: var(--slate);
-  font-size: var(--t-12);
-}
-
-/* The receipt and the ask box share one plane: side by side on a wide screen, stacked on a phone. */
-.story__aside {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  display: grid;
-  grid-template-areas: "ask . receipt";
-  grid-template-columns: 46fr 10fr 44fr;
-  align-items: start;
-  transform: translateY(calc(var(--y) * 1cqh + var(--dy) * 1px));
-  transition: transform var(--move) var(--ease-in-out);
-}
-
-/* The receipt: a slip of plain lines under one hairline, no box. The lifted mark is its stamp. */
-.story__receipt {
-  display: grid;
-  grid-area: receipt;
-  justify-items: start;
-  gap: var(--sp-3);
-  min-width: 0;
-  padding-top: var(--sp-3);
-  border-top: var(--hair) solid var(--line);
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 240ms var(--ease-out) 160ms,
-    transform var(--move) var(--ease-out);
-  pointer-events: none;
-}
-
-.story__receipt.is-on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.story__receipt-title {
-  padding-left: 28px;
-  font-size: var(--t-15);
-  font-weight: 500;
-  line-height: 20px;
-}
-
-/* Plain lines: small caps over values, no rules between them. */
-.story__lines {
-  display: grid;
-  gap: var(--sp-3);
-  width: 100%;
-}
-
-.story__lines > div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.story__lines dd {
-  min-width: 0;
-  font-size: var(--t-15);
-}
-
-.story__lines--two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--sp-5);
-}
-
-.story__wide {
-  grid-column: 1 / -1;
-}
-
-.story__go {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: var(--t-14);
-  font-weight: 500;
-}
-
-.story__quiet {
-  color: var(--slate);
-  font-size: var(--t-13);
-  line-height: 1.5;
-}
-
-/* The ask box slides in beside the receipt. */
-.story__ask {
-  display: grid;
-  grid-area: ask;
-  gap: var(--sp-4);
-  min-width: 0;
-  opacity: 0;
-  transform: translateX(-16px);
-  transition:
-    opacity 240ms var(--ease-out),
-    transform var(--move) var(--ease-out);
-  pointer-events: none;
-}
-
-.story__ask.is-on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.askbox {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
-  transition: border-color var(--d-1) var(--ease-out);
-}
-
-.askbox:focus-within {
-  border-color: var(--ink);
-}
-
-/* 16px or more under a finger, so iOS never zooms. */
-.askbox__input {
-  width: 100%;
-  min-height: 56px;
-  padding: 0 var(--sp-4);
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: clamp(16px, 0.9rem + 0.4vw, 18px);
-  outline: none;
-}
-
-.askbox__input::placeholder {
-  color: var(--slate);
-}
-
-.askbox__input::-webkit-search-cancel-button {
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.askbox__go {
-  min-width: 80px;
-  padding: 0 var(--sp-5);
-  border: 0;
-  border-left: var(--hair) solid var(--line);
-  background: none;
-  color: var(--ink);
-  font-size: var(--t-15);
-  font-weight: 500;
-  transition: transform var(--d-press) var(--ease-out);
-}
-
-.askbox__go:active {
-  transform: scale(0.97);
-}
-
-/* Three needs from the live offers, as plain lines: the words to type, and what they find. */
-.story__needs {
-  display: grid;
-}
-
-.story__need {
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-  width: 100%;
-  min-height: 44px;
-  padding: var(--sp-2) 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  text-align: left;
-  transition: transform var(--d-press) var(--ease-out);
-}
-
-.story__need .mono {
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--ink) 30%, transparent);
-  text-underline-offset: 0.22em;
-}
-
-.story__need:active {
-  transform: scale(0.98);
-}
-
-/* The totals, label over value in mono, in the frame's corner. */
-.story__totals {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  display: grid;
-  gap: var(--sp-3);
-  opacity: 0;
-  transition: opacity 240ms var(--ease-out);
-}
-
-.story__totals.is-on {
-  opacity: 1;
-}
-
-.story__sums {
-  display: flex;
-  gap: var(--sp-8);
-}
-
-.story__sums > div {
-  display: grid;
-  gap: 2px;
-}
-
-.story__sums dd {
-  font-family: var(--mono);
-  font-size: clamp(1.25rem, 1rem + 0.8vw, 1.75rem);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-
-.story__wait {
-  display: block;
-  width: 2.5ch;
-  height: 1em;
-}
-
-.story__updated {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55em;
-  color: var(--slate);
-  font-size: var(--t-12);
-}
-
-/* A total changed: it ticks once. Never counts up. */
-.tick {
-  display: inline-block;
-}
-
-.tick.is-ticked {
-  animation: landing-tick 280ms var(--ease-out);
-}
-
-@keyframes landing-tick {
-  from {
-    opacity: 0.35;
-    transform: translateY(-4px);
-  }
-}
-
-/* The live dot breathes slowly while the page is reading the hub. */
 .live-dot {
   display: inline-block;
   flex: none;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ink);
-  animation: landing-breathe 1.6s ease-in-out infinite;
+  background: var(--settle-fill);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--settle-fill) 22%, transparent);
+  animation: live-pulse 2.4s var(--ease-in-out) infinite;
 }
 
-@keyframes landing-breathe {
+@keyframes live-pulse {
   50% {
-    opacity: 0.3;
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--settle-fill) 0%, transparent);
   }
 }
 
-/* Stage two: the desk under the statement, one artifact changing state. */
-.story__desk {
-  position: absolute;
-  top: calc(var(--beat) * var(--lines));
-  right: 0;
-  bottom: 0;
-  left: 0;
-  container-type: size;
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--slate);
+  font-family: var(--display);
+  font-size: var(--t-13);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-/*
- * The envelope, as plain lines: the stage's left anchor. From beat 1 it steps back a little and
- * stays readable while the try-out, then the release, sit beside it at the same scale.
- */
-.story__env {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: grid;
-  gap: var(--sp-4);
-  width: 40%;
-  transform-origin: top left;
-  transition:
-    transform var(--move) var(--ease-in-out),
-    opacity 240ms var(--ease-out);
-}
+/* 1 · The hero */
 
-.story__env.is-back {
-  opacity: 0.85;
-}
-
-/* The exit: the envelope leaves with the rest of the stage's evidence (and wins over a phone's stepped-back state). */
-.story__desk .story__env.is-gone {
-  opacity: 0;
-}
-
-.story__meta {
-  font-family: var(--mono);
-  text-transform: none;
-}
-
-/* The try-out and then the release sit beside the envelope, one at a time. */
-.story__try,
-.story__release {
-  position: absolute;
-  top: 0;
-  left: 48%;
-  display: grid;
-  justify-items: start;
-  gap: var(--sp-4);
-  width: 52%;
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 240ms var(--ease-out),
-    transform var(--move) var(--ease-out);
-  pointer-events: none;
-}
-
-.story__try.is-on,
-.story__release.is-on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.story__try .hold {
-  width: 100%;
-}
-
-.story__offer {
-  display: grid;
-  gap: var(--sp-1);
-  font-size: var(--t-15);
-  font-weight: 500;
-}
-
-.story__exact {
-  display: grid;
-  justify-items: start;
-  gap: var(--sp-1);
-}
-
-/* Check it without us: five lines, no table, then the way in. It fills the last screen from its top third. */
-.story__proof {
-  display: grid;
-  align-content: start;
-  gap: var(--sp-8);
+.hero {
+  position: relative;
+  isolation: isolate;
   min-height: 100svh;
-  max-width: var(--content);
-  margin: 0 auto;
-  padding: max(136px, 30svh) clamp(16px, 4vw, 40px) 64px;
-}
-
-.story__proof .story__line {
-  position: static;
-}
-
-.story__proof-list {
   display: grid;
-  gap: var(--sp-4);
+  align-items: end;
+  padding: calc(var(--bar) + var(--sp-16)) var(--gutter) clamp(var(--sp-16), 12vh, 140px);
+  overflow: hidden;
 }
 
-.story__proof-list li {
+.hero__bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+/* Beneath the glass, in its colours: what shows while it loads, and wherever WebGL cannot run. */
+.hero__poster {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 90% at 78% 22%, color-mix(in oklab, var(--steel) 55%, transparent), transparent 70%),
+    radial-gradient(50% 60% at 20% 90%, color-mix(in oklab, var(--lavender) 16%, transparent), transparent 70%),
+    var(--paper);
+}
+
+.hero__glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 1;
+  transition: opacity 900ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* Keeps the words readable over the brightest folds, and hands the hero to the paper below. */
+.hero__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--paper) 70%, transparent) 0, transparent calc(var(--bar) + 48px)),
+    linear-gradient(90deg, color-mix(in oklab, var(--paper) 82%, transparent) 0%, color-mix(in oklab, var(--paper) 40%, transparent) 46%, transparent 72%),
+    linear-gradient(180deg, transparent 55%, var(--paper) 100%);
+}
+
+.hero__inner {
+  width: 100%;
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-6);
+}
+
+.hero__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 12px 6px 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--paper) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 14%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--t-13);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hero__title {
+  max-width: 13ch;
+  font-family: var(--display);
+  font-size: clamp(2.75rem, 1.4rem + 5.4vw, 6.25rem);
+  font-weight: 700;
+  line-height: 0.96;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.hero__lede {
+  max-width: 52ch;
+  color: color-mix(in oklab, var(--ink) 80%, var(--paper));
+  font-size: clamp(var(--t-16), 0.9rem + 0.35vw, var(--t-20));
+  line-height: 1.5;
+}
+
+.hero__actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-1) var(--sp-4);
-  font-size: var(--t-17);
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 
-.story__proof-list li span {
+.hero__cta,
+.hero__ghost {
+  min-height: 52px;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-pill);
+  font-size: var(--t-16);
+}
+
+.hero__ghost {
+  background: color-mix(in oklab, var(--paper) 50%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 22%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hero__ghost:hover {
+    background: color-mix(in oklab, var(--paper) 30%, transparent);
+  }
+}
+
+.hero__figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) clamp(var(--sp-6), 4vw, var(--sp-12));
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-6);
+  border-top: var(--hair) solid color-mix(in oklab, var(--ink) 16%, transparent);
+  width: min(100%, 720px);
+}
+
+.hero__fig {
+  display: grid;
+  gap: 2px;
+}
+
+.hero__fig dt {
+  color: var(--slate);
+  font-family: var(--display);
+  font-size: var(--t-12);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero__fig dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(var(--t-24), 1rem + 1.4vw, var(--t-32));
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.hero__figs--wait {
   color: var(--slate);
   font-size: var(--t-14);
 }
 
-.story__close {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3) var(--sp-6);
-}
-
-.landing__fine {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-/* A phone: the same beats, the statement at the top of the frame and its evidence under it. */
-@media (max-width: 720px) {
-  .landing__links {
-    gap: var(--sp-2) var(--sp-4);
-    font-size: var(--t-13);
-  }
-
-  .story__box {
-    top: 96px;
-    bottom: 16px;
-  }
-
-  .story__line {
-    max-width: none;
-  }
-
-  .story__plane {
-    bottom: 92px;
-  }
-
-  .story__group {
-    width: 7.2rem;
-  }
-
-  .story__group-name {
-    font-size: var(--t-13);
-  }
-
-  .story__aside {
-    grid-template-areas:
-      "receipt"
-      "ask";
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: var(--sp-6);
-  }
-
-  .story__ask {
-    transform: translateY(12px);
-  }
-
-  .story__sums {
-    gap: var(--sp-5);
-  }
-
-  .story__env {
-    width: 100%;
-  }
-
-  .story__env.is-back {
-    opacity: 0.5;
-    transform: scale(0.8);
-  }
-
-  .story__try,
-  .story__release {
-    top: calc(var(--env-h) * 0.8 + 16px);
-    left: 0;
-    width: 100%;
-  }
-
-  .story__proof {
-    padding-top: 136px;
-  }
-}
-
-/*
- * 1440 and every wide screen: the evidence carries the frame (firstmate review of 35d4c0a, fix 1).
- * Statements at about twice the old weight, marks at 16 px (field.ts), totals at 30 px, and no text
- * in the evidence under 14 px; labels stay small caps.
- */
-@media (min-width: 721px) {
-  .landing {
-    --beat: clamp(40px, 4.4vw, 64px);
-  }
-
-  .story--evidence {
-    --lines: 2.6;
-  }
-
-  .story--clears {
-    --lines: 3.6;
-  }
-
-  .story__plane {
-    bottom: 120px;
-  }
-
-  .story__box .label {
-    font-size: 15px;
-    font-variant-caps: all-small-caps;
-    letter-spacing: 0.05em;
-    text-transform: none;
-  }
-
-  .story__box .status {
-    font-size: 15px;
-  }
-
-  .story__lines dd {
-    font-size: 17px;
-  }
-
-  .story__quiet {
-    font-size: 15px;
-  }
-
-  .story__go {
-    font-size: 16px;
-  }
-
-  .story__end,
-  .story__updated {
-    font-size: 14px;
-  }
-
-  .story__group-name {
-    font-size: 17px;
-  }
-
-  .story__group-chain,
-  .story__group-n {
-    font-size: 15px;
-  }
-
-  .story__receipt-title {
-    padding-left: 40px;
-    font-size: 20px;
-    line-height: 28px;
-  }
-
-  .story__sums {
-    gap: 48px;
-  }
-
-  .story__sums dd {
-    font-size: 30px;
-  }
-
-  .story__need .mono {
-    font-size: 16px;
-  }
-
-  .story__offer {
-    font-size: 18px;
-  }
-}
-
-/*
- * Less motion: nothing pins. Every beat is its own full-height section with the same content, in
- * its own state, and nothing moves or is placed by a transform.
- */
-.story--static .story__frame {
-  position: relative;
-  height: auto;
-  min-height: 100svh;
-  overflow: visible;
-}
-
-.story--static
-  :is(
-    .story__line,
-    .story__claim,
-    .story__mark,
-    .story__group,
-    .story__baseline,
-    .story__end,
-    .story__aside,
-    .story__receipt,
-    .story__ask,
-    .story__totals,
-    .story__env,
-    .story__try,
-    .story__release
-  ) {
-  transition: none;
-}
-
-.story--static :is(.story__line, .story__claim, .story__receipt, .story__ask, .story__totals, .story__try, .story__release) {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.story--static .story__mark {
-  top: calc(var(--y) * 1% + var(--dy) * 1px - var(--m) * var(--s) / 2);
-  left: calc(var(--x) * 1% + var(--dx) * 1px - var(--m) * var(--s) / 2);
-  width: calc(var(--m) * var(--s));
-  height: calc(var(--m) * var(--s));
-  transform: none;
-}
-
-.story--static .story__group {
-  top: calc(var(--base) * 1% + var(--dy) * 1px);
-  left: calc(var(--x) * 1% - 5rem);
-  transform: none;
-}
-
-.story--static .story__aside {
-  top: calc(var(--y) * 1% + var(--dy) * 1px);
-  transform: none;
-}
-
-/* Unpinned, the envelope keeps its place and full size; on a phone the try-out and the release stack under it. */
-.story--static .story__env.is-back {
-  transform: none;
-}
-
-@media (max-width: 720px) {
-  .story--static .story__group {
-    left: calc(var(--x) * 1% - 3.6rem);
-  }
-
-  .story--static .story__try,
-  .story--static .story__release {
-    top: calc(var(--env-h) + 16px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .live-dot,
-  .tick.is-ticked {
-    animation: none;
-  }
-}
-
-/* The life of one payment: four steps from the hub's own records (STEER-2058). */
-.story--life {
-  --lines: 3.6;
-}
-
-/* Under the statement: one row of steps over a single hairline rail. */
-.story__life {
+.hero__down {
   position: absolute;
-  top: calc(var(--beat) * var(--lines));
-  right: 0;
-  left: 0;
-  pointer-events: auto;
-}
-
-.life {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--sp-4);
-  padding-top: var(--sp-5);
-  border-top: var(--hair) solid var(--line);
-}
-
-.life__step {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--sp-3);
-  row-gap: var(--sp-2);
-  align-content: start;
-  min-width: 0;
+  left: 50%;
+  bottom: var(--sp-6);
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
   color: var(--slate);
-  opacity: 0.35;
-  transform: translateY(8px);
+  font-family: var(--display);
+  font-size: var(--t-13);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   transition:
-    opacity 240ms var(--ease-out),
-    transform 240ms var(--ease-out);
+    color var(--d-1) ease,
+    transform var(--d-press) var(--ease-out);
 }
 
-.life__step.is-on,
-.life__step.is-done {
-  color: var(--ink);
-  opacity: 1;
-  transform: none;
+.hero__down svg {
+  animation: nudge 2.4s var(--ease-in-out) infinite;
 }
 
-.life__step.is-exit {
-  opacity: 0;
+@keyframes nudge {
+  50% {
+    transform: translateY(3px);
+  }
 }
 
-.life__n {
-  min-width: 4ch;
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: var(--t-13);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  white-space: nowrap;
+.hero__down:active {
+  transform: scale(0.97);
 }
 
-.life__step.is-on .life__n,
-.life__step.is-done .life__n {
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .hero__down:hover {
+    color: var(--ink);
+  }
 }
 
-.life__label {
-  font-size: var(--t-15);
-  font-weight: 500;
-  line-height: 1.3;
-}
-
-.life__step .story__lines,
-.life__step .story__go,
-.life__quiet {
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.life__step .story__go {
-  justify-self: start;
-}
-
-.life__quiet {
-  font-size: var(--t-13);
-}
-
-/* A phone: one column of steps, and only the current step says its lines. */
 @media (max-width: 720px) {
-  .life__step:not(.is-on) :is(.story__lines, .story__go, .life__quiet) {
+  .hero {
+    align-items: end;
+    padding-bottom: var(--sp-16);
+  }
+  .hero__veil {
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--paper) 75%, transparent) 0, transparent calc(var(--bar) + 40px)),
+      linear-gradient(180deg, transparent 20%, color-mix(in oklab, var(--paper) 72%, transparent) 55%, var(--paper) 100%);
+  }
+  .hero__actions,
+  .hero__cta,
+  .hero__ghost {
+    width: 100%;
+  }
+  .hero__fig {
+    min-width: 40%;
+  }
+  .hero__down {
     display: none;
   }
 }
 
-/* 1440 and every wide screen: four equal columns, all of them legible, nothing under 14 px. */
-@media (min-width: 721px) {
-  .life {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--sp-6);
-  }
+/* 2–4 · The journey */
 
-  .life__n {
-    font-size: var(--t-14);
-  }
+.journey--pinned {
+  position: relative;
+  height: calc((var(--span) + 1) * 100svh);
+}
 
-  .life__label {
-    font-size: var(--t-16);
-  }
+.journey--pinned > .journey__frame {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+}
 
-  .life__quiet {
-    font-size: var(--t-14);
+.journey__frame {
+  display: grid;
+  align-items: center;
+  padding: calc(var(--bar) + var(--sp-6)) var(--gutter) var(--sp-10);
+}
+
+.journey--static > .journey__frame {
+  padding-block: var(--sp-16);
+  border-top: var(--hair) solid var(--line);
+}
+
+.journey__grid {
+  width: 100%;
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+  gap: clamp(var(--sp-8), 5vw, var(--sp-16));
+}
+
+.journey__copy {
+  display: grid;
+  gap: var(--sp-6);
+  align-content: center;
+}
+
+.journey__step {
+  color: var(--usdc);
+  font-family: var(--display);
+  font-size: var(--t-15);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.journey__step span {
+  color: var(--muted);
+}
+
+/* The statements share one cell and cross-fade, so the copy never jumps as the beat changes. */
+.journey__lines,
+.journey__cards {
+  display: grid;
+}
+
+.journey__lines > *,
+.journey__cards > * {
+  grid-area: 1 / 1;
+}
+
+.journey__line {
+  font-family: var(--display);
+  font-size: clamp(var(--t-32), 1.2rem + 2.2vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  filter: blur(6px);
+  transform: translateY(10px);
+  transition:
+    opacity var(--d-3) var(--ease-out),
+    transform var(--d-3) var(--ease-out),
+    filter var(--d-3) var(--ease-out);
+}
+
+.journey__line.is-on {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
+}
+
+.journey__card {
+  align-self: start;
+  padding: var(--sp-5);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--elev-1);
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity var(--d-2) var(--ease-out),
+    transform var(--d-2) var(--ease-out);
+}
+
+.journey__card.is-on {
+  opacity: 1;
+  transform: none;
+  transition-delay: 60ms;
+}
+
+.journey__roles {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.journey__roles > div {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: var(--sp-3);
+  align-items: baseline;
+}
+
+.journey__roles dt {
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.journey__roles dd {
+  margin: 0;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.journey__data {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+
+.journey__card > .label + .journey__data {
+  margin-top: var(--sp-3);
+}
+
+.journey__row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: baseline;
+}
+
+.journey__row dd {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--t-15);
+}
+
+.journey__quiet {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.journey__data + .journey__quiet {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+}
+
+.journey__honest {
+  font-size: var(--t-15);
+}
+
+.journey__meta {
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.journey__go {
+  display: inline-flex;
+  margin-top: var(--sp-4);
+  color: var(--usdc);
+  font-family: var(--display);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .journey__go:hover {
+    text-decoration: underline;
   }
 }
 
-/* Less motion: a static section already holds its own state; nothing moves or is placed by a transform. */
-.story--static .life__step {
-  transform: none;
-  transition: none;
+.journey__stage {
+  position: relative;
+  aspect-ratio: 640 / 420;
+  width: 100%;
+}
+
+/* The beat ticks: where you are, and a way to jump. */
+.journey__ticks {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-6);
+  translate: -50% 0;
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.journey__tick {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.journey__tick::before {
+  content: "";
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background-color var(--d-2) ease;
+}
+
+.journey__tick.is-done::before {
+  background: color-mix(in oklab, var(--usdc-fill) 55%, var(--line));
+}
+
+.journey__tick.is-on::before {
+  background: var(--usdc-fill);
+}
+
+/* The diagram */
+
+.diagram {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.diagram__rules path,
+.diagram__lit path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+}
+
+.diagram__rules path {
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.diagram__lit path {
+  stroke: var(--usdc-fill);
+  stroke-width: 2.5;
+}
+
+.diagram__lit path.is-release {
+  stroke: var(--settle-fill);
+}
+
+.diagram__node {
+  opacity: 0;
+}
+
+.journey--static .diagram__node {
+  opacity: 1;
+}
+
+.diagram__disc {
+  fill: var(--raised);
+  stroke: var(--line);
+  stroke-width: 1.5;
+  transition:
+    stroke var(--d-2) ease,
+    fill var(--d-2) ease;
+}
+
+.diagram__glyph {
+  color: var(--slate);
+  transition: color var(--d-2) ease;
+}
+
+.diagram__halo {
+  fill: var(--usdc-fill);
+  opacity: 0;
+  transition: opacity var(--d-3) var(--ease-out);
+}
+
+.diagram__name {
+  fill: var(--ink);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* The party each beat is about. */
+[data-beat="1"] .diagram__node--agent,
+[data-beat="2"] .diagram__node--you,
+[data-beat="3"] .diagram__node--escrow,
+[data-beat="4"] .diagram__node--seller {
+  --hot: 1;
+}
+
+.diagram__node:is(.diagram__node--agent, .diagram__node--you, .diagram__node--escrow, .diagram__node--seller) .diagram__halo {
+  opacity: calc(var(--hot, 0) * 0.16);
+}
+
+[data-beat="1"] .diagram__node--agent .diagram__disc,
+[data-beat="2"] .diagram__node--you .diagram__disc,
+[data-beat="3"] .diagram__node--escrow .diagram__disc {
+  stroke: var(--usdc-fill);
+}
+
+[data-beat="1"] .diagram__node--agent .diagram__glyph,
+[data-beat="2"] .diagram__node--you .diagram__glyph,
+[data-beat="3"] .diagram__node--escrow .diagram__glyph {
+  color: var(--usdc);
+}
+
+.diagram__dot {
+  transition: opacity var(--d-1) ease;
+}
+
+.diagram__dot-core {
+  fill: var(--usdc-fill);
+  stroke: var(--paper);
+  stroke-width: 2;
+  transition: fill var(--d-2) ease;
+}
+
+.diagram__dot-ring {
+  fill: var(--usdc-fill);
+  opacity: 0.22;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ring 1.8s var(--ease-out) infinite;
+}
+
+@keyframes ring {
+  from {
+    transform: scale(0.6);
+    opacity: 0.35;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Settled: the payment reached the seller. Green, the one colour for it. */
+.diagram[data-settled] .diagram__dot-core,
+.diagram[data-settled] .diagram__dot-ring {
+  fill: var(--settle-fill);
+}
+
+.diagram[data-settled] .diagram__node--seller .diagram__disc {
+  stroke: var(--settle-fill);
+  fill: color-mix(in oklab, var(--settle-fill) 14%, var(--raised));
+}
+
+.diagram[data-settled] .diagram__node--seller .diagram__glyph {
+  color: var(--settle);
+}
+
+.diagram[data-settled] .diagram__node--seller .diagram__halo {
+  fill: var(--settle-fill);
+  opacity: 0.18;
+}
+
+@media (max-width: 720px) {
+  .journey__frame {
+    align-items: start;
+    padding: calc(var(--bar) + var(--sp-3)) var(--gutter) var(--sp-12);
+  }
+  .journey__grid {
+    grid-template-columns: 1fr;
+    gap: var(--sp-4);
+  }
+  .journey__stage {
+    order: -1;
+    aspect-ratio: 360 / 520;
+    max-height: 40svh;
+    margin: 0 auto;
+  }
+  .journey--static .journey__stage {
+    max-height: 56svh;
+  }
+  .journey__copy {
+    gap: var(--sp-3);
+  }
+  .journey__line {
+    font-size: var(--t-24);
+  }
+  .journey__card {
+    padding: var(--sp-4);
+  }
+  .journey__row {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+  }
+  .journey__ticks {
+    bottom: var(--sp-3);
+  }
+}
+
+/* 5 · The tape */
+
+.stream,
+.proof {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: clamp(var(--sp-16), 10vw, 140px) var(--gutter);
+}
+
+.stream__head,
+.proof__head {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-10);
+}
+
+.stream__title,
+.proof__title {
+  font-family: var(--display);
+  font-size: clamp(var(--t-32), 1.2rem + 2.4vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.stream__lede {
+  max-width: 56ch;
+  color: var(--slate);
+}
+
+.stream__list {
+  display: grid;
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+}
+
+.stream__row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) 8rem 9rem 6rem 3rem;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 60px;
+  padding: var(--sp-3) var(--sp-5);
+  border-top: var(--hair) solid var(--line);
+  transition:
+    opacity var(--d-3) var(--ease-out),
+    transform var(--d-3) var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 40ms);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.stream__row:first-child {
+  border-top: 0;
+}
+
+.stream__kind {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-family: var(--display);
+  font-size: var(--t-12);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.stream__kind--released,
+.stream__kind--settled {
+  background: var(--settle-wash);
+  color: var(--settle);
+}
+
+.stream__kind--refunded {
+  background: var(--seal-wash);
+  color: var(--seal);
+}
+
+.stream__what {
+  display: grid;
+  min-width: 0;
+}
+
+.stream__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.stream__seller {
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.stream__amount {
+  justify-self: end;
+  font-family: var(--display);
+  font-size: var(--t-17);
+  font-weight: 600;
+}
+
+.stream__asset {
+  margin-left: 4px;
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.stream__rail,
+.stream__age {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.stream__tx {
+  justify-self: end;
+  color: var(--usdc);
+  font-family: var(--display);
+  font-size: var(--t-14);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stream__tx:hover {
+    text-decoration: underline;
+  }
+}
+
+.stream__empty {
+  padding: var(--sp-8) var(--sp-5);
+  border-radius: var(--r-3);
+  box-shadow: var(--elev-1);
+  color: var(--slate);
+}
+
+.stream__notes {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-5);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+@media (max-width: 860px) {
+  .stream__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "what amount"
+      "meta tx";
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .stream__what {
+    grid-area: what;
+  }
+  .stream__amount {
+    grid-area: amount;
+  }
+  .stream__kind {
+    display: none;
+  }
+  .stream__rail {
+    grid-area: meta;
+    font-size: var(--t-13);
+  }
+  .stream__age {
+    display: none;
+  }
+  .stream__tx {
+    grid-area: tx;
+  }
+}
+
+/* 6 · The proof */
+
+.proof {
+  border-top: var(--hair) solid var(--line);
+}
+
+.proof__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: var(--sp-3);
+}
+
+.proof__list li {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-5);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--d-1) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .proof__list li:hover {
+    box-shadow: var(--elev-1-hover);
+  }
+}
+
+.proof__list a {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--t-17);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.proof__list span {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.proof__close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-5);
+  margin-top: var(--sp-12);
+}
+
+.proof__close .btn {
+  min-height: 52px;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-pill);
+  font-size: var(--t-16);
+}
+
+.proof__repo {
+  color: var(--slate);
+  font-family: var(--display);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.proof__fine {
+  margin-top: var(--sp-6);
+  color: var(--muted);
+  font-size: var(--t-13);
+}
+
+/* Less motion: nothing pulses or drifts; fades stay. */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .hero__down svg,
+  .diagram__dot-ring {
+    animation: none;
+  }
+  .journey__line,
+  .journey__card,
+  .stream__row {
+    transform: none;
+    filter: none;
+  }
 }

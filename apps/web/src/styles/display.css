@@ -1,23 +1,9 @@
-/* Countersign Display: a house face for display type only (see public/fonts/README.md). */
+/* Plus Jakarta Sans, the house face for display and body (see public/fonts/README.md). One variable file, 200 to 800. */
 @font-face {
-  font-family: "Countersign Display";
-  src: url("/fonts/CountersignDisplay-Regular.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "Plus Jakarta Sans";
+  src: url("/fonts/PlusJakartaSans-Variable.woff2") format("woff2-variations"),
+    url("/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
+  font-weight: 200 800;
   font-style: normal;
   font-display: swap;
 }
-@font-face {
-  font-family: "Countersign Display";
-  src: url("/fonts/CountersignDisplay-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Countersign Display";
-  src: url("/fonts/CountersignDisplay-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
