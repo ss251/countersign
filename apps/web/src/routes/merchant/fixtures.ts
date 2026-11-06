@@ -1,0 +1,213 @@
+import type { Order, ReceiptOrder, RelayStatus } from "./model.ts";
+import { formatUsdt, txUrl, wasReceived } from "./model.ts";
+
+/*
+ * Fixture orders for reviewing the screens with no services running (?fixture=1).
+ * Four are the real Whitechain Sepolia history of this merchant, so every proof link opens a
+ * real transaction. The held order and the partly refunded one are made up, with hashes of
+ * their own; no hash appears twice.
+ */
+
+const MERCHANT = "0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c";
+const CUSTOMER = "0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298";
+
+const NOW = Date.now();
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+
+export const fixtureMerchant = MERCHANT;
+
+export const fixtureOrders: Order[] = [
+  {
+    // Real: an agent bought a forecast over x402 through the drop-in paywall.
+    id: "0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07",
+    kind: "exact",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "50000",
+    fee: "0",
+    refunded: "0",
+    refundable: "50000",
+    status: "paid",
+    closeKind: null,
+    createdAt: NOW - 2 * MINUTE,
+    receivedAt: NOW - 2 * MINUTE,
+    settleTx: "0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07",
+    closeTx: null,
+    refundTxs: [],
+    description: "Mumbai weather forecast",
+  },
+  {
+    // Real: the whitechain-dev skill bought through the hub; the escrow released to the merchant.
+    id: "0x01a66ebcdaa75420b747496de7e523ed0293ecf27d6733c56aead58719dcb231",
+    kind: "escrow",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "50000",
+    fee: "500",
+    refunded: "0",
+    refundable: "50000",
+    status: "paid",
+    closeKind: "release",
+    createdAt: NOW - 9 * MINUTE,
+    receivedAt: NOW - 9 * MINUTE + 4_000,
+    settleTx: "0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c",
+    closeTx: "0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812",
+    refundTxs: [],
+    offerHash: "0xc94049eb809dca1ee14d91cf69ee2f9d807aee085d0c14ba8422d65eaab21b7b",
+    description: "whitechain-dev",
+  },
+  {
+    // Made up: held in escrow until delivery.
+    id: "0x7d1e0c4a5b9f3e8d2c6a1b0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+    kind: "escrow",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "400000",
+    fee: "0",
+    refunded: "0",
+    refundable: "400000",
+    status: "held",
+    closeKind: null,
+    createdAt: NOW - 18 * MINUTE,
+    receivedAt: null,
+    settleTx: "0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a",
+    closeTx: null,
+    refundTxs: [],
+    deadline: NOW + 25 * MINUTE,
+    description: "Contract review, 2 files",
+  },
+  {
+    // Made up: a direct payment, partly refunded.
+    id: "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
+    kind: "exact",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "1000000",
+    fee: "0",
+    refunded: "250000",
+    refundable: "750000",
+    status: "partially_refunded",
+    closeKind: null,
+    createdAt: NOW - 52 * MINUTE,
+    receivedAt: NOW - 52 * MINUTE,
+    settleTx: "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
+    closeTx: null,
+    refundTxs: ["0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c"],
+    description: "Licence renewal, 4 seats",
+  },
+  {
+    // Real: the first gasless payment, refunded in one click.
+    id: "0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc",
+    kind: "exact",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "250000",
+    fee: "0",
+    refunded: "250000",
+    refundable: "0",
+    status: "refunded",
+    closeKind: null,
+    createdAt: NOW - 2 * HOUR,
+    receivedAt: NOW - 2 * HOUR,
+    settleTx: "0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc",
+    closeTx: null,
+    refundTxs: ["0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5"],
+    description: "Whitechain checkout",
+  },
+  {
+    // Real: an escrow order the merchant cancelled while it was held; the full amount went back.
+    id: "0xd3247aa41d6a23adfe6ae673d6ad2c676da8fdfb188a4c4c5dd8b06ca7bb8e7e",
+    kind: "escrow",
+    customer: CUSTOMER,
+    merchant: MERCHANT,
+    amount: "300000",
+    fee: "0",
+    refunded: "0",
+    refundable: "0",
+    status: "cancelled",
+    closeKind: "cancel",
+    createdAt: NOW - 2 * HOUR - 8 * MINUTE,
+    receivedAt: null,
+    settleTx: "0x3e82355da37166f668d4bc1c428d8b03a262915ef2a856ebb10b1423b89e2447",
+    closeTx: "0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9",
+    refundTxs: [],
+    description: "Weather report, Mumbai",
+  },
+];
+
+/** The refund a fixture desk pretends to send: a hash of its own for each order, never reused. */
+export function fixtureRefundTx(orderId: string): string {
+  const body = orderId.slice(2);
+  return `0x${body.slice(32)}${body.slice(0, 32)}`;
+}
+
+export const fixtureStatus: RelayStatus = {
+  address: "0xa2EEfc657138eE5367291F8e2Ac45BAC28486006",
+  balanceWei: "1554000000000000000",
+  balanceWbt: "1.554",
+  ceiling: {
+    capWei: "50000000000000000",
+    usedWei: "2200000000000000",
+    remainingWei: "47800000000000000",
+    txCount: 4,
+    maxTx: 200,
+    resetsAt: NOW + 41 * MINUTE,
+  },
+  network: "eip155:1874",
+  chainId: 1874,
+};
+
+export function findFixtureOrder(id: string): ReceiptOrder | null {
+  const wanted = id.toLowerCase();
+  const order = fixtureOrders.find((candidate) => candidate.id.toLowerCase() === wanted);
+  if (!order) return null;
+  return {
+    ...order,
+    refunds: order.refundTxs.map((txHash, index) => ({
+      amount: index === 0 ? order.refunded : undefined,
+      txHash,
+    })),
+    settleTxUrl: txUrl(order.settleTx),
+    ...(order.closeTx ? { closeTxUrl: txUrl(order.closeTx) } : {}),
+    refundTxUrls: order.refundTxs.map((txHash) => txUrl(txHash)),
+  };
+}
+
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+const CSV_HEADER =
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+
+/** The same columns the relay's orders.csv exports, from the fixtures. */
+export function fixtureCsv(): string {
+  const rows = [CSV_HEADER];
+  for (const order of fixtureOrders) {
+    const amount = wasReceived(order) ? BigInt(order.amount) : 0n;
+    const fee = BigInt(order.fee ?? "0");
+    const refunded = BigInt(order.refunded);
+    const net = amount - fee - refunded;
+    rows.push(
+      [
+        new Date(order.createdAt).toISOString(),
+        order.id,
+        order.kind,
+        order.customer,
+        order.merchant,
+        formatUsdt(order.amount),
+        formatUsdt(fee.toString()),
+        formatUsdt(order.refunded),
+        `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
+        order.status,
+        txUrl(order.settleTx),
+        order.closeTx ? txUrl(order.closeTx) : "",
+        order.refundTxs.map((hash) => txUrl(hash)).join(" "),
+      ]
+        .map(csvField)
+        .join(","),
+    );
+  }
+  return `${rows.join("\n")}\n`;
+}
