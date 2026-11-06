@@ -7,11 +7,14 @@ import {
   type PackageManifest,
 } from "../manifest.ts";
 import {
+  PEER_COMPLETIONS,
   PUBLISH_SURFACE,
+  completePeerDependencies,
   exportKeys,
   extraDependenciesFor,
   extraEntriesFor,
   omittedExportLines,
+  peerCompletionsFor,
   type PublishSurface,
 } from "../surface.ts";
 
@@ -176,5 +179,112 @@ describe("the publish surface", () => {
     expect(extraEntriesFor("mcp")).toEqual([]);
     expect(extraDependenciesFor("relay")).toEqual({});
     expect(extraDependenciesFor("mcp")).toEqual({});
+  });
+});
+
+describe("peer completions", () => {
+  const mcpCompletion = {
+    package: "@x402/evm",
+    needsBy: "@circle-fin/x402-batching",
+    reason:
+      "its server entry imports @x402/evm but lists it only as an optional peer, " +
+      "which npm does not install",
+  };
+
+  test("the completion is added with the union range after the scan", () => {
+    const plan = completePeerDependencies({
+      short: "mcp",
+      completions: peerCompletionsFor("mcp"),
+      dependencies: { "@circle-fin/x402-batching": "4.0.0" },
+      union: { "@circle-fin/x402-batching": "4.0.0", "@x402/evm": "2.30.0" },
+    });
+    expect(plan.dependencies).toEqual({
+      "@circle-fin/x402-batching": "4.0.0",
+      "@x402/evm": "2.30.0",
+    });
+  });
+
+  test("the completed dependency keys are sorted", () => {
+    const plan = completePeerDependencies({
+      short: "mcp",
+      completions: peerCompletionsFor("mcp"),
+      dependencies: { zod: "4.6.7", "@circle-fin/x402-batching": "4.0.0" },
+      union: {
+        zod: "4.6.7",
+        "@x402/evm": "2.30.0",
+        "@circle-fin/x402-batching": "4.0.0",
+      },
+    });
+    expect(Object.keys(plan.dependencies)).toEqual([
+      "@circle-fin/x402-batching",
+      "@x402/evm",
+      "zod",
+    ]);
+  });
+
+  test("a completion missing from the union throws naming it", () => {
+    let message = "";
+    try {
+      completePeerDependencies({
+        short: "mcp",
+        completions: peerCompletionsFor("mcp"),
+        dependencies: { "@circle-fin/x402-batching": "4.0.0" },
+        union: { "@circle-fin/x402-batching": "4.0.0" },
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("@x402/evm");
+    expect(message).toContain("not a dependency of any repository manifest");
+  });
+
+  test("a stale completion is an error naming the missing needsBy", () => {
+    let message = "";
+    try {
+      completePeerDependencies({
+        short: "mcp",
+        completions: peerCompletionsFor("mcp"),
+        dependencies: {},
+        union: { "@x402/evm": "2.30.0" },
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe(
+      "stale peer completion for mcp: @x402/evm " +
+        "(needed by @circle-fin/x402-batching, which is not a dependency)",
+    );
+  });
+
+  test("an empty package, needsBy or reason throws", () => {
+    expect(() =>
+      peerCompletionsFor("mcp", { mcp: [{ package: "", needsBy: "x", reason: "y" }] }),
+    ).toThrow(/empty package/);
+    expect(() =>
+      peerCompletionsFor("mcp", { mcp: [{ package: "x", needsBy: " ", reason: "y" }] }),
+    ).toThrow(/empty needsBy/);
+    expect(() =>
+      peerCompletionsFor("mcp", { mcp: [{ package: "x", needsBy: "y", reason: "" }] }),
+    ).toThrow(/empty reason/);
+  });
+
+  test("one printed line per completion", () => {
+    const plan = completePeerDependencies({
+      short: "mcp",
+      completions: [mcpCompletion],
+      dependencies: { "@circle-fin/x402-batching": "4.0.0" },
+      union: { "@x402/evm": "2.30.0" },
+    });
+    expect(plan.lines).toEqual([
+      "mcp: peer completion @x402/evm for @circle-fin/x402-batching " +
+        "(its server entry imports @x402/evm but lists it only as an optional peer, " +
+        "which npm does not install)",
+    ]);
+  });
+
+  test("relay and cli have no peer completions", () => {
+    expect(PEER_COMPLETIONS.mcp).toEqual([mcpCompletion]);
+    expect(peerCompletionsFor("relay")).toEqual([]);
+    expect(peerCompletionsFor("cli")).toEqual([]);
   });
 });
