@@ -348,3 +348,15 @@ tr-09 stopped correctly at its stop condition. `packages/runner/test/children.te
 - Both spawners enforce the same time and output ceilings, and both return the same result.
 - `packages/runner/test/child-node.test.ts` runs the Node spawner under Bun on the same three cases as `child.test.ts`.
 - The Node bundle never reaches `Bun.spawn`, so the shipped path holds no Bun-only call.
+
+## D23 — a signed-in person gets an envelope and a token scoped to it in one call (07 Nov; refs #21)
+
+The Buyer page's empty state asked a first-time user to paste the operator's token. `POST /envelopes/session` replaces that.
+
+- **Who.** Only a person signed in through Privy (D19). Without a session the answer is 401, and nothing is issued. The body names the wallet, `{agent}`, and it must be one of that person's wallets.
+- **The envelope.**
+  - If the hub holds none for that wallet, it issues one with tight defaults: cap 1 USDC, 0.5 per seller, ask above 0.05, expiry 24 h, and the wallet itself as approver. It is stored unsigned, and `GET /envelopes/:agent` answers `verified: false` for it.
+  - An envelope the hub already holds is returned unchanged, if its approver is one of the person's wallets. Otherwise the answer is 403.
+  - A newer agent-signed mirror replaces a hub-issued envelope, as before.
+- **The token.** Each call issues a new random token for that agent only, valid 24 h, and drops the previous one. The response carries it once. The hub stores only its SHA-256 and never logs it.
+- **Where it works.** The token is accepted in place of the operator token on three routes, for its own agent only: `GET /envelopes/:agent`, `GET /approvals?agent=` and `POST /approvals/:id/decision`. A decision still needs the approver's signature. On every other route, and for every other agent, it counts as no token.
