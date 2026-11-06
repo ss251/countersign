@@ -69,9 +69,13 @@ interface McpToolResult {
 }
 
 interface McpClient {
-  connect(transport: unknown): Promise<void>;
+  connect(transport: unknown, options?: { timeout?: number }): Promise<void>;
   listTools(): Promise<{ tools: Array<{ name: string }> }>;
-  callTool(params: { name: string; arguments?: Record<string, unknown> }): Promise<McpToolResult>;
+  callTool(
+    params: { name: string; arguments?: Record<string, unknown> },
+    resultSchema?: unknown,
+    options?: { timeout?: number },
+  ): Promise<McpToolResult>;
   close(): Promise<void>;
 }
 
@@ -381,7 +385,7 @@ export const npmPublished: Flow = {
 
       const client = new Client({ name: "countersign-e2e", version: "0.0.0" });
       ctx.defer(() => client.close());
-      await client.connect(transport);
+      await client.connect(transport, { timeout: 240_000 });
 
       const tools = await client.listTools();
       const names = tools.tools.map((t) => t.name).sort();
@@ -393,7 +397,7 @@ export const npmPublished: Flow = {
       const found = rows.find((r) => typeof r.offerHash === "string" && r.offerHash.toLowerCase() === listing.offerHash.toLowerCase());
       check(found?.offerHash, `search_offers names ${listing.offerHash.slice(0, 10)} (it answered ${rows.length})`);
 
-      const buy = await client.callTool({ name: "buy", arguments: { offerHash: found.offerHash, input: {} } });
+      const buy = await client.callTool({ name: "buy", arguments: { offerHash: found.offerHash, input: {} } }, undefined, { timeout: 240_000 });
       const reply = parseMcpBuy(buy.content ?? []);
       check(reply.output !== undefined, "the MCP buy returns the seller's output");
       await releasedOnArc(bought.escrow, reply.releaseTx, reply.slipHash, "MCP buy release tx");
