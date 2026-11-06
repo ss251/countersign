@@ -98,6 +98,8 @@ export interface EnvelopeView {
   names: Record<string, string>;
   /** Circle Gateway deposit that nanopayments draw from. */
   gatewayBalance?: string;
+  /** Unix seconds the hub recorded the revoke. Only ever read back from the hub. */
+  revokedAt?: number;
   /**
    * Set when this is the agent's signed mirror on the hub. The limits are then read-only here:
    * they live on the agent's machine, and nothing on the hub can loosen them.

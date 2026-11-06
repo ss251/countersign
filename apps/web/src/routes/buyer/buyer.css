@@ -728,6 +728,11 @@
   font-size: var(--t-13);
 }
 
+.env__error {
+  color: var(--seal);
+  font-size: var(--t-13);
+}
+
 .env__gateway {
   display: grid;
   gap: var(--sp-1);
@@ -779,44 +784,6 @@
   font-size: var(--t-12);
 }
 
-.limit__change {
-  min-height: 44px;
-  font-size: var(--t-14);
-}
-
-.limit--editing {
-  grid-template-columns: 1fr;
-  gap: var(--sp-2);
-}
-
-.limit__input-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.limit__input-row .input {
-  padding-right: 64px;
-}
-
-.limit__asset {
-  position: absolute;
-  right: var(--sp-3);
-  color: var(--slate);
-  font-size: var(--t-13);
-  pointer-events: none;
-}
-
-.limit__error {
-  color: var(--seal);
-  font-size: var(--t-13);
-}
-
-.limit__buttons {
-  display: flex;
-  gap: var(--sp-2);
-}
-
 .allow {
   display: grid;
   border-top: var(--hair) solid var(--line);
@@ -824,7 +791,7 @@
 
 .allow__row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
   min-height: 48px;
@@ -841,16 +808,6 @@
 .allow__row .hash__value {
   color: var(--slate);
   font-size: var(--t-12);
-}
-
-.allow__remove {
-  min-height: 44px;
-  font-size: var(--t-14);
-}
-
-.allow__form {
-  display: grid;
-  gap: var(--sp-3);
 }
 
 /* History */

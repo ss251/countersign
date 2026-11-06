@@ -3,6 +3,7 @@ import {
   approvalDecisionMessage,
   approvalRequestHash,
   canonicalJson,
+  envelopeRevokeMessage,
   type ApprovalDecision,
   type ApprovalRequest,
 } from "@countersign/core";
@@ -124,4 +125,16 @@ export async function signDecision(
   });
   const sig = await privateKeyToAccount(key).signMessage({ message: approvalDecisionMessage(body) });
   return { decidedAt: now, sig };
+}
+
+/** D20: this phone's approver key revokes an agent on the hub. EIP-191 over core's envelopeRevokeMessage. */
+export async function signRevoke(
+  agent: string,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<{ revokedAt: number; sig: string }> {
+  const key = readKey();
+  if (!key) throw new SigningError("no-key", "This phone has no approver key yet.");
+  const { privateKeyToAccount } = await import("viem/accounts");
+  const sig = await privateKeyToAccount(key).signMessage({ message: envelopeRevokeMessage(agent, now) });
+  return { revokedAt: now, sig };
 }
