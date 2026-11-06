@@ -45,21 +45,33 @@ describe("the review against what settled", () => {
   const OTHER_JOB = `0x${"cd".repeat(32)}`;
   const OTHER_PAYEE = `0x${"22".repeat(20)}`;
 
-  test("with no delay, a different job id fails", () => {
-    expect(() => compareSettlement(REVIEW, { ...SETTLED, job: OTHER_JOB }, 0)).toThrow(
-      `the review showed ${JOB}, but the slip's jobId was ${OTHER_JOB}`,
-    );
+  const REBUILT = {
+    note: `the console rebuilt the terms at Sign: job ${JOB.slice(0, 10)}… -> ${OTHER_JOB.slice(0, 10)}…`,
+  };
+
+  test("with no delay, a different job id passes and returns the rebuilt note", () => {
+    expect(compareSettlement(REVIEW, { ...SETTLED, job: OTHER_JOB }, 0)).toEqual(REBUILT);
   });
 
-  test("with a delay, a different job id passes and returns the note", () => {
-    expect(compareSettlement(REVIEW, { ...SETTLED, job: OTHER_JOB }, 180)).toEqual({
-      note: `the console re-prepared the terms at Sign: job ${JOB.slice(0, 10)}… -> ${OTHER_JOB.slice(0, 10)}…`,
-    });
+  test("with a delay, a different job id passes and returns the rebuilt note", () => {
+    expect(compareSettlement(REVIEW, { ...SETTLED, job: OTHER_JOB }, 180)).toEqual(REBUILT);
+  });
+
+  test("with no delay, a different payee still fails", () => {
+    expect(() => compareSettlement(REVIEW, { ...SETTLED, payee: OTHER_PAYEE }, 0)).toThrow(
+      `the review showed ${PAYEE}, but the Funded payee was ${OTHER_PAYEE}`,
+    );
   });
 
   test("with a delay, a different payee still fails", () => {
     expect(() => compareSettlement(REVIEW, { ...SETTLED, payee: OTHER_PAYEE }, 180)).toThrow(
       `the review showed ${PAYEE}, but the Funded payee was ${OTHER_PAYEE}`,
+    );
+  });
+
+  test("with no delay, a different amount still fails", () => {
+    expect(() => compareSettlement(REVIEW, { ...SETTLED, amount: 999_999n }, 0)).toThrow(
+      `the review showed 1000000, but the slip's amount was 999999`,
     );
   });
 

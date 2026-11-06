@@ -34,14 +34,16 @@ function short(job: string): string {
 /**
  * Compare what settled against the review the signer saw.
  *
- * The payee and the amount must always match. The job id may differ only when Sign re-prepared the
- * terms after a wait; the returned note names the job the review showed and the one that settled.
+ * The payee and the amount must always match. The console rebuilds the terms at every Sign, so the
+ * job id may differ whatever the delay; the returned note names the job the review showed and the
+ * one that settled.
  */
 export function compareSettlement(
   review: Review,
   settlement: Settlement,
   signDelayS: number,
 ): ReviewComparison {
+  void signDelayS;
   if (settlement.payee.toLowerCase() !== review.payee.toLowerCase()) {
     throw new Error(`the review showed ${review.payee}, but the Funded payee was ${settlement.payee}`);
   }
@@ -49,11 +51,8 @@ export function compareSettlement(
     throw new Error(`the review showed ${review.amount}, but the slip's amount was ${settlement.amount}`);
   }
   if (settlement.job.toLowerCase() === review.job.toLowerCase()) return {};
-  if (signDelayS === 0) {
-    throw new Error(`the review showed ${review.job}, but the slip's jobId was ${settlement.job}`);
-  }
   return {
-    note: `the console re-prepared the terms at Sign: job ${short(review.job)} -> ${short(settlement.job)}`,
+    note: `the console rebuilt the terms at Sign: job ${short(review.job)} -> ${short(settlement.job)}`,
   };
 }
 
