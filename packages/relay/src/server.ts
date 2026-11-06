@@ -259,16 +259,12 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     const body = await readJson(c);
     const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
     if (!v || !isHex32(v.jobId) || !isHex32(v.slipHash) || !isHexString(v.sellerSig)) return bad(c);
-    // A late v2 release is the arbiter's power, and on Whitechain the arbiter is this relay's key:
-    // only the hub, which checked the delivery, may ask for one, exactly as for /escrow/fail.
+    // On v2 only the arbiter may release, and on Whitechain the arbiter is this relay's key: only
+    // the hub, which checked the delivery, may ask for a release, exactly as for /escrow/fail.
     const fromHub = hubToken !== undefined && authorizedHub(c.req.header("authorization"), hubToken);
-    if (!fromHub) {
-      const needsHub = await releaseNeedsHub(v.jobId, csCtx);
-      if (needsHub === "unknown") return c.json({ ok: false, reason: "job_unreadable" }, 503);
-      if (needsHub) {
-        if (!hubToken) return c.json({ ok: false, reason: "late_release_not_configured" }, 503);
-        return c.json({ ok: false, reason: "hub_auth_required" }, 401);
-      }
+    if (!fromHub && releaseNeedsHub(v.jobId, csCtx)) {
+      if (!hubToken) return c.json({ ok: false, reason: "release_not_configured" }, 503);
+      return c.json({ ok: false, reason: "hub_auth_required" }, 401);
     }
     return replyOp(
       c,

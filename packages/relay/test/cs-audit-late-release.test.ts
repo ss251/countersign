@@ -160,7 +160,8 @@ describe("cs-audit e513fe7: past the deadline /escrow/release is the hub's verdi
     expect(releaseWrites(relay)).toBe(1);
   });
 
-  test("an on-time release (now == deadline) without the token is still forwarded", async () => {
+  // orch-cs 19:44:14Z: only the arbiter may release, at any time, so on time is refused too.
+  test("an on-time release (now == deadline) without the token is refused too, and nothing is submitted", async () => {
     const relay = createTestRelay();
     const deadlines = new Map<string, bigint>();
     withV2(relay, deadlines);
@@ -168,7 +169,7 @@ describe("cs-audit e513fe7: past the deadline /escrow/release is the hub's verdi
 
     const res = await release(appAt(relay, deadline), jobId);
 
-    expect(res.status).toBe(200);
-    expect(releaseWrites(relay)).toBe(1);
+    expect([401, 403]).toContain(res.status);
+    expect(releaseWrites(relay)).toBe(0);
   });
 });

@@ -159,19 +159,24 @@ async function fundedV1(relay: TestRelay) {
   return { jobId };
 }
 
+// On v2 only the arbiter (the relay) may release, and only on the hub's word (orch-cs 19:44:14Z),
+// so these releases come from the hub and carry its bearer token.
+const HUB_TOKEN = "a-hub-token-long-enough";
+
 function appFor(relay: TestRelay) {
   return createRelayApp({
     reader: relay.chain,
     relayer: relay.relayer,
     ledger: relay.ledger,
     now: () => NOW,
+    config: { hubToken: HUB_TOKEN },
   });
 }
 
 function post(app: ReturnType<typeof createRelayApp>, path: string, body: unknown) {
   return app.request(path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${HUB_TOKEN}` },
     body: JSON.stringify(body),
   });
 }

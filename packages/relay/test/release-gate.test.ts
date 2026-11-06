@@ -1,8 +1,7 @@
 /**
- * Past a v2 job's deadline only the escrow's arbiter may release, and on Whitechain the arbiter is
- * the relay's own key. So /escrow/release past the on-chain deadline (now > deadline, as the
- * contract checks) needs the hub's bearer token, exactly as /escrow/fail does; until then the route
- * stays open. The chain is
+ * On v2 only the escrow's arbiter may release, at any time, and on Whitechain the arbiter is the
+ * relay's own key. So every v2 /escrow/release needs the hub's bearer token, exactly as /escrow/fail
+ * does; a v1 release is unchanged. The chain is
  * simulated; nothing here reaches a network.
  */
 
@@ -22,7 +21,7 @@ type TestRelay = ReturnType<typeof createTestRelay>;
 let salt = 0;
 
 /** A funded job on the ledger and on the simulated chain, with this on-chain deadline. */
-function fundedJob(relay: TestRelay, escrow: string, deadline: number, options: { unreadable?: boolean } = {}) {
+function fundedJob(relay: TestRelay, escrow: string, deadline: number) {
   salt += 1;
   const jobId = `0x${salt.toString(16).padStart(64, "0")}` as Hex;
   relay.policy.allowedEscrows.push(V2);
@@ -46,7 +45,6 @@ function fundedJob(relay: TestRelay, escrow: string, deadline: number, options: 
   relay.chain.readContract = async (call) => {
     const id = String(call.args?.[0] ?? "").toLowerCase();
     if (call.functionName === "jobOf" && id === jobId.toLowerCase()) {
-      if (options.unreadable) throw new Error("rpc down");
       return { status: 1, deadline: BigInt(deadline) };
     }
     if (call.functionName === "reviewOf") return [0n, 0n, 0n];
@@ -79,68 +77,53 @@ function releases(relay: TestRelay): number {
   return relay.chain.writes.filter((call) => call.functionName === "release").length;
 }
 
-describe("a late v2 release needs the hub", () => {
-  test("a seller's late Release(junk) without the hub token is refused 401, and nothing is submitted", async () => {
+describe("on v2 every release needs the hub", () => {
+  test("a seller's Release(junk) without the hub token is refused 401, and nothing is submitted", async () => {
     const relay = createTestRelay();
-    const jobId = fundedJob(relay, V2, NOW - 10);
+    const jobId = fundedJob(relay, V2, NOW + 3600);
     const res = await release(appFor(relay, HUB_TOKEN), jobId);
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ ok: false, reason: "hub_auth_required" });
     expect(releases(relay)).toBe(0);
   });
 
-  test("a wrong bearer is the same as none", async () => {
+  test("past the deadline it is refused the same way", async () => {
     const relay = createTestRelay();
     const jobId = fundedJob(relay, V2, NOW - 10);
+    const res = await release(appFor(relay, HUB_TOKEN), jobId);
+    expect(res.status).toBe(401);
+    expect(releases(relay)).toBe(0);
+  });
+
+  test("a wrong bearer is the same as none", async () => {
+    const relay = createTestRelay();
+    const jobId = fundedJob(relay, V2, NOW + 3600);
     const res = await release(appFor(relay, HUB_TOKEN), jobId, { authorization: "Bearer not-the-hub-token-at-all" });
     expect(res.status).toBe(401);
     expect(releases(relay)).toBe(0);
   });
 
-  test("one second past the deadline a release already needs the hub", async () => {
-    const relay = createTestRelay();
-    const jobId = fundedJob(relay, V2, NOW - 1);
-    const res = await release(appFor(relay, HUB_TOKEN), jobId);
-    expect(res.status).toBe(401);
-    expect(releases(relay)).toBe(0);
+  test("with the hub token a release is forwarded, on time and late alike", async () => {
+    for (const deadline of [NOW + 3600, NOW - 10]) {
+      const relay = createTestRelay();
+      const jobId = fundedJob(relay, V2, deadline);
+      const res = await release(appFor(relay, HUB_TOKEN), jobId, { authorization: `Bearer ${HUB_TOKEN}` });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+      expect(releases(relay)).toBe(1);
+    }
   });
 
-  test("with the hub token a late release is forwarded", async () => {
-    const relay = createTestRelay();
-    const jobId = fundedJob(relay, V2, NOW - 10);
-    const res = await release(appFor(relay, HUB_TOKEN), jobId, { authorization: `Bearer ${HUB_TOKEN}` });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
-    expect(releases(relay)).toBe(1);
-  });
-
-  test("an on-time v2 release without the token still forwards", async () => {
+  test("a relay with no hub token refuses a v2 release 503", async () => {
     const relay = createTestRelay();
     const jobId = fundedJob(relay, V2, NOW + 3600);
-    const res = await release(appFor(relay, HUB_TOKEN), jobId);
-    expect(res.status).toBe(200);
-    expect(releases(relay)).toBe(1);
-  });
-
-  test("a relay with no hub token refuses a late v2 release 503", async () => {
-    const relay = createTestRelay();
-    const jobId = fundedJob(relay, V2, NOW - 10);
     const res = await release(appFor(relay), jobId);
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ ok: false, reason: "late_release_not_configured" });
+    expect(await res.json()).toEqual({ ok: false, reason: "release_not_configured" });
     expect(releases(relay)).toBe(0);
   });
 
-  test("a v2 job the relay cannot read is refused 503, and nothing is submitted", async () => {
-    const relay = createTestRelay();
-    const jobId = fundedJob(relay, V2, NOW + 3600, { unreadable: true });
-    const res = await release(appFor(relay, HUB_TOKEN), jobId);
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ ok: false, reason: "job_unreadable" });
-    expect(releases(relay)).toBe(0);
-  });
-
-  test("a v1 job is unaffected: no deadline read and no token needed", async () => {
+  test("a v1 job is unchanged: its release needs no token", async () => {
     const relay = createTestRelay();
     const jobId = fundedJob(relay, WHITECHAIN_ESCROW, NOW - 10);
     const res = await release(appFor(relay, HUB_TOKEN), jobId);

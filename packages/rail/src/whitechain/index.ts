@@ -143,7 +143,7 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
       close("/escrow/dispute", { jobId, status, buyerSig });
     escrow.releaseAfterWindow = (jobId) => close("/escrow/release-after-window", { jobId });
     if (token) {
-      // Past the deadline the relay releases only on the hub's word, so the hub's release carries it.
+      // On v2 the relay releases only on the hub's word, so the hub's release carries it.
       escrow.release = (jobId, slipHash, sellerSig) =>
         close("/escrow/release", { jobId, slipHash, sellerSig }, { authorization: `Bearer ${token}` });
       escrow.failDelivery = (jobId) =>
