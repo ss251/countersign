@@ -33,6 +33,11 @@ export interface Erc8004IdentityOptions {
   /** Test seam: when supplied, no RPC client is created. */
   client?: IdentityClient;
   now?: () => number;
+  /** Last identity found for a seller, so a restart does not scan from `fromBlock` again. */
+  persist?: {
+    get(seller: string): { registry: Address; agentId: string; block: bigint } | null;
+    put(seller: string, value: { registry: Address; agentId: string; block: bigint }): void;
+  };
 }
 
 const REGISTERED_EVENT = parseAbiItem(
@@ -51,7 +56,9 @@ interface CacheEntry {
  * Look up the newest ERC-8004 registration for a seller. Reads `Registered` logs in
  * 10,000-block windows from `fromBlock`, filtered on the indexed owner topic. Any RPC
  * failure is a null identity, never a failed request. A failed lookup keeps the last
- * identity it found, and is retried after 30 seconds.
+ * identity it found, and is retried after 30 seconds. With `persist`, that identity is
+ * read back after a restart and the next scan starts at the block where it was found.
+ * A later window that contains no registration does not forget it.
  */
 export function erc8004IdentityLookup(options: Erc8004IdentityOptions): IdentityLookup {
   const client = options.client ?? rpcClient(options.rpcUrl);
@@ -59,6 +66,7 @@ export function erc8004IdentityLookup(options: Erc8004IdentityOptions): Identity
   const now = options.now ?? Date.now;
   const cache = new Map<string, CacheEntry>();
   const lastFound = new Map<string, Erc8004Identity>();
+  const registryKey = options.registry.toLowerCase();
 
   return async (seller: string): Promise<Erc8004Identity | null> => {
     const key = seller.toLowerCase();
@@ -68,10 +76,21 @@ export function erc8004IdentityLookup(options: Erc8004IdentityOptions): Identity
 
     let value: Erc8004Identity | null = null;
     let failed = false;
+    let scanFrom = fromBlock;
+    let persistedMatch = false;
     try {
+      const row = options.persist?.get(seller) ?? null;
+      if (row !== null && row.registry.toLowerCase() === registryKey) {
+        persistedMatch = true;
+        if (!lastFound.has(key)) {
+          lastFound.set(key, { identityRegistry: options.registry, agentId: row.agentId });
+        }
+        if (row.block > scanFrom) scanFrom = row.block;
+      }
+
       const latest = await client.getBlockNumber();
       let newest: RegisteredLog | null = null;
-      for (let start = fromBlock; start <= latest; start += WINDOW) {
+      for (let start = scanFrom; start <= latest; start += WINDOW) {
         const end = start + WINDOW - 1n > latest ? latest : start + WINDOW - 1n;
         const logs = await retryOnce(() =>
           client.getRegisteredLogs({
@@ -94,6 +113,14 @@ export function erc8004IdentityLookup(options: Erc8004IdentityOptions): Identity
       }
       if (newest !== null) {
         value = { identityRegistry: options.registry, agentId: newest.agentId.toString() };
+        lastFound.set(key, value);
+        options.persist?.put(seller, {
+          registry: options.registry,
+          agentId: value.agentId,
+          block: newest.blockNumber,
+        });
+      } else if (persistedMatch) {
+        value = lastFound.get(key) ?? null;
       }
     } catch {
       failed = true;

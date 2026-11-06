@@ -1,0 +1,13 @@
+> Source: Grok, through its CLI, 07 Nov 2026, about 01:30 IST. A re-check of escrow v2 (PR #164) at `52b7c7c`, where only the arbiter releases, after the [07 Nov re-check](2026-11-07-grok-recheck-escrow-v2.md) of `e513fe7`.
+
+I'll review `CountersignedEscrow.sol` at `52b7c7c` against the prior findings and the diff since `53eed70`, tracing every path that can move a Funded job.Only the arbiter can move a Funded job to Delivered or Released, at every timestamp.
+
+**Paths.** `release` is the only writer of Delivered (212) and the only Funded caller of `_pay` (208–210, which lands Released). It requires Funded (195), `block.timestamp <= settleBy` (196–197), `msg.sender == arbiter` (202), and the payee’s `Release(jobId, slipHash)` (203–204). Every other caller reverts `ReleaseNeedsArbiter` before the deadline, at the deadline, and through `settleBy`. After `settleBy` the call reverts `SettleWindowClosed` for the arbiter as well (197). `accept` (221) and `releaseAfterWindow` (231) require Delivered, so they only finish a job the arbiter already moved. `dispute` ends Disputed (258), `refund` and `cancel` end Refunded (273, 290), and `failDelivery` ends Failed and is itself arbiter-only (296, 302).
+
+**Prior findings.** B stays closed: a seller junk slip, on time or in `(deadline, settleBy]`, reverts at 202, so the job stays Funded and `failDelivery` (295–308) or `refund` (266–274) still pays the buyer. C1 stays closed (104–121, 143–149): a bond moves only on a field match to `termsOf[payee]` plus `Lock(jobId, msg.sender)`. C2 stays closed: a post-`settleBy` `refund` forfeits (272–274, 438), and `cancel` after the deadline reverts (288). H1 stays closed: `settleBy = deadline + 600` (43, 446–447), and the arbiter’s `release` and `failDelivery` both succeed at `== settleBy` (197, 300). M1 stays closed: `jobId` hashes bond and `reviewWindow` and is the EIP-3009 nonce (334–337, 403–404). A stays closed: `jobId` commits the buyer (336). Honest settlement still lands. The arbiter submits the payee’s Release through `settleBy` (193–215). A windowed job becomes Delivered, and with no dispute `_pay` pays the payee and returns the bond (229–236, 410–424).
+
+**Stranding.** A Funded job always has an exit. In `(deadline, settleBy]` only the arbiter can move it (dispute closes at 251, cancel at 288). At `settleBy + 1` anyone’s `refund` pays the buyer the price plus the bond (266–274). That arbiter-outage default is the only new cost. Low: it pays the same way as `failDelivery` (302–308), lasts at most the 600s grace, and returns the buyer’s own price. A Delivered payee whose token transfer reverts is the same pre-existing stuck `_pay` (225, 236).
+
+**New issues.** None at Critical, High, or Medium.
+
+VERDICT: DEPLOY
