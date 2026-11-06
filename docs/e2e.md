@@ -282,6 +282,8 @@ Each run writes `e2e/runs/<run-id>.md` with every flow's status, duration, faile
 
 A test that fails is not edited to pass. A product bug goes to the owning lane and the flow stays red until it is fixed.
 
+One kind of failure is repeated rather than reported: a read that moves nothing, against a third-party API (Circle's Gateway balance, the Hedera mirror), that failed before the server answered, such as a closed socket or a timeout. It is tried up to three times, and the flow notes each repeat. An answer is never repeated, an error answer included, and nothing sent to the hub under test is ever repeated.
+
 ## Money
 
 - **Budget guard.** Before anything is spent, the suite reads every paying wallet. A flow that would take one below its floor is `SKIPPED (funds)`, and the run asks for a faucet top-up naming the address.
