@@ -33,6 +33,14 @@ Two refusals protect the money.
 
 Reproduce it with the commands under "Setup": the hub with `HEDERA_RAIL=1`, a runner serving the skill on the hedera rail, and `scripts/hedera/beat --hub <hub>`.
 
+### On the public hub
+
+The same beat runs against the production hub that the console reads, [`hub-production-e85e.up.railway.app`](https://hub-production-e85e.up.railway.app/settlements). There, Circle's `use-usdc` is offer `0x41536222…0ae0`, payable on escrow, Gateway and Hedera for 0.01 USDC. The production hub holds no Hedera key.
+
+- **Payment.** The agent paid with no human step: [`0.0.9185802@1793966332.720364516`](https://hashscan.io/testnet/transaction/0.0.9185802@1793966332.720364516), settled by the x402.org facilitator. Result `SUCCESS` at `1793966342.154129104`: agent -0.01 USDC, seller `0.0.11337065` +0.01 USDC, memo `cs1:41536222…`.
+- **Slip.** The hub lists the job at `/settlements`. Its seller-signed slip `0xe15834f1a7d4916894f6778a8922f0b325787e6d4a89a6a941f15df28c56cb74` is served at `/slips/<hash>`.
+- **Spend log and audit.** Spend entry #26, cap refusal #27 ("Refused. This would spend 0.19 of a 0.185 budget."). Audit: matched 1, unbacked 0, unlogged 0.
+
 ## Live facts (testnet, checked 2026-11-06)
 
 | What | Value |
@@ -92,26 +100,75 @@ Each message on topic `0.0.11337070` is one canonical-JSON entry:
  "offerHash":"0x31b1…1b9d","payTo":"0.0.11337065","rail":"hedera","seller":"0x…","total":"10000","tx":"0.0.9185802@1793958945.424133897","v":1}
 ```
 
-- **Entry kinds:** `kind` is `spend` (it carries `tx`) or `refused` (it carries the envelope's `reason`, such as `over-cap`). `total` is the running spend under the envelope, and `cap` is the envelope's cap.
+- **Entry kinds:** `total` is the running spend under the envelope, and `cap` is the envelope's cap. `kind` is one of:
+  - `spend`, which carries `tx`;
+  - `refused`, which carries the envelope's `reason`, such as `over-cap`;
+  - `schedule` and `expired`, for the scheduled checkout below.
 - **Who can write:** only the agent's key can submit to the topic, and the topic has no admin key. Entries can be appended but never edited, reordered or deleted. Each one is timestamped by network consensus, not by the agent.
 - **Journal:** the agent rebuilds its running total from this log at start-up (`spentFromLog`), so the log is the agent's journal as well as its audit trail.
-- **Audit:** `audit.ts` reports three lists:
-  - **unbacked:** spends the chain does not back, because the transaction is missing or failed, the credit or debit differs, or the memo names another offer;
+- **Audit:** `audit.ts` reports five lists:
+  - **unbacked:** spends the chain does not back, because the transaction is missing or failed, the credit or debit differs, or the memo names another offer. An `expired` entry whose schedule actually executed lands here too;
   - **unlogged:** USDC transfers out of the agent after logging began that no entry names;
+  - **pending:** schedules still waiting for the seller's key;
+  - **released:** schedules that expired without moving anything;
   - **matched:** everything else.
 
-  It exits 1 if either of the first two lists is non-empty.
+  It exits 1 if unbacked or unlogged is non-empty.
 
 The audit has caught a real gap. At 15:59 IST a rail smoke test (`scripts/hedera/smoke.ts`) paid 0.01 USDC with the agent's key without going through the agent, so nothing was logged: [`0.0.9185802@1793959186.794495705`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959186.794495705). A later agent run settled [`0.0.9185802@1793959685.864333631`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631) (entry #3) and was refused at its cap (entry #4). The audit after that run reported `matched 2  unbacked 0  unlogged 1` and named the smoke payment. The log cannot be edited, so that line stays. Smoke tests that pay with the agent's key will append their spends like the agent does.
+
+## Scheduled checkout
+
+The scheduled flow is a second way to pay on the same rail. Nothing moves when the agent creates the payment: the agent submits a `ScheduleCreateTransaction` that wraps the USDC transfer (`agent -amount`, seller `+amount`) with the offer memo `cs1:<offer hash>` on the inner transfer and on the schedule. The create carries an explicit `expirationTime`, `waitForExpiry = false`, and no admin key. The agent signs the create, and that signature counts toward the scheduled transfer.
+
+The seller does not trust the schedule blindly. Its signature is the authority that lets the transfer run, so it reads every byte of what it signs:
+
+1. It reads the schedule's body from the mirror node only.
+2. It decodes the body with the generated `SchedulableTransactionBody` decoder and requires an exact re-encode. A body that repeats a member, adds a second member of the transaction oneof, or carries an unknown field is not canonical, and it is refused.
+3. The body may hold only a token transfer, its memo and its fee. Allowance debits are refused.
+4. The transfer must be exactly one debit from the buyer and one credit to the seller, of the offer's amount, on `0.0.429274`, with the offer memo.
+
+Only then does it submit `ScheduleSignTransaction`. The seller-sign account has `receiverSignatureRequired = true`, so its USDC credit cannot execute without that key. The transfer runs as soon as the second signature lands.
+
+If the seller never signs, the schedule reaches its expiration and the network deletes it without moving funds. There is no refund to issue, because the agent's balance was never debited.
+
+- **Envelope:** a schedule counts against the agent's cap from the moment it exists, because the seller can execute it at any time until it expires.
+  - The agent reserves the amount before it submits the create.
+  - Right after the create, it appends a `schedule` entry to the spend log: `tx` is the create transaction id, `schedule` is the schedule id, and `expiresAt` is the expiration.
+  - When the mirror node shows the schedule expired, the agent appends an `expired` entry and releases the hold.
+  - `reconcile` backs a `schedule` entry with the execution record (`GET /api/v1/transactions/{createTxId}?scheduled=true`) and the same exact-amount and memo checks as a spend. Without an execution, the entry is pending or released.
+- **Seller key:** `scripts/hedera/keygen.ts` adds `SELLER_SIGN` (`HD_SELLER_SIGN_KEY`, `_EVM`, `_ID`). `scripts/hedera/setup.ts` creates that account from the operator with `setReceiverSignatureRequired(true)` and seeds it with 0.3 HBAR for its `ScheduleSign` fees. The operator pays every USDC association.
+- **Commands:**
+
+```sh
+bun scripts/hedera/schedule.ts                # create, seller check-and-sign, execute, log, audit
+bun scripts/hedera/schedule.ts --expiry-demo  # create, never sign, release the hold once it expires
+bun scripts/hedera/schedule.ts --json         # either mode: human lines on stderr, one evidence object on stdout
+```
+
+### Traced live
+
+Every value below was read back from Hedera testnet on 06 Nov.
+
+- **Main run.** The agent created [`0.0.11337064@1793965412.228050109`](https://hashscan.io/testnet/transaction/0.0.11337064@1793965412.228050109), which made schedule [`0.0.11338645`](https://hashscan.io/testnet/schedule/0.0.11338645) and logged entry #23 (`schedule`).
+  - The seller checked the body and signed: [`0.0.11338176@1793965419.166594063`](https://hashscan.io/testnet/transaction/0.0.11338176@1793965419.166594063).
+  - The transfer executed at consensus `1793965422.905201235` with result `SUCCESS`: agent -0.01 USDC, seller-sign account `0.0.11338176` +0.01 USDC.
+  - Audit of the run: matched 1, unbacked 0, unlogged 0.
+- **Expiry run.** The agent created [`0.0.11337064@1793965439.994154527`](https://hashscan.io/testnet/transaction/0.0.11337064@1793965439.994154527), which made schedule [`0.0.11338653`](https://hashscan.io/testnet/schedule/0.0.11338653) and logged entry #24 (`schedule`).
+  - Nobody signed, and the schedule expired with no `executed_timestamp`.
+  - The agent logged entry #25 (`expired`) and released the hold.
+  - The agent's balance stayed at 19.75 USDC before and after. Audit: released 1, unbacked 0.
+
+  "Expired. Nothing moved."
 
 ## Setup
 
 Keys live only in `~/.config/countersign/hd.env` (mode 0600). The scripts print addresses and ids, never keys.
 
 ```sh
-bun scripts/hedera/keygen.ts   # three ECDSA keys: operator, agent, seller; prints EVM addresses
+bun scripts/hedera/keygen.ts   # four ECDSA keys: operator, agent, seller, seller-sign; prints EVM addresses
 # fund the operator's EVM address with testnet HBAR at https://portal.hedera.com/faucet
-bun scripts/hedera/setup.ts    # creates agent + seller from the operator, associates USDC, creates the topic
+bun scripts/hedera/setup.ts    # creates agent + seller + seller-sign from the operator, associates USDC, creates the topic
 # send testnet USDC to the agent account at https://faucet.circle.com (network: Hedera Testnet)
 bun scripts/hedera/status.ts   # HBAR and USDC balances from the mirror node
 bun scripts/hedera/smoke.ts [x402.org|blocky402|local]   # one rail payment end to end, plus a moved-price and a replay refusal
@@ -131,7 +188,7 @@ bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8811 \
 scripts/hedera/beat --hub http://127.0.0.1:8811
 ```
 
-`agent-run.ts` and `audit.ts` both take `--json`, which prints one evidence object for the `#/demo` page on stdout, in the form `{beat, ok, evidence: [{label, value, url?}]}`. The usual lines go to stderr. The smoke test appends its own spend to the HCS log, like the agent does.
+`agent-run.ts` and `audit.ts` both take `--json`, which prints one evidence object on stdout, in the form `{beat, ok, evidence: [{label, value, url?}]}`. The usual lines go to stderr. The end-to-end suite reads the agent's object. The smoke test appends its own spend to the HCS log, like the agent does.
 
 `setup.ts` is idempotent. Every receiving account must associate the USDC token before it can be paid, or settlement fails with `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT`; the script associates both the agent and the seller.
 

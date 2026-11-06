@@ -7,7 +7,8 @@ import { CIRCLE_CATALOGUE, hubCallOf, payableVia, readCatalogue } from "./catalo
 import { HubClient } from "./hub-client.ts";
 import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
-import { countersignPayer, gatewayPayer } from "./payer.ts";
+import { publishEnvelope } from "./mirror.ts";
+import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
 import { resume } from "./resume.ts";
 import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
@@ -92,21 +93,25 @@ async function main(): Promise<void> {
     if (fromUrl) hub = new HubClient(fromUrl.hub);
     const hash = (fromUrl?.offerHash ?? pos[1]) as Hex | undefined;
     const raw = one("input");
-    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>]");
+    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
     const rail = parseRail(one("rail"));
+    const approvals = parseApprovals(one("approvals"));
     const account = agentAccount();
     const result = await buy({
       hub,
       offerHash: hash,
       input: JSON.parse(raw),
-      payers: [countersignPayer(account), gatewayPayer(account)],
+      payers: [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)],
       envelope: state.loadEnvelope(),
       journal,
       state,
       now: Math.floor(Date.now() / 1000),
       approve: flags.has("approve"),
       known,
+      account,
+      mirror: flags.has("hub"),
       ...(rail !== undefined ? { rail } : {}),
+      ...(approvals !== undefined ? { approvals } : {}),
     });
     console.log(JSON.stringify(result.output, null, 2));
     console.log("Released. Slip minted.");
@@ -145,14 +150,39 @@ async function main(): Promise<void> {
     );
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
+  } else if (cmd === "publish-envelope") {
+    const account = agentAccount();
+    const ok = await publishEnvelope({
+      hub,
+      account,
+      envelope: state.loadEnvelope(),
+      spent: journal.spend(),
+      now: Math.floor(Date.now() / 1000),
+    });
+    console.log(ok ? "Envelope published." : "Envelope publish failed.");
   } else if (cmd === "resume") {
-    const rows = await resume({ hub, journal, state, known });
+    const mirror = flags.has("hub")
+      ? { account: agentAccount(), envelope: state.loadEnvelope() }
+      : undefined;
+    const rows = await resume({
+      hub,
+      journal,
+      state,
+      known,
+      ...(mirror !== undefined ? { mirror } : {}),
+    });
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
-    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] | accept <jobId> | dispute <jobId> | envelope show|set | journal | resume");
+    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> | envelope show|set | publish-envelope | journal | resume");
     console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
   }
+}
+
+function parseApprovals(raw: string | undefined): "local" | "hub" | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "local" || raw === "hub") return raw;
+  throw new Error(`Unknown approvals mode ${raw}.`);
 }
 
 function parseRail(raw: string | undefined): RailId | undefined {

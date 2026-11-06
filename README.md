@@ -2,6 +2,8 @@
 
 countersign lets a software agent pay for a call to another piece of software with one signature that binds the offer, the payee and the amount, and hands it back a receipt that proves itself without the hub.
 
+What is built, what is on a branch and what is only designed: [docs/status.md](docs/status.md).
+
 ## Rails
 
 One interface, one slip shape. Nothing above a rail knows which chain it is on ([docs/spec/rail.md](docs/spec/rail.md)).
@@ -11,7 +13,7 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 | Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
 | Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The hub loads it with `WC_RELAY_URL`, and the relay submits and pays the gas ([docs/whitechain.md](docs/whitechain.md)). |
 | Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078), see [Hedera payment flow](#hedera-payment-flow). |
-| Stripe MPP | `mpp:stripe` | | | In progress, built against a mock until test keys arrive ([#5](https://github.com/ss251/countersign/issues/5)). Not live. |
+| MPP | Tempo testnet (Moderato), chain `42431`, `mpp:tempo` | pathUSD `0x20c0000000000000000000000000000000000000` | direct, MPP's Tempo charge (402 with `WWW-Authenticate: Payment`, `Payment-Receipt` on success) | Live on Tempo testnet through the rail's demo endpoint: [0.01 pathUSD settled](https://explore.testnet.tempo.xyz/tx/0x4866e130e21972d08eb7c52eab353bb6259b0f9866621979682cef2179e3a89f) after the review fix. Not wired into the hub yet. Stripe's card method sits behind `MPP_STRIPE=1`. See [docs/mpp.md](docs/mpp.md). |
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
@@ -135,11 +137,11 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
-`bun run e2e` runs every flow countersign claims against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is not run on the build machine and reports `NOT RUN`. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md).
+`bun run e2e` runs the flows in [docs/e2e.md](docs/e2e.md) against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is cut ([D14](docs/decisions.md)) and reports `NOT RUN`; the screens are checked by hand. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md).
 
 ## Repository map
 
@@ -148,13 +150,13 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `apps/hub` | The hub: offers, 402 challenges, jobs, slips, discovery, runner connections. |
 | `apps/web` | The console. |
 | `packages/core` | Types, canonical JSON, offer, countersignature, envelope, slip. The reference for `docs/spec`. |
-| `packages/rail` | The `Rail` interface and the escrow, Gateway and Hedera rails. |
+| `packages/rail` | The `Rail` interface, the escrow, Whitechain, eip3009, Gateway, Hedera and MPP rails, and the rail router. |
 | `packages/buyer` | The buyer agent and its CLI. |
 | `packages/runner` | The seller's runner and its CLI. |
 | `packages/verify` | The standalone slip verifier. |
 | `packages/relay` | The Whitechain relay: x402 facilitator and gas payer for the whitechain rail. |
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments. |
-| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `e2e.md`, `terms.md`. |
+| `docs/` | `status.md`, `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `e2e.md`, `terms.md`. |
 | `e2e/` | The end-to-end suite and its run reports. |
 | `examples/catalogue` | The sponsor skills the demo sellers serve, unmodified, with upstream and licence. |
 | `scripts/` | Hedera setup, agent run and audit; Gateway deposit and balance. |
@@ -172,8 +174,9 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **Keys stay on the device.** The buyer and seller read their keys from the environment, and the hub holds no buyer key. On escrow rails the hub can submit the buyer's countersignature, but the signature fixes the escrow, payee and amount.
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
+- **Direct rails pay before delivery.** On Hedera and Gateway the hub settles before the seller runs, and nothing returns that payment if the delivery fails. Only the escrow rails hold the money until the output checks out.
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not held.** No contract collects it.
+- **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
 
 ## Terms

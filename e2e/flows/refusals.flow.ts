@@ -5,6 +5,7 @@
  */
 
 import { join } from "node:path";
+import { offerHash, publishMessage, type Offer } from "@countersign/core";
 import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC, type HubHandle, type SellerHandle } from "../lib/actors.ts";
 import { check, equal, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { sleep } from "../lib/http.ts";
@@ -57,6 +58,48 @@ export const refusals: Flow = {
       const body = res.json as { code?: string; message?: string };
       equal(body.code, "bad-input", "bad input code");
       equal(body.message, BAD_INPUT, "bad input message");
+    });
+
+    await ctx.step("an input the slip cannot hash is refused before any 402", async () => {
+      // The seller publishes an offer whose schema takes a number. Nobody serves it, so a call
+      // that passed every gate would stop at "seller offline"; one that cannot be hashed stops first.
+      const account = ctx.env.secrets.account("E2E_SELLER_KEY");
+      const offer: Offer = {
+        v: 1,
+        seller: account.address,
+        title: `e2e numeric input ${ctx.env.runId}`,
+        summary: "An offer whose input is a number, published only to test the hub's gates.",
+        adapter: "skill",
+        input: { type: "object", properties: { n: { type: "number" } }, required: ["n"], additionalProperties: false },
+        output: { type: "object" },
+        price: PRICE.toString(),
+        deadline: 120,
+        bond: "0",
+        rails: ["escrow"],
+        issuedAt: Math.floor(Date.now() / 1000),
+      };
+      const hash = offerHash(offer);
+      const sig = await account.signMessage({ message: publishMessage(hash) });
+      const pub = await ctx.http("publish numeric offer", `${hub.url}/offers`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ offer, sig }),
+      });
+      check(pub.status === 200 || pub.status === 201, `publish status ${pub.status}`);
+      const call = (n: number) =>
+        ctx.http(`call with n=${n}`, `${hub.url}/offers/${hash}/call`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ input: { n } }),
+        });
+      const fractional = await call(0.5);
+      equal(fractional.status, 422, "fractional input status");
+      const body = fractional.json as { code?: string; message?: string };
+      equal(body.code, "bad-input", "fractional input code");
+      equal(body.message, "Refused. The input holds a value the slip cannot hash, such as a fractional number. Nothing was charged.", "fractional input message");
+      check(!fractional.headers.has("payment-required"), "no payment terms were issued");
+      const whole = await call(2);
+      equal(whole.status, 503, "a whole number passes the gate and stops at the offline seller");
     });
 
     await ctx.step("the buyer refuses a bad input before signing", async () => {
