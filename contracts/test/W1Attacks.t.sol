@@ -24,7 +24,7 @@ contract W1AttacksTest is Test {
         (buyer, buyerKey) = makeAddrAndKey("buyer");
         (seller, sellerKey) = makeAddrAndKey("seller");
         token = new MockEIP3009();
-        escrow = new CountersignedEscrow(address(token), treasury, 100);
+        escrow = new CountersignedEscrow(address(token), treasury, 100, makeAddr("arbiter"));
         token.mint(buyer, 100_000_000);
     }
 
@@ -72,7 +72,7 @@ contract W1AttacksTest is Test {
 
     // Cross-escrow / cross-chain domain separation: a countersignature for escrow A is dead on escrow B.
     function test_countersignature_does_not_fund_a_second_escrow() public {
-        CountersignedEscrow other = new CountersignedEscrow(address(token), treasury, 100);
+        CountersignedEscrow other = new CountersignedEscrow(address(token), treasury, 100, makeAddr("arbiter"));
         ICountersignedEscrow.Countersignature memory cs = _cs(escrow, uint64(block.timestamp + 300), 1);
         vm.expectRevert();
         other.fund(OFFER, cs);
