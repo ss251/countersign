@@ -75,7 +75,12 @@ From a scratch directory outside this repository, on Node 25 with `@countersign-
 - The shell sequence bought `use-arc`: release [`0x6e03…a382`](https://explorer.testnet.arc.io/tx/0x6e03db12e6bc461ad3e81329bcf44ec6e5cfaf7e465042cc6dc52bcda6f7a382). `countersign verify` read slip `0xcec2…1d5a` as `VALID`.
 - An MCP client ran the server exactly as configured above. It listed the six tools and bought `use-arc`: release [`0x6f17…b1c8`](https://explorer.testnet.arc.io/tx/0x6f1754aeb58899c435116962859b9f5ae5f943ea74486b12169d87681ba2b1c8). `verify_slip` found the slip valid, including the on-chain check.
 
-Both used an already funded testnet key. The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
+Both used an already funded testnet key, before `login` existed. With `login`, from a clean directory with `npx -y @countersign-hub/cli@0.1.1` on 06 Nov, and no key on the machine:
+
+- A CLI buy on Arc escrow v2 released [`0x2416…995c`](https://explorer.testnet.arc.io/tx/0x241615b59ad44ccb464e81c328d161233fd3d49258fe3fdc94e194de29b2995c), and its slip verified `VALID` with `--rpc`. `countersign mcp`, with no key in its environment, bought and released [`0x1efa…b531`](https://explorer.testnet.arc.io/tx/0x1efac4b4129019519cbcc3a44395827d98ef12e54c026274c68f9569ee64b531).
+- On Whitechain, the agent bought `whitechain-dev` in USDT through escrow v2, holding no WBT: fund [`0xdc9e…e00b`](https://explorer.testnet.whitechain.io/tx/0xdc9e6c3be640b6cfbe9be23460dc18d81e8bd253c22798c34ac5e7c82f9fe00b), release [`0x8e49…c615`](https://explorer.testnet.whitechain.io/tx/0x8e497c737aedb2e15139b6ef4d0717226b06294914da34bd56b70368e1e4c615). The merchant then refunded it from the public merchant screen: [`0xe554…2956`](https://explorer.testnet.whitechain.io/tx/0xe55477a5615af49d5653a754062183439aaf7c405e1a8d3d17de3da6d3af2956).
+
+The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
 
 ## List your tool
 
