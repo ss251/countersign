@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
-import type { Address, Chain, PublicClient, Transport } from "viem";
-import { escrowRail } from "@countersign/rail";
+import type { Address, Chain, Hex, PublicClient, Transport } from "viem";
+import { escrowRail, escrowV2Abi } from "@countersign/rail";
 import { parseAtomic } from "@countersign/core";
 import type { CountersignExtra, CountersignPayload, SettleResult, VerifyResult } from "@countersign/core";
 import { NETWORK } from "./chain.ts";
@@ -31,16 +31,27 @@ type Body = {
     resource?: unknown;
   } & Record<string, unknown>;
   paymentRequirements: Record<string, unknown> & { extra?: Record<string, unknown> };
+  /** Escrow v2: the payee's Lock(jobId) signature, beside the payment. */
+  lockSig?: unknown;
 };
 
 type Checked =
   | { ok: false; result: VerifyResult }
-  | { ok: true; body: Body; payload: CountersignPayload; extra: CountersignExtra; payer: Address };
+  | {
+      ok: true;
+      body: Body;
+      payload: CountersignPayload;
+      extra: CountersignExtra;
+      payer: Address;
+      version: 1 | 2;
+    };
 
-function railFor(ctx: CountersignContext) {
+function railFor(ctx: CountersignContext, escrow: Address, version: 1 | 2) {
   const now = ctx.now;
   return escrowRail(
     whitechainEscrowConfig({
+      escrow,
+      ...(version === 2 ? { version: 2 as const } : {}),
       publicClient: ctx.chainClient as PublicClient<Transport, Chain>,
       now: () => readNow(now),
     }),
@@ -59,8 +70,30 @@ function sameAddress(a: unknown, b: unknown): boolean {
   return typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
 }
 
-export function fundCall(extra: CountersignExtra, payload: CountersignPayload): EscrowFundCall {
-  return { kind: "escrowFund", escrow: getAddress(extra.escrow), offerHash: extra.offerHash, payload };
+function isHexString(value: unknown): value is Hex {
+  return typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+export function fundCall(
+  extra: CountersignExtra,
+  payload: CountersignPayload,
+  version: 1 | 2 = 1,
+  lockSig?: Hex,
+): EscrowFundCall {
+  return {
+    kind: "escrowFund",
+    escrow: getAddress(extra.escrow),
+    offerHash: extra.offerHash,
+    payload,
+    version,
+    ...(lockSig ? { lockSig } : {}),
+  };
+}
+
+/** The bond the terms countersigned, in atomic units; zero when absent or malformed. */
+function bondOfTerms(payload: CountersignPayload): bigint {
+  const bond = payload.terms.bond;
+  return typeof bond === "string" && /^\d+$/.test(bond) ? BigInt(bond) : 0n;
 }
 
 async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Address[]): Promise<Checked> {
@@ -77,6 +110,8 @@ async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Ad
     return invalid("invalid_payload");
   }
   if (!allowedEscrows.some((escrow) => sameAddress(escrow, extra.escrow))) return invalid("invalid_payload");
+  const escrow = getAddress(extra.escrow);
+  const version = ctx.relayer.escrowVersion(escrow);
   const accepted = payment.accepted;
   if (
     accepted.scheme !== req.scheme ||
@@ -100,7 +135,7 @@ async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Ad
   }
   if (amount < ctx.relayer.minAmount) return invalid("amount_below_minimum");
 
-  const rail = railFor(ctx);
+  const rail = railFor(ctx, escrow, version);
   let verdict: VerifyResult;
   try {
     verdict = await rail.verify(payment as never, req as never);
@@ -111,14 +146,21 @@ async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Ad
     return { ok: false, result: { isValid: false, invalidReason: verdict.invalidReason ?? "invalid_payload" } };
   }
   const payload = payment.payload as unknown as CountersignPayload;
-  const simulation = await ctx.relayer.simulate(fundCall(extra as unknown as CountersignExtra, payload));
-  if (!simulation.ok) return invalid("invalid_transaction_state");
+  // The hub calls verify before the runner signs the Lock, so a bonded v2 job has none here.
+  // Settle simulates with the real lockSig before submitting.
+  if (!(version === 2 && bondOfTerms(payload) > 0n)) {
+    const simulation = await ctx.relayer.simulate(
+      fundCall(extra as unknown as CountersignExtra, payload, version, version === 2 ? "0x" : undefined),
+    );
+    if (!simulation.ok) return invalid("invalid_transaction_state");
+  }
   return {
     ok: true,
     body,
     payload,
     extra: extra as unknown as CountersignExtra,
     payer: getAddress(verdict.payer),
+    version,
   };
 }
 
@@ -144,6 +186,10 @@ export async function settleCountersign(
     network: NETWORK,
     ...extra,
   });
+
+  const rawLockSig = (input as Body | null | undefined)?.lockSig;
+  if (rawLockSig !== undefined && !isHexString(rawLockSig)) return fail("invalid_payload");
+  const lockSig = rawLockSig as Hex | undefined;
 
   // A job already on the ledger answers without touching the chain again.
   const rawNonce = (input as Body | null)?.paymentPayload?.payload?.authorization as { nonce?: unknown } | undefined;
@@ -175,13 +221,17 @@ export async function settleCountersign(
   const checked = await check(input, ctx, allowedEscrows);
   if (!checked.ok) return fail(checked.result.invalidReason ?? "invalid_payload");
 
-  const { payload, extra, payer } = checked;
+  const { payload, extra, payer, version } = checked;
+  if (version === 2 && bondOfTerms(payload) > 0n && (!lockSig || lockSig === "0x")) {
+    return fail("lock_missing", { payer });
+  }
   const jobId = payload.authorization.nonce;
-  const outcome = await ctx.relayer.submit(fundCall(extra, payload), payer);
+  const escrow = getAddress(extra.escrow);
+  const outcome = await ctx.relayer.submit(fundCall(extra, payload, version, lockSig), payer);
   const terms = payload.terms;
   const resource = resourceUrl(checked.body.paymentPayload.resource);
   const description = resourceDescription(checked.body.paymentPayload.resource);
-  const record = (status: "funded" | "pending", txHash: string, block: bigint) =>
+  const record = (status: "funded" | "pending", txHash: string, block: bigint, bond: string) =>
     ctx.ledger.recordJob({
       jobId,
       offerHash: terms.offerHash,
@@ -192,23 +242,53 @@ export async function settleCountersign(
       fundTx: txHash,
       fundBlock: block,
       status,
+      escrow,
+      bond,
+      reviewWindow: version === 2 ? (terms.reviewWindow ?? 0) : undefined,
       createdAt: readNow(ctx.now) * 1000,
       resource,
       description,
     });
 
   switch (outcome.status) {
-    case "confirmed":
-      record("funded", outcome.txHash, outcome.blockNumber);
+    case "confirmed": {
+      const bond =
+        version === 2
+          ? await bondOfJob(ctx, escrow, jobId, terms.bond ?? "0")
+          : "0";
+      record("funded", outcome.txHash, outcome.blockNumber, bond);
       return { success: true, payer, transaction: outcome.txHash, network: NETWORK, jobId };
+    }
     case "pending":
-      record("pending", outcome.txHash, 0n);
+      record("pending", outcome.txHash, 0n, version === 2 ? (terms.bond ?? "0") : "0");
       return fail("settlement_pending", { payer, transaction: outcome.txHash, jobId });
     case "reverted":
       return fail("invalid_transaction_state", { payer, transaction: outcome.txHash });
     case "refused":
       return fail(refusalReason(outcome.reason), { payer });
   }
+}
+
+/** The bond the contract locked for this job, or the terms' value when the read is unavailable. */
+async function bondOfJob(
+  ctx: CountersignContext,
+  escrow: Address,
+  jobId: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    const value = await ctx.reader.readContract({
+      address: escrow,
+      abi: escrowV2Abi,
+      functionName: "bondOfJob",
+      args: [jobId],
+    });
+    if (typeof value === "bigint") return value.toString(10);
+    if (typeof value === "string" && /^\d+$/.test(value)) return value;
+  } catch {
+    // The fund landed; a failed read must not lose the job record.
+  }
+  return /^\d+$/.test(fallback) ? fallback : "0";
 }
 
 function refusalReason(reason: RelayRefusalReason): string {

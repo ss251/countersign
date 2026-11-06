@@ -322,3 +322,29 @@ cs-phone found this on the live canary. When iOS puts the phone page in the back
 - An attempt that ends `offline`, `pong-timeout` or `closed` means the runner went away. It counts as offline, never as a failure.
 - Before and after each attempt, a runner whose last pong is older than 25 s (one ping interval plus slack) is treated as offline, and its offer is skipped for that round. The hub logs `[canary] skipped <offerHash>: <reason>`.
 - A runner that keeps answering pings but not the canary, such as an old build, is still delisted after three failed attempts.
+
+## D22 — `countersign`, one command that delegates and runs on Node 22 or later (07 Nov; refs #246)
+
+`countersign` (`packages/cli`) holds no logic of its own.
+
+- `sell skill <SKILL.md>` and `sell openapi --spec <file> --operation <id>` run the runner's `serve`, which lists the offer and dials out to the hub, so the seller opens no port. With `--publish-only` they run its `publish`. `--spec` is the runner's `--openapi`. Every other flag passes through unchanged.
+- `buy`, `discover`, `envelope` and `journal` run the buyer CLI, `verify` runs the verifier CLI, and `mcp` runs the buyer MCP server's `main(argv)` from `packages/mcp`, bundled into `countersign`. Nothing is looked up by package name, because the `@countersign` scope on npm is not ours.
+- `sell mcp` says plainly that the runner CLI cannot sell an MCP tool yet.
+
+**Node.** It runs on Node 22 or later. The runner dials the hub with the global `WebSocket`, which Node has had by default since 22, and Node 20 has been end-of-life since April 2026.
+
+**The runner without Bun.** For that, the runner stops calling Bun-only APIs, with no change in behaviour:
+- hashes go through `node:crypto`, so every digest, and so every offer hash, is unchanged;
+- files are read through `node:fs`;
+- the job child is spawned through `node:child_process`, under the same time and output ceilings;
+- the child reads its request from stdin through Node's stream;
+- the child's entry is found beside the running file: `child-entry.js` in a bundle, `child-entry.ts` from source under Bun.
+
+## D22, amended — the job child keeps Bun.spawn under Bun and uses node:child_process elsewhere (07 Nov; refs #246)
+
+tr-09 stopped correctly at its stop condition. `packages/runner/test/children.test.ts` checks that the child's environment holds only `PATH`, `HOME` and `COUNTERSIGN_LINEAGE`, and it watches that through a wrapper around `Bun.spawn`. A child started through `node:child_process` passes the same environment, but the wrapper cannot see it. The test stays as it is.
+
+- `runInChild` has two spawners. Under Bun it keeps `Bun.spawn`, which the existing tests observe. Anywhere else, including a Node bundle, it spawns through `node:child_process`.
+- Both spawners enforce the same time and output ceilings, and both return the same result.
+- `packages/runner/test/child-node.test.ts` runs the Node spawner under Bun on the same three cases as `child.test.ts`.
+- The Node bundle never reaches `Bun.spawn`, so the shipped path holds no Bun-only call.

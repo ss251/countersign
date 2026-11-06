@@ -333,6 +333,7 @@ export async function paidCall(
     slipHash: null,
     createdAt: now,
     reviewWindow: termsReviewWindow(payment),
+    parentJobId: parentOf(deps.store, lineage),
   });
   if (!claimed) return duplicatePayment(railId);
 
@@ -450,6 +451,17 @@ export async function paidCall(
     headers: { [PAYMENT_RESPONSE_HEADER]: toBase64Json(closing) },
     railId,
   };
+}
+
+/** The parent job: the last lineage entry that names a job this hub recorded, or null. Offer-hash entries are skipped. */
+export function parentOf(store: Store, lineage: Hex[]): Hex | null {
+  for (let index = lineage.length - 1; index >= 0; index -= 1) {
+    const entry = lineage[index];
+    if (entry === undefined) continue;
+    const job = store.getJob(entry);
+    if (job !== null) return job.jobId;
+  }
+  return null;
 }
 
 /** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
