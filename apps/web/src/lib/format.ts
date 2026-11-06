@@ -92,6 +92,22 @@ export function isoOf(unix: number): string {
 }
 
 /** "Today", "Yesterday" or "5 Nov". */
+/** How long ago, in the fewest words a ledger needs: "just now", "4 min ago", "2 h ago", "3 d ago". */
+export function formatAgo(unix: number, now = nowUnix()): string {
+  const s = Math.max(0, now - unix);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86_400)} d ago`;
+}
+
+/** Unix seconds at local midnight: where "today" starts for a person reading the desk. */
+export function startOfToday(now = new Date()): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
 export function formatDay(unix: number, now = new Date()): string {
   const d = fromUnix(unix);
   const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
@@ -100,6 +116,9 @@ export function formatDay(unix: number, now = new Date()): string {
   if (days === 1) return "Yesterday";
   return dayFormat.format(d);
 }
+
+/** Rails that settle through CountersignedEscrow: the money waits on chain and a failed delivery returns it. */
+export const ESCROW_RAILS: ReadonlySet<RailId> = new Set<RailId>(["escrow", "whitechain", "erc8183"]);
 
 export const RAIL_LABEL: Record<RailId, string> = {
   escrow: "Arc · escrow",

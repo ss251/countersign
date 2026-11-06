@@ -7,7 +7,7 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
 - **The seller signs the offer.** A seller publishes by POSTing `{offer, sig}` to `/offers`. `sig` is an EIP-191 signature by `offer.seller` over the text `countersign offer <offerHash>`. The hub recomputes `offerHash` and refuses the offer if the signature does not recover to `offer.seller` ([spec/offer.md](spec/offer.md)).
 - **An offer is fixed by its hash.** `offerHash = keccak256(canonicalJson(offer))`. Any change, the price included, makes a new offer with a new hash. A countersignature names one hash ([spec/offer.md](spec/offer.md)).
 - **The hub stores and serves it.** A published offer is stored and listed on `GET /offers` and `GET /offers/:offerHash`, with `online` (whether the seller's runner is connected now) and `status` (`listed` or `delisted`).
-- **Taking an offer out of service.** The hub has no route that delists an offer, so no offer is marked `delisted` today. A seller stops serving an offer by stopping its runner. The listing then shows `online: false`, and a call answers "The seller is offline. Nothing was charged." before any payment is asked for. A changed offer is a new listing, and the earlier hash stays listed.
+- **Taking an offer out of service.** There is no delist route today, so no offer is marked `delisted`. A seller stops serving an offer by stopping its runner. The listing then shows `online: false`, and a call answers "The seller is offline. Nothing was charged." before any payment is asked for. A changed offer is a new listing, and the earlier hash stays listed.
 
 ## 2. What the hub does and does not do
 
@@ -15,7 +15,7 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
   - On the escrow rails (Arc, Whitechain) funds move from the buyer to `CountersignedEscrow`, and from the escrow to the seller or back to the buyer, on chain ([spec/escrow.md](spec/escrow.md)).
   - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator ([hedera.md](hedera.md)).
   - On the Gateway rail the buyer's deposit sits in Circle Gateway. Gateway debits the buyer at once and credits the seller in a later batch.
-- **Keys.** The hub holds no buyer key and no seller key. The seller's key stays with its runner, and the buyer's with its agent. On the Arc escrow rail the hub holds one relayer key (`CS_RELAYER_KEY`). It submits the buyer's `fund` and the seller's `release` and pays their gas. It cannot change what they signed: the escrow checks the buyer's countersignature on `fund` and the seller's signature on `release`. On the Hedera rail the hub holds no Hedera key.
+- **Keys.** The hub holds no buyer key and no seller key. The seller's key stays with its runner, and the buyer's with its agent. On the Arc escrow rail the hub holds one relayer key (`CS_RELAYER_KEY`). It submits the buyer's `fund` and the seller's `release` and pays their gas. It cannot change what they signed: the escrow checks the buyer's countersignature on `fund` and the seller's signature on `release`. On the Whitechain rail the hub holds no key: it passes `fund`, `release`, `refund` and `cancel` to the relay (`WC_RELAY_URL`), which submits them and pays the gas. On the Hedera rail the hub holds no Hedera key.
 - **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery and is never released ([spec/offer.md](spec/offer.md)).
 
 ## 3. What the buyer's countersignature binds
@@ -58,4 +58,4 @@ As `contracts/src/CountersignedEscrow.sol` has them. Each job closes once: relea
 
 ## 7. Seller names
 
-Offers name the seller by its address. How seller names are shown will be described in `docs/ens.md`, once the name-resolver code exists.
+Offers name the seller by its address.

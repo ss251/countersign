@@ -36,8 +36,11 @@ export interface RailDeclaration {
   kind: "escrow" | "direct" | "batched";
   /** Escrow contract, when kind is "escrow". */
   escrow?: string;
-  /** Who pays the network fee. The buyer never does on our rails. */
-  gasPaidBy: "hub" | "relayer" | "facilitator" | "gateway";
+  /**
+   * Who pays the network fee. On most rails it is the hub, a relayer, a facilitator or Gateway.
+   * On mpp:tempo the buyer's own Tempo transaction pays it, a fraction of a cent in a stablecoin.
+   */
+  gasPaidBy: "hub" | "relayer" | "facilitator" | "gateway" | "buyer";
   /** One plain sentence on when money counts as settled, e.g. "One Arc block after release." */
   finality: string;
   /** Explorer URL template with {tx}, e.g. "https://testnet.arcscan.app/tx/{tx}". */

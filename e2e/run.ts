@@ -16,6 +16,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { join } from "node:path";
 import { FLOWS, NUMBERS } from "./flows/index.ts";
 import { formatAmount, planBudget } from "./lib/budget.ts";
+import { acquireRunLock } from "./lib/lock.ts";
 import { runFlow, secs, type Flow, type FlowResult, type RunEnv } from "./lib/flow.ts";
 import { ARTIFACTS_DIR, repoPath, ROOT } from "./lib/paths.ts";
 import { counts, writeRun } from "./lib/report.ts";
@@ -115,8 +116,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Dry runs spend nothing and take no lock; a real run waits for any other run to finish.
+  const release = args.dry ? () => undefined : await acquireRunLock(runId, log);
+  process.once("exit", release);
   mkdirSync(dir, { recursive: true });
-  const commit = git("rev-parse", "--short", "HEAD");
+  // The run's own outputs do not make it dirty; any other tracked change does.
+  const dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)e2e/runs") !== "unknown";
+  const commit = `${git("rev-parse", "--short", "HEAD")}${dirty ? " with local changes" : ""}`;
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
 

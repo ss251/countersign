@@ -1,29 +1,58 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { AmountError, parseUnits } from "@countersign/core";
 import type { Resource } from "../../lib/api.ts";
-import { formatAmount, formatMoney, remainingAtomic, usd } from "../../lib/format.ts";
+import { formatAmount, formatClock, formatMoney, remainingAtomic, usd } from "../../lib/format.ts";
 import type { Envelope, EnvelopeView } from "../../lib/types.ts";
 import { Meter } from "../../ui/Meter.tsx";
+import { approvalToken, rememberApprovalToken } from "../../lib/hub.ts";
+import { Absent } from "../../ui/Absent.tsx";
 import { Amount, Button, Hash } from "../../ui/primitives.tsx";
+import { TokenForm } from "./Approvals.tsx";
 
 /** The human’s limits: budget, per-seller limit, when to ask, allowlist, revoke. */
-export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) {
+export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView | null> }) {
+  if (envelope.source === "absent") {
+    return (
+      <Absent reason={envelope.reason ?? "This hub has no envelope to show."} onRetry={envelope.reload}>
+        {envelope.needsToken && !approvalToken() ? (
+          <TokenForm
+            onSave={(t) => {
+              rememberApprovalToken(t);
+              envelope.reload();
+            }}
+          />
+        ) : null}
+      </Absent>
+    );
+  }
   const view = envelope.data;
   if (!view) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
   const env = view.envelope;
   const setEnvelope = (patch: Partial<Envelope>) => envelope.set({ ...view, envelope: { ...env, ...patch } });
   const left = remainingAtomic(env.cap, view.spent.total);
+  /** The agent's signed copy: shown as signed, never edited here, because an edit here would change nothing it does. */
+  const readOnly = view.mirror !== undefined;
 
   return (
     <div className="env">
+      {view.mirror ? (
+        <p className="env__mirror">
+          Signed by {view.agentName} at <span className="num">{formatClock(view.mirror.signedAt)}</span>. These limits live on your
+          agent’s machine and this is its signed copy, so nothing on this phone can loosen them. Change them there and it signs a
+          new one.
+        </p>
+      ) : null}
+
       {env.revoked ? (
         <section className="env__revoked" role="status">
           <p className="env__revoked-title">Revoked.</p>
           <p className="env__revoked-body">{view.agentName} is refused on every call until you issue a new envelope.</p>
-          <Button variant="primary" block onClick={() => setEnvelope({ revoked: false })}>
-            Issue a new envelope
-          </Button>
+          {readOnly ? null : (
+            <Button variant="primary" block onClick={() => setEnvelope({ revoked: false })}>
+              Issue a new envelope
+            </Button>
+          )}
         </section>
       ) : null}
 
@@ -41,23 +70,35 @@ export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) 
           Limits
         </h2>
         <div className="env__rows">
-          <LimitRow label="Budget" hint="Total the agent may spend." atomic={env.cap} onSave={(cap) => setEnvelope({ cap })} />
+          <LimitRow
+            label="Budget"
+            hint="Total the agent may spend."
+            atomic={env.cap}
+            readOnly={readOnly}
+            onSave={(cap) => setEnvelope({ cap })}
+          />
           <LimitRow
             label="Per seller"
             hint="Most the agent may pay any one seller."
             atomic={env.perMerchant}
+            readOnly={readOnly}
             onSave={(perMerchant) => setEnvelope({ perMerchant })}
           />
           <LimitRow
             label="Ask me above"
-            hint="Calls above this wait for your countersignature."
+            hint={view.askAbove === null ? "The agent buys inside the limits without asking." : "Calls above this wait for your countersignature."}
             atomic={view.askAbove}
+            readOnly={readOnly}
             onSave={(askAbove) => envelope.set({ ...view, askAbove })}
           />
         </div>
       </section>
 
-      <Allowlist view={view} onChange={(allowlist, names) => envelope.set({ ...view, names, envelope: { ...env, allowlist } })} />
+      <Allowlist
+        view={view}
+        readOnly={readOnly}
+        onChange={(allowlist, names) => envelope.set({ ...view, names, envelope: { ...env, allowlist } })}
+      />
 
       {view.gatewayBalance ? (
         <section className="env__section" aria-labelledby="gateway-title">
@@ -71,7 +112,7 @@ export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) 
         </section>
       ) : null}
 
-      {env.revoked ? null : <Revoke agent={view.agentName} onRevoke={() => setEnvelope({ revoked: true })} />}
+      {env.revoked || readOnly ? null : <Revoke agent={view.agentName} onRevoke={() => setEnvelope({ revoked: true })} />}
     </div>
   );
 }
@@ -80,14 +121,17 @@ function LimitRow({
   label,
   hint,
   atomic,
+  readOnly = false,
   onSave,
 }: {
   label: string;
   hint: string;
-  atomic: string;
+  /** Null when the limit is off, as when the agent never asks. */
+  atomic: string | null;
+  readOnly?: boolean;
   onSave: (atomic: string) => void;
 }) {
-  const money = usd(atomic);
+  const money = usd(atomic ?? "0");
   const plain = () => formatAmount(money).replace(/,/g, "");
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(plain);
@@ -117,23 +161,25 @@ function LimitRow({
 
   if (!editing) {
     return (
-      <div className="limit">
+      <div className={readOnly ? "limit limit--read" : "limit"}>
         <div className="limit__text">
           <span className="limit__label">{label}</span>
           <span className="limit__hint">{hint}</span>
         </div>
-        <Amount money={money} size="sm" />
-        <Button
-          variant="quiet"
-          className="limit__change"
-          aria-label={`Change ${label.toLowerCase()}`}
-          onClick={() => {
-            setValue(plain());
-            setEditing(true);
-          }}
-        >
-          Change
-        </Button>
+        {atomic === null ? <span className="limit__off">Never</span> : <Amount money={money} size="sm" />}
+        {readOnly ? null : (
+          <Button
+            variant="quiet"
+            className="limit__change"
+            aria-label={`Change ${label.toLowerCase()}`}
+            onClick={() => {
+              setValue(atomic === null ? "" : plain());
+              setEditing(true);
+            }}
+          >
+            Change
+          </Button>
+        )}
       </div>
     );
   }
@@ -187,9 +233,11 @@ function LimitRow({
 
 function Allowlist({
   view,
+  readOnly,
   onChange,
 }: {
   view: EnvelopeView;
+  readOnly: boolean;
   onChange: (allowlist: string[], names: Record<string, string>) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -222,7 +270,9 @@ function Allowlist({
         Allowlist
       </h2>
       {list.length === 0 ? (
-        <p className="env__muted">Empty, so the agent may pay any seller. Add one to limit it to a list.</p>
+        <p className="env__muted">
+          Empty, so the agent may pay any seller.{readOnly ? "" : " Add one to limit it to a list."}
+        </p>
       ) : (
         <ul className="allow">
           {list.map((a) => {
@@ -231,24 +281,26 @@ function Allowlist({
               <li key={a} className="allow__row">
                 <span className="allow__name">{label}</span>
                 <Hash value={a} label={`${label} address`} copy={false} />
-                <Button
-                  variant="quiet"
-                  className="allow__remove"
-                  aria-label={`Remove ${label}`}
-                  onClick={() => onChange(list.filter((x) => x !== a), view.names)}
-                >
-                  Remove
-                </Button>
+                {readOnly ? null : (
+                  <Button
+                    variant="quiet"
+                    className="allow__remove"
+                    aria-label={`Remove ${label}`}
+                    onClick={() => onChange(list.filter((x) => x !== a), view.names)}
+                  >
+                    Remove
+                  </Button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
-      {adding ? (
+      {readOnly ? null : adding ? (
         <form className="allow__form" onSubmit={add} noValidate>
           <label className="field">
             <span className="field__label">Name</span>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" placeholder="hedera-tools" />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" placeholder="What you call this seller" />
           </label>
           <label className="field">
             <span className="field__label">Address</span>
