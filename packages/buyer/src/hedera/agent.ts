@@ -30,6 +30,7 @@ import {
   toSdkTxId,
   USDC_TESTNET,
   type MirrorOptions,
+  type MirrorTransaction,
 } from "@countersign/rail/hedera";
 import type { Client } from "@hiero-ledger/sdk";
 import { createScheduledPayment, type ScheduledPayment } from "./schedule.ts";
@@ -62,6 +63,8 @@ export interface HederaAgentOptions {
   sign?: SignOptions;
   mirror?: MirrorOptions;
   now?: () => number;
+  /** Test seam: wait between charge polls. Defaults to a setTimeout promise. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ScheduleHold {
@@ -89,6 +92,15 @@ export type ReleaseOutcome = "pending" | "executed" | "released";
 
 /** Seconds past a schedule's expiration before a missing execution counts as a release. */
 export const RELEASE_MARGIN_SECONDS = 60;
+
+/** How long the agent waits between mirror reads while a transfer could still land. */
+export const CHARGE_POLL_MS = 2_000;
+/** Seconds past the transfer's valid window before a missing record counts as not charged. */
+export const CHARGE_MARGIN_SECONDS = 20;
+/** Seconds past the window and margin before a silent mirror turns the answer into unknown. */
+export const CHARGE_UNKNOWN_SECONDS = 60;
+/** The most reads charged() makes, so a clock that never advances cannot spin forever. */
+export const CHARGE_MAX_POLLS = 300;
 
 export type BuyOutcome =
   | {
@@ -153,6 +165,7 @@ export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
 export function createHederaAgent(opts: HederaAgentOptions) {
   const f = opts.fetch ?? fetch;
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const createSchedule = opts.createSchedule ?? createScheduledPayment;
   let spent: EnvelopeSpend = opts.spent ?? { total: "0", bySeller: {} };
   const hub = opts.hub.replace(/\/$/, "");
@@ -238,13 +251,20 @@ export function createHederaAgent(opts: HederaAgentOptions) {
   }
 
   /** Did this payment reach consensus? Used when the hub fails after the facilitator may have settled. */
-  async function charged(transactionId: string, req: PaymentRequirements): Promise<boolean> {
-    for (let i = 0; i < 6; i++) {
-      const tx = await getTransaction(transactionId, opts.mirror).catch(() => null);
+  async function charged(transactionId: string, req: PaymentRequirements, validUntil: number): Promise<boolean> {
+    for (let i = 0; i < CHARGE_MAX_POLLS; i++) {
+      let tx: MirrorTransaction | null | undefined;
+      try {
+        tx = await getTransaction(transactionId, opts.mirror);
+      } catch {
+        tx = undefined;
+      }
       if (tx) return tx.result === "SUCCESS" && netFor(tx.tokens[req.asset] ?? [], opts.payer.accountId) === -BigInt(req.amount);
-      await new Promise((r) => setTimeout(r, 2_000));
+      if (tx === null && now() >= validUntil + CHARGE_MARGIN_SECONDS) return false;
+      if (now() >= validUntil + CHARGE_MARGIN_SECONDS + CHARGE_UNKNOWN_SECONDS) break;
+      await sleep(CHARGE_POLL_MS);
     }
-    return false;
+    throw new Error(`Unknown whether ${transactionId} was charged: the mirror did not answer after the transfer's valid window closed.`);
   }
 
   return {
@@ -303,8 +323,9 @@ export function createHederaAgent(opts: HederaAgentOptions) {
 
       let payment: PaymentPayload;
       let transactionId: string;
+      let validUntil: number;
       try {
-        ({ payment, transactionId } = await hederaPayment(opts.payer, req, url, opts.sign));
+        ({ payment, transactionId, validUntil } = await hederaPayment(opts.payer, req, url, opts.sign));
       } catch (error) {
         // Nothing signed, so nothing can land.
         release(reservation);
@@ -319,7 +340,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         });
       } catch (error) {
         // The request left without an answer: hold the reservation until the chain can rule it out.
-        const wasCharged = await charged(transactionId, req);
+        const wasCharged = await charged(transactionId, req, validUntil);
         if (wasCharged) {
           settleReservation(reservation);
           await log("spend", { offerHash: listing.offerHash, seller: listing.offer.seller }, req, { tx: transactionId });
@@ -344,7 +365,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
 
       // Anything else: the log must still say whether money moved.
       const message = await paid.text();
-      const wasCharged = await charged(transactionId, req);
+      const wasCharged = await charged(transactionId, req, validUntil);
       let seq: number | undefined;
       if (wasCharged) {
         settleReservation(reservation);
