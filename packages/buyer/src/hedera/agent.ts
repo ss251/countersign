@@ -25,10 +25,13 @@ import {
   HEDERA_TESTNET,
   httpFacilitator,
   netFor,
+  scheduleStatus,
   toSdkTxId,
+  USDC_TESTNET,
   type MirrorOptions,
 } from "@countersign/rail/hedera";
 import type { Client } from "@hiero-ledger/sdk";
+import { createScheduledPayment, type ScheduledPayment } from "./schedule.ts";
 import { hederaPayment, type HederaPayer } from "./signer.ts";
 import { appendEntry, type LoggedEntry, type SpendEntry } from "./spendlog.ts";
 
@@ -51,10 +54,35 @@ export interface HederaAgentOptions {
   spent?: EnvelopeSpend;
   /** Fee payers the agent will sign for. Omitted: read once from `FACILITATORS` on the first buy. */
   trustedFeePayers?: string[];
+  /** Test seam: build and submit a schedule. Defaults to createScheduledPayment. */
+  createSchedule?: typeof createScheduledPayment;
   fetch?: typeof fetch;
   mirror?: MirrorOptions;
   now?: () => number;
 }
+
+export interface ScheduleHold {
+  scheduleId: string;
+  createTxId: string;
+  offerHash: string;
+  seller: string;
+  payTo: string;
+  asset: string;
+  amount: string;
+}
+
+export type ScheduleOutcome =
+  | {
+      kind: "scheduled";
+      scheduleId: string;
+      createTxId: string;
+      expiresAt: number;
+      logSequence: number;
+      hold: ScheduleHold;
+    }
+  | { kind: "refused"; reason: string; message: string; logSequence?: number };
+
+export type ReleaseOutcome = "pending" | "executed" | "released";
 
 export type BuyOutcome =
   | {
@@ -68,11 +96,41 @@ export type BuyOutcome =
   | { kind: "refused"; reason: string; message: string; logSequence?: number }
   | { kind: "failed"; status: number; message: string; charged: boolean; transactionId?: string; logSequence?: number };
 
-/** What the agent has spent, rebuilt from its own HCS log. */
+/**
+ * What the agent has spent, rebuilt from its own HCS log. A schedule counts from the moment it is
+ * created; an expired entry releases the amount its schedule entry added, once.
+ */
 export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
   let spent: EnvelopeSpend = { total: "0", bySeller: {} };
+  const scheduled = new Map<string, { seller: string; amount: string }>();
+  const released = new Set<string>();
+
+  const add = (seller: string, offerHash: string, amount: string) => {
+    spent = recordSpend(spent, { seller, offerHash, amount });
+  };
+  const subtract = (seller: string, amount: string) => {
+    const key = seller.toLowerCase();
+    spent = {
+      total: (BigInt(spent.total) - BigInt(amount)).toString(10),
+      bySeller: { ...spent.bySeller, [key]: (BigInt(spent.bySeller[key] ?? "0") - BigInt(amount)).toString(10) },
+    };
+  };
+
   for (const { entry } of entries) {
-    if (entry.kind === "spend") spent = recordSpend(spent, { seller: entry.seller, offerHash: entry.offerHash, amount: entry.amount });
+    if (entry.kind === "schedule") {
+      if (entry.schedule) scheduled.set(entry.schedule, { seller: entry.seller, amount: entry.amount });
+      add(entry.seller, entry.offerHash, entry.amount);
+    } else if (entry.kind === "expired") {
+      if (!entry.schedule || released.has(entry.schedule)) continue;
+      const held = scheduled.get(entry.schedule);
+      if (!held) continue;
+      released.add(entry.schedule);
+      subtract(held.seller, held.amount);
+    } else if (entry.kind === "spend") {
+      // A spend that follows its schedule entry was already counted at create time.
+      if (entry.schedule && scheduled.has(entry.schedule)) continue;
+      add(entry.seller, entry.offerHash, entry.amount);
+    }
   }
   return spent;
 }
@@ -80,9 +138,11 @@ export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
 export function createHederaAgent(opts: HederaAgentOptions) {
   const f = opts.fetch ?? fetch;
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
+  const createSchedule = opts.createSchedule ?? createScheduledPayment;
   let spent: EnvelopeSpend = opts.spent ?? { total: "0", bySeller: {} };
   const hub = opts.hub.replace(/\/$/, "");
   const reservations = new Map<number, { seller: string; offerHash: string; amount: string }>();
+  const releasedSchedules = new Set<string>();
   let nextReservation = 0;
   let trusted: Set<string> | null = opts.trustedFeePayers ? new Set(opts.trustedFeePayers) : null;
   let trustLookup: Promise<Set<string>> | null = null;
@@ -138,20 +198,20 @@ export function createHederaAgent(opts: HederaAgentOptions) {
 
   async function log(
     kind: SpendEntry["kind"],
-    listing: Listing,
-    req: PaymentRequirements,
-    extra: { tx?: string; reason?: string },
+    subject: { offerHash: string; seller: string },
+    terms: { payTo: string; asset: string; amount: string },
+    extra: { tx?: string; schedule?: string; expiresAt?: number; reason?: string },
   ): Promise<number> {
     const entry: SpendEntry = {
       v: 1,
       kind,
       rail: "hedera",
       network: HEDERA_TESTNET,
-      offerHash: listing.offerHash,
-      seller: listing.offer.seller,
-      payTo: req.payTo,
-      asset: req.asset,
-      amount: req.amount,
+      offerHash: subject.offerHash,
+      seller: subject.seller,
+      payTo: terms.payTo,
+      asset: terms.asset,
+      amount: terms.amount,
       ...extra,
       total: spent.total,
       cap: opts.envelope.cap,
@@ -221,7 +281,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         ? { ok: false as const, reason: "needs-human", message: "Refused. This amount needs a human; the agent does not ask." }
         : checkEnvelope(opts.envelope, spendIncludingPending(), request, now());
       if (!decision.ok) {
-        const seq = await log("refused", listing, req, { reason: decision.reason });
+        const seq = await log("refused", { offerHash: listing.offerHash, seller: listing.offer.seller }, req, { reason: decision.reason });
         return { kind: "refused", reason: decision.reason, message: decision.message, logSequence: seq };
       }
       const reservation = reserve(request);
@@ -247,7 +307,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         const wasCharged = await charged(transactionId, req);
         if (wasCharged) {
           settleReservation(reservation);
-          await log("spend", listing, req, { tx: transactionId });
+          await log("spend", { offerHash: listing.offerHash, seller: listing.offer.seller }, req, { tx: transactionId });
         } else {
           release(reservation);
         }
@@ -263,7 +323,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
           throw new Error(`hub reported settlement ${settlement.transaction}, but this agent signed ${transactionId}`);
         }
         settleReservation(reservation);
-        const seq = await log("spend", listing, req, { tx: transactionId });
+        const seq = await log("spend", { offerHash: listing.offerHash, seller: listing.offer.seller }, req, { tx: transactionId });
         return { kind: "paid", output: result.output, slip: result.slip, settlement, transactionId, logSequence: seq };
       }
 
@@ -273,11 +333,111 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       let seq: number | undefined;
       if (wasCharged) {
         settleReservation(reservation);
-        seq = await log("spend", listing, req, { tx: transactionId });
+        seq = await log("spend", { offerHash: listing.offerHash, seller: listing.offer.seller }, req, { tx: transactionId });
       } else {
         release(reservation);
       }
       return { kind: "failed", status: paid.status, message, charged: wasCharged, transactionId, logSequence: seq };
+    },
+
+    /**
+     * Create a scheduled USDC transfer under the envelope. The amount is reserved and logged as a
+     * schedule the moment the create is submitted, so a second schedule cannot slip past the cap
+     * while the first is still executable.
+     */
+    async schedule(
+      target: { offer: Offer; offerHash: string },
+      scheduleOpts: { client: Client; expiresInSeconds: number },
+    ): Promise<ScheduleOutcome> {
+      const payTo = target.offer.payTo?.hedera ?? "";
+      const subject = { offerHash: target.offerHash, seller: target.offer.seller };
+      const terms = { payTo, asset: USDC_TESTNET, amount: target.offer.price };
+
+      if (!target.offer.rails.includes("hedera") || !/^0\.0\.\d+$/.test(payTo)) {
+        const reason = "no-hedera";
+        const message = "Refused. The offer does not settle on the hedera rail with an account id.";
+        const seq = await log("refused", subject, terms, { reason });
+        return { kind: "refused", reason, message, logSequence: seq };
+      }
+
+      // No await between this check and the reservation: one JavaScript turn, so parallel schedules serialise.
+      const request = { seller: target.offer.seller, offerHash: target.offerHash, amount: target.offer.price };
+      const decision = needsHuman(opts.envelope, request.amount)
+        ? { ok: false as const, reason: "needs-human", message: "Refused. This amount needs a human; the agent does not ask." }
+        : checkEnvelope(opts.envelope, spendIncludingPending(), request, now());
+      if (!decision.ok) {
+        const seq = await log("refused", subject, terms, { reason: decision.reason });
+        return { kind: "refused", reason: decision.reason, message: decision.message, logSequence: seq };
+      }
+      const reservation = reserve(request);
+      const expiresAt = now() + scheduleOpts.expiresInSeconds;
+
+      let payment: ScheduledPayment;
+      try {
+        payment = await createSchedule(scheduleOpts.client, opts.payer, {
+          payTo,
+          asset: USDC_TESTNET,
+          amount: BigInt(target.offer.price),
+          offerHash: target.offerHash,
+          expiresInSeconds: scheduleOpts.expiresInSeconds,
+        });
+      } catch (error) {
+        // The create may have reached consensus, so the reservation stays held for the life of the
+        // agent: releasing it could let a second schedule pass a cap the first still occupies.
+        throw error;
+      }
+
+      settleReservation(reservation);
+      const hold: ScheduleHold = {
+        scheduleId: payment.scheduleId,
+        createTxId: payment.createTxId,
+        offerHash: target.offerHash,
+        seller: target.offer.seller,
+        payTo,
+        asset: USDC_TESTNET,
+        amount: target.offer.price,
+      };
+      const seq = await log("schedule", subject, terms, {
+        tx: payment.createTxId,
+        schedule: payment.scheduleId,
+        expiresAt,
+      });
+      return {
+        kind: "scheduled",
+        scheduleId: payment.scheduleId,
+        createTxId: payment.createTxId,
+        expiresAt,
+        logSequence: seq,
+        hold,
+      };
+    },
+
+    /**
+     * Release a schedule the mirror now shows expired or deleted. A schedule that executed, or is
+     * still pending, changes nothing. Releasing the same schedule twice logs once.
+     */
+    async releaseExpired(hold: ScheduleHold): Promise<ReleaseOutcome> {
+      const status = await scheduleStatus(hold.scheduleId, { ...opts.mirror, now });
+      if (status === "pending") return "pending";
+      if (status === "executed") return "executed";
+      if (releasedSchedules.has(hold.scheduleId)) return "released";
+      releasedSchedules.add(hold.scheduleId);
+
+      const key = hold.seller.toLowerCase();
+      spent = {
+        total: (BigInt(spent.total) - BigInt(hold.amount)).toString(10),
+        bySeller: {
+          ...spent.bySeller,
+          [key]: (BigInt(spent.bySeller[key] ?? "0") - BigInt(hold.amount)).toString(10),
+        },
+      };
+      await log(
+        "expired",
+        { offerHash: hold.offerHash, seller: hold.seller },
+        { payTo: hold.payTo, asset: hold.asset, amount: hold.amount },
+        { tx: hold.createTxId, schedule: hold.scheduleId },
+      );
+      return "released";
     },
   };
 }
