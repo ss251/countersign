@@ -4,11 +4,27 @@ countersign settles agent-to-software payments on Hedera testnet over x402 v2. T
 
 No human approves a payment. The agent's envelope (budget cap, per-merchant limit, allowlist) decides, and the facilitator only broadcasts what the agent signed.
 
-**By default the payment is held until the seller countersigns and the hub co-signs.** The held payee is a 2-of-2 account, so the buyer's schedule moves no money until both the seller's key and the hub's release key sign it. This hub adds its signature only after a checked delivery. A delivery that fails costs the buyer nothing (see the next section), and neither the seller nor the hub can release the payment alone (proved live on production, below). Production serves only this held rail for Hedera: the direct x402 payment traced below is off on production since main 7565080, and runs only on a hub started with `HEDERA_RAIL=1`.
+**By default the payment is held until the seller countersigns and the hub co-signs.** The held payee is a 2-of-2 account, so the buyer's schedule moves no money until both the seller's key and the hub's release key sign it. This hub adds its signature only after a checked delivery. A delivery that fails costs the buyer nothing (see the next section), and neither the seller nor the hub can release the payment alone (proved live on production, below). Production also serves plain x402 on the `hedera` rail, settled only after delivery (next section).
+
+## Plain x402, settled after delivery
+
+On the `hedera` rail the agent signs one x402 v2 `exact` transfer, as in the trace below. The hub no longer hands it to the facilitator first. It:
+
+1. verifies the signed transfer: one debit, one credit, the exact amount, payee and offer memo;
+2. refuses it, with nothing charged, if the transfer expires less than 30 seconds after the offer's deadline;
+3. runs the seller, and checks the output against the offer's schema and the signed slip;
+4. only then gives the transfer to the facilitator to submit.
+
+On production: a purchase settled at [`0.0.9185802@1794006014.352007822`](https://hashscan.io/testnet/transaction/0.0.9185802@1794006014.352007822), after its slip `0x4812cd9a…d057` was delivered. The payment's consensus time is later than the slip's `deliveredAt`.
+
+- **A failed delivery charges nothing.** The transfer is never submitted. The hub answers `502` "Not delivered. Nothing was charged", and the transfer expires unused.
+- **A failed settle withholds the output.** If the seller delivered but the transfer does not settle, the hub answers `502`, keeps the output back, and names the transfer and the time after which it cannot land, so the buyer checks it before paying again.
+- **One transfer buys one call.** The job is keyed on the signed transfer itself, so sending it again is refused: `409` while the first call runs or after it failed, and `402` as a replay once it has settled.
+- **A wallet that pays first is not held.** If the buyer's own wallet has already sent the payment, the hub verifies it on the mirror node and the call runs settled-first, as on a direct rail. No client in this repository pays that way.
 
 ## Held by default: nothing moves until the seller countersigns
 
-On the direct `hedera` rail, the payment settles before the job runs. If the job then fails, the buyer has paid for nothing. That happened once, live: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251) (entry #34).
+Before settle-after-delivery, the direct `hedera` rail settled the payment before the job ran. If the job then failed, the buyer had paid for nothing. That happened once, live: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251) (entry #34).
 
 So the default Hedera path is now the **`hedera-scheduled`** rail. The router ranks it as protected, ahead of the direct rail. A buyer that wants the direct rail opts in.
 
@@ -77,6 +93,8 @@ bun scripts/hedera/agent-run.ts <hub> --exact ...                               
 ```
 
 ## Payment flow, traced through one real payment
+
+This payment ran before settle-after-delivery, so it settles at step 6 and delivers at step 7. Production now runs the seller and checks the output first, then settles ([above](#plain-x402-settled-after-delivery)).
 
 The agent `0.0.11337064` bought one call to Circle's `use-usdc` skill (Apache-2.0) for 0.05 USDC through the countersign hub, with no human approving. The seller's runner served the skill and was paid on Hedera at `0.0.11337065`. Every value below was read back from Hedera testnet.
 
