@@ -4,9 +4,9 @@ countersign settles agent-to-software payments on Hedera testnet over x402 v2. T
 
 No human approves a payment. The agent's envelope (budget cap, per-merchant limit, allowlist) decides, and the facilitator only broadcasts what the agent signed.
 
-**By default the payment is held.** The buyer's scheduled transfer moves money only when the hub submits the seller's countersignature after a checked delivery, so a failed delivery costs the buyer nothing (see the next section). The direct x402 payment traced below is the opt-in alternative.
+**By default the payment is held until the seller countersigns.** The buyer's schedule moves no money until the seller's key signs it. This hub submits the seller's countersignature only after a checked delivery, so a delivery that fails costs the buyer nothing (see the next section). **The seller's key alone can still release the payment without delivering:** the hold protects against a seller that fails, not one that takes the money. Requiring the hub's signature too is designed but not live. The direct x402 payment traced below is the opt-in alternative.
 
-## Held by default: nothing moves until a checked delivery
+## Held by default: nothing moves until the seller countersigns
 
 On the direct `hedera` rail, the payment settles before the job runs. If the job then fails, the buyer has paid for nothing. That happened once, live: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251) (entry #34).
 
@@ -24,7 +24,7 @@ So the default Hedera path is now the **`hedera-scheduled`** rail. The router ra
 
 **A failed delivery** is a crash, a timeout, an error, or an output that fails the checks. In each case nothing is submitted, and the hub answers: "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires." Unsigned, the schedule expires. The agent then logs an `expired` entry and releases the hold.
 
-**What the hold covers.** It protects the buyer against a seller that fails or never delivers. It does not stop a seller who deliberately signs without delivering, because the seller holds that key. The Arc escrow's arbiter covers that case.
+**What the hold covers, and what it does not.** It protects the buyer against a seller that fails or never delivers. It does **not** stop a seller who signs without delivering: the payee's key alone executes the schedule and bypasses the hub's checks entirely. Until the hub's own signature is also required (designed, not live), treat the held rail as protection against a failed delivery, not against a dishonest seller. The Arc escrow's arbiter covers that case today.
 
 **What it costs.** A held purchase costs the buyer about 0.16 HBAR in network fees (`ScheduleCreate` 0.146, plus the scheduled transfer 0.013), against about 0.005 for a direct one. The seller pays 0.015 to countersign.
 

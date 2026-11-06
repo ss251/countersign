@@ -4,6 +4,7 @@ import type { Address } from "viem";
 import { createHub } from "./app.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
+import { createPrivyVerifier } from "./privy.ts";
 
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
 const ARC_ERC8004_IDENTITY = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
@@ -40,6 +41,11 @@ const ens = sepoliaEnsResolver(ensRpcUrls ? { rpcUrls: ensRpcUrls } : {});
 // decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
 const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined;
 
+// Privy checks the signed-in person on the routes that act for them. Unset, the Privy header is ignored.
+const privyAppId = process.env.PRIVY_APP_ID?.trim() ?? "";
+const privySecret = process.env.PRIVY_APP_SECRET?.trim() ?? "";
+const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(privyAppId, privySecret) : undefined;
+
 // The Whitechain relay's public order records, read by /orders for refunds after release.
 const relayUrl = process.env.WC_RELAY_URL?.trim() || undefined;
 
@@ -63,6 +69,7 @@ const { app, websocket } = createHub({
   publicUrl,
   ens,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
+  ...(privy ? { privy } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),
 });
@@ -73,3 +80,4 @@ setInterval(() => {
 }, 30_000);
 
 console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
+console.log(`[hub] privy sign-in: ${privy === undefined ? "off" : "on"}`);
