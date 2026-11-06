@@ -104,7 +104,7 @@ export function otherRailsLines(rails: RailDeclaration[] | undefined): string[] 
   const lines: string[] = [];
   if (first.length) lines.push(`${listed(first)} ${first.length === 1 ? "pays" : "pay"} the seller before delivery.`);
   if (held.some((r) => r.network.startsWith("hedera:"))) {
-    lines.push("Held Hedera waits for the seller's key, which can also release it without delivering.");
+    lines.push("Held Hedera moves only when the seller and the hub both sign.");
   }
   return lines;
 }
@@ -114,6 +114,28 @@ export function railOrder(rails: RailDeclaration[] | undefined, rows: Settlement
   const ids: RailId[] = (rails ?? []).map((r) => r.id);
   for (const s of rows) if (!ids.includes(s.rail)) ids.push(s.rail);
   return ids;
+}
+
+/** The number words groups are counted in. */
+export const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/** A rail a settlement names that the hub no longer declares: shown, never counted as live. */
+export function isRetired(rail: RailId, rails: RailDeclaration[] | undefined): boolean {
+  return rails ? !rails.some((r) => r.id === rail) : false;
+}
+
+export function retiredLabel(name: string): string {
+  return `Retired: ${name}`;
+}
+
+/** Beat 2's line: the hub's declared rails only. */
+export function railsLine(rails: RailDeclaration[] | undefined, order: RailId[]): string {
+  if (rails) {
+    const n = rails.length;
+    return `On ${WORDS[n] ?? n} live ${n === 1 ? "rail" : "rails"}.`;
+  }
+  const n = order.length;
+  return `On ${WORDS[n] ?? n} ${n === 1 ? "rail" : "rails"}.`;
 }
 
 /** Evenly spaced group centres in percent, across [from, to]. */
