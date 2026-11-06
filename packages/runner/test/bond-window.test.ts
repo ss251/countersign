@@ -5,7 +5,7 @@ import { parseBondArgs } from "../src/bond.ts";
 
 const ROOT = join(import.meta.dir, "../../..");
 const MESSAGE =
-  "Refused. A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.";
+  "Refused. A bond needs --review-window of at least 60 seconds: a bond protects a buyer who can refuse a delivery.";
 
 describe("bond terms", () => {
   test("with --bond 100 and no --review-window exits non-zero with that message", () => {
@@ -54,6 +54,26 @@ describe("bond terms", () => {
         "100",
         "--review-window",
         "0",
+        "--min-duration",
+        "120",
+        "--escrow",
+        "0x4444444444444444444444444444444444444444",
+      ]),
+    ).toThrow(MESSAGE);
+  });
+
+  test("--bond 100 --review-window 59 is the same refusal", () => {
+    expect(() =>
+      parseBondArgs([
+        "terms",
+        "--offer",
+        `0x${"aa".repeat(32)}`,
+        "--price",
+        "500000",
+        "--bond",
+        "100",
+        "--review-window",
+        "59",
         "--min-duration",
         "120",
         "--escrow",

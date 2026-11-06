@@ -61,6 +61,7 @@ const DISPUTE_ABI = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "jobId", type: "bytes32" },
+      { name: "status", type: "uint8" },
       { name: "buyerSig", type: "bytes" },
     ],
     outputs: [],
@@ -163,7 +164,7 @@ describe("dispute --direct", () => {
     const tx = parseTransaction(serialized);
     expect(tx.to?.toLowerCase()).toBe(ESCROW.toLowerCase());
     expect(tx.data).toBe(
-      encodeFunctionData({ abi: DISPUTE_ABI, functionName: "dispute", args: [JOB_ID, "0x"] }),
+      encodeFunctionData({ abi: DISPUTE_ABI, functionName: "dispute", args: [JOB_ID, 1, "0x"] }),
     );
     expect((await recoverTransactionAddress({ serializedTransaction: serialized })).toLowerCase()).toBe(
       buyer.address.toLowerCase(),

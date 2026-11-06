@@ -18,6 +18,14 @@ export interface WalletRequest {
   params?: unknown;
 }
 
+export interface WalletSession {
+  authorized: boolean;
+}
+
+export function newWalletSession(): WalletSession {
+  return { authorized: false };
+}
+
 export type RpcCall = (request: { method: string; params?: unknown }) => Promise<unknown>;
 
 export interface WalletError {
@@ -104,12 +112,15 @@ export async function handleWalletRequest(
   rpc: RpcCall,
   request: WalletRequest,
   rpcUrl: string = ARC.rpc,
+  session: WalletSession = newWalletSession(),
 ): Promise<unknown> {
   const { method, params } = request;
   switch (method) {
     case "eth_requestAccounts":
-    case "eth_accounts":
+      session.authorized = true;
       return [account.address];
+    case "eth_accounts":
+      return session.authorized ? [account.address] : [];
     case "eth_chainId":
       return ARC_CHAIN_ID_HEX;
     case "net_version":
@@ -166,8 +177,9 @@ export async function installTestWallet(
   rpcUrl: string = ARC.rpc,
 ): Promise<void> {
   const rpc = arcRpc(rpcUrl);
+  const session = newWalletSession();
   await context.exposeBinding("__csWallet", async (_source, request: WalletRequest) =>
-    handleWalletRequest(account, rpc, request, rpcUrl),
+    handleWalletRequest(account, rpc, request, rpcUrl, session),
   );
   await context.addInitScript(testWalletScript);
 }

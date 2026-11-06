@@ -73,6 +73,24 @@ describe("escrow v2 countersign terms (D16)", () => {
     expect(jobIdOf({ ...v2, reviewWindow: 601 }, CHAIN, ESCROW)).not.toBe(id);
   });
 
+  test("the v2 jobId matches the vector contracts/test/Parity.t.sol asserts against the contract", () => {
+    const terms: CountersignTerms = {
+      offerHash: "0x1111111111111111111111111111111111111111111111111111111111111111" as Hex,
+      buyer: "0x2222222222222222222222222222222222222222" as Address,
+      payee: "0x3333333333333333333333333333333333333333" as Address,
+      amount: "1500000",
+      deadline: 1_762_400_300,
+      salt: "42",
+    };
+    const at = "0x4444444444444444444444444444444444444444" as Address;
+    expect(jobIdOf({ ...terms, bond: "500000", reviewWindow: 3600 }, 5042002, at)).toBe(
+      "0x828d7c08e5ceaa062bb376176a187ea3ca6f5b1100b4f7d61c55d4b9dd847790",
+    );
+    expect(jobIdOf({ ...terms, bond: "0", reviewWindow: 0 }, 5042002, at)).toBe(
+      "0x734bac74d246f2670a8a73fd546e8e780aef62c74a7976c6fba258bcabb77f11",
+    );
+  });
+
   test("a v2 job with bond 0 and window 0 is still v2: its jobId differs from the v1 one", () => {
     const zero = { ...v1, bond: "0", reviewWindow: 0 };
     expect(isV2Terms(zero)).toBe(true);
