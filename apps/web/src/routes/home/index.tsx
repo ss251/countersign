@@ -175,8 +175,8 @@ function SettlementRow({ s, live }: { s: Settlement; live: boolean }) {
       </span>
       <span className="settled__end">
         <Amount money={usd(s.amount, s.rail)} size="sm" className={s.kind === "refunded" ? "amount--void" : undefined} />
-        <span className={cx("status", s.kind === "released" ? "status--released" : "status--refunded")}>
-          {s.kind === "released" ? "Released" : "Refunded"}
+        <span className={cx("status", s.kind === "refunded" ? "status--refunded" : "status--released")}>
+          {s.kind === "released" ? "Released" : s.kind === "settled" ? "Settled" : "Refunded"}
         </span>
       </span>
       {s.tx ? (

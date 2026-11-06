@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as fx from "../src/fixtures/index.ts";
 import type { Listing } from "../src/lib/types.ts";
-import { deliveryRate, groupBySeller, matches } from "../src/routes/registry/index.tsx";
+import { deliveryRate, groupBySeller, matches, withRecords } from "../src/routes/registry/index.tsx";
 
 const listings = fx.listings;
 
@@ -31,5 +31,38 @@ describe("registry", () => {
     expect(deliveryRate(0, 0)).toBe("—");
     expect(deliveryRate(41, 1)).toBe("98%");
     expect(deliveryRate(0, 2)).toBe("0%");
+  });
+});
+
+describe("registry with the hub's /sellers", () => {
+  test("takes the hub's counts and ERC-8004 identity over what listings imply", () => {
+    const groups = groupBySeller(listings);
+    const target = groups[groups.length - 1]!;
+    const merged = withRecords(groups, [
+      {
+        address: target.address,
+        name: null,
+        payees: {},
+        offers: [],
+        calls: 9,
+        released: 5,
+        settled: 2,
+        refunded: 1,
+        failed: 1,
+        volume: "350000",
+        erc8004: { agentId: "42", identityRegistry: "0x0000000000000000000000000000000000008004", reputation: null },
+      },
+    ]);
+    const g = merged.find((x) => x.address === target.address)!;
+    expect(g.agentId).toBe("42");
+    expect(g.released).toBe(7);
+    expect(g.refunded).toBe(1);
+    expect(g.failed).toBe(1);
+    expect(g.name).toBe(target.name);
+  });
+
+  test("leaves groups alone when the hub does not serve /sellers", () => {
+    const groups = groupBySeller(listings);
+    expect(withRecords(groups, null)).toBe(groups);
   });
 });

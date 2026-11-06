@@ -2,7 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as fx from "../fixtures/index.ts";
 import { explorerTemplate, shortHex, symbolFor } from "./format.ts";
 import { HubError, hubBase, hubGet, hubOffer, hubOffers, hubRails, hubSlip, type HubListing } from "./hub.ts";
-import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, Settlement, Slip, SlipView, TreeView } from "./types.ts";
+import type {
+  Approval,
+  EnvelopeView,
+  Listing,
+  Purchase,
+  RailDeclaration,
+  SearchResult,
+  SellerRecord,
+  Settlement,
+  Slip,
+  SlipView,
+  TreeView,
+} from "./types.ts";
 
 /**
  * Every read the screens make goes through here. With a hub chosen (see hub.ts) the
@@ -124,6 +136,18 @@ export const api = {
     const rows = await orMissing(hubGet<{ settlements: Settlement[] } | Settlement[]>(`/settlements?limit=${limit}`));
     if (!rows) return live(null);
     return live(Array.isArray(rows) ? rows : rows.settlements);
+  },
+  /** The hub's sellers with slip-derived counts and identity; null until the hub serves /sellers. */
+  sellers: async (): Promise<Loaded<SellerRecord[] | null>> => {
+    if (!hubBase()) return settle(null);
+    const r = await orMissing(hubGet<{ sellers: SellerRecord[] }>("/sellers"));
+    return live(r ? r.sellers : null);
+  },
+  /** The hub's ranked offer search; null until the hub serves it, so the caller ranks /offers itself. */
+  search: async (q: string, limit = 5): Promise<Loaded<SearchResult[] | null>> => {
+    if (!hubBase()) return settle(null);
+    const r = await orMissing(hubGet<{ results: SearchResult[] }>(`/offers/search?q=${encodeURIComponent(q)}&limit=${limit}`));
+    return live(r ? r.results : null);
   },
   // The phone reads the buyer agent's own state, which no hub endpoint serves yet.
   envelope: () => settle<EnvelopeView>(structuredClone(fx.envelope)),
