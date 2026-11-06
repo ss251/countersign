@@ -160,6 +160,10 @@ Every value below was read back from Hedera testnet on 06 Nov.
   - The agent's balance stayed at 19.75 USDC before and after. Audit: released 1, unbacked 0.
 
   "Expired. Nothing moved."
+- **Expiry run after the release margin (#128).** Since #105's review, a hold is released only 60 s after the schedule's expiration, so the demo now waits that long.
+  - The agent created [`0.0.11337064@1793972401.951725298`](https://hashscan.io/testnet/transaction/0.0.11337064@1793972401.951725298), which made schedule [`0.0.11339869`](https://hashscan.io/testnet/schedule/0.0.11339869) and logged entry [#42](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/42) (`schedule`).
+  - It expired at `1793972469.578`. Entry [#43](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/43) (`expired`) landed at `1793972532.954`, 63 s later.
+  - There was no execution record, and the agent held 19.52 USDC before and after. Audit: released 1, unbacked 0, unlogged 0.
 
 ## The Hedera Agent Kit as a metered offer
 
