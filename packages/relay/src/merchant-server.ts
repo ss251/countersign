@@ -6,6 +6,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
 import { parseAtomic } from "@countersign/core";
 import { DEFAULT_MERCHANT_ORIGINS, loadMerchantConfig } from "./config.ts";
+import { isRefundReason } from "./ledger.ts";
+import type { RefundReason } from "./ledger.ts";
 import { signCancel, signRefund } from "./merchant.ts";
 import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 import type { Address, Hex } from "viem";
@@ -89,6 +91,14 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
         }
       }
     }
+    let reason: RefundReason | undefined;
+    if (body && typeof body === "object" && "reason" in body) {
+      const raw = (body as { reason: unknown }).reason;
+      if (raw !== undefined) {
+        if (!isRefundReason(raw)) return c.json({ ok: false, reason: "invalid_payload" }, 400);
+        reason = raw;
+      }
+    }
 
     const orderResponse = await fetch(`${relayUrl}/orders/${encodeURIComponent(id)}`);
     if (!orderResponse.ok) {
@@ -110,9 +120,25 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       return c.json({ ok: false, reason: "not_your_order" }, 403);
     }
 
-    if (order.kind === "escrow" && order.status === "held") {
+    if (
+      order.kind === "escrow" &&
+      (order.status === "held" || order.status === "in_review")
+    ) {
+      let full: bigint;
+      try {
+        full = parseAtomic(order.amount);
+      } catch {
+        return c.json({ ok: false, reason: "order_not_found" }, 502);
+      }
+      if (amount !== undefined && amount !== full) {
+        return c.json({ ok: false, reason: "partial_cancel_not_possible" }, 400);
+      }
       const sellerSig = await signCancel({ merchant, escrow, jobId: order.id as Hex });
-      return forward(`${relayUrl}/escrow/cancel`, { jobId: order.id, sellerSig });
+      return forward(`${relayUrl}/escrow/cancel`, {
+        jobId: order.id,
+        sellerSig,
+        ...(reason ? { reason } : {}),
+      });
     }
 
     if (order.status === "paid" || order.status === "partially_refunded") {
@@ -132,7 +158,11 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       } catch {
         return c.json({ ok: false, reason: "refund_not_possible" }, 400);
       }
-      return forward(`${relayUrl}/refund`, { paymentId: order.id, ...signed });
+      return forward(`${relayUrl}/refund`, {
+        paymentId: order.id,
+        ...signed,
+        ...(reason ? { reason } : {}),
+      });
     }
 
     return c.json({ ok: false, reason: "not_refundable" }, 409);
@@ -163,6 +193,14 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
         } catch {
           return c.json({ ok: false, reason: "invalid_payload" }, 400);
         }
+      }
+    }
+    let reason: RefundReason | undefined;
+    if (body && typeof body === "object" && "reason" in body) {
+      const raw = (body as { reason: unknown }).reason;
+      if (raw !== undefined) {
+        if (!isRefundReason(raw)) return c.json({ ok: false, reason: "invalid_payload" }, 400);
+        reason = raw;
       }
     }
 
@@ -206,7 +244,7 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
     const refundResponse = await fetch(`${relayUrl}/refund`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ paymentId, ...signed }),
+      body: JSON.stringify({ paymentId, ...signed, ...(reason ? { reason } : {}) }),
     });
     return new Response(await refundResponse.text(), {
       status: refundResponse.status,

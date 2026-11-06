@@ -765,3 +765,26 @@ describe("escrow v2 review states (built against the hub's served fields; nothin
     expect(windowWords(300)).toBe("5-minute");
   });
 });
+
+describe("refund reasons, now that the relay stores them (wc-08)", () => {
+  test("a partial refund sends its reason with the confirmed amount", async () => {
+    const realFetch = globalThis.fetch;
+    const bodies: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/orders")) return Response.json({ orders: [] });
+      bodies.push(String(init?.body ?? ""));
+      return Response.json({ ok: true, txHash: "0x22" });
+    }) as typeof fetch;
+    await unlockRefunds("t");
+    await refundOrder("0x01", { amount: 2_500n, reason: "duplicate" });
+    expect(JSON.parse(bodies.at(-1)!)).toEqual({ amount: "2500", reason: "duplicate" });
+    globalThis.fetch = realFetch;
+  });
+
+  test("a cancel's reason is kept only when it is one of the four", () => {
+    const base = { ...fixtureOrders[5]! };
+    expect(fromHubOrder({ ...base, closeReason: "not_delivered" })!.closeReason).toBe("not_delivered");
+    expect(fromHubOrder({ ...base, closeReason: "because" })!.closeReason).toBeNull();
+  });
+});

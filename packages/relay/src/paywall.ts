@@ -54,13 +54,16 @@ type PaymentRequired = {
 };
 
 type Claim = {
-  state: "in_flight" | "settled";
+  state: "in_flight" | "settled" | "pending";
   /** Unix seconds after which a settled claim may be forgotten. */
   validBefore: number;
+  /** The settle transaction, once one is pending. */
+  txHash: string | null;
 };
 
 const MAX_CLAIMS = 10_000;
 const ALREADY_USED = "Refused. This payment was already used.";
+const STILL_SETTLING = "Refused. This payment is still settling.";
 
 /**
  * Puts a USDT price on a Hono route. A request without payment gets an x402 v2
@@ -75,7 +78,9 @@ const ALREADY_USED = "Refused. This payment was already used.";
  * The authorisation is claimed by `from:nonce` before the handler runs. A second request
  * presenting the same authorisation gets 409, both while the first is in flight and after it
  * settled. A claim is released when the request is refused before settlement (bad verify, a
- * handler error in "after" mode, or a failed settle), so an unused authorisation can be retried.
+ * handler error in "after" mode, or a settle that failed outright), so an unused authorisation
+ * can be retried. A settle that answers `settlement_pending` keeps the claim until `validBefore`
+ * plus a minute, because the transaction may still land.
  */
 export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   const amount = parseUnits(options.price, USDT.decimals);
@@ -90,6 +95,8 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   function prune(at: number): void {
     for (const [key, claim] of claims) {
       if (claim.state === "settled" && at > claim.validBefore) claims.delete(key);
+      // A pending transaction can still land until the token refuses the authorisation.
+      if (claim.state === "pending" && at > claim.validBefore + 60) claims.delete(key);
     }
     if (claims.size >= MAX_CLAIMS) {
       for (const [key, claim] of claims) {
@@ -115,7 +122,15 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   }
 
   function settleClaim(key: string, validBefore: number): void {
-    claims.set(key, { state: "settled", validBefore: Math.max(validBefore, now() + 60) });
+    claims.set(key, {
+      state: "settled",
+      validBefore: Math.max(validBefore, now() + 60),
+      txHash: null,
+    });
+  }
+
+  function pendingClaim(key: string, validBefore: number, txHash: string): void {
+    claims.set(key, { state: "pending", validBefore, txHash });
   }
 
   return async (c, next) => {
@@ -147,8 +162,15 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
     const claim = claimOf(payment);
     if (claim) {
       prune(now());
-      if (claims.has(claim.key)) return alreadyUsed(c);
-      claims.set(claim.key, { state: "in_flight", validBefore: claim.validBefore });
+      const existing = claims.get(claim.key);
+      if (existing) {
+        return existing.state === "pending" ? stillSettling(c) : alreadyUsed(c);
+      }
+      claims.set(claim.key, {
+        state: "in_flight",
+        validBefore: claim.validBefore,
+        txHash: null,
+      });
     }
 
     const request: VerifyRequest = {
@@ -183,6 +205,19 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
         return { kind: "refused", response: unreachable(c) };
       }
       if (settle.success !== true) {
+        if (settle.errorReason === "settlement_pending") {
+          // The transaction may still land, so keep the payment claimed until it cannot.
+          if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction);
+          const response = required(
+            c,
+            requirements,
+            url,
+            "Refused. settlement_pending",
+            options,
+          );
+          response.headers.set(PAYMENT_RESPONSE_HEADER, toBase64Json(settle));
+          return { kind: "refused", response };
+        }
         if (claim) release(claim.key);
         return {
           kind: "refused",
@@ -262,6 +297,10 @@ function withSettle(c: Context, settle: SettleResponse): Response {
 
 function alreadyUsed(c: Context): Response {
   return c.json({ error: ALREADY_USED }, 409);
+}
+
+function stillSettling(c: Context): Response {
+  return c.json({ error: STILL_SETTLING }, 409);
 }
 
 function requirementsFor(
