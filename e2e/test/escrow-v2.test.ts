@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeAbiParameters, encodeEventTopics, type Address, type Hex, type TransactionReceipt } from "viem";
 import { State, type KnownRail } from "@countersign/buyer";
-import { ARC, ESCROW_V2_EXTRA, JOB, escrowEvents, type EvmNetwork } from "../lib/chains.ts";
+import { ARC, arbiterReason, ESCROW_V2_EXTRA, JOB, escrowEvents, type EvmNetwork } from "../lib/chains.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const V2 = "0x000000000000000000000000000000000000dEaD";
@@ -86,6 +86,26 @@ describe("escrow v2 facts", () => {
     const out = escrowEvents(net, rcpt);
     expect(out.delivered).toEqual([{ jobId, slipHash, deliveredAt: 123n, reviewEndsAt: 456n }]);
     expect(out.funded).toEqual([]);
+  });
+});
+
+describe("the arbiter gate", () => {
+  const ARBITER = "0xE37F64A73225f5eA06BABcb1cc5440F01446C267" as Address;
+  const SUBMITTER = "0xEE4d89C544D09968dA97842e6F7be4904fbF3934" as Address;
+
+  test("v1 never names an arbiter", () => {
+    expect(arbiterReason(1, ARBITER, SUBMITTER)).toBeNull();
+  });
+
+  test("v2 with the hub as arbiter is not blocked, whatever the case", () => {
+    expect(arbiterReason(2, ARBITER.toLowerCase() as Address, ARBITER)).toBeNull();
+    expect(arbiterReason(2, ARBITER, ARBITER.toLowerCase() as Address)).toBeNull();
+  });
+
+  test("v2 with a different arbiter names both addresses", () => {
+    expect(arbiterReason(2, ARBITER, SUBMITTER)).toBe(
+      `escrow v2 releases only from its arbiter ${ARBITER}, and this suite's hub signs as ${SUBMITTER}`,
+    );
   });
 });
 

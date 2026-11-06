@@ -8,10 +8,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hex } from "viem";
 import { canonicalJson, type Slip } from "@countersign/core";
-import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC, verifyCli } from "../lib/actors.ts";
+import { buyerCli, readJournal, startHub, startSkillSeller, submitterAddress, USE_ARC, verifyCli } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
-import { ARC, escrowEvents, explorerTx, JOB, jobOf, receipt, sameAddress, tokenBalance, tokenTransfers, tollAccruedOf, tollOf, treasuryOf } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
+import { arcArbiter, arbiterReason, ARC, escrowEvents, explorerTx, JOB, jobOf, receipt, sameAddress, tokenBalance, tokenTransfers, tollAccruedOf, tollOf, treasuryOf } from "../lib/chains.ts";
+import { check, equal, NotRun, sameHex, type Flow } from "../lib/flow.ts";
 import { linkStatus, portClosed } from "../lib/http.ts";
 
 export const PRICE = 10_000n; // 0.01 USDC
@@ -36,6 +36,8 @@ export const arcSpine: Flow = {
     ];
   },
   async run(ctx) {
+    const blocked = arbiterReason(ARC.escrowVersion, await arcArbiter(), submitterAddress(ctx));
+    if (blocked) throw new NotRun(blocked);
     const s = ctx.env.secrets;
     const buyer = s.address("CS_BUYER_ADDRESS");
     const state = join(ctx.dir, "buyer-state");

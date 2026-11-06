@@ -6,10 +6,10 @@
 
 import { join } from "node:path";
 import type { Hex } from "viem";
-import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
+import { buyerCli, readJournal, startHub, startSkillSeller, submitterAddress, USE_ARC } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
-import { ARC, disputeWindowOf, escrowEvents, JOB, jobOf, reader, receipt, revertOf, sameAddress, tokenTransfers, waitChainTimePast, writer } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
+import { arcArbiter, arbiterReason, ARC, disputeWindowOf, escrowEvents, JOB, jobOf, reader, receipt, revertOf, sameAddress, tokenTransfers, waitChainTimePast, writer } from "../lib/chains.ts";
+import { check, equal, NotRun, sameHex, type Flow } from "../lib/flow.ts";
 import { portClosed } from "../lib/http.ts";
 import { escrowAbi } from "@countersign/rail";
 import { PRICE } from "./arc-spine.flow.ts";
@@ -37,6 +37,8 @@ export const arcDeadlineRefund: Flow = {
     ];
   },
   async run(ctx) {
+    const blocked = arbiterReason(ARC.escrowVersion, await arcArbiter(), submitterAddress(ctx));
+    if (blocked) throw new NotRun(blocked);
     const s = ctx.env.secrets;
     const buyer = s.address("CS_BUYER_ADDRESS");
     const stranger = s.account("E2E_STRANGER_KEY");

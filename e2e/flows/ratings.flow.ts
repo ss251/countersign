@@ -7,10 +7,10 @@
 
 import { join } from "node:path";
 import type { Hex } from "viem";
-import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
+import { buyerCli, readJournal, startHub, startSkillSeller, submitterAddress, USE_ARC } from "../lib/actors.ts";
 import { units, wallets, type Wallet } from "../lib/budget.ts";
-import { ARC, disputeWindowOf, escrowEvents, JOB, jobOf, receipt, sameAddress, tokenBalance, waitChainTimePast } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
+import { arcArbiter, arbiterReason, ARC, disputeWindowOf, escrowEvents, JOB, jobOf, receipt, sameAddress, tokenBalance, waitChainTimePast } from "../lib/chains.ts";
+import { check, equal, NotRun, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { sleep } from "../lib/http.ts";
 import { PRICE } from "./arc-spine.flow.ts";
 
@@ -63,6 +63,8 @@ export const ratings: Flow = {
     ];
   },
   async run(ctx) {
+    const blocked = arbiterReason(ARC.escrowVersion, await arcArbiter(), submitterAddress(ctx));
+    if (blocked) throw new NotRun(blocked);
     const s = ctx.env.secrets;
     const hub = await ctx.step("hub up", () => startHub(ctx, { arc: true }));
     const seller = await ctx.step(`seller publishes use-arc with a ${DEADLINE_SECONDS} s deadline`, () =>

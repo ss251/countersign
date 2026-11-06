@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Address, Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { canonicalHash, type Offer } from "@countersign/core";
 import { KNOWN_RAILS, type KnownRail } from "@countersign/buyer";
 import { ARC } from "./chains.ts";
@@ -180,6 +181,11 @@ export function arcV2Rail(): KnownRail {
 export function pinArcV2(stateDir: string): void {
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "rails.json"), `${JSON.stringify([arcV2Rail()], null, 2)}\n`);
+}
+
+/** The address the suite's hub signs Arc transactions with; the key never leaves the signer. */
+export function submitterAddress(ctx: FlowCtx): Address {
+  return privateKeyToAccount(ctx.env.secrets.key("E2E_ARC_SUBMITTER_KEY")).address;
 }
 
 /** One buyer CLI command with the buyer key in its environment and nothing else. */

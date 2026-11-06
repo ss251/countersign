@@ -62,6 +62,8 @@ With the switch on, `ARC.escrow` is the v2 address and `ARC.escrowVersion` is 2,
 
 The run summary's header records the escrow version and the Arc escrow address. Whitechain stays on v1 in this packet: its relay handles v1 only here, and cs-wc's wc-09 builds v2 there.
 
+v2 releases only from its arbiter, and the Arc v2 escrow's arbiter is the production hub. A run with a local hub therefore reports `arc-spine`, `arc-deadline-refund` and `ratings` as NOT RUN, naming both addresses. They run once the suite's hub is the arbiter, through an e2e deployment, or once production serves v2.
+
 ## What each flow asserts
 
 Each flow is a list of named steps. The first failed step ends the flow, names itself in the summary and keeps its artifacts. Processes the flow started are always stopped.

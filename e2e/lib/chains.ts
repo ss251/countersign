@@ -216,6 +216,7 @@ const ESCROW_V2_JOB = parseAbi([
 
 const TOLL_ACCRUED = parseAbi(["function tollAccrued() view returns (uint256)"]);
 const DISPUTE_WINDOW = parseAbi(["function DISPUTE_WINDOW() view returns (uint64)"]);
+const ARBITER = parseAbi(["function arbiter() view returns (address)"]);
 
 /** The ABI a call or error decode uses: v1 alone, or v1 plus v2's events, errors and functions. */
 function abiFor(net: EvmNetwork): Abi {
@@ -273,6 +274,21 @@ export function disputeWindowOf(net: EvmNetwork): Promise<bigint> {
 
 export function treasuryOf(net: EvmNetwork): Promise<Address> {
   return reader(net).readContract({ address: net.escrow, abi: escrowAbi, functionName: "treasury" }) as Promise<Address>;
+}
+
+/** The address escrow v2 releases from, or null on v1. */
+export async function arcArbiter(): Promise<Address | null> {
+  if (ARC.escrowVersion !== 2) return null;
+  return reader(ARC).readContract({ address: ARC.escrow, abi: ARBITER, functionName: "arbiter" }) as Promise<Address>;
+}
+
+/**
+ * Why this suite's local hub cannot settle on the escrow, or null when it can. v2 releases
+ * only from the escrow's arbiter, and the hub signs as the suite's own submitter.
+ */
+export function arbiterReason(version: 1 | 2, arbiter: Address | null, submitter: Address): string | null {
+  if (version === 1 || sameAddress(arbiter, submitter)) return null;
+  return `escrow v2 releases only from its arbiter ${arbiter}, and this suite's hub signs as ${submitter}`;
 }
 
 export interface Funded { jobId: Hex; offerHash: Hex; buyer: Address; payee: Address; amount: bigint; deadline: bigint }
