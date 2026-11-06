@@ -27,3 +27,8 @@ subgraph/build/
 data/
 *.sqlite
 *.sqlite-*
+
+# the human acceptance run: local artifacts, traces and reports
+e2e/human/artifacts/
+e2e/human/test-results/
+e2e/human/playwright-report/
