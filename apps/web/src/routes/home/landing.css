@@ -1,9 +1,17 @@
 /*
- * The landing: one statement on the near-black field, then the evidence for it. Our ink palette in
- * its dark form (the tokens are scoped to .landing), the one red, green and blue keeping their meanings.
+ * The landing, v2: scroll as a story (DESIGN-NOTE "The landing, v2"). Two pinned stages and a
+ * closing list: one statement per frame, and evidence that stays and changes state between beats.
+ * Native scroll only. Movement is transform and opacity only. The dark tokens are scoped to
+ * .landing (tokens.css); the one red, green and blue keep their meanings.
  */
 
 .landing {
+  /* The content edge: a 16 to 40 px gutter, and never wider than the content width. */
+  --side: max(clamp(16px, 4vw, 40px), calc((100% - var(--content)) / 2));
+  /* One beat's statement. */
+  --beat: clamp(2rem, 1.1rem + 2.4vw, 3.25rem);
+  --move: 560ms;
+  position: relative;
   min-height: 100dvh;
   background: var(--paper);
   color: var(--ink);
@@ -14,18 +22,31 @@
   text-underline-offset: 0.22em;
 }
 
-/* Almost no chrome: the wordmark and four links, on the field itself. */
+/* Texture, CSS only: a paper grain at 5%, fixed, over everything and under no pointer. */
+.landing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+/* Almost no chrome: the wordmark and four links, fixed on the paper so nothing passes under bare text. */
 .landing__bar {
-  position: absolute;
+  position: fixed;
   top: 0;
   right: 0;
   left: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
   padding: var(--sp-5) clamp(16px, 4vw, 40px);
+  background: var(--paper);
 }
 
 .landing__brand {
@@ -63,17 +84,72 @@
   }
 }
 
-/* The first screen: the statement, set enormous, low on the field like a signature line. */
-.landing__first {
-  position: relative;
-  display: grid;
-  align-content: end;
-  min-height: 100svh;
-  padding: 128px clamp(16px, 4vw, 40px) clamp(40px, 8vh, 88px);
+/* A stage: `--beats` screens tall around one sticky frame of one screen. */
+.story--pinned {
+  height: calc(var(--beats) * 100svh);
+}
+
+.story__frame {
+  position: sticky;
+  top: 0;
+  height: 100svh;
   overflow: hidden;
 }
 
-/* The captain's loop sits behind, muted; a poster until it loads; nothing until it exists. */
+/* The frame's content box, under the bar and inside the content edge. */
+.story__box {
+  position: absolute;
+  top: 112px;
+  right: var(--side);
+  bottom: 40px;
+  left: var(--side);
+}
+
+/* One statement at a time: the beat's line crossfades in place over 240 ms, rising 8 px. */
+.story__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 20ch;
+  font-size: var(--beat);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+
+.story__line.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* Beat 0, the claim: the statement low on the field like a signature line, as in round 2. */
+.story__claim {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: end;
+  padding: 128px var(--side) clamp(40px, 8vh, 88px);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+  pointer-events: none;
+}
+
+.story__claim.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* The captain's loop sits behind the claim, muted; a poster until it loads; nothing until it exists. */
 .landing__loop {
   position: absolute;
   inset: 0;
@@ -121,10 +197,7 @@
   text-wrap: pretty;
 }
 
-/*
- * The first screen's number, in one mono line: the figures in ink, their words in slate, the live
- * dot ahead. It holds a line's height before the first read, so nothing above it moves when it lands.
- */
+/* The first screen's number, in one mono line: figures in ink, words in slate, the live dot ahead. */
 .landing__figures {
   position: relative;
   display: inline-flex;
@@ -170,11 +243,6 @@ button.landing__figures::after {
   }
 }
 
-/* The desk takes focus only when the figures or the cue send the keyboard down to it. */
-.landing__desk:focus {
-  outline: none;
-}
-
 .landing__cta {
   display: flex;
   flex-wrap: wrap;
@@ -201,89 +269,342 @@ button.landing__figures::after {
   font-size: var(--t-13);
 }
 
+.landing a.landing__cue {
+  display: inline-flex;
+  align-items: center;
+  color: var(--slate);
+  text-decoration: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .landing__cue:hover {
+  .landing__cue:hover,
+  .landing a.landing__cue:hover {
     color: var(--ink);
   }
 }
 
-/* Every section after the first: ruled, wide, quiet. */
-.landing__section {
-  display: grid;
-  gap: var(--sp-8);
-  max-width: var(--content);
-  margin: 0 auto;
-  padding: clamp(56px, 10vh, 112px) clamp(16px, 4vw, 40px);
+/*
+ * Beats 1 to 4: the plane under the statement. Marks and labels are placed in percent of its box
+ * (container units) plus px, so they move by transform alone and never touch at any size.
+ */
+.story__plane {
+  position: absolute;
+  top: calc(var(--beat) * 3.5);
+  right: 0;
+  bottom: 104px;
+  left: 0;
+  container-type: size;
+}
+
+.story__field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* The line the payments stand on, and the first and newest times at its ends. */
+.story__baseline {
+  position: absolute;
+  top: calc(var(--base) * 1%);
+  right: 0;
+  left: 0;
   border-top: var(--hair) solid var(--line);
+  transition: opacity 240ms var(--ease-out);
 }
 
-.landing__h2 {
-  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem);
-  font-weight: 400;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+.story__end {
+  position: absolute;
+  top: calc(var(--base) * 1% + 10px);
+  left: 0;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  transition: opacity 240ms var(--ease-out);
 }
 
-/* The live desk */
-.landing__desk-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
+.story__end--last {
+  right: 0;
+  left: auto;
+}
+
+/* One mark per real settlement: a small ink square, never a decoration. */
+.story__mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--m);
+  height: var(--m);
+  border-radius: 1px;
+  background: var(--ink);
+  opacity: var(--o);
+  transform: translate(calc(var(--x) * 1cqw + var(--dx) * 1px - 50%), calc(var(--y) * 1cqh + var(--dy) * 1px - 50%))
+    scale(var(--s));
+  transition:
+    transform var(--move) var(--ease-in-out) var(--d),
+    opacity 240ms var(--ease-out) var(--d);
+}
+
+/* Each rail's group is named under its marks: the rail, its chain, its settled count. */
+.story__group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 10rem;
+  text-align: center;
+  opacity: var(--o);
+  transform: translate(calc(var(--x) * 1cqw - 50%), calc(var(--base) * 1cqh + var(--dy) * 1px));
+  transition:
+    transform var(--move) var(--ease-in-out),
+    opacity 240ms var(--ease-out);
+}
+
+.story__group-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: var(--t-14);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.story__group-chain,
+.story__group-n {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+/* The receipt and the ask box share one plane: side by side on a wide screen, stacked on a phone. */
+.story__aside {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-areas: "ask . receipt";
+  grid-template-columns: 46fr 10fr 44fr;
+  align-items: start;
+  transform: translateY(calc(var(--y) * 1cqh + var(--dy) * 1px));
+  transition: transform var(--move) var(--ease-in-out);
+}
+
+/* The receipt: a slip of plain lines under one hairline, no box. The lifted mark is its stamp. */
+.story__receipt {
+  display: grid;
+  grid-area: receipt;
+  justify-items: start;
   gap: var(--sp-3);
+  min-width: 0;
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 240ms var(--ease-out) 160ms,
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
 }
 
-.landing__updated {
+.story__receipt.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story__receipt-title {
+  padding-left: 28px;
+  font-size: var(--t-15);
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* Plain lines: small caps over values, no rules between them. */
+.story__lines {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.story__lines > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.story__lines dd {
+  min-width: 0;
+  font-size: var(--t-15);
+}
+
+.story__lines--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--sp-5);
+}
+
+.story__wide {
+  grid-column: 1 / -1;
+}
+
+.story__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.story__quiet {
+  color: var(--slate);
+  font-size: var(--t-13);
+  line-height: 1.5;
+}
+
+/* The ask box slides in beside the receipt. */
+.story__ask {
+  display: grid;
+  grid-area: ask;
+  gap: var(--sp-4);
+  min-width: 0;
+  opacity: 0;
+  transform: translateX(-16px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
+}
+
+.story__ask.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.askbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  transition: border-color var(--d-1) var(--ease-out);
+}
+
+.askbox:focus-within {
+  border-color: var(--ink);
+}
+
+/* 16px or more under a finger, so iOS never zooms. */
+.askbox__input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(16px, 0.9rem + 0.4vw, 18px);
+  outline: none;
+}
+
+.askbox__input::placeholder {
+  color: var(--slate);
+}
+
+.askbox__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.askbox__go {
+  min-width: 80px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-left: var(--hair) solid var(--line);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-15);
+  font-weight: 500;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.askbox__go:active {
+  transform: scale(0.97);
+}
+
+/* Three needs from the live offers, as plain lines: the words to type, and what they find. */
+.story__needs {
+  display: grid;
+}
+
+.story__need {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-2) 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.story__need .mono {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--ink) 30%, transparent);
+  text-underline-offset: 0.22em;
+}
+
+.story__need:active {
+  transform: scale(0.98);
+}
+
+/* The totals, label over value in mono, in the frame's corner. */
+.story__totals {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  gap: var(--sp-3);
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out);
+}
+
+.story__totals.is-on {
+  opacity: 1;
+}
+
+.story__sums {
+  display: flex;
+  gap: var(--sp-8);
+}
+
+.story__sums > div {
+  display: grid;
+  gap: 2px;
+}
+
+.story__sums dd {
+  font-family: var(--mono);
+  font-size: clamp(1.25rem, 1rem + 0.8vw, 1.75rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.story__wait {
+  display: block;
+  width: 2.5ch;
+  height: 1em;
+}
+
+.story__updated {
   display: inline-flex;
   align-items: center;
   gap: 0.55em;
   color: var(--slate);
-  font-size: var(--t-13);
-}
-
-.landing__absent {
-  color: var(--slate);
-  font-size: var(--t-15);
-}
-
-.landing__desk-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
-  align-items: start;
-  gap: clamp(32px, 5vw, 64px);
-}
-
-.landing__desk-left {
-  display: grid;
-  gap: var(--sp-8);
-}
-
-/* Three totals, label over value, from the hub's own ledger. */
-.totals3 {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--sp-5);
-}
-
-.totals3 > div {
-  display: grid;
-  gap: var(--sp-1);
-  min-width: 0;
-}
-
-.totals3 dd {
-  font-family: var(--mono);
-  font-size: clamp(2rem, 1.3rem + 2.6vw, 3.5rem);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
-.totals3__wait {
-  display: block;
-  width: 2.5ch;
-  height: 0.9em;
+  font-size: var(--t-12);
 }
 
 /* A total changed: it ticks once. Never counts up. */
@@ -302,36 +623,7 @@ button.landing__figures::after {
   }
 }
 
-.rails-live {
-  display: grid;
-  border-top: var(--hair) solid var(--line);
-}
-
-.rails-live__row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-bottom: var(--hair) solid var(--line);
-  font-size: var(--t-14);
-}
-
-.rails-live__name {
-  font-weight: 500;
-}
-
-.rails-live__chain,
-.rails-live__n {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-.rails-live__n {
-  text-align: right;
-}
-
-/* The live dot breathes slowly while the desk is reading. */
+/* The live dot breathes slowly while the page is reading the hub. */
 .live-dot {
   display: inline-block;
   flex: none;
@@ -348,187 +640,118 @@ button.landing__figures::after {
   }
 }
 
-/* The stream card: the last settlements, newest first. */
-.stream {
+/* Stage two: the desk under the statement, one artifact changing state. */
+.story__desk {
+  position: absolute;
+  top: calc(var(--beat) * 3.5);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  container-type: size;
+}
+
+/* The envelope, as plain lines; from beat 1 it steps back into the corner and stays. */
+.story__env {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: grid;
-  gap: var(--sp-3);
-  padding: var(--sp-5);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
-}
-
-.stream__none {
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.stream__list {
-  display: grid;
-}
-
-.stream__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-top: var(--hair) solid var(--line);
-}
-
-.stream__row.is-new {
-  animation: landing-in 180ms var(--ease-out);
-}
-
-@keyframes landing-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-
-.stream__what {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.stream__title {
-  overflow: hidden;
-  font-size: var(--t-14);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stream__meta {
-  color: var(--slate);
-  font-size: var(--t-12);
-}
-
-.stream__end {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-}
-
-/* A tx link is money that moved: the one blue in the stream. */
-.landing a.stream__tx {
-  color: var(--usdc);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-}
-
-.stream__tx--none {
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-}
-
-/* The ask box */
-.askbox {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
-  transition: border-color var(--d-1) var(--ease-out);
-}
-
-.askbox:focus-within {
-  border-color: var(--ink);
-}
-
-/* 16px or more under a finger, so iOS never zooms. */
-.askbox__input {
-  width: 100%;
-  min-height: 60px;
-  padding: 0 var(--sp-5);
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: clamp(16px, 0.9rem + 0.5vw, 19px);
-  outline: none;
-}
-
-.askbox__input::placeholder {
-  color: var(--slate);
-}
-
-.askbox__input::-webkit-search-cancel-button {
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.askbox__go {
-  min-width: 88px;
-  padding: 0 var(--sp-5);
-  border: 0;
-  border-left: var(--hair) solid var(--line);
-  background: none;
-  color: var(--ink);
-  font-size: var(--t-15);
-  font-weight: 500;
-  transition: transform var(--d-press) var(--ease-out);
-}
-
-.askbox__go:active {
-  transform: scale(0.97);
-}
-
-.askbox__examples {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--sp-3);
-}
-
-.askbox__example {
-  display: grid;
-  gap: var(--sp-2);
-  width: 100%;
-  min-height: 80px;
-  padding: var(--sp-4);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
-  background: none;
-  color: var(--ink);
-  text-align: left;
-  transition:
-    border-color var(--d-1) var(--ease-out),
-    transform var(--d-press) var(--ease-out);
-}
-
-.askbox__example:active {
-  transform: scale(0.98);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .askbox__example:hover {
-    border-color: color-mix(in oklch, var(--line), var(--ink) 40%);
-  }
-}
-
-.askbox__hits {
-  color: var(--slate);
-  font-size: var(--t-12);
-}
-
-/* Proof */
-.proof {
-  display: grid;
-  border-top: var(--hair) solid var(--line);
-}
-
-.proof li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: var(--sp-4);
-  padding: var(--sp-4) 0;
-  border-bottom: var(--hair) solid var(--line);
-  font-size: var(--t-15);
+  width: min(100%, 26rem);
+  transform-origin: top left;
+  transition:
+    transform var(--move) var(--ease-in-out),
+    opacity 240ms var(--ease-out);
 }
 
-.proof li span {
+.story__env.is-back {
+  opacity: 0.55;
+  transform: translateX(62cqw) scale(0.78);
+}
+
+.story__meta {
+  font-family: var(--mono);
+  text-transform: none;
+}
+
+/* The try-out and the release take the centre, one at a time. */
+.story__try,
+.story__release {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-4);
+  width: 54%;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
+}
+
+.story__try.is-on,
+.story__release.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story__try .hold {
+  width: 100%;
+}
+
+.story__offer {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--t-15);
+  font-weight: 500;
+}
+
+.story__exact {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-1);
+}
+
+/* Check it without us: five lines, no table, then the way in. */
+.story__proof {
+  display: grid;
+  gap: var(--sp-8);
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 136px clamp(16px, 4vw, 40px) 64px;
+}
+
+.story__proof .story__line {
+  position: static;
+}
+
+.story__proof-list {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.story__proof-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-4);
+  font-size: var(--t-17);
+}
+
+.story__proof-list li span {
   color: var(--slate);
   font-size: var(--t-14);
+}
+
+.story__close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
 }
 
 .landing__fine {
@@ -536,46 +759,146 @@ button.landing__figures::after {
   font-size: var(--t-13);
 }
 
-/* The steps reuse the overview's artifacts; on the landing they sit a little wider apart. */
-.landing .clear {
-  border-top: 0;
-  padding-top: 0;
-}
-
-@media (max-width: 860px) {
-  .landing__desk-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .askbox__examples {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .proof li {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--sp-1);
-  }
-}
-
-@media (max-width: 520px) {
+/* A phone: the same beats, the statement at the top of the frame and its evidence under it. */
+@media (max-width: 720px) {
   .landing__links {
     gap: var(--sp-2) var(--sp-4);
     font-size: var(--t-13);
   }
-  .totals3 {
-    gap: var(--sp-3);
+
+  .story__box {
+    top: 96px;
+    bottom: 16px;
   }
-  .rails-live__row {
-    grid-template-columns: 8px minmax(0, 1fr) auto;
+
+  .story__line {
+    max-width: none;
   }
-  .rails-live__chain {
-    grid-column: 2;
-    grid-row: 2;
+
+  .story__plane {
+    bottom: 92px;
+  }
+
+  .story__group {
+    width: 7.2rem;
+  }
+
+  .story__group-name {
+    font-size: var(--t-13);
+  }
+
+  .story__aside {
+    grid-template-areas:
+      "receipt"
+      "ask";
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--sp-6);
+  }
+
+  .story__ask {
+    transform: translateY(12px);
+  }
+
+  .story__sums {
+    gap: var(--sp-5);
+  }
+
+  .story__env {
+    width: 100%;
+  }
+
+  .story__env.is-back {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+
+  .story__try,
+  .story__release {
+    top: calc(var(--env-h) * 0.8 + 16px);
+    width: 100%;
+  }
+}
+
+/*
+ * Less motion: nothing pins. Every beat is its own full-height section with the same content, in
+ * its own state, and nothing moves or is placed by a transform.
+ */
+.story--static .story__frame {
+  position: relative;
+  height: auto;
+  min-height: 100svh;
+  overflow: visible;
+}
+
+.story--static
+  :is(
+    .story__line,
+    .story__claim,
+    .story__mark,
+    .story__group,
+    .story__baseline,
+    .story__end,
+    .story__aside,
+    .story__receipt,
+    .story__ask,
+    .story__totals,
+    .story__env,
+    .story__try,
+    .story__release
+  ) {
+  transition: none;
+}
+
+.story--static :is(.story__line, .story__claim, .story__receipt, .story__ask, .story__totals, .story__try, .story__release) {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story--static .story__mark {
+  top: calc(var(--y) * 1% + var(--dy) * 1px - var(--m) * var(--s) / 2);
+  left: calc(var(--x) * 1% + var(--dx) * 1px - var(--m) * var(--s) / 2);
+  width: calc(var(--m) * var(--s));
+  height: calc(var(--m) * var(--s));
+  transform: none;
+}
+
+.story--static .story__group {
+  top: calc(var(--base) * 1% + var(--dy) * 1px);
+  left: calc(var(--x) * 1% - 5rem);
+  transform: none;
+}
+
+.story--static .story__aside {
+  top: calc(var(--y) * 1% + var(--dy) * 1px);
+  transform: none;
+}
+
+.story--static .story__env.is-back {
+  left: 62%;
+  width: 34%;
+  transform: none;
+}
+
+@media (max-width: 720px) {
+  .story--static .story__group {
+    left: calc(var(--x) * 1% - 3.6rem);
+  }
+
+  .story--static .story__env.is-back {
+    left: 0;
+    width: 100%;
+  }
+
+  .story--static .story__try,
+  .story--static .story__release {
+    top: calc(var(--env-h) + 16px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .live-dot,
-  .tick.is-ticked,
-  .stream__row.is-new {
+  .tick.is-ticked {
     animation: none;
   }
 }
