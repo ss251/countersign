@@ -3,6 +3,7 @@
  *
  * jobId  = EIP-712 hash of Countersign(offerHash, buyer, payee, amount, deadline, salt)
  *          under the escrow's domain {name "Countersign", version "1", chainId, escrow}.
+ *          Escrow v2 appends (bond, reviewWindow) to the struct; terms carrying either field are v2.
  * The buyer signs one message: the token's EIP-3009 ReceiveWithAuthorization
  *          {from: buyer, to: escrow, value: amount, validAfter, validBefore, nonce: jobId}.
  * A settlement at any other amount, payee, deadline or offer derives another jobId,
@@ -33,6 +34,25 @@ export const COUNTERSIGN_TYPES = {
     { name: "salt", type: "uint256" },
   ],
 } as const;
+
+/** Escrow v2 (D16): the offer's bond and review window are countersigned inside jobId. */
+export const COUNTERSIGN_V2_TYPES = {
+  Countersign: [
+    { name: "offerHash", type: "bytes32" },
+    { name: "buyer", type: "address" },
+    { name: "payee", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+    { name: "salt", type: "uint256" },
+    { name: "bond", type: "uint256" },
+    { name: "reviewWindow", type: "uint64" },
+  ],
+} as const;
+
+/** True for escrow v2 terms: they carry bond and reviewWindow (both, even when zero). */
+export function isV2Terms(terms: CountersignTerms): boolean {
+  return terms.bond !== undefined || terms.reviewWindow !== undefined;
+}
 
 export const RELEASE_TYPES = {
   Release: [
@@ -79,6 +99,23 @@ export function tokenDomain(chainId: number, token: Address, name: string, versi
 }
 
 export function jobIdOf(terms: CountersignTerms, chainId: number, escrow: Address): Hex {
+  if (isV2Terms(terms)) {
+    return hashTypedData({
+      domain: escrowDomain(chainId, escrow),
+      types: COUNTERSIGN_V2_TYPES,
+      primaryType: "Countersign",
+      message: {
+        offerHash: terms.offerHash,
+        buyer: getAddress(terms.buyer),
+        payee: getAddress(terms.payee),
+        amount: parseAtomic(terms.amount),
+        deadline: BigInt(terms.deadline),
+        salt: parseAtomic(terms.salt),
+        bond: parseAtomic(terms.bond ?? "0"),
+        reviewWindow: BigInt(terms.reviewWindow ?? 0),
+      },
+    });
+  }
   return hashTypedData({
     domain: escrowDomain(chainId, escrow),
     types: COUNTERSIGN_TYPES,
