@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { getAddress, type Hex } from "viem";
 import { offerHash, type Offer, type PaymentPayload } from "@countersign/core";
-import { WHITECHAIN_ESCROW, WHITECHAIN_USDT, whitechainRail } from "../src/whitechain/index.ts";
+import { WHITECHAIN_ESCROW, WHITECHAIN_RPC_URL, WHITECHAIN_USDT, whitechainRail } from "../src/whitechain/index.ts";
 
 const seller = "0x1111111111111111111111111111111111111111";
 const otherPayTo = "0x2222222222222222222222222222222222222222";
@@ -43,6 +43,7 @@ const requirements = whitechainRail({ relayUrl: "http://relay" }).challenge(offe
 
 describe("whitechain rail", () => {
   test("declaration", () => {
+    expect(WHITECHAIN_RPC_URL).toBe("https://rpc.ankr.com/whitechain_testnet");
     const d = whitechainRail({ relayUrl: "http://relay" }).declaration;
     expect(d.id).toBe("whitechain");
     expect(d.network).toBe("eip155:1874");

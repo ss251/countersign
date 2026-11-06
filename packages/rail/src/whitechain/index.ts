@@ -12,6 +12,7 @@ import { escrowRail } from "../escrow/index.ts";
 
 export const WHITECHAIN_USDT: Address = getAddress("0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7");
 export const WHITECHAIN_ESCROW: Address = getAddress("0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4");
+export const WHITECHAIN_RPC_URL = "https://rpc.ankr.com/whitechain_testnet";
 const NETWORK: Network = "eip155:1874";
 
 export interface WhitechainRailOptions {
@@ -29,7 +30,7 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
   const base = escrowRail({
     id: "whitechain",
     chainId: 1874,
-    rpcUrl: opts.rpcUrl ?? "https://rpc.testnet.whitechain.io",
+    rpcUrl: opts.rpcUrl ?? WHITECHAIN_RPC_URL,
     escrow: opts.escrow ?? WHITECHAIN_ESCROW,
     token: WHITECHAIN_USDT,
     tokenName: "Tether USD",

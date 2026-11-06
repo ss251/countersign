@@ -4,14 +4,18 @@ import type { Address } from "viem";
 export const WHITECHAIN_CHAIN_ID = 1874;
 export const NETWORK = "eip155:1874";
 export const EXPLORER_URL = "https://explorer.testnet.whitechain.io";
-export const WHITECHAIN_RPC_URL = "https://rpc.testnet.whitechain.io";
+export const WHITECHAIN_RPC_URLS = [
+  "https://rpc.ankr.com/whitechain_testnet",
+  "https://rpc.testnet.whitechain.io",
+];
+export const WHITECHAIN_RPC_URL = WHITECHAIN_RPC_URLS[0]!;
 
 export const whitechainSepolia = defineChain({
   id: WHITECHAIN_CHAIN_ID,
   name: "Whitechain Sepolia",
   nativeCurrency: { name: "Whitechain", symbol: "WBT", decimals: 18 },
   rpcUrls: {
-    default: { http: [WHITECHAIN_RPC_URL] },
+    default: { http: [...WHITECHAIN_RPC_URLS] },
   },
   blockExplorers: {
     default: { name: "Whitechain Explorer", url: EXPLORER_URL },
