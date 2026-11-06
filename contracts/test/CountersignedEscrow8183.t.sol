@@ -292,4 +292,71 @@ contract CountersignedEscrow8183Test is Test {
         assertTrue(hook.supportsInterface(type(IERC165).interfaceId));
         assertFalse(hook.supportsInterface(0xffffffff));
     }
+
+    // ------------------------------------------------------------------ a direct claimRefund
+
+    function test_a_direct_claim_refund_does_not_strand_the_money() public {
+        (bytes32 jobId,) = _funded();
+        vm.warp(_coreJob(jobId).expiredAt);
+        vm.prank(stranger);
+        core.claimRefund(escrow.job8183Of(jobId));
+
+        assertEq(uint8(_coreJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Expired));
+        assertEq(token.balanceOf(address(escrow)), PRICE);
+
+        vm.expectEmit(address(escrow));
+        emit CountersignedEscrow8183.Refunded(jobId, buyer, PRICE, false);
+        vm.prank(stranger);
+        escrow.refund(jobId);
+
+        assertEq(token.balanceOf(buyer), 100_000_000);
+        assertEq(token.balanceOf(address(escrow)), 0);
+    }
+
+    function test_a_cancel_after_a_direct_claim_refund_still_refunds() public {
+        (bytes32 jobId,) = _funded();
+        vm.warp(_coreJob(jobId).expiredAt);
+        vm.prank(stranger);
+        core.claimRefund(escrow.job8183Of(jobId));
+
+        vm.expectEmit(address(escrow));
+        emit CountersignedEscrow8183.Refunded(jobId, buyer, PRICE, true);
+        vm.prank(stranger);
+        escrow.cancel(jobId, _cancelSig(sellerKey, jobId));
+
+        assertEq(token.balanceOf(buyer), 100_000_000);
+    }
+
+    function test_a_second_refund_after_a_direct_claim_refund_reverts() public {
+        (bytes32 jobId,) = _funded();
+        vm.warp(_coreJob(jobId).expiredAt);
+        vm.prank(stranger);
+        core.claimRefund(escrow.job8183Of(jobId));
+
+        vm.prank(stranger);
+        escrow.refund(jobId);
+
+        vm.expectRevert(abi.encodeWithSelector(CountersignedEscrow8183.NotFunded.selector, jobId));
+        escrow.refund(jobId);
+    }
+
+    function test_the_core_refund_opens_only_after_the_deadline() public {
+        CountersignedEscrow8183.Countersignature memory cs =
+            _countersign(OFFER, seller, PRICE, uint64(block.timestamp + 3600), 7);
+        bytes32 jobId = escrow.fund(OFFER, cs);
+
+        assertEq(_coreJob(jobId).expiredAt, uint256(cs.deadline) + 1);
+        uint256 id = escrow.job8183Of(jobId);
+
+        vm.warp(cs.deadline);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MockAgenticCommerce.RefundNotYetAvailable.selector, id, uint256(cs.deadline) + 1
+            )
+        );
+        core.claimRefund(id);
+
+        escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        assertEq(uint8(_coreJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Completed));
+    }
 }
