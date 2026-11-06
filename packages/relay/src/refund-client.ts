@@ -83,7 +83,9 @@ export async function refundOrderWithStatus(
   const now = input.now ?? (() => Math.floor(Date.now() / 1000));
   const send = input.fetch ?? globalThis.fetch;
 
-  if (order.kind === "escrow" && (order.status === "held" || order.status === "in_review")) {
+  // Only a held escrow order can be cancelled. An order in review signs nothing, because the escrow's
+  // cancel reverts unless the job is Funded (v1 NotFunded, v2 NotOpen); it falls through to not_refundable.
+  if (order.kind === "escrow" && order.status === "held") {
     const full = atomicOf(order.amount);
     if (input.amount !== undefined && input.amount !== full) {
       return { reply: { ok: false, reason: "partial_cancel_not_possible" }, status: 400 };
