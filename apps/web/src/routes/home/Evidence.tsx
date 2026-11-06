@@ -15,12 +15,16 @@ import { span, toBeat, useBeat } from "./stage.ts";
  *   2 "On three rails.": the same marks regroup by rail, each group named with its chain and count.
  *   3 "Each one left a slip anyone can check.": the newest mark lifts out into its receipt.
  *   4 "Ask for one.": the ask box slides in beside the receipt.
- *   5 the exit, half a screen: all of the stage's evidence leaves together and only the last
- *     statement rides the frame away, so nothing is orphaned under the next stage.
+ *   5 the exit: all of the stage's evidence leaves together and only the last statement rides the
+ *     frame away, so nothing is orphaned under the next stage.
  */
 
-/** Screens of scroll per beat; the exit is short. Unpinned, the exit is not a section of its own. */
-const WEIGHTS = [1, 1, 1, 1, 1, 0.5] as const;
+/**
+ * Screens of scroll per beat. The exit is 0.3 of a screen: with the stretch before the statement
+ * slides under the bar, it holds alone for about half a screen, and the 240 ms fade still finishes
+ * before the frame moves. Unpinned, the exit is not a section of its own.
+ */
+const WEIGHTS = [1, 1, 1, 1, 1, 0.3] as const;
 const SECTIONS = EXIT;
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
 

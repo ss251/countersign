@@ -13,11 +13,12 @@ import { span, toBeat, useBeat, useHeight } from "./stage.ts";
  *     corner and the hold-to-countersign try-out takes the centre.
  *   2 "On the escrow rail, nothing moves until the output checks out.": the newest escrow release,
  *     and one quiet line for the direct rails, which settle before delivery.
- *   3 the exit, half a screen: the envelope and the release leave together; the statement rides
- *     the frame away, so nothing is orphaned as the proof comes up.
+ *   3 the exit: the envelope and the release leave together; the statement rides the frame away,
+ *     so nothing is orphaned as the proof comes up.
  */
 
-const WEIGHTS = [1, 1, 1, 0.5] as const;
+/** The exit is 0.3 of a screen, as in the first stage: the statement holds alone for about half a screen. */
+const WEIGHTS = [1, 1, 1, 0.3] as const;
 const EXIT = 3;
 
 export interface ClearsProps {
