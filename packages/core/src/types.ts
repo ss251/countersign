@@ -43,7 +43,7 @@ export interface Asset {
 /** A JSON Schema document (draft 2020-12 subset). Kept opaque here; validation lives in the runner and buyer. */
 export type JsonSchema = { [key: string]: unknown };
 
-/** The runner serves "skill" and "mcp" (one MCP tool per offer, spawned per job, #42); "openapi" is not built. */
+/** The runner serves "skill", "mcp" (one MCP tool per offer, spawned per job, #42) and "openapi" (one upstream HTTP call per job). */
 export type AdapterKind = "skill" | "mcp" | "openapi";
 
 /**

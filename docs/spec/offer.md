@@ -7,7 +7,7 @@ What a seller publishes. Type `Offer` in `packages/core/src/types.ts`; checks in
 | `v` | Always `1`. |
 | `seller` | The seller's identity key. It signs every slip and is the payee on EVM rails unless `payTo` says otherwise. |
 | `title`, `summary` | What a person reads. |
-| `adapter` | `skill`, `mcp` or `openapi`: how the runner serves it. The runner serves `skill` and `mcp`; `openapi` is not built ([status.md](../status.md)). |
+| `adapter` | `skill`, `mcp` or `openapi`: how the runner serves it. See [OpenAPI](#openapi). |
 | `upstream` | For catalogue items, the upstream URL and licence. |
 | `input`, `output` | JSON Schema 2020-12. A call whose input fails is refused before payment. An output that fails is a failed delivery. On an escrow rail it is never released, and the buyer gets the money back after the deadline. A direct rail (Hedera, Gateway) settles before the seller runs, so that payment is not returned. |
 | `price` | Atomic units of a 6-decimal USD stablecoin, as a digit string. |
@@ -21,6 +21,12 @@ What a seller publishes. Type `Offer` in `packages/core/src/types.ts`; checks in
 `offerHash = keccak256(canonicalJson(offer))`. Canonical JSON sorts keys by UTF-16 code unit, uses no whitespace, and refuses non-integer numbers (`packages/core/src/canonical.ts`). Any change, the price included, makes a new offer with a new hash. A countersignature names one hash, which is how a moved price is caught.
 
 A seller publishes by POSTing `{offer, sig}` to the hub, where `sig` is an EIP-191 signature by `seller` over the text `countersign offer <offerHash>`.
+
+## OpenAPI
+
+An offer whose `adapter` is `openapi` is served by a runner spec beside the offer, the same way a skill path sits beside a skill offer. The spec is not part of the signed offer. It is `{ adapter: "openapi", url, method, headers?, bodyField? }`.
+
+For each job the scrubbed child calls `url` with `method`. The body is the job input as JSON, or `{ [bodyField]: input }` when `bodyField` is set. `headers` are sent with that request. The output is the parsed JSON response. The run keeps the runner's time ceiling and output-size ceiling. A response whose status is not 2xx is a failed delivery: the child stops, and the runner reports the status.
 
 ## ENS seller names and the payee lock
 

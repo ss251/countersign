@@ -1,25 +1,32 @@
 /**
- * The child entry: read one {spec, input} request on stdin, run the skill or
- * MCP adapter and write {output} on stdout. Errors become {error} with a
- * non-zero exit.
+ * The child entry: read one {spec, input, timeoutMs} request on stdin, run the
+ * skill, MCP or OpenAPI adapter and write {output} on stdout. Errors become
+ * {error} with a non-zero exit.
  */
 
 import type { ChildSpec, SkillSpec } from "./child.ts";
 import { runMcp, type McpSpec, type McpServerRef } from "./mcp.ts";
+import { runOpenApi, type OpenApiSpec } from "./openapi.ts";
 import { readSkill, runSkill, type SkillInput } from "./skill.ts";
 
 interface ChildRequest {
   spec: ChildSpec;
   input: unknown;
+  timeoutMs: number;
 }
 
 async function main(): Promise<void> {
   const request = parseRequest(await Bun.stdin.text());
-  const output =
-    request.spec.adapter === "skill"
-      ? runSkill(await readSkill(request.spec.skillPath), asSkillInput(request.input))
-      : await runMcp(request.spec, request.input);
+  const output = await run(request);
   console.log(JSON.stringify({ output }));
+}
+
+async function run(request: ChildRequest): Promise<unknown> {
+  if (request.spec.adapter === "skill") {
+    return runSkill(await readSkill(request.spec.skillPath), asSkillInput(request.input));
+  }
+  if (request.spec.adapter === "mcp") return runMcp(request.spec, request.input);
+  return runOpenApi(request.spec, request.input, request.timeoutMs);
 }
 
 function parseRequest(raw: string): ChildRequest {
@@ -27,9 +34,14 @@ function parseRequest(raw: string): ChildRequest {
   if (!isRecord(value) || !isRecord(value.spec)) {
     throw new Error("The child request is malformed.");
   }
+  const timeoutMs = value.timeoutMs;
+  if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("The child request is malformed.");
+  }
   const adapter = value.spec.adapter;
-  if (adapter === "skill") return { spec: parseSkill(value.spec), input: value.input };
-  if (adapter === "mcp") return { spec: parseMcp(value.spec), input: value.input };
+  if (adapter === "skill") return { spec: parseSkill(value.spec), input: value.input, timeoutMs };
+  if (adapter === "mcp") return { spec: parseMcp(value.spec), input: value.input, timeoutMs };
+  if (adapter === "openapi") return { spec: parseOpenApi(value.spec), input: value.input, timeoutMs };
   throw new Error("Refused. Unknown adapter.");
 }
 
@@ -57,6 +69,26 @@ function parseMcp(spec: Record<string, unknown>): McpSpec {
   return parsed;
 }
 
+function parseOpenApi(spec: Record<string, unknown>): OpenApiSpec {
+  const url = spec.url;
+  const method = spec.method;
+  if (typeof url !== "string" || typeof method !== "string") {
+    throw new Error("The child request is malformed.");
+  }
+  const parsed: OpenApiSpec = { adapter: "openapi", url, method };
+  if (spec.headers !== undefined) {
+    if (!isStringRecord(spec.headers)) throw new Error("The child request is malformed.");
+    parsed.headers = spec.headers;
+  }
+  if (spec.bodyField !== undefined) {
+    if (typeof spec.bodyField !== "string" || spec.bodyField.length === 0) {
+      throw new Error("The child request is malformed.");
+    }
+    parsed.bodyField = spec.bodyField;
+  }
+  return parsed;
+}
+
 function parseServer(value: unknown): McpServerRef | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || typeof value.package !== "string" || typeof value.version !== "string") {
@@ -75,6 +107,14 @@ function asSkillInput(value: unknown): SkillInput {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === "string")
+  );
 }
 
 main().catch((error: unknown) => {

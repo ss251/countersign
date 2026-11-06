@@ -7,6 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { McpSpec } from "./mcp.ts";
+import type { OpenApiSpec } from "./openapi.ts";
 
 export class CeilingError extends Error {
   override name = "CeilingError";
@@ -22,7 +23,7 @@ export interface SkillSpec {
   skillPath: string;
 }
 
-export type ChildSpec = SkillSpec | McpSpec;
+export type ChildSpec = SkillSpec | McpSpec | OpenApiSpec;
 
 const CHILD_ENTRY = join(import.meta.dir, "child-entry.ts");
 
@@ -48,7 +49,7 @@ export async function runInChild(
   });
 
   try {
-    proc.stdin.write(JSON.stringify({ spec, input }));
+    proc.stdin.write(JSON.stringify({ spec, input, timeoutMs: limits.timeMs }));
     await proc.stdin.end();
   } catch {
     // The child can exit before it reads its input; its exit decides the result.
