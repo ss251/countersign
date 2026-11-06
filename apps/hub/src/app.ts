@@ -13,6 +13,7 @@ import {
   type ErrorBody,
   type Offer,
   type PublishRequest,
+  type Slip,
 } from "./deps.ts";
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
@@ -215,6 +216,25 @@ export function createHub(deps: HubDeps) {
     return json(slip);
   });
 
+  app.get("/jobs/:jobId/children", (c) => {
+    const jobId = c.req.param("jobId");
+    const children = deps.store.childJobs(jobId).map((job) => ({
+      jobId: job.jobId,
+      offerHash: job.offerHash,
+      status: job.status,
+      slipHash: job.slipHash,
+    }));
+    return json({ jobId, children });
+  });
+
+  app.get("/trees/:root", (c) => {
+    const root = c.req.param("root");
+    if (deps.store.getSlip(root) === null) {
+      return fail(404, "unknown-slip", "Refused. That slip is not known.");
+    }
+    return json(receiptTree(deps.store, root));
+  });
+
   app.get("/ratings", async () => json({ ratings: await ratings.all() }));
 
   app.get("/ratings/:seller", async (c) => {
@@ -289,4 +309,73 @@ function json(body: unknown, status = 200, headers?: Record<string, string>): Re
 function fail(status: number, code: string, message: string): Response {
   const body: ErrorBody = { code, message };
   return json(body, status);
+}
+
+const TREE_MAX_DEPTH = 8;
+const TREE_MAX_NODES = 256;
+
+interface TreeNode {
+  slip: Slip;
+  title: string;
+  sellerName: string;
+  observed: Hex[];
+}
+
+function short(value: string): string {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function titleFor(store: Store, offerHash: Hex): string {
+  const stored = store.getOffer(offerHash);
+  if (stored === null) return `offer ${short(offerHash)}`;
+  return stored.offer.title;
+}
+
+function observedFor(store: Store, jobId: Hex): Hex[] {
+  const hashes: Hex[] = [];
+  for (const job of store.childJobs(jobId)) {
+    if (job.slipHash !== null) hashes.push(job.slipHash);
+  }
+  return hashes;
+}
+
+/**
+ * Breadth-first receipt tree. Each slip hash is visited once. The root is depth 0;
+ * nothing below depth 8 is walked, and the walk stops at 256 nodes. A child hash
+ * this hub does not hold is listed in `missing` instead of `nodes`.
+ */
+function receiptTree(store: Store, root: string): { root: string; nodes: Record<string, TreeNode>; missing: string[] } {
+  const nodes: Record<string, TreeNode> = {};
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  const queue: Array<{ hash: string; depth: number }> = [{ hash: root, depth: 0 }];
+
+  while (queue.length > 0 && Object.keys(nodes).length < TREE_MAX_NODES) {
+    const item = queue.shift();
+    if (item === undefined) break;
+    const key = item.hash.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const slip = store.getSlip(item.hash);
+    if (slip === null) {
+      missing.push(item.hash);
+      continue;
+    }
+
+    nodes[slip.hash] = {
+      slip,
+      title: titleFor(store, slip.body.offerHash),
+      sellerName: short(slip.body.seller),
+      observed: observedFor(store, slip.body.jobId),
+    };
+
+    if (item.depth >= TREE_MAX_DEPTH) continue;
+    if (Object.keys(nodes).length >= TREE_MAX_NODES) continue;
+    for (const child of slip.body.children) {
+      queue.push({ hash: child, depth: item.depth + 1 });
+    }
+  }
+
+  return { root, nodes, missing };
 }
