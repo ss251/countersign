@@ -37,14 +37,17 @@ let recovered: Address | null;
 beforeEach(async () => {
   seller = viem.privateKeyToAccount(PRIVATE_KEY);
   const skill = await readSkill(FIXTURE);
-  offer = skillOffer({
-    seller: seller.address,
-    skill,
-    price: "1000",
-    deadline: 120,
-    rails: ["hedera-scheduled", "hedera"],
-    now: NOW,
-  });
+  offer = {
+    ...skillOffer({
+      seller: seller.address,
+      skill,
+      price: "10000",
+      deadline: 120,
+      rails: ["hedera-scheduled", "hedera"],
+      now: NOW,
+    }),
+    payTo: { "hedera-scheduled": "0.0.11337065" },
+  };
   offerHash = hashOffer(offer);
   clock = NOW;
   server = null;

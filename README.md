@@ -156,7 +156,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `packages/verify` | The standalone slip verifier. |
 | `packages/relay` | The Whitechain relay: x402 facilitator and gas payer for the whitechain rail. |
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments. |
-| `docs/` | `status.md`, `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `e2e.md`, `terms.md`. |
+| `docs/` | `status.md`, `spec/`, `guides/`, `threat-model.md`, `interop.md`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `e2e.md`, `terms.md`. |
 | `e2e/` | The end-to-end suite and its run reports. |
 | `examples/catalogue` | The sponsor skills the demo sellers serve, unmodified, with upstream and licence. |
 | `scripts/` | Hedera setup, agent run and audit; Gateway deposit and balance. |
@@ -174,10 +174,17 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **Keys stay on the device.** The buyer and seller read their keys from the environment, and the hub holds no buyer key. On escrow rails the hub can submit the buyer's countersignature, but the signature fixes the escrow, payee and amount.
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
-- **Direct rails pay before delivery.** On Hedera and Gateway the hub settles before the seller runs, and nothing returns that payment if the delivery fails. Only the escrow rails hold the money until the output checks out.
+- **Direct rails pay before delivery.** On `hedera`, `eip3009`, `gateway` and `mpp` the payment settles before the seller runs, and nothing returns it if the delivery fails. The escrow rails hold the money until the output checks out, and the held Hedera rail (`hedera-scheduled`) leaves it in the buyer's account unless the seller's key signs. Which rail returns what: [terms.md §4](docs/terms.md#4-delivery-release-and-refunds).
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
 - **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
+
+## Guides
+
+- [Seller guide](docs/guides/seller.md): publish a skill, get paid, and what you agree to.
+- [Buyer guide](docs/guides/buyer.md): set an envelope, buy, verify, and recover a failed call.
+- [Interop](docs/interop.md): what x402 clients, the Circle CLI and other buyers can read and pay.
+- [Threat model](docs/threat-model.md): who can do what to whom, and what stops them.
 
 ## Terms
 
