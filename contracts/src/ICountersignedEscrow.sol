@@ -103,7 +103,8 @@ interface ICountersignedEscrow {
     error ReviewClosed(bytes32 jobId, uint64 endsAt);
     error NotOpen(bytes32 jobId);
 
-    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. Anyone may submit it.
+    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. A bonded job is funded
+    ///         only by the arbiter; anyone may submit an unbonded one.
     ///         A non-zero `cs.bond` or `cs.reviewWindow` must match the payee's registered terms,
     ///         and the bond moves from the payee's free bond into the job.
     function fund(bytes32 offerHash, Countersignature calldata cs) external returns (bytes32 jobId);

@@ -101,6 +101,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
             if (cs.reviewWindow != 0) _reviews[jobId].window = cs.reviewWindow;
         }
         if (cs.bond != 0) {
+            // Forced default (option d): only the arbiter funds a bonded job, after the payee's runner accepted it.
+            if (msg.sender != arbiter) revert NotArbiter();
             uint256 available = bondOf[cs.payee];
             if (available < cs.bond) revert BondMissing(cs.payee, cs.bond, available);
             bondOf[cs.payee] = available - cs.bond;
