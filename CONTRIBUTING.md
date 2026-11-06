@@ -66,7 +66,9 @@ bun run web:build     # when apps/web changes
 
 - Findings arrive as comments on the pull request.
 - Address them with new commits on the same branch.
-- A pull request merges with zero blockers, squashed into one commit.
+- A pull request merges with zero blockers as one squashed commit. Merge commits and rebase merges are disabled on this repository and delete-branch-on-merge is on, so GitHub does the squash and the pull request title becomes the commit subject.
+- Title every pull request `#NN <what changed and why it matters>`, where NN is the issue it closes. Put the detail in the pull request body: what changed, why, and the proof. The squashed commit carries only the title, so the body is where a reader finds the rest.
+- Never force-push a published branch, and never rebase one.
 - Never merge your own pull request.
 
 ## Secrets and safety
