@@ -217,3 +217,92 @@ The headless browser is no longer cut. A person has to be able to sign in, conne
   - The test then runs that path with a test EIP-1193 provider from a throwaway key.
 - **Funding.** The test wallet is funded with 1 USDC on Arc by a dedicated test-funder key before it buys, and the test asserts the balance. The deployer's own key never sits in CI.
 - **Status.** `docs/status.md` marks this `IN DESIGN` until the project exists, and `SHIPPED` only when it runs green.
+
+## D17 — a call nested inside a purchase of the same offer or seller is refused before payment (06 Nov; refs #27)
+
+A call's `lineage` lists the jobIds of the purchases it is nested inside, outermost first (`CallRequest` in `packages/core/src/wire.ts`). The hub now uses it for what it was declared for: refusing cycles.
+
+- **The rule.** Before any 402 or payment, the hub resolves each lineage jobId it knows. If an ancestor job bought the same offer, or an offer from the same seller, the call is refused with 409 `lineage-cycle`: "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged."
+- **Where.** First in the paid-call pipeline, right after the offer is loaded. It runs before the ENS lock, both input gates, the online check and the rails.
+- **What it cannot see.** A jobId this hub does not hold, such as a purchase made through another hub, is skipped. A caller that sends no lineage is not checked. Lineage comes from the caller, so the check stops honest agents from looping, not a buyer who hides its ancestry.
+
+## D19 — the hub checks a signed-in person with Privy on the routes that act for them; signatures still authorise money (06 Nov; refs #21)
+
+**When it is on.** Only when `PRIVY_APP_ID` and `PRIVY_APP_SECRET` are both set. Otherwise every route behaves exactly as before, and a Privy header is ignored.
+
+**The token.**
+- The console sends the person's Privy access token in `X-Privy-Token`. `Authorization: Bearer` stays the operator's `HUMAN_APPROVAL_TOKEN`.
+- The hub verifies the token with `@privy-io/server-auth` (`verifyAuthToken`; the token's app id must be ours), then reads the person's Ethereum wallets with `getUserById`, cached for 60 seconds.
+- An invalid token gets 401 and an unreachable Privy gets 503, both before any 402 or payment.
+
+**The routes that act for a person, and what the person must own.**
+
+| Route | A verified person must own |
+|---|---|
+| `GET /envelopes/:agent` | the approver named in that agent's envelope |
+| `GET /approvals?agent=` | the approver named in that agent's envelope |
+| `POST /approvals/:id/decision` | the approver named in the envelope of the approval's agent |
+| `POST /offers/:offerHash/call` | the payer the rail verified, which must be an EVM address |
+| `POST /jobs/:jobId/accept`, `POST /jobs/:jobId/dispute` | the job's buyer |
+
+- **The three approval routes.** A verified person who owns the approver needs no operator token. A caller with no Privy token uses the operator token exactly as before.
+- **The other three routes.** The token is optional, because agents call them without one. When a token is sent, it must verify and the person must own the address.
+
+**What the token never does.** It never replaces a signature. The payment signature, the approver's decision signature and the buyer's review signature are checked exactly as before, and they alone authorise money.
+
+**Left out on purpose.**
+- `PUT /envelopes/:agent`, `POST /approvals` and `POST /offers` are signed by an agent or a seller key, not by a person.
+- The merchant refund is not a hub route: it lives on the merchant's own service.
+
+## D17, amended — a lineage that names the offer or its seller directly is refused too (06 Nov; refs #27)
+
+D17 resolves each lineage jobId through the jobs this hub holds. A lineage entry that is not a jobId, such as the target offer's own hash or its seller's address, was skipped. Now an entry equal to the target's offer hash, or to its seller's address (compared without case), is refused with the same 409 `lineage-cycle`, before any 402. The jobId check is unchanged.
+
+**Status (06 Nov, after #214 reached cs/int).** `purchaseCycle` (#214) now runs first, so an entry equal to the target's offer hash answers 422 `purchase-cycle`. An entry naming the seller, and an ancestor job of the same offer or seller, still answer 409 `lineage-cycle`. Both come before any 402 ([terms.md](terms.md) §2).
+
+## D20 — the person revokes an agent from the phone, and the hub refuses that agent before any 402 (06 Nov; refs #21)
+
+The envelope lives on the agent's machine, and the agent signs its mirror, so the phone cannot rewrite it. What the person can do from the phone is revoke the agent on the hub, signed by the approver key the envelope names.
+
+**The revoke.**
+- `POST /envelopes/:agent/revoke` takes `{revokedAt, sig}`.
+- `sig` is the approver's EIP-191 signature over the canonical JSON of `{kind: "countersign-envelope-revoke", v: 1, agent, revokedAt}`. `agent` is lowercase, and `revokedAt` is unix seconds within 300 seconds of the hub's clock.
+- The route is gated like an approval decision: a Privy person who owns the approver (D19), or the operator token. The signature is what revokes.
+
+**What the hub does with it.**
+- It records the revoke and answers 200 `{agent, revoked: true, revokedAt}`. A second revoke keeps the first.
+- `GET /envelopes/:agent` returns `revocation: {revokedAt}`, so the phone reads it back after a reload.
+
+**Enforcement.**
+- **Before any 402.** A call whose `X-Countersign-Agent` header names a revoked agent gets 403 `envelope-revoked`: "Refused. This agent's envelope was revoked by its approver. Nothing was charged."
+- **At payment, before settle.** A payment whose verified payer is a revoked agent gets the same refusal, so an agent that leaves the header off still moves no money.
+- **The buyer.** The buyer CLI sends `X-Countersign-Agent` with its address on every call.
+
+**No reinstating tonight.** A revoked agent stays revoked on this hub. To resume, the person makes a new agent key on the agent's machine, and the agent mirrors a new envelope under it. The phone's other envelope controls (budget, per-seller limit, allowlist) still live on the agent's machine: the phone shows the agent's signed copy and cannot change it.
+
+**Limits.**
+- The header is the agent's own claim; the payment check is what binds it.
+- A Hedera payer is a Hedera account, not an EVM agent, so it is not covered.
+
+## D18 — a seller delists its own offer, and a canary delists an offer whose runner no longer answers for it (06 Nov; refs #26)
+
+**Delisting by the seller.**
+- `POST /offers/:offerHash/delist` takes `{sig}`: the seller's EIP-191 signature over `countersign delist <offerHash>`.
+- It answers 200 `{offerHash, status: "delisted"}`, including when the offer was already delisted. An unknown offer gets 404, a malformed request 400, and a signature that is not the offer's seller 401.
+
+**What delisted means.**
+- The offer is absent from `GET /offers`, `/offers/search` and every discovery document.
+- A call answers 404 before any 402.
+- A runner's hello cannot bring it back.
+- Publishing the same offer again does not relist it, because its hash is unchanged. A seller relists by publishing a changed offer.
+
+**The canary.**
+- It is on when the hub starts with `CANARY=1`, every `CANARY_INTERVAL_S` seconds (default 300).
+- It covers every listed offer whose runner is online. The hub sends `{t: "canary", offerHash, nonce}` over that runner's WebSocket.
+- A runner that still serves the offer answers `{t: "canary", offerHash, nonce, sig}`, signed by the offer's seller over `countersign canary <offerHash> <nonce>`. Otherwise it answers `{t: "canary-fail", offerHash, nonce, reason}`.
+- Each offer gets three attempts, five seconds apart, ten seconds each. An offer whose three attempts all fail is delisted at once, and the hub logs why.
+- Offline offers are not canaried: they already answer 503 and sell nothing.
+
+**What the canary proves, and what it does not.** It proves that the runner holding the offer still serves it, and that the seller's key still signs for it. It does not run the offer's work or check its output; a paid delivery still goes through the delivery gate.
+
+**Rollout.** A runner that predates the canary ignores it, so its offers would be delisted. `CANARY=1` goes on in production only after every live runner answers canaries: `packages/runner` with this change, and the phone page separately.

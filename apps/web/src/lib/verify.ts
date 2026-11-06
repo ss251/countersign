@@ -43,6 +43,16 @@ export function canReadChain(slip: Slip): boolean {
   return Boolean(slip.body.escrow && PUBLIC_RPC[slip.body.network]);
 }
 
+/**
+ * The explorer link for a slip's settlement transaction. Fixture slips carry stand-in
+ * transactions that are on no chain, so they never get a link.
+ */
+export function explorerFor(slip: Slip, fromFixtures: boolean): string | undefined {
+  if (fromFixtures) return undefined;
+  const template = explorerTemplate(slip.body.network);
+  return template ? template.replace("{tx}", encodeURIComponent(slip.settlement.transaction)) : undefined;
+}
+
 export function parseSlip(text: string): { slip: Slip } | { error: string } {
   let value: unknown;
   try {
@@ -160,7 +170,6 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
       if (!slip.body.escrow) return null;
       const network = networkName(slip.body.network);
       const tx = slip.settlement?.transaction;
-      const href = tx && explorerTemplate(slip.body.network) ? explorerTemplate(slip.body.network).replace("{tx}", tx) : undefined;
       if (f.ok && hashOk) {
         const block = /block (\d+)/.exec(f.detail)?.[1];
         return {
@@ -169,7 +178,7 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
           state: "pass",
           detail: `${network}${block ? ` block ${Number(block).toLocaleString("en-US")}` : ""}: the escrow's Released event for this job carries exactly the hash computed here.`,
           value: tx,
-          href,
+          href: tx ? explorerFor(slip, false) : undefined,
         };
       }
       if (f.ok && !hashOk) {
@@ -180,7 +189,6 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
           state: "fail",
           detail: `${network}'s Released event for this job carries the hash this file claims, but the body here hashes to something else. The chain does not hold this slip.`,
           value: tx,
-          href,
         };
       }
       return {
@@ -189,7 +197,6 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
         state: "fail",
         detail: chainFailure(f.detail, network),
         value: tx,
-        href,
       };
     }
     default:

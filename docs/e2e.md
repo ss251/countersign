@@ -190,7 +190,7 @@ The offer is Hedera's Agent Kit MCP server, `@hashgraph/hedera-agent-kit-mcp` 1.
 4. **the slip binds the call**: its `inputHash` is the hash of the tool's arguments, and its `outputHash` is the hash of the call record (tool, server, package and version, input hash, result). The public hub lists the settlement, and the slip verifies.
 5. **the result is real**: the returned bytes decode, with the Hedera SDK, to a `TransferTransaction` whose transaction id names the buyer, carrying the memo and the HBAR legs that were sent and no signature.
 
-Until the agent's `--offer` flag is in the branch (#42), the flow reports NOT RUN.
+It runs against production in every full run: the suite's public hub defaults to the production hub, so 17, 18, 18b and the 14 checks are part of every run and are NOT RUN only when a run passes `--no-public`.
 
 ### 18 · erc8004-identity
 

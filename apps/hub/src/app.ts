@@ -5,6 +5,7 @@ import {
   assertOffer,
   assertSchema,
   checkEnsLock,
+  delistMessage,
   type EnsResolve,
   offerHash,
   publishMessage,
@@ -22,6 +23,7 @@ import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
+import type { PrivyVerifier } from "./privy.ts";
 import { Ratings } from "./ratings.ts";
 import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
@@ -40,10 +42,14 @@ export interface HubDeps {
   ens?: EnsResolve;
   /** Bearer token the human's phone presents to decide an approval. */
   humanApprovalToken?: string;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
+  /** The full git commit this hub was deployed from, or undefined when unknown. */
+  commit?: string;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -74,6 +80,7 @@ export function createHub(deps: HubDeps) {
   app.get("/healthz", (c) =>
     json({
       ok: true,
+      commit: deps.commit ?? null,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
       router: router.healthz(),
@@ -121,6 +128,37 @@ export function createHub(deps: HubDeps) {
 
     const fresh = deps.store.putOffer(hash, request.offer.seller, request.offer, deps.now());
     return json({ offerHash: hash }, fresh ? 201 : 200);
+  });
+
+  app.post("/offers/:offerHash/delist", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json<unknown>();
+    } catch {
+      return fail(400, "bad-request", "Refused. The delist request is malformed.");
+    }
+    if (!isRecord(body) || typeof body.sig !== "string") {
+      return fail(400, "bad-request", "Refused. The delist request is malformed.");
+    }
+
+    const stored = deps.store.getOffer(c.req.param("offerHash"));
+    if (stored === null) return fail(404, "unknown-offer", "Refused. That offer is not listed.");
+
+    let signer: string;
+    try {
+      signer = await recoverMessageAddress({
+        message: delistMessage(stored.offerHash),
+        signature: body.sig as Hex,
+      });
+    } catch {
+      return fail(401, "bad-signature", "Refused. The delist signature is not the seller's.");
+    }
+    if (signer.toLowerCase() !== stored.seller.toLowerCase()) {
+      return fail(401, "bad-signature", "Refused. The delist signature is not the seller's.");
+    }
+
+    if (stored.delistedAt === null) deps.store.delistOffer(stored.offerHash, deps.now());
+    return json({ offerHash: stored.offerHash, status: "delisted" }, 200);
   });
 
   app.get("/offers", (c) =>

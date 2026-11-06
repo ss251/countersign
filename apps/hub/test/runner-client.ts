@@ -1,7 +1,8 @@
-import type { PrivateKeyAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import type { Hex } from "viem";
 import {
   canonicalHash,
+  canaryMessage,
   runnerAuthMessage,
   slipBodyFor,
   slipHash,
@@ -19,6 +20,7 @@ export interface RunnerOptions {
   offers: Hex[];
   now: () => number;
   respond: (order: JobOrder) => Promise<JobAnswer>;
+  canary?: "answer" | "ignore" | "wrong-key" | "refuse";
 }
 
 export interface RunnerHandle {
@@ -116,6 +118,38 @@ export function startRunner(options: RunnerOptions): RunnerHandle {
           });
         }
         break;
+      case "canary": {
+        const mode = options.canary ?? "answer";
+        if (mode === "ignore") break;
+        if (mode === "refuse") {
+          send({
+            t: "canary-fail",
+            offerHash: frame.offerHash,
+            nonce: frame.nonce,
+            reason: "not-served",
+          });
+          break;
+        }
+        const served = options.offers.find(
+          (hash) => hash.toLowerCase() === frame.offerHash.toLowerCase(),
+        );
+        if (!served) {
+          send({
+            t: "canary-fail",
+            offerHash: frame.offerHash,
+            nonce: frame.nonce,
+            reason: "not-served",
+          });
+          break;
+        }
+        const account =
+          mode === "wrong-key" ? privateKeyToAccount(generatePrivateKey()) : options.account;
+        const sig = await account.signMessage({
+          message: canaryMessage(served, frame.nonce),
+        });
+        send({ t: "canary", offerHash: served, nonce: frame.nonce, sig });
+        break;
+      }
       case "error":
         failReady(new Error(frame.message));
         break;

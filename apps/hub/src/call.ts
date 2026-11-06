@@ -26,12 +26,14 @@ import { keccak256, toBytes, type Hex } from "viem";
 import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, firstLine, resourceFor } from "./discovery.ts";
+import { owns, personFrom, type PrivyVerifier } from "./privy.ts";
 import type { HubRouter } from "./route.ts";
 import type { RunnerLink } from "./runners.ts";
-import type { Fault, Store } from "./store.ts";
+import type { Fault, StoredOffer, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
+const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
 
 export interface CallDeps {
   store: Store;
@@ -43,6 +45,8 @@ export interface CallDeps {
   jobTimeoutMs?: number;
   /** Sepolia ENS lookups. A named offer is served only while its name still locks its payees. */
   ens?: EnsResolve;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
 }
 
 export interface CallOutcome {
@@ -63,6 +67,12 @@ export async function paidCall(
   if (!stored || stored.delistedAt !== null) {
     return failure(404, "unknown-offer", "Refused. That offer is not listed.");
   }
+  const privyCheck = await personFrom(headers, deps.privy);
+  if (privyCheck.kind === "refused") return failure(privyCheck.status, privyCheck.code, privyCheck.message);
+  const claimedAgent = (headers.get("x-countersign-agent") ?? "").trim();
+  if (claimedAgent !== "" && deps.store.getRevocation(claimedAgent) !== null) {
+    return failure(403, "envelope-revoked", REVOKED);
+  }
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
@@ -74,6 +84,14 @@ export async function paidCall(
       422,
       "purchase-cycle",
       "Refused. Paying this offer would repeat an offer hash already in the lineage. Nothing was charged.",
+    );
+  }
+
+  if (lineageCycle(deps.store, stored, hexList(call.lineage))) {
+    return failure(
+      409,
+      "lineage-cycle",
+      "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged.",
     );
   }
 
@@ -207,6 +225,22 @@ export async function paidCall(
   const nonce = authorizationNonce(payment.payload);
   if (nonce !== null && deps.store.getJob(nonce) !== null) {
     return duplicatePayment(railId);
+  }
+
+  if (
+    privyCheck.kind === "person" &&
+    !(/^0x[0-9a-fA-F]{40}$/.test(verify.payer ?? "") && owns(privyCheck.person, verify.payer))
+  ) {
+    return failure(
+      403,
+      "not-your-wallet",
+      "Refused. This payment is not from one of your wallets. Nothing was charged.",
+      railId,
+    );
+  }
+
+  if (/^0x[0-9a-fA-F]{40}$/.test(verify.payer ?? "") && deps.store.getRevocation(verify.payer as string) !== null) {
+    return failure(403, "envelope-revoked", REVOKED, railId);
   }
 
   const payer = verify.payer ?? "";
@@ -350,7 +384,7 @@ export async function paidCall(
     },
   };
   if (match.rail.declaration.explorerTx !== "") {
-    settlement.url = explorerUrl(match.rail.declaration, closeTx);
+    settlement.url = explorerUrl(match.rail.declaration, closing.explorerRef ?? closeTx);
   }
   if (review !== null) settlement.review = review;
   const slip: Slip = {
@@ -387,6 +421,19 @@ export async function paidCall(
   };
 }
 
+/** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
+export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
+  for (const jobId of lineage) {
+    if (sameText(jobId, target.offerHash) || sameText(jobId, target.seller)) return true;
+    const ancestor = store.getJob(jobId);
+    if (ancestor === null) continue;
+    if (ancestor.offerHash.toLowerCase() === target.offerHash.toLowerCase()) return true;
+    const bought = store.getOffer(ancestor.offerHash);
+    if (bought !== null && sameText(bought.seller, target.seller)) return true;
+  }
+  return false;
+}
+
 /** The review a v2 escrow opens at delivery, stored on the slip outside the committed hash (D12). */
 interface ReviewRecord {
   window: number;
@@ -396,8 +443,8 @@ interface ReviewRecord {
 
 /**
  * True when `lineage` plus this offer hash contains the same hash twice.
- * That is a direct cycle (the offer is already in the list) or a longer one
- * (appending it repeats any hash the list already holds).
+ * That is a direct cycle (the offer is already in the list) or an earlier one
+ * (the list already names one hash twice).
  */
 function purchaseCycle(lineage: readonly string[], offerHash: string): boolean {
   const seen = new Set<string>();

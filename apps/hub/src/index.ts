@@ -1,9 +1,11 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
+import { runCanary } from "./canary.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
+import { createPrivyVerifier } from "./privy.ts";
 
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
 const ARC_ERC8004_IDENTITY = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
@@ -40,6 +42,11 @@ const ens = sepoliaEnsResolver(ensRpcUrls ? { rpcUrls: ensRpcUrls } : {});
 // decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
 const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined;
 
+// Privy checks the signed-in person on the routes that act for them. Unset, the Privy header is ignored.
+const privyAppId = process.env.PRIVY_APP_ID?.trim() ?? "";
+const privySecret = process.env.PRIVY_APP_SECRET?.trim() ?? "";
+const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(privyAppId, privySecret) : undefined;
+
 // The Whitechain relay's public order records, read by /orders for refunds after release.
 const relayUrl = process.env.WC_RELAY_URL?.trim() || undefined;
 
@@ -56,15 +63,30 @@ const identity =
       })
     : undefined;
 
-const { app, websocket } = createHub({
+// The full commit this image was built from: deploy-hub.sh writes COMMIT into the stage.
+const commitFromFile = ((): string | undefined => {
+  try {
+    return readFileSync(resolve(process.cwd(), "COMMIT"), "utf8").trim();
+  } catch {
+    return undefined;
+  }
+})();
+const commitCandidate = process.env.HUB_COMMIT?.trim() || commitFromFile;
+const commit =
+  commitCandidate !== undefined && /^[0-9a-f]{40}$/.test(commitCandidate) ? commitCandidate : undefined;
+console.log(`[hub] commit ${commit ? commit.slice(0, 7) : "unknown"}`);
+
+const { app, websocket, runners } = createHub({
   store,
   rails,
   now,
   publicUrl,
   ens,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
+  ...(privy ? { privy } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),
+  ...(commit ? { commit } : {}),
 });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
@@ -72,4 +94,17 @@ setInterval(() => {
   void runJanitor({ store, rails, now });
 }, 30_000);
 
+if (process.env.CANARY === "1") {
+  const everyMs = Number(process.env.CANARY_INTERVAL_S ?? 300) * 1000;
+  let running = false;
+  setInterval(() => {
+    if (running) return;
+    running = true;
+    void runCanary({ store, runners, now, log: (line) => console.log(line) }).finally(() => {
+      running = false;
+    });
+  }, everyMs);
+}
+
 console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
+console.log(`[hub] privy sign-in: ${privy === undefined ? "off" : "on"}`);

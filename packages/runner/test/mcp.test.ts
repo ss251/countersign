@@ -66,7 +66,7 @@ describe("runMcp", () => {
   });
 
   test("the child entry refuses an unknown adapter", async () => {
-    const spec = { adapter: "openapi" } as unknown as ChildSpec;
+    const spec = { adapter: "http" } as unknown as ChildSpec;
     await expect(runInChild(spec, {}, LIMITS)).rejects.toThrow("Refused. Unknown adapter.");
   });
 });

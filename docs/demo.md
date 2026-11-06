@@ -2,6 +2,12 @@
 
 One scene. A real slip from 06 Nov, paid and released on Arc testnet through the production hub, is verified with no hub at all: only the slip file and the chain. Then one byte is changed, and the same check refuses it.
 
+**Artefacts (the reality rule, STEER-2120).** Each claim in this scene stands on one of these:
+
+- the signed release tx [`0xa3898552…ff73`](https://explorer.testnet.arc.io/tx/0xa3898552f658247fc3e4e259ec61e1e99259af762e68a5b885171e41ca98ff73);
+- the live URL [`/slips/0x4320274e…dadf`](https://hub-production-e85e.up.railway.app/slips/0x4320274e97d303c0276c293381c6e2824baa1e1a3a12d70c949829abb93dcadf) on the production hub, which opens logged out and serves the same slip as the file (checked at 15:51Z on 06 Nov);
+- the verifier run VALID against Arc's public RPC, re-run at 15:51Z on 06 Nov from cs/int 35a9da9.
+
 The slip is `docs/demo/slip-4320274e.json`, the phone's location job:
 
 | Field | Value |
@@ -77,11 +83,11 @@ FAIL onchain           the event hash 0x4320274e97d303c0276c293381c6e2824baa1e1a
 INVALID
 ```
 
-The line to say: "one signature, six terms, change a byte and the chain refuses it". The six terms are the ones the buyer countersigned: the offer, buyer, payee, amount, deadline and salt.
+The line to say: "one signature, six terms; change one byte and the slip no longer matches the chain". The six terms are the ones the buyer countersigned: the offer, buyer, payee, amount, deadline and salt.
 
 ## Honest framing
 
 - **The hub killed on stage is a local one.** The slip came from the production hub earlier today, and the production hub keeps running. What the scene proves holds for both: verifying needs neither hub, only the file and the chain.
-- **The escrow is the v1 deployment.** The v2 escrow, with the seller bond and the review window, is not deployed yet ([status](status.md)).
+- **The escrow is the v1 deployment,** the one the production hub settles through: deploy tx [`0x06638eb4…6c5a`](https://explorer.testnet.arc.io/tx/0x06638eb4cfa8db52b5e097778160fbc913561e88f56aa8fc2ec195cb6d596c5a).
 - **If Arc's public RPC is slow,** add `--rpc <another Arc testnet RPC>`.
 - **Offline,** the verifier prints `VALID (offline: the chain was not read)`, so the on-chain line needs the network.

@@ -10,6 +10,7 @@
  *   hub: challenge -> runner: hello (signed) -> hub: ready
  *   hub: job -> runner: result | fail
  *   hub: ping -> runner: pong
+ *   hub: canary -> runner: canary | canary-fail
  */
 
 import type { Address, Hex } from "viem";
@@ -44,6 +45,16 @@ export function publishMessage(offerHash: Hex): string {
   return `countersign offer ${offerHash}`;
 }
 
+/** The text a seller signs with EIP-191 to delist an offer (D18). */
+export function delistMessage(offerHash: Hex): string {
+  return `countersign delist ${offerHash}`;
+}
+
+/** The text a runner signs with the seller's key to answer a canary (D18). */
+export function canaryMessage(offerHash: Hex, nonce: string): string {
+  return `countersign canary ${offerHash} ${nonce}`;
+}
+
 /** Everything a runner needs to serve one paid call and write its slip. */
 export interface JobOrder {
   jobId: Hex;
@@ -61,7 +72,7 @@ export interface JobOrder {
   chainId?: number;
   /** A held payment: the buyer's schedule and the transaction that created it. */
   schedule?: { id: string; createTx: string };
-  /** Offer hashes of the purchases this call is nested inside, outermost first. The hub refuses a cycle before payment. */
+  /** The purchases this call is nested inside, outermost first, as offer hashes or job ids. The hub refuses a cycle before payment (terms.md §2). */
   lineage: Hex[];
 }
 
@@ -70,6 +81,7 @@ export type HubToRunner =
   | { t: "ready"; seller: Address; offers: Hex[] }
   | { t: "job"; order: JobOrder }
   | { t: "ping"; ts: number }
+  | { t: "canary"; offerHash: Hex; nonce: string }
   | { t: "error"; message: string };
 
 export type RunnerToHub =
@@ -83,6 +95,8 @@ export type RunnerToHub =
       countersign?: string;
     }
   | { t: "fail"; jobId: Hex; reason: string }
+  | { t: "canary"; offerHash: Hex; nonce: string; sig: Hex }
+  | { t: "canary-fail"; offerHash: Hex; nonce: string; reason: string }
   | { t: "pong"; ts: number };
 
 /** POST /offers body. */
