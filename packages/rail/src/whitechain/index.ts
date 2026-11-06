@@ -40,6 +40,8 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
     explorerTx: "https://explorer.testnet.whitechain.io/tx/{tx}",
     finality: "Final one Whitechain block, about a second, after release.",
     gasPaidBy: "relayer",
+    finalitySeconds: 6,
+    cost: { tollBps: 100, fixed: "0" },
     ...(opts.publicClient ? { publicClient: opts.publicClient } : {}),
   });
 

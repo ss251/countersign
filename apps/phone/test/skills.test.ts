@@ -161,6 +161,8 @@ describe("phone-side refusals and what leaves the phone", () => {
     link = new RunnerLink({
       hubUrl: `http://127.0.0.1:${server.port}`,
       signer,
+      // The stand-in hub has no chain: this test is about the protocol's own refusals.
+      checkOrder: async () => null,
       now: () => NOW,
       skills: () => [
         {

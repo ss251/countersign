@@ -14,7 +14,12 @@ buyer CLI ──HTTP 402 / x402──▶ hub ◀──runner WebSocket (dialled 
 
 1. **A key made on the phone.** On first open the page makes a fresh key with viem and keeps it in IndexedDB, for that site, on that device. Only signatures leave the page. The key signs three things: the hub's sign-in nonce, the two offers, and each slip.
 2. **The person turns a skill on.** Each skill has its own switch, in plain words. Turning location on asks the browser for permission and reads one position, to show the accuracy the phone gets. Turning photos on asks for nothing yet. Nothing is read or captured before that tap. Turning a skill on publishes its signed offer (`POST /offers`) and says hello to the hub again with the offers that are on.
-3. **The hub dispatches a paid job.** Once the buyer's money is in escrow, the hub sends the job down the socket. The phone checks the input against the offer's schema before it reads anything. Then:
+3. **The hub dispatches a paid job.** Once the buyer's money is in escrow, the hub sends the job down the socket. Before the phone reads anything, it checks the job:
+   - the input against the offer's schema;
+   - the order's price, payee, rail and asset against the offer;
+   - on the escrow rail, the job itself on Arc. The escrow must be one of the pinned CountersignedEscrow deployments (`KNOWN_ESCROWS` in `packages/verify`), and its `jobOf` must show the job funded, for this seller and this offer, at no less than the price, with the deadline ahead.
+
+   The hub writes the order, so only the chain read stops a hub that funds one unit and claims the full price. A job that fails any check is refused, and nothing is read or captured for it. Then:
    - **location:** it reads one fresh fix, at high accuracy, never a cached one, and never watches the position between jobs;
    - **photo:** it shows the request, the buyer's prompt and how long the hub will wait. The person takes the picture or declines. The page shrinks the picture to at most 800 px, re-encodes it as JPEG, which drops the camera's EXIF metadata (any GPS position included), and hashes the bytes.
 4. **The phone signs the slip.** It builds the slip body with `slipBodyFor` from `@countersign/core`, as `packages/runner` does, and signs the EIP-712 `Release` under the escrow's domain.
@@ -50,16 +55,18 @@ Canonical JSON carries only safe integers as numbers, so a float cannot be hashe
 - **The page must stay open.** The phone serves only while the page is open and in the foreground. While a skill is on, the page holds a screen wake lock where the browser offers one. A phone that sleeps or switches apps drops the socket, the hub marks its offers offline, and a call to them answers `503 seller offline` with nothing charged.
 - **A person has about two minutes.** The hub waits up to 120 s for a job (its default `jobTimeoutMs`), less when the offer's deadline is nearer. A photo not taken by then is refused, and the escrow refunds the buyer at the deadline.
 - **A paused page loses its job.** If the browser pauses the page while the camera is open, and the hub hears no reply to its heartbeat for 45 s, the hub drops the connection, the job fails, and the buyer is refunded at the deadline.
-- **The key is a browser key.** Anything running on this origin, and anyone holding the unlocked phone, can read it. It is for testnet only. Clearing the site's data loses the key, and its offers stay listed, offline, under the old seller.
+- **The key is a browser key.** Anything running on this origin, and anyone holding the unlocked phone, can read it. It is for testnet only: never send it real money. Clearing the site's data loses the key, and its offers stay listed, offline, under the old seller.
+- **The phone reads Arc through a public RPC.** If that RPC is down, a paid job is refused rather than served unchecked, and the escrow refunds the buyer at the deadline.
 - **Every browser is a new seller.** Each browser that turns a skill on publishes two offers under its own key. They stay listed after the page closes, because the hub has no seller-side delisting yet.
 - **The hub is fixed.** A link may name a hub with `?hub=`, but the page accepts only the hub it was built for, its own origin, or loopback for development. A hub decides which jobs reach the phone, so a stranger's hub could ask for its position with nobody paying.
 
 ## Proof
 
 - **Bench run, 06 Nov.** The phone's own runner code (`RunnerLink`, the skills and the signer), run in a terminal with a stated position rather than a sensed one, served an order from the buyer CLI through a hub on the Arc escrow `0x19c27D770969291E6A0a305dc1Be1a845E7c1b76`. Slip `0xe43bc227a292a18c72d2ee010f7fca7d49b0872bf92e3df86d526632b49bee4c`, released in [`0x1c214d02…899b`](https://explorer.testnet.arc.io/tx/0x1c214d02fd17dd4deacf46160ad0458a559865d39bb1fc0dca827e8872b5899b). The `Released` event carries that slip hash; the seller received 0.0099 USDC and the toll 0.0001.
+- **Bench run with the funding check, 06 Nov.** The same bench, now reading `jobOf` on Arc before serving, served a second buyer-CLI order: slip `0x9f5b5ca18c2903f26830fa9c75755eabda4e95874e18f76049bda3440aadae99`, released in [`0x252ec40a…1f51`](https://explorer.testnet.arc.io/tx/0x252ec40ae3b04b50e9d7697080c375f85dda1c22409ae22b69ef8bb399d81f51).
 
 ## Run it
 
 - **The page:** `bun run --cwd apps/phone dev`, then open `http://127.0.0.1:5193/`. It talks to the production hub by default. `?hub=/hub` reaches a hub on `127.0.0.1:8787` through the dev server's proxy, WebSocket included. Location, the camera and WebCrypto need a secure context: https, or localhost.
 - **Without a phone:** `PHONE_SELLER_KEY=0x… bun apps/phone/test/bench.ts --hub http://127.0.0.1:8787 --lat 19.076090 --lon 72.877420` serves the same runner code from a terminal, with a position you state. It is a protocol check, not a phone.
-- **Tests:** `bun test apps/phone`. They run the phone's runner code against the real hub in process: delivery and release, a declined photo, a person slower than the hub's wait, re-registration when a skill is turned off, an offer under another key, and a frame-by-frame check that the key never leaves the phone.
+- **Tests:** `bun test apps/phone`. They run the phone's runner code against the real hub in process: delivery and release, a declined photo, a person slower than the hub's wait, a hub that funds one unit but orders the full price, re-registration when a skill is turned off, an offer under another key, and a frame-by-frame check that the key never leaves the phone. `funding.test.ts` covers each refusal of the funding check.

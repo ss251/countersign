@@ -91,6 +91,12 @@ export interface LinkConfig {
   signer: PhoneSigner;
   /** Read on every dial: only the skills the person has turned on. */
   skills: () => ServedSkill[];
+  /**
+   * Was this job really paid for as the offer says? Null to serve it, or the refusal to send.
+   * Runs before the skill, so nothing is read or captured for a job nobody funded
+   * (runner/funding.ts reads the escrow on chain). Required: a caller opts out explicitly.
+   */
+  checkOrder: (order: JobOrder, offer: Offer) => Promise<string | null>;
   /** Unix seconds. */
   now?: () => number;
   onStatus?: (status: LinkStatus) => void;
@@ -115,6 +121,7 @@ export const REFUSED = {
   output: "Refused. The output does not match the offer's schema.",
   tooLarge: "Refused. The output is larger than this phone sends.",
   late: "Refused. The hub stopped waiting before the phone finished.",
+  unchecked: "Refused. The phone could not check that this job was paid.",
 } as const;
 
 export class RunnerLink {
@@ -276,6 +283,16 @@ export class RunnerLink {
     const job: PhoneJob = { order, offer: skill.offer, waitUntil, signal: controller.signal };
 
     try {
+      // Paid for, as the offer says, before anything is read or captured.
+      let unpaid: string | null;
+      try {
+        unpaid = await this.cfg.checkOrder(order, skill.offer);
+      } catch {
+        unpaid = REFUSED.unchecked;
+      }
+      if (unpaid !== null) return refuse(unpaid);
+      if (controller.signal.aborted) return refuse(REFUSED.late);
+
       this.cfg.onJob?.({ kind: "started", job });
       let output: unknown;
       try {
