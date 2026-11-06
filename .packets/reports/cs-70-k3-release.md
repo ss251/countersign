@@ -355,3 +355,139 @@ $ grep -c 'bun:' .release/stage/relay/dist/*.js
 
 A merchant imports `@countersign-hub/relay/paywall` (or `.../pay-fetch`, `.../browser`),
 not the bare root `@countersign-hub/relay`.
+
+## cs-70c: declare only the packages the bundle imports
+
+### The change
+
+`scripts/release/imports.ts` scans each emitted `.js` file with
+`new Bun.Transpiler({ loader: "js" }).scanImports(code)`. Static imports,
+side-effect imports, `import("x")` and `require("x")` count; string literals do
+not. Each specifier is reduced to its package (`viem/chains` → `viem`,
+`@scope/pkg/sub` → `@scope/pkg`, `ajv/dist/2020.js` → `ajv`), and `node:` plus
+`module.builtinModules` names are ignored.
+
+`build.ts` runs the scanner over every staged bundle, then keeps only the imported
+members of the existing manifest union, with their ranges unchanged. Declared but
+unused packages are dropped from `dependencies` (they remain on the `external`
+list), keys stay sorted, and an import with no declared range fails the build with
+the package and every emitted file that imports it. `build.ts` prints the count
+line per package.
+
+`smoke.ts` runs every export import and `bin --help` under both the installed Node
+and Node 20 through `npx -y node@20`, tagging each line `[node vX.Y.Z]`.
+`--no-node20` prints `SKIP node 20 (--no-node20)`; a failed Node 20 fetch prints
+`FAIL node 20: could not obtain node@20` and exits 1.
+
+### Gate 1: install, typecheck, tests
+
+```
+$ bun install --linker hoisted && bun run typecheck && bun test scripts/release
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [4.94s]
+$ tsc -p tsconfig.json
+bun test v1.3.14 (0d9b296a)
+
+ 54 pass
+ 0 fail
+ 98 expect() calls
+Ran 54 tests across 8 files. [146.00ms]
+```
+
+The original 43 tests are unchanged; eleven new tests cover the scanner kinds, the
+ignored `node:`/builtin imports, the non-import string literal, subpath reduction,
+an undeclared import, unused-range removal with sorted keys, and a conflicting
+range.
+
+### Gate 2: the relay declares two dependencies
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: /Users/sailesh/Developer/countersign-wt/cs-70/.release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+The staged manifest's `dependencies`:
+
+```json
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "viem": "^2.57.16"
+  },
+```
+
+Tarball: 8,642 bytes. Dependency count before: 14. After: 2.
+
+### Gate 3: smoke under Node 20 and the installed Node
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 11s
+node 20 --version: v20.20.2
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+A clean install adds 19 packages, down from 221. `EBADENGINE` warnings remaining: 0.
+
+```
+$ bun scripts/release/smoke.ts --dir .release --no-node20
+...
+SKIP node 20 (--no-node20)
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+...
+```
+
+With a failing `npx`, the second runtime is not skipped silently:
+
+```
+FAIL node 20: could not obtain node@20
+```
+
+### Gate 4: missing lanes still fail
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release-req
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+`.release-req` was removed afterwards.
+
+### Gate 5: no workspace, Bun or `Bun.` text in the bundles
+
+```
+$ grep -c '@countersign/' .release/stage/relay/dist/*.js
+.release/stage/relay/dist/browser.js:0
+.release/stage/relay/dist/pay-fetch.js:0
+.release/stage/relay/dist/paywall.js:0
+
+$ grep -c 'bun:' .release/stage/relay/dist/*.js
+.release/stage/relay/dist/browser.js:0
+.release/stage/relay/dist/pay-fetch.js:0
+.release/stage/relay/dist/paywall.js:0
+
+$ grep -c 'Bun\.' .release/stage/relay/dist/*.js
+.release/stage/relay/dist/browser.js:0
+.release/stage/relay/dist/pay-fetch.js:0
+.release/stage/relay/dist/paywall.js:0
+```
