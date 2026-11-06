@@ -2,9 +2,11 @@ import type { Hex } from "viem";
 import type { CountersignExtra, Offer, PaymentRequirements } from "@countersign/core";
 import {
   KNOWN_GATEWAYS,
+  knownDirectFor,
   knownGatewayFor,
   knownRailFor,
   sameAddress,
+  type KnownDirect,
   type KnownGateway,
   type KnownRail,
 } from "./known-rails.ts";
@@ -13,6 +15,7 @@ export type TermsCheck = { ok: true; rail: KnownRail } | { ok: false; message: s
 export type GatewayTermsCheck =
   | { ok: true; gateway: KnownGateway }
   | { ok: false; message: string };
+export type DirectTermsCheck = { ok: true; direct: KnownDirect } | { ok: false; message: string };
 
 const UNKNOWN_RAIL = "Refused. This rail is not one this agent knows.";
 const WRONG_PAYEE = "Refused. The payment terms pay someone other than the offer's seller.";
@@ -56,6 +59,26 @@ export function checkTerms(offer: Offer, offerHash: Hex, entry: PaymentRequireme
     return { ok: false, message: "Refused. The payment terms outlast the offer's deadline." };
   }
   return { ok: true, rail };
+}
+
+/**
+ * The direct counterpart: the token, its EIP-712 domain, the payee and the amount
+ * all come from the fetched offer or a pinned direct entry.
+ */
+export function checkDirectTerms(
+  offer: Offer,
+  entry: PaymentRequirements,
+  known: KnownDirect[],
+): DirectTermsCheck {
+  const direct = knownDirectFor(entry, known);
+  if (!direct) return { ok: false, message: UNKNOWN_RAIL };
+  const expectedPayTo = offer.payTo?.eip3009 ?? offer.seller;
+  if (!sameAddress(entry.payTo, expectedPayTo)) return { ok: false, message: WRONG_PAYEE };
+  if (entry.amount !== offer.price) return { ok: false, message: WRONG_AMOUNT };
+  if (entry.maxTimeoutSeconds > 300) {
+    return { ok: false, message: "Refused. The payment window is longer than this agent allows." };
+  }
+  return { ok: true, direct };
 }
 
 /**
