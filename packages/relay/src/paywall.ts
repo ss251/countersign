@@ -11,6 +11,7 @@ import {
   toBase64Json,
 } from "@countersign/core";
 import { NETWORK, USDT } from "./chain.ts";
+import { PAYMENT_RETRY_HEADER } from "./headers.ts";
 import type { WireAuthorization } from "./eip3009.ts";
 import type {
   PaymentPayload,
@@ -20,7 +21,7 @@ import type {
   VerifyResponse,
 } from "./exact.ts";
 
-export const PAYMENT_RETRY_HEADER = "PAYMENT-RETRY";
+export { PAYMENT_RETRY_HEADER };
 
 export type PaywallFetch = (
   input: string | URL | Request,

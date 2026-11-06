@@ -32,7 +32,7 @@ else
   src="$work"
   label="$ref ($(git -C "$root" rev-parse --short "$ref"))"
   echo "installing $label"
-  (cd "$src" && bun install --frozen-lockfile >/dev/null)
+  (cd "$src" && bun install --frozen-lockfile --linker hoisted >/dev/null)
 fi
 
 # The Privy app id is public, but it lives on the web service. Read it here, where this checkout is linked to
@@ -84,7 +84,7 @@ if [ -d "$src/apps/phone/dist" ]; then
   cp -R "$src/apps/phone/dist" "$stage/dist/phone"
   rm -f "$stage"/dist/phone/assets/*.map
 fi
-cp "$src/apps/web/server.ts" "$stage/server.ts"
+(cd "$src" && bun build apps/web/server.ts --target bun --outfile "$stage/server.js")
 cp "$here/deploy/Dockerfile" "$stage/Dockerfile"
 echo "staged $(du -sh "$stage" | cut -f1)"
 
