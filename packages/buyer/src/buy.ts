@@ -196,6 +196,7 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
           hub,
           account,
           approver: envelope.approver,
+          state: a.state,
           offerHash,
           title: offer.title,
           amount: entry.amount,

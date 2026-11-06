@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
@@ -8,6 +8,7 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   approvalDecisionBody,
   approvalDecisionMessage,
+  approvalRequestHash,
   canonicalHash,
   canonicalJson,
   checkCountersign,
@@ -150,6 +151,7 @@ interface ApprovalRequest {
   rail: string;
   terms: unknown;
   requestedAt: number;
+  nonce: Hex;
 }
 
 interface BuyHub {
@@ -171,6 +173,7 @@ interface BuyHubOptions {
   mirrorHang?: boolean;
   onMirror?: () => void;
   approvalRejectStatus?: number;
+  reuseDecision?: boolean;
 }
 
 function startBuyHub(options: BuyHubOptions = {}): BuyHub {
@@ -181,6 +184,7 @@ function startBuyHub(options: BuyHubOptions = {}): BuyHub {
   let approvedAtPayment = false;
   let polls = 0;
   let lastRequest: ApprovalRequest | null = null;
+  let decided: { id: string; status: string; decidedAt: number; decisionSig: string } | null = null;
   const state: BuyHub = {
     url: "",
     get approvals() {
@@ -222,6 +226,7 @@ function startBuyHub(options: BuyHubOptions = {}): BuyHub {
         return Response.json({ id: APPROVAL_ID }, { status: 201 });
       }
       if (req.method === "GET" && url.pathname.startsWith("/approvals/")) {
+        if (options.reuseDecision && decided !== null) return Response.json(decided);
         if (options.decision === "pending") return Response.json({ status: "pending" });
         polls += 1;
         if (polls < (options.pollsBeforeDecision ?? 1)) return Response.json({ status: "pending" });
@@ -239,6 +244,7 @@ function startBuyHub(options: BuyHubOptions = {}): BuyHub {
           amount: options.decisionAmount ?? lastRequest.amount,
           rail: lastRequest.rail,
           terms: lastRequest.terms,
+          requestHash: approvalRequestHash(lastRequest),
           decision: "countersign",
           decidedAt,
         });
@@ -246,6 +252,7 @@ function startBuyHub(options: BuyHubOptions = {}): BuyHub {
           message: approvalDecisionMessage(decisionBody),
         });
         approvalStatus = "countersign";
+        decided = { id, status: "countersign", decidedAt, decisionSig };
         return Response.json({
           id,
           status: "countersign",
@@ -339,6 +346,7 @@ describe("requestApproval", () => {
       hub: new HubClient(hub.url),
       account: agent,
       approver: approver.address,
+      state: fresh().state,
       offerHash,
       title: "A call",
       amount: PRICE,
@@ -359,6 +367,7 @@ describe("requestApproval", () => {
       hub: new HubClient(hub.url),
       account: agent,
       approver: approver.address,
+      state: fresh().state,
       offerHash,
       title: "A call",
       amount: PRICE,
@@ -377,6 +386,7 @@ describe("requestApproval", () => {
       hub: new HubClient(hub.url),
       account: agent,
       approver: approver.address,
+      state: fresh().state,
       offerHash,
       title: "A call",
       amount: "1000",
@@ -514,6 +524,30 @@ describe("buy with hub approvals", () => {
 
     expect(result.output).toEqual({ a: "hi" });
     expect(elapsed).toBeLessThan(1_000);
+  });
+
+  test("a decision for call 1 served for call 2 ends human-unverified", async () => {
+    const hub = startBuyHub({ reuseDecision: true });
+    const f = fresh();
+    await run(f, hub);
+    expect(hub.paid).toBe(1);
+
+    await expect(run(f, hub)).rejects.toThrow(BuyError);
+    expect(hub.paid).toBe(1);
+    expect(f.journal.entries().at(-1)?.reason).toBe("human-unverified");
+  });
+
+  test("one approval id can never clear two buys", async () => {
+    const hub = startBuyHub();
+    const f = fresh();
+    await run(f, hub);
+    expect(f.state.hasConsumedApproval(APPROVAL_ID)).toBe(true);
+    expect(statSync(f.state.consumedApprovalsPath).mode & 0o777).toBe(0o600);
+
+    await expect(run(f, hub)).rejects.toThrow(BuyError);
+    expect(hub.approvals).toBe(2);
+    expect(hub.paid).toBe(1);
+    expect(f.journal.entries().at(-1)?.reason).toBe("human-unverified");
   });
 });
 
