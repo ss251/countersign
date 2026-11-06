@@ -35,6 +35,8 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 18 | `erc8004-identity` | the Hedera seller's ERC-8004 identity: owner, registration file, the hub card and live offers it names, and the wallet it declares | Hedera testnet | cs-hd |
 | 18b | `erc8004-arc` | every seller the public hub names with an ERC-8004 agent id owns it on Arc, its registration names this hub and its own offers, and earned feedback exists | Arc testnet | orch-cs |
 | 20 | `hedera-schedule` | on demand: a scheduled Hedera payment executes only on the seller's signature, with exactly the price moved and a `schedule` entry on HCS | Hedera testnet | cs-hd |
+| 21 | `hedera-held` | on demand: the agent pays the Agent Kit offer held, its default since #157; the seller's signature executes the schedule, exactly the price moves to the seller's signing account, the slip names the held rail | Hedera testnet | cs-hd |
+| 21b | `hedera-held-undelivered` | on demand: the same offer with an input its tool cannot serve; the call fails, the schedule expires unexecuted, the agent releases its hold, and its USDC never moves | Hedera testnet | cs-hd |
 | 19 | `mpp` | the MPP rail's Tempo method pays for real on Tempo testnet: the challenge is checked before paying, the receipt, the transfer on chain, a replay refused | Tempo Moderato | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
@@ -101,6 +103,8 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 6. **merchant refunds in one click.** `POST /orders/:id/refund` with the merchant's token returns a transaction the relayer sent; USDT moves from the merchant back to the buyer; the order reads `refunded`; the buyer still holds no WBT and has sent no transaction.
 
 ### 6 · hedera
+
+Flows 6, 15 and 17 pay the exact Hedera rail. Since #157 a plain agent run pays held wherever the hub offers it, at about 0.16 HBAR a purchase, so these flows pass `--exact` and check the 402's `exact` accept by scheme: a held accept may come first, and it pays another account. Until the agent in the branch takes `--exact`, the flag is left out. The held rail has its own flows, 21 and 21b, run on demand.
 
 1. **hub up** with the Hedera rail, and a seller whose offer pays a Hedera account (`runner serve --pay-to hedera=<account>`).
 2. **402 names the rail.** The challenge asks for USDC on `hedera:testnet`, paid to the seller's account, with the facilitator's fee payer.
@@ -215,7 +219,32 @@ About 0.18 HBAR a run, so the hourly run skips it as `NOT RUN (on demand)`; `bun
 3. **mirror, transfer**: the scheduled `CRYPTOTRANSFER` succeeded and moved exactly 0.01 USDC from the agent to one account.
 4. **HCS**: the `schedule` entry names the schedule, the create transaction and the amount, written by the agent.
 
-The expiry path, where nothing moves, joins once its script waits out the release margin (hd-10).
+The expiry path, where nothing moves, is flow 21b.
+
+### 21, 21b · hedera-held (on demand)
+
+About 0.16 HBAR a purchase, so the hourly run skips both as `NOT RUN (on demand)`. Both pay production's Agent Kit offer (17's seller), which lists `hedera-scheduled` first: the agent creates a scheduled USDC transfer to the seller's signing account, and nothing moves until the seller signs it after a checked delivery. Both report NOT RUN while production does not declare `hedera-scheduled` or the offer does not list it first, and while the agent in the branch has no held path.
+
+Both first check the same three things:
+
+1. **production declares the held rail** in `/rails`.
+2. **the offer lists it first** and keeps the exact Hedera rail beside it; it hashes to its offer hash, and its `hedera-scheduled` payee is an account.
+3. **the 402 offers both payments.** The held accept (scheme `countersign`, `extra.name` `hedera-scheduled`) pays the offer's held payee exactly the price in USDC, with the offer's hash, the offer's deadline as its timeout, and a hold of the deadline plus 180 s. The exact accept still pays the offer's Hedera account.
+
+21, `--flow hedera-held`:
+
+4. **the agent pays held, its default**, with no human step. Its payment is the schedule's create, it reports the hold's HCS entry and the slip, and it saw the schedule execute.
+5. **mirror, schedule**: executed, created and paid for by the agent, not waiting for expiry, not deleted.
+6. **mirror, transfer**: the scheduled `CRYPTOTRANSFER` succeeded and moved exactly the price from the agent to one account, the held payee.
+7. **HCS**: the `schedule` entry names the schedule, the create, the amount, the payee and the offer, written by the agent.
+8. **the slip**: the public hub serves it, rail `hedera-scheduled`, its input hash is the tool's arguments, and its settlement is the schedule's create.
+
+21b, `--flow hedera-held-undelivered`, about seven minutes, since it waits out the hold. The input is cs-hd's `{"transfers":[{"accountId":"not-an-account","amount":1}]}`, which the offer's schema takes and the Agent Kit tool cannot serve.
+
+4. **the call fails and the hold is released**: `agent-run.ts --prove-undelivered` succeeds. The hub did not answer 200, the agent saw no execution, it released the hold once the schedule expired, its USDC balance is the same before and after, and it logged an `expired` entry.
+5. **mirror, schedule**: never executed, created by the agent, and past its expiry.
+6. **mirror, transfer**: no scheduled transaction exists for the create.
+7. **HCS**: the `schedule` entry and the `expired` entry name the same schedule and create, both written by the agent.
 
 ### 19 · mpp
 
