@@ -37,6 +37,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 20 | `hedera-schedule` | on demand: a scheduled Hedera payment executes only on the seller's signature, with exactly the price moved and a `schedule` entry on HCS | Hedera testnet | cs-hd |
 | 21 | `hedera-held` | on demand: the agent pays the Agent Kit offer held, its default since #157; the seller's signature executes the schedule, exactly the price moves to the seller's signing account, the slip names the held rail | Hedera testnet | cs-hd |
 | 21b | `hedera-held-undelivered` | on demand: the same offer with an input its tool cannot serve; the call fails, the schedule expires unexecuted, the agent releases its hold, and its USDC never moves | Hedera testnet | cs-hd |
+| 22 | `npm-published` | on demand: the published npm packages from a clean directory: discover, buy on Arc, verify VALID, and the MCP server through the SDK client | Arc testnet | cs-truth |
 | 19 | `mpp` | the MPP rail's Tempo method pays for real on Tempo testnet: the challenge is checked before paying, the receipt, the transfer on chain, a replay refused | Tempo Moderato | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
@@ -264,6 +265,19 @@ Both first check the same three things:
 5. **mirror, schedule**: never executed, created by the agent, and past its expiry.
 6. **mirror, transfer**: no scheduled transaction exists for the create.
 7. **HCS**: the `schedule` entry and the `expired` entry name the same schedule and create, both written by the agent.
+
+### 22 · npm-published (on demand)
+
+Runs the packages a stranger gets from npm, in a fresh temporary directory outside the repository. Every child runs there with only `PATH`, a temporary `HOME`, an npm cache inside that directory and `NO_COLOR=1`; the buyer key reaches a child by environment, never in argv.
+
+1. **the published versions**: `npm view @countersign-hub/cli@V version` (and the same for `@countersign-hub/mcp`) names what npm would install.
+2. **help answers**: `npx -y @countersign-hub/cli@V --help` and `... buy --help` both exit 0. Version 0.1.0 has no per-command help, so this flow is expected red at this step there.
+3. **discover with the default hub**: `... discover --state <dir>` passes no `--hub` and no `CS_HUB`; its `use-arc` line starts with the offer hash the public hub lists.
+4. **buy on Arc**: `envelope set` and `buy` through `npx`, with the arguments flow 12 uses; the journal names the slip and the release transaction, whose receipt carries `Released` from the escrow the hub's `/rails` names.
+5. **verify VALID**: `... verify <state>/slips/<slipHash>.json --rpc <Arc RPC>` exits 0 and ends in `VALID`.
+6. **the MCP server through the SDK client**: `... mcp --state <dir>` is spawned by `StdioClientTransport`; the client lists all six tools, searches for `use-arc`, buys it, checks the release on chain, and verifies the slip. The server's stderr goes to a redacted log.
+
+`E2E_NPM_VERSION` selects the version to install, `latest` by default. The flow is on demand because it installs the published packages from npm, and it spends the Arc buyer's 0.02 USDC on two buys. Run it with `bun run e2e -- --flow npm-published`.
 
 ### 19 · mpp
 
