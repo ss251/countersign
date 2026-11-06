@@ -854,3 +854,40 @@
 .approval__dock .hold--done {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--seal) 45%, transparent);
 }
+
+/* Live requests from the hub: when it asked, what went wrong, and the approver token. */
+
+.approval__when {
+  font-weight: 400;
+}
+
+.approval__problem {
+  color: var(--seal);
+  font-size: var(--t-14);
+  text-wrap: pretty;
+}
+
+.token {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+/* The agent's signed envelope: read here, changed on the agent's machine. */
+
+.env__mirror {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-2);
+  background: var(--sunk);
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-wrap: pretty;
+}
+
+.limit--read {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.limit__off {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
