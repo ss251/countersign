@@ -6,6 +6,9 @@
  *   bond show --escrow <address> [--rpc <url>]
  *   bond terms --offer <bytes32> --price <atomic> --bond <atomic> --review-window <seconds>
  *     --min-duration <seconds> --escrow <address> [--rpc <url>]
+ *     --min-duration is the least time a funded bonded job may have before its deadline. At least 60:
+ *     shorter lets a buyer fund a job the seller cannot meet and take the bond on the default. At most
+ *     the offer's deadline minus about 300 s, or honest purchases revert (cs-w1, review of 9240aec).
  *   bond terms --show --offer <bytes32> --escrow <address> [--rpc <url>]
  *
  * deposit signs an EIP-3009 ReceiveWithAuthorization from the seller to the escrow, good for ten
@@ -81,6 +84,9 @@ const bondAbi = [
  * Escrow v2's bond terms. Hand-written until Rajdeep's contract lands; the generated ABI
  * replaces this fragment then. See docs/spec/escrow.md under "Escrow v2".
  */
+/** The least --min-duration `bond terms` accepts (cs-w1, review of 9240aec). */
+export const MIN_DURATION_FLOOR = 60;
+
 export const TERMS_ABI = [
   {
     type: "function",
@@ -285,6 +291,11 @@ function parseTermsArgs(args: string[]): BondTermsCommand | BondTermsShowCommand
   const parsedWindow = wholeSeconds(reviewWindow, "--review-window");
   assertTerms(parsedPrice, parsedBond, parsedWindow);
   const parsedMinDuration = wholeSeconds(minDuration, "--min-duration");
+  if (parsedMinDuration < MIN_DURATION_FLOOR) {
+    throw new Error(
+      `Refused. --min-duration must be at least ${MIN_DURATION_FLOOR} seconds, or a buyer could fund a bonded job whose deadline the seller cannot meet and take the bond.`,
+    );
+  }
   return {
     command: "terms",
     offer: offerHash,
