@@ -18,7 +18,7 @@ interface Parsed {
   flags: Map<string, string[]>;
 }
 
-const BOOLEAN = new Set(["approve", "revoke", "unrevoke"]);
+const BOOLEAN = new Set(["approve", "revoke", "unrevoke", "direct"]);
 
 function parse(argv: string[]): Parsed {
   const pos: string[] = [];
@@ -141,13 +141,22 @@ async function main(): Promise<void> {
     console.log(`Envelope saved. Budget ${usd(env.cap)} USDC, ${usd(env.perMerchant)} per seller${env.revoked ? ", revoked" : ""}.`);
   } else if ((cmd === "accept" || cmd === "dispute") && pos[1] !== undefined) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(pos[1])) throw new Error(`Usage: ${cmd} <jobId>`);
-    const args = { hub, journal, state, known, signer: agentAccount(), jobId: pos[1] as Hex, now: Math.floor(Date.now() / 1000) };
-    const done = cmd === "accept" ? await acceptJob(args) : await disputeJob(args);
-    console.log(
-      cmd === "accept"
-        ? `Accepted ${done.jobId}. The hub relays it; the seller is paid when it lands.`
-        : `Disputed ${done.jobId}. The hub relays it; run resume to see the refund land.`,
-    );
+    const account = agentAccount();
+    const args = { hub, journal, state, known, signer: account, jobId: pos[1] as Hex, now: Math.floor(Date.now() / 1000) };
+    if (cmd === "accept") {
+      const done = await acceptJob(args);
+      console.log(`Accepted ${done.jobId}. The hub relays it; the seller is paid when it lands.`);
+    } else {
+      const done = await disputeJob({
+        ...args,
+        ...(flags.has("direct") ? { direct: true, account } : {}),
+      });
+      console.log(
+        done.transaction
+          ? `Disputed ${done.jobId}. The hub did not relay it; sent ${done.transaction}.`
+          : `Disputed ${done.jobId}. The hub relays it; run resume to see the refund land.`,
+      );
+    }
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
   } else if (cmd === "publish-envelope") {
@@ -174,7 +183,7 @@ async function main(): Promise<void> {
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
-    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> | envelope show|set | publish-envelope | journal | resume");
+    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> [--direct] | envelope show|set | publish-envelope | journal | resume");
     console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
   }
 }
