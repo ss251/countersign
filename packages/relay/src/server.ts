@@ -98,6 +98,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       balanceWei: status.balanceWei.toString(),
       balanceWbt: formatUnits(status.balanceWei, 18),
       ceiling: jsonSafe(status.ceiling),
+      hubCeiling: status.hubCeiling ? jsonSafe(status.hubCeiling) : null,
       policy: jsonSafe(status.policy),
       payees: status.policy.allowedPayees,
       minAmount: status.policy.minAmount.toString(),
@@ -268,7 +269,11 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     }
     return replyOp(
       c,
-      await releaseJob({ jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig }, csCtx),
+      await releaseJob(
+        { jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig },
+        csCtx,
+        { fromHub },
+      ),
     );
   });
 
@@ -536,8 +541,10 @@ if (import.meta.main) {
   const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });
   const ceiling = new SpendCeiling(config.ceiling);
   ceiling.seed(ledger.recentSpends(Date.now() - config.ceiling.windowMs));
+  const hubCeiling = new SpendCeiling(config.hubCeiling);
   const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling, (spend) =>
     ledger.recordSpend(spend),
+    hubCeiling,
   );
   const app = createRelayApp({
     reader: publicClient,

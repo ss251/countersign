@@ -136,6 +136,7 @@ export type RelayerStatus = {
   address: Address;
   balanceWei: bigint;
   ceiling: CeilingSnapshot;
+  hubCeiling: CeilingSnapshot | null;
   policy: RelayerPolicy;
 };
 
@@ -151,6 +152,7 @@ export class Relayer {
     private readonly policy: RelayerPolicy,
     private readonly ceiling: SpendCeiling,
     private readonly onSpend?: (spend: SpendEvent) => void,
+    private readonly hubCeiling?: SpendCeiling,
   ) {}
 
   get address(): Address {
@@ -197,8 +199,12 @@ export class Relayer {
     }
   }
 
-  async submit(call: RelayCall, payer: Address): Promise<RelayOutcome> {
-    return this.exclusive(() => this.submitUnlocked(call, payer));
+  async submit(
+    call: RelayCall,
+    payer: Address,
+    opts?: { hub?: boolean },
+  ): Promise<RelayOutcome> {
+    return this.exclusive(() => this.submitUnlocked(call, payer, opts));
   }
 
   exclusive<T>(run: () => Promise<T>): Promise<T> {
@@ -210,7 +216,11 @@ export class Relayer {
     return result;
   }
 
-  async submitUnlocked(call: RelayCall, payer: Address): Promise<RelayOutcome> {
+  async submitUnlocked(
+    call: RelayCall,
+    payer: Address,
+    opts?: { hub?: boolean },
+  ): Promise<RelayOutcome> {
     if (!this.allowed(call)) {
       return { status: "refused", reason: "not_allowed" };
     }
@@ -238,7 +248,8 @@ export class Relayer {
     const gasWithHeadroom =
       (simulation.gas * BigInt(100 + this.policy.gasHeadroomPct)) / 100n;
     const worstCaseWei = gasWithHeadroom * maxFeePerGas;
-    const reservation = this.ceiling.reserve({ payer, worstCaseWei });
+    const ceiling = opts?.hub && this.hubCeiling ? this.hubCeiling : this.ceiling;
+    const reservation = ceiling.reserve({ payer, worstCaseWei });
     if (!reservation.ok) {
       return { status: "refused", reason: reservation.reason };
     }
@@ -248,11 +259,11 @@ export class Relayer {
     try {
       balanceWei = await this.reader.getBalance({ address: this.account.address });
     } catch (error) {
-      this.ceiling.cancel(ticket);
+      ceiling.cancel(ticket);
       return { status: "refused", reason: "balance_floor", detail: describeError(error) };
     }
     if (balanceWei - worstCaseWei < this.policy.minBalanceWei) {
-      this.ceiling.cancel(ticket);
+      ceiling.cancel(ticket);
       return { status: "refused", reason: "balance_floor" };
     }
 
@@ -267,7 +278,7 @@ export class Relayer {
         maxPriorityFeePerGas,
       });
     } catch (error) {
-      this.ceiling.cancel(ticket);
+      ceiling.cancel(ticket);
       return { status: "refused", reason: "simulation_failed", detail: describeError(error) };
     }
 
@@ -278,7 +289,7 @@ export class Relayer {
       });
       const effectiveGasPrice = receipt.effectiveGasPrice ?? maxFeePerGas;
       const costWei = receipt.gasUsed * effectiveGasPrice;
-      this.ceiling.settle(ticket, costWei);
+      ceiling.settle(ticket, costWei);
       this.onSpend?.({ txHash, payer, costWei, at: Date.now() });
       return {
         status: receipt.status === "success" ? "confirmed" : "reverted",
@@ -299,6 +310,7 @@ export class Relayer {
       address: this.account.address,
       balanceWei,
       ceiling: this.ceiling.snapshot(),
+      hubCeiling: this.hubCeiling?.snapshot() ?? null,
       policy: this.policy,
     };
   }

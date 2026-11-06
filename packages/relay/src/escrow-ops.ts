@@ -69,6 +69,7 @@ type CloseOptions = {
   slipHash?: Hex;
   closeReason?: RefundReason | null;
   closeVia?: CloseVia | null;
+  fromHub?: boolean;
 };
 
 async function close(
@@ -93,7 +94,13 @@ async function close(
 
   const escrow = jobEscrow(known, ctx);
   const version = ctx.relayer.escrowVersion(escrow);
-  const outcome = await ctx.relayer.submit(call(escrow), (known?.buyer ?? escrow) as Address);
+  // A v2 release that came with the hub bearer is the hub's own call; it is charged to the hub
+  // ceiling, not to the buyer, so a buyer cannot spend its quota to block its own release. A v1
+  // release stays on the shared ceiling, charged to the buyer, exactly as before.
+  const outcome =
+    options.fromHub === true && version === 2
+      ? await ctx.relayer.submit(call(escrow), "hub" as Address, { hub: true })
+      : await ctx.relayer.submit(call(escrow), (known?.buyer ?? escrow) as Address);
   switch (outcome.status) {
     case "confirmed": {
       const closedAt = readNow(ctx.now) * 1000;
@@ -154,6 +161,7 @@ async function closeV2(
   call: (escrow: Address) => RelayCall,
   ctx: EscrowContext,
   closeVia?: CloseVia | null,
+  opts: { hub?: boolean } = {},
 ): Promise<EscrowOpResult> {
   if (!isJobId(jobId)) return { ok: false, reason: "job_not_found" };
   const known = ctx.ledger.getJob(jobId);
@@ -165,7 +173,9 @@ async function closeV2(
   if (known.status !== "funded" && known.status !== "delivered") {
     return { ok: false, reason: "job_not_open" };
   }
-  const outcome = await ctx.relayer.submit(call(escrow), known.buyer as Address);
+  const outcome = opts.hub
+    ? await ctx.relayer.submit(call(escrow), "hub" as Address, { hub: true })
+    : await ctx.relayer.submit(call(escrow), known.buyer as Address);
   switch (outcome.status) {
     case "confirmed":
       ctx.ledger.closeJob(
@@ -192,6 +202,7 @@ const ZERO_SLIP_HASH = /^0x0{64}$/i;
 export function releaseJob(
   input: { jobId: string; slipHash: Hex; sellerSig: Hex },
   ctx: EscrowContext,
+  opts: { fromHub?: boolean } = {},
 ): Promise<EscrowOpResult> {
   if (ZERO_SLIP_HASH.test(input.slipHash)) {
     return Promise.resolve({ ok: false, reason: "zero_slip_hash" });
@@ -207,7 +218,7 @@ export function releaseJob(
       sellerSig: input.sellerSig,
     }),
     ctx,
-    { slipHash: input.slipHash },
+    { slipHash: input.slipHash, fromHub: opts.fromHub },
   );
 }
 
@@ -283,5 +294,7 @@ export function failDeliveryJob(input: { jobId: string }, ctx: EscrowContext): P
     "failed",
     (escrow) => ({ kind: "escrowFailDelivery", escrow, jobId: input.jobId as Hex }),
     ctx,
+    undefined,
+    { hub: true },
   );
 }

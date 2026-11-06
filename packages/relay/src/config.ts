@@ -16,6 +16,7 @@ export type RelayConfig = {
   port: number;
   relayUrl: string;
   ceiling: SpendCeilingConfig;
+  hubCeiling: SpendCeilingConfig;
   policy: RelayerPolicy;
   /** The bearer token the hub uses on /escrow/fail. Optional; absent means that route is off. */
   hubToken?: string;
@@ -65,6 +66,7 @@ export function loadRelayConfig(env: Env): RelayConfig {
     throw new Error("RELAY_HUB_TOKEN must be at least 24 characters");
   }
   const allowedPayees = addressListEnv(env, "RELAY_PAYEES", [DEFAULT_PAYEE]);
+  const hubMaxTx = intEnv(env, "RELAY_HUB_MAX_TX_PER_HOUR", 200);
   return {
     relayerPrivateKey,
     rpcUrls: rpcUrlsEnv(env),
@@ -76,6 +78,12 @@ export function loadRelayConfig(env: Env): RelayConfig {
       capWei,
       maxTx: intEnv(env, "RELAY_MAX_TX_PER_HOUR", 200),
       maxTxPerPayer: intEnv(env, "RELAY_MAX_TX_PER_PAYER_PER_HOUR", 30),
+    },
+    hubCeiling: {
+      windowMs: HOUR_MS,
+      capWei: bigintEnv(env, "RELAY_HUB_CAP_WEI_PER_HOUR", capWei),
+      maxTx: hubMaxTx,
+      maxTxPerPayer: hubMaxTx,
     },
     policy: {
       maxFeePerGasWei: maxFeeGwei * GWEI,
