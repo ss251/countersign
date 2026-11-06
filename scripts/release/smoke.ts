@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { parseSmokeArgs } from "./args.ts";
+import { floorMajor } from "./engines.ts";
 import { isRecord } from "./json.ts";
 import { PUBLISH_SCOPE, publishedName } from "./published.ts";
 
@@ -100,18 +101,18 @@ function installedNodeVersion(): string | null {
   return parseVersion(text);
 }
 
-function node20Runtime(cwd: string): Runtime {
-  const result = run(["npx", "-y", "node@20", "--version"], cwd);
+function floorRuntime(major: number, cwd: string): Runtime {
+  const result = run(["npx", "-y", `node@${major}`, "--version"], cwd);
   const fetched = parseVersion(output(result));
-  if (result.code !== 0 || fetched === null || !fetched.startsWith("v20.")) {
-    check("node 20", false, "could not obtain node@20");
+  if (result.code !== 0 || fetched === null || !fetched.startsWith(`v${major}.`)) {
+    check(`node ${major}`, false, `could not obtain node@${major}`);
     process.exit(1);
   }
-  console.log(`node 20 --version: ${fetched}`);
-  return { version: fetched, command: ["npx", "-y", "node@20"] };
+  console.log(`node ${major} --version: ${fetched}`);
+  return { version: fetched, command: ["npx", "-y", `node@${major}`] };
 }
 
-function smokeTarball(tarball: string, current: string, useNode20: boolean): void {
+function smokeTarball(tarball: string, current: string, useFloor: boolean): void {
   const fallback = basename(tarball, ".tgz");
   const work = mkdtempSync(join(tmpdir(), "countersign-smoke-"));
   try {
@@ -121,10 +122,6 @@ function smokeTarball(tarball: string, current: string, useNode20: boolean): voi
     const install = run(["npm", "i", "--no-audit", "--no-fund", tarball], work);
     check(`${fallback} install`, install.code === 0, output(install));
     if (install.code !== 0) return;
-
-    const runtimes: Runtime[] = [{ version: current, command: ["node"] }];
-    if (useNode20) runtimes.push(node20Runtime(work));
-    else console.log("SKIP node 20 (--no-node20)");
 
     const installed = installedPackage(work);
     if (installed === null) {
@@ -139,6 +136,13 @@ function smokeTarball(tarball: string, current: string, useNode20: boolean): voi
       `${installed.name} (expected ${expectedName})`,
     );
 
+    const engines = installed.manifest.engines;
+    const engineNode = isRecord(engines) ? engines.node : undefined;
+    const floor = floorMajor(engineNode) ?? 20;
+    const runtimes: Runtime[] = [{ version: current, command: ["node"] }];
+    if (useFloor) runtimes.push(floorRuntime(floor, work));
+    else console.log(`SKIP node ${floor} (--no-node20)`);
+
     const packageDir = join(work, "node_modules", ...installed.name.split("/"));
     for (const [name, relativeBin] of binEntries(installed.name, installed.manifest.bin)) {
       const binFile = join(packageDir, relativeBin.replace(/^\.\//, ""));
@@ -147,6 +151,26 @@ function smokeTarball(tarball: string, current: string, useNode20: boolean): voi
         check(
           `${short} bin ${name} --help [node ${runtime.version}]`,
           result.code === 0 && output(result).length > 0,
+          output(result),
+        );
+      }
+    }
+
+    if (short === "cli") {
+      const childEntry = join(packageDir, "dist", "child-entry.js");
+      for (const runtime of runtimes) {
+        const result = run(
+          [
+            ...runtime.command,
+            "--input-type=module",
+            "-e",
+            `import { existsSync } from "node:fs"; process.exit(existsSync(${JSON.stringify(childEntry)}) ? 0 : 1);`,
+          ],
+          work,
+        );
+        check(
+          `${short} child entry dist/child-entry.js [node ${runtime.version}]`,
+          result.code === 0,
           output(result),
         );
       }

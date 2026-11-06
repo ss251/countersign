@@ -21,16 +21,23 @@ import {
 import { isRecord, type JsonObject } from "./json.ts";
 import { buildEnvironment, checkFiles, readDist, readTarball } from "./leaks.ts";
 import {
+  bundleEntries,
   dependencyUnion,
   entrySources,
+  extraDependencyRanges,
   sourceTargetMap,
   stagedManifest,
+  type BundleEntry,
   type ManifestSource,
   type PackageManifest,
 } from "./manifest.ts";
 import { tarballPrefix } from "./published.ts";
 import { withNodeShebang } from "./shebang.ts";
-import { omittedExportLines, PUBLISH_SURFACE } from "./surface.ts";
+import {
+  extraDependenciesFor,
+  omittedExportLines,
+  PUBLISH_SURFACE,
+} from "./surface.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
 const SOURCE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
@@ -96,15 +103,11 @@ function resolveMapSource(mapBase: string, source: string): string {
 
 function moveOutputs(input: {
   short: string;
-  packageDir: string;
+  rootDir: string;
   bundleDir: string;
   stageDir: string;
-  entries: readonly string[];
-  targets: Record<string, string>;
+  entries: readonly BundleEntry[];
 }): EmittedFile[] {
-  const result = input.entries.map((entry) =>
-    resolve(input.packageDir, entry),
-  );
   const outputs = new Map<string, string>();
   for (const output of listBundleOutputs(input.bundleDir)) {
     outputs.set(relativePath(input.bundleDir, output), output);
@@ -112,19 +115,17 @@ function moveOutputs(input: {
 
   const emitted: EmittedFile[] = [];
   const consumed = new Set<string>();
-  for (let i = 0; i < input.entries.length; i++) {
-    const entry = input.entries[i];
-    const absolute = result[i];
-    if (entry === undefined || absolute === undefined) continue;
-    const sourceRelative = relativePath(input.packageDir, absolute);
+  for (const entry of input.entries) {
+    const absolute = resolve(input.rootDir, entry.source);
+    const sourceRelative = relativePath(input.rootDir, absolute);
     const outputRelative = sourceRelative.replace(SOURCE_EXTENSION, ".js");
     const output = outputs.get(outputRelative);
     if (output === undefined) {
-      throw new Error(`Bun.build emitted no ${outputRelative} for ${input.short} entry ${entry}`);
+      throw new Error(
+        `Bun.build emitted no ${outputRelative} for ${input.short} entry ${entry.source}`,
+      );
     }
-    const target = input.targets[entry];
-    if (target === undefined) throw new Error(`no staged target for ${input.short} entry ${entry}`);
-    const destination = resolve(input.stageDir, target.replace(/^\.\//, ""));
+    const destination = resolve(input.stageDir, entry.target.replace(/^\.\//, ""));
     mkdirSync(dirname(destination), { recursive: true });
     renameSync(output, destination);
     consumed.add(output);
@@ -316,11 +317,19 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
     console.log(line);
   }
   const dependencies = dependencyUnion(short, readPackageManifest);
+  const extra = extraDependencyRanges(short, extraDependenciesFor(short), (workspace) => {
+    const file = join(ROOT, "packages", workspace, "package.json");
+    return existsSync(file) ? readPackageManifest(workspace) : null;
+  });
+  for (const line of extra.skipped) console.log(line);
+  const declared = { ...dependencies, ...extra.dependencies };
+
   const entries = entrySources(manifest, { short, surface: PUBLISH_SURFACE });
   if (entries.length === 0) {
     throw new Error(`packages/${short}/package.json has no bin or exports source entries`);
   }
   const targets = sourceTargetMap(entries);
+  const bundle = bundleEntries(short, manifest, { short, surface: PUBLISH_SURFACE });
 
   const stageDir = join(outRoot, "stage", short);
   const bundleDir = join(stageDir, ".bundle");
@@ -328,12 +337,12 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
   mkdirSync(bundleDir, { recursive: true });
 
   const result = await Bun.build({
-    entrypoints: entries.map((entry) => resolve(packageDir, entry)),
+    entrypoints: bundle.map((entry) => resolve(ROOT, entry.source)),
     target: "node",
     format: "esm",
     outdir: bundleDir,
-    root: packageDir,
-    external: externalPatterns(Object.keys(dependencies)),
+    root: ROOT,
+    external: externalPatterns(Object.keys(declared)),
     sourcemap: "external",
     splitting: false,
   });
@@ -344,11 +353,10 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
 
   const emitted = moveOutputs({
     short,
-    packageDir,
+    rootDir: ROOT,
     bundleDir,
     stageDir,
-    entries,
-    targets,
+    entries: bundle,
   });
 
   const imported: ImportedPackage[] = [];
@@ -357,16 +365,17 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
       imported.push({ package: name, file: file.file });
     }
   }
-  const selection = selectDependencies(imported, dependencies);
+  const selection = selectDependencies(imported, declared);
   console.log(
-    `${short}: dependencies ${selection.imported.length} of ${Object.keys(dependencies).length} ` +
+    `${short}: dependencies ${selection.imported.length} of ${Object.keys(declared).length} ` +
       `declared: ${selection.imported.join(", ")}`,
   );
+  const stagedDependencies = { ...selection.dependencies, ...extra.dependencies };
 
   const staged = stagedManifest({
     short,
     manifest,
-    dependencies: selection.dependencies,
+    dependencies: stagedDependencies,
     targets,
     surface: PUBLISH_SURFACE,
   });

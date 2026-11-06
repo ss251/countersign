@@ -10,6 +10,48 @@ export const PUBLISH_SURFACE: PublishSurface = {
   relay: ["./paywall", "./pay-fetch", "./browser"],
 };
 
+export type ExtraEntry = {
+  /** Repository-relative source path. */
+  source: string;
+  /** Staged target path, `dist/...js`. */
+  target: string;
+};
+
+export type ExtraEntryTable = Readonly<Record<string, readonly ExtraEntry[] | undefined>>;
+
+/**
+ * Files that sit beside the main bundle but are not declared by `bin` or
+ * `exports`. The runner starts its sandboxed child from `child-entry.js` next
+ * to the running bundle.
+ */
+export const EXTRA_ENTRIES: ExtraEntryTable = {
+  relay: [],
+  mcp: [],
+  cli: [{ source: "packages/runner/src/child-entry.ts", target: "dist/child-entry.js" }],
+};
+
+export type ExtraDependencyTable = Readonly<
+  Record<string, Readonly<Record<string, string>> | undefined>
+>;
+
+/**
+ * Published dependencies the import scanner cannot see, mapped to the short
+ * workspace package that owns the version.
+ */
+export const EXTRA_DEPENDENCIES: ExtraDependencyTable = {
+  relay: {},
+  mcp: {},
+  cli: { "@countersign-hub/mcp": "mcp" },
+};
+
+export function extraEntriesFor(short: string): readonly ExtraEntry[] {
+  return EXTRA_ENTRIES[short] ?? [];
+}
+
+export function extraDependenciesFor(short: string): Readonly<Record<string, string>> {
+  return EXTRA_DEPENDENCIES[short] ?? {};
+}
+
 export function publishAllowlist(
   short: string,
   surface: PublishSurface,

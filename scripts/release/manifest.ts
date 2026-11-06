@@ -1,6 +1,11 @@
+import { nodeEngine } from "./engines.ts";
 import { isRecord, type JsonObject } from "./json.ts";
 import { publishedName } from "./published.ts";
-import { publishExports, type PublishSurface } from "./surface.ts";
+import {
+  extraEntriesFor,
+  publishExports,
+  type PublishSurface,
+} from "./surface.ts";
 
 export type PackageManifest = JsonObject;
 
@@ -161,6 +166,100 @@ export function sourceTargetMap(sources: readonly string[]): Record<string, stri
   );
 }
 
+export type BundleEntry = {
+  /** Repository-relative source path. */
+  source: string;
+  /** Staged path inside the package, `./dist/...`. */
+  target: string;
+  /** True for a surface extra that bin and exports never declare. */
+  extra: boolean;
+};
+
+function repositorySource(source: string): string {
+  const normalized = normalizeSource(source).slice(2);
+  if (normalized.startsWith("../") || normalized.includes("/../")) {
+    throw new Error(`entry escapes the repository: ${source}`);
+  }
+  return normalized;
+}
+
+function extraTarget(target: string): string {
+  const normalized = target.trim().replace(/^\.\//, "");
+  if (
+    !normalized.startsWith("dist/") ||
+    !normalized.endsWith(".js") ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    throw new Error(`extra entry target must be a dist javascript path: ${target}`);
+  }
+  return normalized;
+}
+
+/**
+ * Every file the build bundles for a package: the manifest's bin and published
+ * exports, plus the surface extras. Extras never reach `bin` or `exports`.
+ */
+export function bundleEntries(
+  short: string,
+  manifest: PackageManifest,
+  options: EntryOptions = {},
+): BundleEntry[] {
+  const main = entrySources(manifest, options).map((source) => ({
+    source: repositorySource(`packages/${short}/${normalizeSource(source).slice(2)}`),
+    target: distTarget(source),
+    extra: false,
+  }));
+  const extras = extraEntriesFor(short).map((entry) => ({
+    source: repositorySource(entry.source),
+    target: extraTarget(entry.target),
+    extra: true,
+  }));
+
+  const byTarget = new Map(main.map((entry) => [entry.target, entry.source]));
+  for (const extra of extras) {
+    const existing = byTarget.get(extra.target);
+    if (existing !== undefined) {
+      throw new Error(`both ${existing} and ${extra.source} build to ${extra.target}`);
+    }
+    byTarget.set(extra.target, extra.source);
+  }
+  return [...main, ...extras];
+}
+
+export type ExtraDependencyPlan = {
+  dependencies: Record<string, string>;
+  /** One line per skipped extra dependency, ready to print. */
+  skipped: string[];
+};
+
+/**
+ * The extra dependencies of a package, with each range taken from the version
+ * of its short workspace package. A missing workspace package is skipped with
+ * one line instead of failing the build.
+ */
+export function extraDependencyRanges(
+  short: string,
+  extra: Readonly<Record<string, string>>,
+  read: (workspace: string) => ManifestSource | null,
+): ExtraDependencyPlan {
+  const dependencies: Record<string, string> = {};
+  const skipped: string[] = [];
+  for (const [name, workspace] of Object.entries(extra)) {
+    const source = read(workspace);
+    if (source === null) {
+      skipped.push(`${short}: extra dependency ${name} skipped (packages/${workspace} not found)`);
+      continue;
+    }
+    const version = source.manifest.version;
+    if (typeof version !== "string" || version.length === 0) {
+      throw new Error(`${source.label} has no version for ${short} extra dependency ${name}`);
+    }
+    dependencies[name] = `^${version}`;
+  }
+  return { dependencies: sortedDependencies(dependencies), skipped };
+}
+
 function rewriteValue(
   value: unknown,
   targets: Record<string, string>,
@@ -231,7 +330,7 @@ export function stagedManifest(input: StagedManifestInput): JsonObject {
     type: "module",
     license: "MIT",
     publishConfig: { access: "public" },
-    engines: { node: ">=20" },
+    engines: { node: nodeEngine(manifest) },
     files: ["dist"],
     dependencies: sortedDependencies(publishedDependencies),
   };
