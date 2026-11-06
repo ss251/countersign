@@ -386,7 +386,7 @@ a.hash__value {
 .sheet__body {
   display: grid;
   gap: var(--sp-3);
-  padding: var(--sp-5);
+  padding: var(--sp-5) var(--sp-5) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
 }
 
 .sheet__title {

@@ -138,6 +138,7 @@ function LimitRow({
           id={id}
           className="input num"
           inputMode="decimal"
+          enterKeyHint="done"
           autoComplete="off"
           autoFocus
           value={value}
