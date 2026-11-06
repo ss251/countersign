@@ -7,6 +7,7 @@ import { canonicalJson, type EnvelopeRefusal } from "@countersign/core";
 import {
   getTransaction,
   MIRROR_TESTNET,
+  mirrorFetch,
   netFor,
   offerHashFromMemo,
   scheduleStatus,
@@ -94,12 +95,11 @@ function parseEntry(raw: unknown): SpendEntry | null {
 
 /** Every entry on the topic in consensus order. Messages that are not spend entries are skipped. */
 export async function readEntries(topicId: string, opts: MirrorOptions = {}): Promise<LoggedEntry[]> {
-  const f = opts.fetch ?? fetch;
   const base = opts.base ?? MIRROR_TESTNET;
   const out: LoggedEntry[] = [];
   let next: string | null = `/api/v1/topics/${topicId}/messages?order=asc&limit=100`;
   while (next) {
-    const r = await f(base + next);
+    const r = await mirrorFetch(base + next, opts);
     if (r.status === 404) return out;
     if (!r.ok) throw new Error(`mirror topic ${topicId} -> ${r.status}`);
     const page = (await r.json()) as {
@@ -217,7 +217,6 @@ export async function reconcile(
     }
   }
 
-  const f = opts.fetch ?? fetch;
   const base = opts.base ?? MIRROR_TESTNET;
   const unlogged: string[] = [];
   const since = opts.since ?? entries[0]?.consensusAt;
@@ -226,7 +225,7 @@ export async function reconcile(
     `/api/v1/transactions?account.id=${agent}&transactiontype=CRYPTOTRANSFER&result=success&order=asc&limit=100` +
     `&timestamp=gte:${since}`;
   while (next) {
-    const r = await f(base + next);
+    const r = await mirrorFetch(base + next, opts);
     if (!r.ok) throw new Error(`mirror transactions for ${agent} -> ${r.status}`);
     const page = (await r.json()) as {
       transactions: { transaction_id: string; token_transfers?: { token_id: string; account: string; amount: number }[] }[];
