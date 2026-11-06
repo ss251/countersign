@@ -33,6 +33,13 @@ export function packageName(specifier: string): string | null {
   return head;
 }
 
+/** Drop one leading `#!` line: Bun's import scanner rejects a shebang. */
+export function stripShebang(code: string): string {
+  if (!code.startsWith("#!")) return code;
+  const newline = code.indexOf("\n");
+  return newline < 0 ? "" : code.slice(newline + 1);
+}
+
 /**
  * Every package a JavaScript file imports, from static and side-effect imports,
  * dynamic imports and require calls. Bun's scanner parses the code, so a string
@@ -41,7 +48,7 @@ export function packageName(specifier: string): string | null {
 export function scanImportPackages(code: string): string[] {
   const packages = new Set<string>();
   const transpiler = new Bun.Transpiler({ loader: "js" });
-  for (const imported of transpiler.scanImports(code)) {
+  for (const imported of transpiler.scanImports(stripShebang(code))) {
     if (!COUNTED_KINDS.has(imported.kind)) continue;
     const name = packageName(imported.path);
     if (name !== null) packages.add(name);
