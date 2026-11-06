@@ -16,7 +16,15 @@ import {
   usd,
 } from "../../lib/format.ts";
 import { approverAddress, makeApprover, SigningError } from "../../lib/approver.ts";
-import { approvalToken, HubError, hubPost, rememberAgent, rememberApprovalToken } from "../../lib/hub.ts";
+import {
+  approvalToken,
+  FOREIGN_HUB,
+  HubError,
+  hubPost,
+  isOwnHub,
+  rememberAgent,
+  rememberApprovalToken,
+} from "../../lib/hub.ts";
 import { envelopeChecklist, type Check } from "../../lib/checklist.ts";
 import { createSessionEnvelope } from "./session.ts";
 import type { Approval, EnvelopeView } from "../../lib/types.ts";
@@ -498,22 +506,25 @@ const MISSING_WALLET = "Your wallet is still being set up. Try again in a moment
 /** The primary way in, with the token field kept as the plain secondary option. */
 export function TokenGate({ rejected, onOpen }: { rejected: boolean; onOpen: () => void }) {
   const available = useContext(WalletModeContext).privy;
+  const own = isOwnHub();
   return (
     <>
-      {available ? (
+      {available && own ? (
         <PrivyCreate onOpen={onOpen} />
+      ) : available ? (
+        <p className="locked__alt">{FOREIGN_HUB}</p>
       ) : (
         <p className="locked__alt">Email sign-in is off on this console, so paste a token instead.</p>
       )}
       <div className="locked__paste" data-testid="buyer-own-hub">
-        {available ? <p className="label">Or paste a token</p> : null}
+        {available && own ? <p className="label">Or paste a token</p> : null}
         {rejected ? (
           <p className="field__error" role="alert" data-testid="buyer-token-rejected">
             This hub did not accept the token on this phone. Paste the right one.
           </p>
         ) : null}
         <TokenForm
-          variant={available ? "secondary" : "primary"}
+          variant={available && own ? "secondary" : "primary"}
           onSave={(t) => {
             rememberApprovalToken(t);
             onOpen();
