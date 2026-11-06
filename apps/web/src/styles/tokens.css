@@ -3,6 +3,8 @@
  *
  * Colour law: blue is money, green is settled, red is refused or countersigned,
  * and nothing else borrows them. Links, focus rings and chrome use ink and slate.
+ * "Settled" means the seller was paid: released is green. A refund returns the money
+ * and settles nothing, so refunded is neutral slate, here and in the Studio console.
  * No gradients, no glow, no glassmorphism.
  */
 

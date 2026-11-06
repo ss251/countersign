@@ -9,13 +9,20 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    port: 5191,
     strictPort: true,
     // In development the hub is reached through /hub, so the page and the API share an origin.
     proxy: {
       "/hub": { target: hub, changeOrigin: true, rewrite: (path) => path.replace(/^\/hub/, "") },
     },
   },
-  preview: { host: "127.0.0.1", port: 4173 },
+  // The built app gets the same /hub proxy, so one tunnel to this port reaches both.
+  preview: {
+    host: "127.0.0.1",
+    port: 4173,
+    proxy: {
+      "/hub": { target: hub, changeOrigin: true, rewrite: (path) => path.replace(/^\/hub/, "") },
+    },
+  },
   build: { target: "es2022", sourcemap: true },
 });

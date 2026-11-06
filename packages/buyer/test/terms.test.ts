@@ -247,3 +247,21 @@ describe("resume refunds", () => {
     expect(f.journal.spend().total).toBe("0");
   });
 });
+
+describe("journal lock", () => {
+  test("a lock left by a dead process is reclaimed", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Journal } = await import("../src/index.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cs-lock-"));
+    const path = join(dir, "journal.jsonl");
+    writeFileSync(`${path}.lock`, "999999");
+    const j = new Journal(path);
+    const d = j.reserve(
+      { at: 1, kind: "countersigned", offerHash: "0x01", seller: "0x02", amount: "1" } as never,
+      () => ({ ok: true }),
+    );
+    expect(d.ok).toBe(true);
+  });
+});

@@ -30,8 +30,11 @@ export interface Finding {
 }
 
 export interface Verdict {
+  /** Every check that ran passed. Says nothing about checks listed in `skipped`. */
   valid: boolean;
   findings: Finding[];
+  /** Checks that did not run, in words a person reads. Settlement is only claimed when it was read. */
+  skipped: string[];
 }
 
 const releasedEvent = parseAbiItem(
@@ -40,6 +43,7 @@ const releasedEvent = parseAbiItem(
 
 export async function verifySlip(slip: Slip, opts: { rpcUrl?: string } = {}): Promise<Verdict> {
   const findings: Finding[] = [];
+  const skipped: string[] = [];
   const add = (check: string, ok: boolean, detail: string) => findings.push({ check, ok, detail });
   const body = slip.body;
 
@@ -62,9 +66,11 @@ export async function verifySlip(slip: Slip, opts: { rpcUrl?: string } = {}): Pr
 
   if (opts.rpcUrl) {
     await checkOnchain(slip, opts.rpcUrl, add);
+  } else {
+    skipped.push("onchain: not checked. Pass an RPC URL to read the Released event from the chain.");
   }
 
-  return { valid: findings.every((f) => f.ok), findings };
+  return { valid: findings.every((f) => f.ok), findings, skipped };
 }
 
 async function checkCountersigned(slip: Slip, add: (c: string, ok: boolean, d: string) => void): Promise<void> {

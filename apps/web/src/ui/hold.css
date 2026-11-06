@@ -1,0 +1,95 @@
+.hold {
+  position: relative;
+  display: grid;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  color: var(--ink);
+  text-align: left;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    border-color var(--d-2) var(--ease-out),
+    transform var(--d-2) var(--ease-out);
+}
+
+.hold:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.hold--holding {
+  border-color: color-mix(in oklab, var(--seal) 45%, var(--line));
+  transform: scale(0.992);
+}
+
+.hold--done {
+  border-color: color-mix(in oklab, var(--seal) 35%, var(--line));
+  cursor: default;
+}
+
+.hold[aria-disabled="true"]:not(.hold--done) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hold__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.hold__rule {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.hold__ink,
+.hold__seal {
+  fill: none;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+}
+
+.hold__ink {
+  stroke: var(--ink);
+}
+
+.hold__seal {
+  stroke: var(--seal);
+}
+
+/* The hairline gap. Painted in the surface colour so the strokes look cut. */
+.hold__seam {
+  fill: var(--raised);
+}
+
+.hold__parties {
+  display: flex;
+  justify-content: space-between;
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.hold__label {
+  justify-self: center;
+  padding-top: var(--sp-1);
+  color: var(--ink);
+  font-size: var(--t-15);
+  font-weight: 600;
+}
+
+.hold--holding .hold__label {
+  color: var(--slate);
+}
+
+.hold--done .hold__label {
+  color: var(--seal);
+}

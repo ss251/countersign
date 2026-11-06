@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseAtomic, type EnvelopeDecision, type EnvelopeSpend, type Network, type RailId } from "@countersign/core";
 
@@ -68,12 +68,39 @@ export class Journal {
     const deadline = Date.now() + 5_000;
     for (;;) {
       try {
-        return openSync(this.lockPath, "wx");
+        const fd = openSync(this.lockPath, "wx");
+        writeSync(fd, String(process.pid));
+        return fd;
       } catch (e) {
         if ((e as { code?: string }).code !== "EEXIST") throw e;
+        // A lock left by a process that died is reclaimed rather than waited on.
+        if (this.ownerIsGone()) {
+          try {
+            unlinkSync(this.lockPath);
+          } catch {
+            // someone else reclaimed it first
+          }
+          continue;
+        }
         if (Date.now() >= deadline) throw new Error(`Timed out waiting for the journal lock at ${this.lockPath}.`);
         Atomics.wait(SLEEP, 0, 0, 10);
       }
+    }
+  }
+
+  private ownerIsGone(): boolean {
+    let pid: number;
+    try {
+      pid = Number(readFileSync(this.lockPath, "utf8").trim());
+    } catch {
+      return false;
+    }
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (e) {
+      return (e as { code?: string }).code === "ESRCH";
     }
   }
 

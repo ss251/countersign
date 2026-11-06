@@ -15,6 +15,17 @@ export interface KnownRail {
 
 export const KNOWN_RAILS: KnownRail[] = [
   {
+    // CountersignedEscrow deployed through Arc Studio: the escrow the hub settles Arc calls through.
+    network: "eip155:5042002",
+    scheme: "countersign",
+    chainId: 5042002,
+    escrow: "0x19c27d770969291e6a0a305dc1be1a845e7c1b76",
+    token: "0x3600000000000000000000000000000000000000",
+    tokenName: "USDC",
+    tokenVersion: "2",
+    rpcUrl: "https://rpc.testnet.arc.network",
+  },
+  {
     network: "eip155:5042002",
     scheme: "countersign",
     chainId: 5042002,
