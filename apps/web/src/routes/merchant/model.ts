@@ -106,6 +106,29 @@ export interface RelayCeiling {
   resetsAt: number | string;
 }
 
+/** The relayer's guards, as GET /status reports them (packages/relay/src/config.ts). */
+export interface RelayPolicy {
+  /** The fee cap: the relayer refuses to submit above this max fee per gas. */
+  maxFeePerGasWei: string;
+  /** The balance floor: below this the relayer stops submitting rather than run dry mid-call. */
+  minBalanceWei: string;
+  allowedTokens?: string[];
+  allowedEscrows?: string[];
+  /** The merchants whose payments and refunds the relayer will pay gas for. */
+  allowedPayees?: string[];
+  minAmount?: string;
+}
+
+/** Where the relayer's gas money comes from: the escrow's toll, split by the FeeSplit contract. */
+export interface RelayFunding {
+  feeSplit: string;
+  payees: Array<{ address: string; shareBps: number }>;
+  relayerShareBps: number;
+  tollBps: number;
+  /** USDT waiting in the FeeSplit to be paid out, decimal; null when the chain did not answer. */
+  feeSplitUsdt: string | null;
+}
+
 export interface RelayStatus {
   address: string;
   balanceWei: string;
@@ -113,6 +136,10 @@ export interface RelayStatus {
   ceiling: RelayCeiling;
   network: string;
   chainId: number;
+  policy?: RelayPolicy;
+  escrow?: string;
+  token?: string;
+  funding?: RelayFunding | null;
 }
 
 export type StatusTone = "money" | "settled" | "neutral";
@@ -431,6 +458,23 @@ export function formatWeiWbt(wei: string): string {
 /** A decimal WBT amount (as the relay reports it) to exactly four decimals. */
 export function formatWbt(value: string): string {
   return formatWeiWbt(decimalToWei(value).toString());
+}
+
+/** Wei per gas as gwei, trimmed to at most two decimals: the relayer's fee cap reads "50 gwei". */
+export function formatGwei(wei: string): string {
+  if (!/^\d+$/.test(wei)) throw new Error(`Not a wei amount: ${wei}`);
+  const hundredths = (BigInt(wei) + 5_000_000n) / 10_000_000n;
+  const whole = hundredths / 100n;
+  const fraction = (hundredths % 100n).toString().padStart(2, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : `${whole}`;
+}
+
+/** Basis points as a percentage, with no trailing zeros: 250 reads "2.5%", 10000 reads "100%". */
+export function bpsPercent(bps: number): string {
+  if (!Number.isInteger(bps) || bps < 0) throw new Error(`Not basis points: ${bps}`);
+  const whole = Math.floor(bps / 100);
+  const fraction = String(bps % 100).padStart(2, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}%` : `${whole}%`;
 }
 
 /** The ledger's status filters. Partly refunded money still sits with the merchant, so it is Paid. */

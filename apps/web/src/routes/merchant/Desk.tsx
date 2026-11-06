@@ -61,8 +61,22 @@ import {
   type RowState,
 } from "./Panel.tsx";
 
+import { useAccount } from "wagmi";
+import { Integrate } from "./Integrate.tsx";
+import { RelayerPanel } from "./RelayerPanel.tsx";
+import { WalletRefund, type WalletRefundOutcome } from "./WalletRefund.tsx";
+import { walletRefusal } from "./wallet-refund.ts";
+
 /** The sample ledger, imported only on ?hub=off so the default bundle never carries it. */
 type Sample = typeof import("./fixtures.ts");
+
+/** A wallet refund waiting for the merchant's confirmation; a partial one resolves the panel's promise. */
+interface WalletAsk {
+  order: Order;
+  amount: bigint;
+  reason?: RefundReason;
+  resolve?: (outcome: PartOutcome) => void;
+}
 
 const POLL_MS = 4000;
 const STATUS_POLL_MS = 5000;
@@ -138,8 +152,13 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<PanelView>("detail");
   const [detail, setDetail] = useState<ReceiptOrder | null>(null);
-  const [access, setAccess] = useState<RefundAccess>(() => ({ kind: offline ? "sample" : "checking" }));
+  const [serviceAccess, setAccess] = useState<RefundAccess>(() => ({ kind: offline ? "sample" : "checking" }));
   const [unlockOpen, setUnlockOpen] = useState(false);
+  const [walletAsk, setWalletAsk] = useState<WalletAsk | null>(null);
+  const { address: walletAddress } = useAccount();
+  // The connected wallet signs when it is this merchant (STEER-2210 W2); otherwise the merchant service does.
+  const walletSigns = !offline && !!walletAddress && !!merchant && walletAddress.toLowerCase() === merchant.toLowerCase();
+  const access: RefundAccess = walletSigns && walletAddress ? { kind: "wallet", address: walletAddress } : serviceAccess;
 
   const split = useMedia(SPLIT_QUERY);
   const touch = useMedia("(hover: none)");
@@ -453,6 +472,16 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   /** One click: the refund is on its way unless the merchant takes it back within the window. */
   const startRefund = (order: Order) => {
     if (!canAct(access) || undoTimersRef.current.has(order.id)) return;
+    if (access.kind === "wallet") {
+      // Deliberate already: the merchant reads exactly what is signed, then signs it in the sheet.
+      const refusal = walletRefusal(order, access.address, relayStatus);
+      if (refusal) {
+        setRow(order.id, { kind: "error", message: refusal });
+        return;
+      }
+      setWalletAsk({ order, amount: BigInt(order.refundable) });
+      return;
+    }
     setRow(order.id, { kind: "undo" });
     const timer = window.setTimeout(() => void sendRefund(order), UNDO_MS);
     undoTimersRef.current.set(order.id, timer);
@@ -473,6 +502,11 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
     const current = rows[order.id];
     if (undoTimersRef.current.has(order.id) || current?.kind === "undo" || current?.kind === "sending") {
       return { ok: false, reason: "A refund for this order is already on its way." };
+    }
+    if (access.kind === "wallet") {
+      const refusal = walletRefusal(order, access.address, relayStatus);
+      if (refusal) return { ok: false, reason: refusal };
+      return new Promise<PartOutcome>((resolve) => setWalletAsk({ order, amount, reason, resolve }));
     }
     setRow(order.id, { kind: "sending" });
     if (offline) {
@@ -542,6 +576,36 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   const receiptQuery = offline ? "?hub=off" : "";
   const titleOf = (order: Order) => itemLabel(order, order.offerHash ? titles[order.offerHash] : null);
   const panelOpen = selected !== null;
+
+  /** The wallet sheet closed: record what happened on the row, exactly as a service refund does. */
+  const finishWallet = (outcome: WalletRefundOutcome) => {
+    const ask = walletAsk;
+    setWalletAsk(null);
+    if (!ask) return;
+    const { order, amount, resolve } = ask;
+    const cancelled = isEscrowOpen(order.status);
+    if (outcome.kind === "done") {
+      setRow(order.id, {
+        kind: "done",
+        txHash: outcome.txHash,
+        amount: outcome.refunded ?? amount.toString(),
+        cancelled,
+        before: order.refundable,
+      });
+      resolve?.({ ok: true });
+      void refresh();
+    } else if (outcome.kind === "unknown") {
+      setRow(order.id, { kind: "unknown", message: outcome.reason, before: order.refundable });
+      resolve?.({ ok: "unknown" });
+      void refresh();
+    } else if (outcome.kind === "refused") {
+      setRow(order.id, { kind: "error", message: outcome.reason });
+      addRefusal(order.id, outcome.reason);
+      resolve?.({ ok: false, reason: outcome.reason });
+    } else {
+      resolve?.({ ok: false, reason: "Nothing was sent." });
+    }
+  };
 
   const handleExport = () => {
     setExportError(null);
@@ -874,6 +938,22 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
         <Sheet label="Order" onClose={closePanel}>
           {panel}
         </Sheet>
+      ) : null}
+
+      {showsGas && relayStatus ? <RelayerPanel status={relayStatus} /> : null}
+
+      <Integrate />
+
+      {walletAsk ? (
+        <WalletRefund
+          order={walletAsk.order}
+          amount={walletAsk.amount}
+          {...(walletAsk.reason ? { reason: walletAsk.reason } : {})}
+          {...(relayStatus?.escrow ? { escrow: relayStatus.escrow } : {})}
+          relayUrl={RELAY_URL}
+          hubTitle={walletAsk.order.offerHash ? titles[walletAsk.order.offerHash] : null}
+          onFinish={finishWallet}
+        />
       ) : null}
     </div>
   );
