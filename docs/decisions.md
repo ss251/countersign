@@ -119,3 +119,13 @@ Rule:
 - **Consumed ids.** The agent records every approval id it consumes and refuses an id it has seen before.
 - **What the phone checks.** The hub stores the whole signed request. The approval view returns it with `requestSig`, so the phone checks that the agent signed exactly what it displays, title included, before it signs. A hub can no longer show the human a different title for the same offer and amount.
 - **Body caps.** Every write route caps its body at 16 KiB, including the decision route.
+
+## D14 — five items cut to buy time (06 Nov, 18:12 IST)
+
+With sixteen hours to the deadline, the team dropped these so the build finishes what the demo and the prize rules need. `docs/status.md` lists them as `CUT`.
+
+- Paid sessions.
+- Unified balance.
+- The subgraph and `/graph/stats` (#4). There is no Goldsky account to deploy it with.
+- Railway preview environments for pull requests. If they come back, the preview secrets rule in `docs/deploy.md` still applies.
+- A headless browser for the e2e `web` flow. No browser runs on the build machine, so the screens are checked by hand in a real browser at 390 and 1440 px, light and dark.
