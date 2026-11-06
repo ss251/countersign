@@ -17,6 +17,8 @@ contracts/cache/
 contracts/broadcast/
 subgraph/generated/
 subgraph/build/
+.release/
+.release-test/
 
 # local tooling
 .claude/

@@ -258,3 +258,9 @@
   box-shadow: var(--elev-1);
   font-weight: 600;
 }
+
+/* An option that waits for Privy to start: visibly not ready, and not pressable. */
+.wallet__item:disabled {
+  color: var(--slate);
+  cursor: progress;
+}

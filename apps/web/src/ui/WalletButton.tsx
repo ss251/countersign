@@ -12,12 +12,53 @@ function messageOf(error: { shortMessage?: string; message: string }): string {
   return error.shortMessage || error.message;
 }
 
-type MenuOption = {
+export type MenuOption = {
   testId: string;
   label: string;
   href?: string;
   onSelect?: () => void;
+  /** Not yet usable, e.g. Privy has not reported ready: a click would do nothing, so it cannot be clicked. */
+  disabled?: boolean;
 };
+
+/**
+ * The menu's options, in order. Privy's login and connectWallet do nothing until usePrivy().ready, so while
+ * it starts both say so and cannot be pressed (cs-e2e, run 20261106-174813-90b8: a quick click did nothing).
+ */
+export function menuOptions(a: {
+  signIn?: () => void;
+  connectBrowser: () => void;
+  injected: boolean;
+  starting: boolean;
+  more?: MenuOption[];
+}): MenuOption[] {
+  const options: MenuOption[] = [];
+  if (a.signIn) {
+    const signIn = a.signIn;
+    options.push({
+      testId: "wallet-signin",
+      label: a.starting ? "Loading sign-in…" : "Sign in with email or passkey",
+      onSelect: () => signIn(),
+      disabled: a.starting,
+    });
+  }
+  if (a.injected) {
+    options.push({
+      testId: "wallet-connect-injected",
+      label: "Connect a browser wallet",
+      onSelect: a.connectBrowser,
+      disabled: a.starting,
+    });
+  } else {
+    options.push({
+      testId: "wallet-connect-injected",
+      label: "No wallet in this browser · Get one",
+      href: "https://metamask.io/download/",
+    });
+  }
+  options.push(...(a.more ?? []));
+  return options;
+}
 
 type WalletBodyProps = {
   signIn?: () => void | Promise<void>;
@@ -30,9 +71,20 @@ type WalletBodyProps = {
   cta: string;
   /** Which kind of wallet holds this address, for e2e/human's data-kind. */
   kindOf?: (address: string | undefined) => "privy" | "injected";
+  /** Privy has not reported ready yet, so its options wait. */
+  starting?: boolean;
 };
 
-function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [], cta, kindOf = () => "injected" }: WalletBodyProps) {
+function WalletBody({
+  signIn,
+  connectBrowser,
+  beforeDisconnect,
+  reason,
+  more = [],
+  cta,
+  kindOf = () => "injected",
+  starting = false,
+}: WalletBodyProps) {
   const account = useAccount();
   const connect = useConnect();
   const disconnect = useDisconnect();
@@ -73,28 +125,13 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
     }
   };
 
-  const options: MenuOption[] = [];
-  if (signIn) {
-    options.push({
-      testId: "wallet-signin",
-      label: "Sign in with email or passkey",
-      onSelect: () => void signIn(),
-    });
-  }
-  if (hasInjectedProvider()) {
-    options.push({
-      testId: "wallet-connect-injected",
-      label: "Connect a browser wallet",
-      onSelect: connectBrowser,
-    });
-  } else {
-    options.push({
-      testId: "wallet-connect-injected",
-      label: "No wallet in this browser · Get one",
-      href: "https://metamask.io/download/",
-    });
-  }
-  options.push(...more);
+  const options = menuOptions({
+    signIn: signIn ? () => void signIn() : undefined,
+    connectBrowser,
+    injected: hasInjectedProvider(),
+    starting,
+    more,
+  });
 
   return (
     <div className="wallet" aria-live="polite" ref={root}>
@@ -164,8 +201,12 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
                     type="button"
                     className="wallet__item"
                     data-testid={option.testId}
+                    data-state={option.disabled ? "loading" : "ready"}
                     role="menuitem"
+                    disabled={option.disabled}
+                    aria-disabled={option.disabled || undefined}
                     onClick={() => {
+                      if (option.disabled) return;
                       setOpen(false);
                       option.onSelect?.();
                     }}
@@ -193,7 +234,7 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
 }
 
 function PrivyWalletButton() {
-  const { login, connectWallet, logout } = usePrivy();
+  const { ready, login, connectWallet, logout } = usePrivy();
   const { wallets } = useWallets();
   // Privy's embedded wallet reports walletClientType "privy"; anything else came from the browser.
   const kindOf = (address: string | undefined) =>
@@ -207,6 +248,7 @@ function PrivyWalletButton() {
       reason={null}
       cta="Sign in"
       kindOf={kindOf}
+      starting={!ready}
     />
   );
 }
