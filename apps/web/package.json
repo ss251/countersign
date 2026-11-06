@@ -11,8 +11,10 @@
   "dependencies": {
     "@countersign/core": "workspace:*",
     "@countersign/rail": "workspace:*",
+    "@countersign/relay": "workspace:*",
     "@countersign/verify": "workspace:*",
     "@tanstack/react-query": "^5",
+    "hono": "^4.13.16",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "viem": "^2.57.16",

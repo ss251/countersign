@@ -5,10 +5,13 @@
     "": {
       "name": "countersign",
       "devDependencies": {
+        "@countersign/relay": "workspace:*",
         "@openzeppelin/contracts": "5.6.1",
         "@types/bun": "1.3.x",
         "forge-std": "github:foundry-rs/forge-std#v1.17.0",
+        "hono": "^4.13.16",
         "typescript": "5.9.3",
+        "viem": "^2.57.16",
       },
     },
     "apps/hub": {
@@ -46,8 +49,10 @@
       "dependencies": {
         "@countersign/core": "workspace:*",
         "@countersign/rail": "workspace:*",
+        "@countersign/relay": "workspace:*",
         "@countersign/verify": "workspace:*",
         "@tanstack/react-query": "^5",
+        "hono": "^4.13.16",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "viem": "^2.57.16",
