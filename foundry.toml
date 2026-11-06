@@ -14,8 +14,9 @@ remappings = [
   "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
 ]
 solc_version = "0.8.28"
-# One bytecode for every chain we deploy to: paris has no PUSH0/MCOPY/TSTORE.
-evm_version = "paris"
+# One bytecode for every chain we deploy to. Arc testnet and Whitechain Sepolia both
+# produce Prague-era headers, and OpenZeppelin 5.6 needs MCOPY, so cancun.
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 fs_permissions = [{ access = "read-write", path = "./contracts/deployments" }]

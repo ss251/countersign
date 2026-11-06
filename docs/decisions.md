@@ -10,9 +10,9 @@ Bun workspaces cover `apps/*` and `packages/*`. A single `tsconfig.json` at the 
 
 OpenZeppelin 5.6.1 comes from npm and forge-std from its v1.17.0 tag on GitHub, both as root dev dependencies with explicit remappings. There are no git submodules, so every worktree gets a compiling contracts tree from `bun install` alone.
 
-## D3 — `evm_version = "paris"`
+## D3 — `evm_version = "cancun"`
 
-The same escrow bytecode deploys to Arc and to Whitechain Sepolia. Compiling for paris keeps PUSH0, MCOPY and transient storage out of the bytecode, so neither chain's hardfork level can break a deploy.
+The same escrow bytecode deploys to Arc and to Whitechain Sepolia. OpenZeppelin 5.6's SignatureChecker uses MCOPY, so paris is out. On 06 Nov both chains' latest blocks carried `blobGasUsed`, `parentBeaconBlockRoot` and `requestsHash`, which means Prague-era headers, so cancun bytecode runs on both.
 
 ## D4 — amounts are bigint in code, digit strings on the wire
 
