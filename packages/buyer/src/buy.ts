@@ -44,6 +44,10 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
   const { hub, offerHash, input, journal, envelope } = a;
   const listing = await hub.getOffer(offerHash);
   const offer = listing.offer;
+  // The offer is only what the hub says it is until it hashes to the hash we asked for.
+  if (canonicalHash(offer).toLowerCase() !== offerHash.toLowerCase()) {
+    throw new BuyError("Refused. The hub served an offer that does not match the hash asked for.");
+  }
   if (listing.status === "delisted") throw new BuyError("Refused. The offer is delisted.");
   if (!listing.online) throw new BuyError("Refused. The seller is offline.");
 
