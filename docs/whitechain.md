@@ -14,6 +14,8 @@ For the README, in one line:
 - **Merchant:** sees every order at `#/merchant` as it settles. Refunds an order in one click: a held escrow order is cancelled, and a paid order is sent back as a gasless USDT transfer. Exports a CSV for the accountant. Never holds WBT.
 - **Business side of gas:** the relayer holds the WBT. Half of every escrow toll flows back to it through `FeeSplit`. The guards in [What stops the relayer being drained](#what-stops-the-relayer-being-drained) bound what anyone can make it spend.
 
+The merchant desk reads a seller's orders from the hub (`GET /orders?seller=`). When the hub does not serve that route or does not answer, it reads the Whitechain relay's records instead and says so on the page. Refunds go through the merchant's own service (`packages/relay/src/merchant-server.ts`), which runs on the merchant's machine. The public console has no merchant service or relay configured, so it shows orders but cannot refund them, and the production hub does not run the Whitechain rail. The payments, refunds and export below ran on the build machine.
+
 ## Network
 
 | | |
@@ -29,7 +31,7 @@ For the README, in one line:
 | Gas token | WBT, 18 decimals |
 | Block time | 1 s |
 | Base fee seen | 5 gwei; block gas limit 40,000,000 |
-| Highest EVM target | `prague`. Our contracts compile for `paris` (see `docs/decisions.md` D3) |
+| Highest EVM target | `prague`. Our contracts compile for `cancun` (see `docs/decisions.md` D3) |
 
 ## Settlement token: USDT
 
@@ -120,6 +122,16 @@ The same hub code as `apps/hub`, run with the `whitechain` rail (`packages/relay
 | 2026-11-06 10:13 | Runner delivers and the hub checks the output against the offer's schema. The relay then releases: 0.0495 USDT to the merchant, 0.0005 to `FeeSplit`. `Released` carries the slip hash `0x7f69ea83…df6c` | [`0x90ed826a…c812`](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812) |
 | 2026-11-06 10:18 | An earlier call asked for a section the skill does not have. The runner refused, the hub refused the delivery, and once the deadline passed the hub's janitor refunded the full 0.05 USDT through the relay. No one decided anything | [`0xebf26b54…a7a2`](https://explorer.testnet.whitechain.io/tx/0xebf26b543f81853ef12824ada9fb1096dac25d03a39986a4d5e2abe44228a7a2) |
 
+The same purchase also runs through the **main hub**, once that hub has `WC_RELAY_URL` set. Its four rails are escrow on Arc, whitechain, gateway and hedera:
+
+| When (UTC) | What | Tx |
+|---|---|---|
+| 2026-11-06 10:57 | Buyer funds `whitechain-dev` through the main hub, 0.05 USDT, job `0x32088a56…a53e` | [`0x7743ce20…ddbf`](https://explorer.testnet.whitechain.io/tx/0x7743ce200d4cdbda262f0ca1879119cd5c0cf4480b47b1fb37ae6226e533ddbf) |
+| 2026-11-06 10:57 | The escrow releases with slip hash `0x96c3a275…b427` | [`0x15535057…9bf7`](https://explorer.testnet.whitechain.io/tx/0x15535057c9a69560eca1bd189bdd15dc44be5349627eca9f7217a44af62e9bf7) |
+| 2026-11-06 10:58 | The merchant refunds the order in one click. The full 0.05 USDT goes back and the merchant absorbs the toll | [`0xba2f82ea…0b6f`](https://explorer.testnet.whitechain.io/tx/0xba2f82eaa95415f48b1178937252709b9348f144012bc9979ae945d9fb940b6f) |
+
+`packages/verify` passes all six checks on that slip: hash, seller, terms, countersignature, the known Whitechain escrow, and `Released(job, slip)` on chain in block 12366264.
+
 The slip was checked with the hub stopped, reading chain 1874 through `https://rpc.ankr.com/whitechain_testnet`. All five checks passed: hash, seller, terms, countersignature, and on chain, where `Released(job, slip)` comes from escrow `0x9279…7eb4` in block 12363646.
 
 ```
@@ -200,7 +212,7 @@ forge verify-contract <address> contracts/src/CountersignedEscrow.sol:Countersig
   --constructor-args <abi-encoded args>
 ```
 
-The REST API also accepts `standard-input`, `multi-part` and `flattened-code` at `POST /api/v2/smart-contracts/{address}/verification/via/<method>`; `contract_name` is required there. `v0.8.28+commit.7893614a` and the `paris` EVM target are both on the explorer's list. Poll `GET /api/v2/smart-contracts/{address}` until `is_verified` is true.
+The REST API also accepts `standard-input`, `multi-part` and `flattened-code` at `POST /api/v2/smart-contracts/{address}/verification/via/<method>`; `contract_name` is required there. `v0.8.28+commit.7893614a` and the `cancun` EVM target are both on the explorer's list. Poll `GET /api/v2/smart-contracts/{address}` until `is_verified` is true.
 
 ## Deployments
 
