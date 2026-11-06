@@ -30,6 +30,7 @@ import {
   transfer,
 } from "../lib/fund.ts";
 import { Keyring } from "../lib/keys.ts";
+import { REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
 import { slipHashFromHref } from "../lib/slip.ts";
 import { installTestWallet, newTestAccount } from "../lib/wallet.ts";
 import {
@@ -363,6 +364,19 @@ const runHuman = async (
       const countersign = testId(page, "start-countersign");
       await expect(countersign).toBeEnabled({ timeout: 60_000 });
       await countersign.click();
+
+      await expect(testId(page, "start-review")).toBeVisible({ timeout: 30_000 });
+      const review = reviewValuesOf({
+        "start-payee": await waitAttr(page, "start-payee", REVIEW_FIELD["start-payee"], 30_000),
+        "start-amount": await waitAttr(page, "start-amount", REVIEW_FIELD["start-amount"], 30_000),
+        "start-job": await waitAttr(page, "start-job", REVIEW_FIELD["start-job"], 30_000),
+      });
+      rec.note(`review payee: ${review.payee}`);
+      rec.note(`review amount: ${review.amount}`);
+      rec.note(`review job: ${review.job}`);
+      await rec.screenshot(page, "05", "review");
+
+      await testId(page, "start-sign").click();
       await approveIfPrompted(page);
       await approveIfPrompted(page);
 
@@ -377,7 +391,7 @@ const runHuman = async (
         throw new Error(`start-verify[href] is ${JSON.stringify(href)}, not #/verify/<hash>`);
       }
       rec.slip = slipHash;
-      return { hash, slipHash };
+      return { hash, slipHash, review };
     });
 
     const proof = await step(rec, page, "06", "prove", "prove the purchase on chain", async () => {
@@ -398,6 +412,12 @@ const runHuman = async (
       const slip = slipFieldsOf(parsed);
       if (slip.buyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
+      }
+      if (slip.jobId.toLowerCase() !== bought.review.job.toLowerCase()) {
+        throw new Error(`the review showed ${bought.review.job}, but the slip's jobId was ${slip.jobId}`);
+      }
+      if (slip.amount !== bought.review.amount) {
+        throw new Error(`the review showed ${bought.review.amount}, but the slip's amount was ${slip.amount}`);
       }
 
       const offerResponse = await fetch(`${hub}/offers/${slip.offerHash}`);
@@ -448,6 +468,9 @@ const runHuman = async (
       }
       if (fundBuyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the Funded buyer is ${fundBuyer}, not ${wallet}`);
+      }
+      if (fundPayee.toLowerCase() !== bought.review.payee.toLowerCase()) {
+        throw new Error(`the review showed ${bought.review.payee}, but the Funded payee was ${fundPayee}`);
       }
       if (fundAmount !== slip.amount) {
         throw new Error(`the Funded amount is ${fundAmount}, not the slip amount ${slip.amount}`);

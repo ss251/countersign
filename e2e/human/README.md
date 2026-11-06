@@ -2,8 +2,9 @@
 
 A Playwright project that does what a person does on the deployed console and hub, and proves each
 money step on chain: sign in, fund the wallet with 1 USDC, buy an Arc escrow offer (countersign,
-fund), watch the seller deliver and release, then verify the slip in the console and with the
-standalone verifier.
+read the review, sign, fund), watch the seller deliver and release, then verify the slip in the
+console and with the standalone verifier. The review's payee, amount and job are checked against
+the slip and the `Funded` log.
 
 ## Run
 
@@ -56,4 +57,4 @@ bun test e2e/human/test
 ```
 
 They cover the injected wallet's request handler, the secrets loader, the report renderer and leak
-scan, and the funding arithmetic. No browser and no network.
+scan, the funding arithmetic and the review values' parsing. No browser and no network.
