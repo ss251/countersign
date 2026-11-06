@@ -30,6 +30,20 @@ export const walletConfig = createConfig({
   },
 });
 
+export const PRIVY_APP_ID: string | undefined =
+  import.meta.env.VITE_PRIVY_APP_ID?.trim() || undefined;
+
+export type WalletMode = { privy: boolean; reason: string | null };
+
+export const PRIVY_NOT_SET_UP =
+  "Email sign-in is not set up on this console, so connect a browser wallet.";
+
+export function walletModeFor(appId: string | undefined, failed: string | null): WalletMode {
+  if (!appId) return { privy: false, reason: PRIVY_NOT_SET_UP };
+  if (failed) return { privy: false, reason: failed };
+  return { privy: true, reason: null };
+}
+
 export function chainName(id: number | undefined): string {
   if (id === undefined) return "";
   return walletConfig.chains.find((chain) => chain.id === id)?.name ?? `chain ${id}`;
