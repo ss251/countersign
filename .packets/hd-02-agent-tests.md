@@ -22,6 +22,7 @@ Read first:
 
 ## Constraints
 
+- **No browser of any kind on this machine:** no headless Chrome, Playwright, Puppeteer or screenshot tools. UI checks go back to the lane, which raises NEEDS-BROWSER.
 - **Tests are offline.**
   - The hub is a `Bun.serve({ port: 0 })` inside the test. It uses a real `createHederaRail` with a fake facilitator and `verifyPayerSignature: async () => ({ ok: true })`, so the agent's signed transfer goes through the real rail checks.
   - Keys come from `PrivateKey.generateECDSA()`, and the mirror node is a fake `fetch`.
