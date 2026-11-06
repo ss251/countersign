@@ -27,7 +27,7 @@ export function Stream({ rows, loaded, rails, hubDown }: StreamProps) {
     <section className="stream" aria-labelledby="stream-title">
       <div className="stream__head">
         <p className="section-kicker">
-          <span className="live-dot" aria-hidden="true" /> Live from the hub
+          Live from the hub
         </p>
         <h2 id="stream-title" className="stream__title">
           Every payment here was real.

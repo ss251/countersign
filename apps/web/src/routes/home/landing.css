@@ -9,23 +9,6 @@
   overflow-x: clip;
 }
 
-.live-dot {
-  display: inline-block;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--settle-fill);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--settle-fill) 22%, transparent);
-  animation: live-pulse 2.4s var(--ease-in-out) infinite;
-}
-
-@keyframes live-pulse {
-  50% {
-    box-shadow: 0 0 0 6px color-mix(in oklab, var(--settle-fill) 0%, transparent);
-  }
-}
-
 .section-kicker {
   display: inline-flex;
   align-items: center;
@@ -56,17 +39,14 @@
   z-index: -1;
 }
 
-/* Beneath the glass, in its colours: what shows while it loads, and wherever WebGL cannot run. */
+/* Beneath the glyphs, in their colours: what shows while the field mounts. */
 .hero__poster {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(70% 90% at 78% 22%, color-mix(in oklab, var(--steel) 55%, transparent), transparent 70%),
-    radial-gradient(50% 60% at 20% 90%, color-mix(in oklab, var(--lavender) 16%, transparent), transparent 70%),
-    var(--paper);
+  background: var(--paper);
 }
 
-.hero__glass {
+.hero__glyphs {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -80,7 +60,7 @@
   }
 }
 
-/* Keeps the words readable over the brightest folds, and hands the hero to the paper below. */
+/* Keeps the words readable over the brightest glyphs, and hands the hero to the paper below. */
 .hero__veil {
   position: absolute;
   inset: 0;
@@ -103,7 +83,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 6px 12px 6px 10px;
+  padding: 6px 12px;
   border-radius: var(--r-pill);
   background: color-mix(in oklab, var(--paper) 55%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 14%, transparent);
@@ -117,11 +97,11 @@
 }
 
 .hero__title {
-  max-width: 13ch;
+  max-width: 15ch;
   font-family: var(--display);
-  font-size: clamp(2.75rem, 1.4rem + 5.4vw, 6.25rem);
+  font-size: clamp(2.25rem, 1.1rem + 3.6vw, 4.5rem);
   font-weight: 700;
-  line-height: 0.96;
+  line-height: 1.06;
   letter-spacing: -0.025em;
   color: var(--ink);
 }
@@ -924,7 +904,6 @@
 
 /* Less motion: nothing pulses or drifts; fades stay. */
 @media (prefers-reduced-motion: reduce) {
-  .live-dot,
   .hero__down svg,
   .diagram__dot-ring {
     animation: none;

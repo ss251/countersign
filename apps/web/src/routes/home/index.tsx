@@ -19,7 +19,7 @@ const POLL_MS = 10_000;
 
 /**
  * The front door, told as one story with its evidence:
- *   1 the hero: the claim over folded glass, with the hub's own figures;
+ *   1 the hero: the claim over a swelling glyph field, with the hub's own figures;
  *   2–4 the journey: five parties on one diagram, and one real escrow payment riding it;
  *   5 the evidence: the hub's last settlements, live;
  *   6 the proof: where to check all of it without us.

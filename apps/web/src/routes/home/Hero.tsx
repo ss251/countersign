@@ -1,24 +1,16 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "../../app/router.tsx";
 import { useThemeToggle } from "../../app/theme.ts";
 import { formatAmount, usd } from "../../lib/format.ts";
 import type { HubStats } from "../../lib/types.ts";
+import { GlyphField } from "./GlyphField.tsx";
 
 /*
- * Beat 1, the hero: the statement over a field of folded glass, and the hub's own figures under it.
- * The glass is a WebGL shader (gradflow's "fold"); it loads after first paint, pauses whenever it
- * is off screen or the tab is hidden, and holds still under reduced motion. A plain gradient in
- * the same colours sits beneath it, so the hero is never empty while it loads or where WebGL fails.
- * A video can take the glass's place later: it is one layer, .hero__bg.
+ * Beat 1, the hero: the statement over a field of glyphs that swell in rings from the pointer, and
+ * the hub's own figures under it. The field mounts after first paint, pauses whenever it is off
+ * screen or the tab is hidden, and holds still under reduced motion. A plain gradient sits beneath
+ * it, so the hero is never empty while it loads.
  */
-
-const GradFlow = lazy(() => import("gradflow").then((m) => ({ default: m.GradFlow })));
-
-/** The fold in our palette: steel panes on raisin, lit along the creases in lavender. */
-const FOLD = {
-  dark: { type: "fold", color1: "#437F97", color2: "#242124", color3: "#D8DCFF", speed: 0.4, scale: 1, noise: 0.1 },
-  light: { type: "fold", color1: "#9CC2D2", color2: "#EEF0FF", color3: "#FFFFFF", speed: 0.4, scale: 1, noise: 0.06 },
-} as const;
 
 export interface HeroProps {
   stats: HubStats | null;
@@ -44,17 +36,13 @@ export function Hero({ stats, missing, railsLive, reduced, onDown }: HeroProps) 
     <section ref={box} className="hero" aria-labelledby="hero-title">
       <div className="hero__bg" aria-hidden="true">
         <div className="hero__poster" />
-        {ready ? (
-          <Suspense fallback={null}>
-            <GradFlow className="hero__glass" config={FOLD[current]} paused={reduced || !visible} transition={600} />
-          </Suspense>
-        ) : null}
+        {ready ? <GlyphField running={!reduced && visible} theme={current} target={box} /> : null}
         <div className="hero__veil" />
       </div>
 
       <div className="hero__inner">
         <p className="hero__kicker">
-          <span className="live-dot" aria-hidden="true" /> Agent checkout, countersigned
+          Agent checkout, countersigned
         </p>
         <h1 id="hero-title" className="hero__title">
           Payments that only move when the work lands.
@@ -118,7 +106,7 @@ function Figures({ stats, missing, railsLive }: { stats: HubStats | null; missin
   );
 }
 
-/** Whether the element is on screen and the tab is visible: the glass draws only then. */
+/** Whether the element is on screen and the tab is visible: the glyphs draw only then. */
 function useVisible(el: React.RefObject<HTMLElement | null>): boolean {
   const [onScreen, setOnScreen] = useState(true);
   const [tab, setTab] = useState(true);
