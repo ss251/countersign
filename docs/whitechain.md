@@ -64,6 +64,24 @@ These are fresh keys made for this project. The private keys live only in `~/.co
 | merchant | `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` | USDT it was paid, never WBT |
 | buyer | `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298` | USDT only, never WBT |
 
+### How the lane wallets were funded
+
+The relayer is the only wallet that ever gets WBT from outside, and it pays for everything after that. Buyers get no WBT at any point.
+
+| When (UTC) | What | Tx |
+|---|---|---|
+| 2026-11-06 09:27 | relayer receives 1.9 WBT | [`0xd41d2ecd…9779`](https://explorer.testnet.whitechain.io/tx/0xd41d2ecd6aa2a8bd5d173a51b331bddc8b46cf47c078a70a8b5f1c0703e97779) |
+| 2026-11-06 09:33 | relayer swaps 0.2 WBT for 14.664556 USDT, paid to the buyer (`BuyTestUsdt.s.sol`) | [`0x0c1bb12a…0301`](https://explorer.testnet.whitechain.io/tx/0x0c1bb12ac1af1e49f4285703a8c1f23b67391601857548c64484818226bb0301) |
+| 2026-11-06 09:34 | relayer sends 0.1 WBT to the deployer (`TopUpWbt.s.sol`) | [`0xdf4ab567…935b`](https://explorer.testnet.whitechain.io/tx/0xdf4ab567d18958c673c423ed9df7622e22ffd046d8640262ecf2808b20b8935b) |
+
+Both scripts read keys from the environment through `vm.envUint`, so a key never appears in a command line:
+
+```
+set -a; . ~/.config/countersign/wc.env; set +a
+WC_SWAP_SIGNER=RELAYER WC_SWAP_RECIPIENT=$WC_BUYER_ADDRESS WC_SWAP_WBT_WEI=200000000000000000 WC_SWAP_MIN_USDT=13500000 \
+  forge script contracts/script/whitechain/BuyTestUsdt.s.sol:BuyTestUsdt --rpc-url https://rpc.testnet.whitechain.io --broadcast --slow
+```
+
 ## Verifying contracts
 
 Blockscout takes Foundry's `blockscout` verifier on the Etherscan-compatible endpoint:
