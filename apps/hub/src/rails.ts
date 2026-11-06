@@ -1,7 +1,7 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { eip3009Rail, escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
 import { createHederaHeldRail, createHederaRail } from "@countersign/rail/hedera";
-import type { Address, Hex } from "viem";
+import { isAddress, type Address, type Hex } from "viem";
 
 const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
 
@@ -64,6 +64,9 @@ export const RAIL_CONFIG_VARS = [
   "ARC_USDC",
   "ARC_ESCROW_VERSION",
   "CS_RELAYER_KEY",
+  "WC_ESCROW_VERSION",
+  "WC_ESCROW_V2",
+  "WC_RELAY_TOKEN",
 ] as const;
 
 /** Whether the environment asks for this rail. */
@@ -124,7 +127,25 @@ export async function railsFromEnv(
     }
   }
   if (railRequested("whitechain", env) && env.WC_RELAY_URL) {
-    rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));
+    const version = env.WC_ESCROW_VERSION === "2" ? 2 : 1;
+    const escrowV2 = env.WC_ESCROW_V2?.trim();
+    if (version === 2 && (!escrowV2 || !isAddress(escrowV2))) {
+      log("[hub] rail whitechain is off: WC_ESCROW_VERSION=2 needs WC_ESCROW_V2");
+    } else {
+      try {
+        rails.push(
+          whitechainRail({
+            relayUrl: env.WC_RELAY_URL,
+            version,
+            ...(version === 2 ? { escrow: escrowV2 as Address } : {}),
+            relayToken: env.WC_RELAY_TOKEN?.trim() || undefined,
+          }),
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error);
+        log(`[hub] rail whitechain is off: ${reason}`);
+      }
+    }
   }
   if (railRequested("gateway", env)) {
     await startOptional(rails, "gateway", makers.gateway ?? (() => gatewayRail({})), log);
