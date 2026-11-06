@@ -38,7 +38,7 @@ function fakeFacilitator(o: FakeOpts = {}) {
 }
 
 /** A mirror node that knows exactly one transaction, or none. */
-function fakeMirror(tx?: { id: string; result: string; credit: bigint }) {
+function fakeMirror(tx?: { id: string; result: string; credit: bigint; consensusTimestamp?: string }) {
   return {
     base: "http://mirror.test",
     fetch: (async (url: string) => {
@@ -50,7 +50,7 @@ function fakeMirror(tx?: { id: string; result: string; credit: bigint }) {
                 transaction_id: toMirrorTxId(tx.id),
                 result: tx.result,
                 name: "CRYPTOTRANSFER",
-                consensus_timestamp: "1793957001.000000001",
+                consensus_timestamp: tx.consensusTimestamp ?? `${Math.floor(Date.now() / 1000)}.000000001`,
                 memo_base64: null,
                 transfers: [],
                 token_transfers: [
@@ -200,13 +200,17 @@ describe("hedera rail", () => {
 
   test("when the facilitator goes silent on settle, the chain decides", async () => {
     const { f } = fakeFacilitator({ settle: "throw" });
-    const r0 = await rail([f]);
+    const t = Math.floor(Date.now() / 1000);
+    const r0 = await rail([f], { now: () => t });
     const req = r0.challenge(offer(), ctx);
     const payment = await pay(req);
     const { decodeTransfer } = await import("../inspect.ts");
     const id = decodeTransfer(payment.payload.transaction as string).transactionId;
 
-    const landed = await rail([f], { mirror: fakeMirror({ id, result: "SUCCESS", credit: 10000n }) });
+    const landed = await rail([f], {
+      now: () => t,
+      mirror: fakeMirror({ id, result: "SUCCESS", credit: 10000n, consensusTimestamp: `${t + 1}.000000001` }),
+    });
     expect(await landed.settle(payment, req)).toMatchObject({ success: true, transaction: id, payer: PAYER });
 
     const missing = await rail([f], { mirror: fakeMirror() });
@@ -214,6 +218,22 @@ describe("hedera rail", () => {
 
     const short = await rail([f], { mirror: fakeMirror({ id, result: "SUCCESS", credit: 9999n }) });
     expect((await short.settle(payment, req)).success).toBe(false);
+  });
+
+  test("a mirror record older than the attempt is a replay, not this settlement", async () => {
+    const { f } = fakeFacilitator({ settle: "throw" });
+    const t = Math.floor(Date.now() / 1000);
+    const r0 = await rail([f], { now: () => t });
+    const req = r0.challenge(offer(), ctx);
+    const payment = await pay(req);
+    const { decodeTransfer } = await import("../inspect.ts");
+    const id = decodeTransfer(payment.payload.transaction as string).transactionId;
+
+    const old = await rail([f], {
+      now: () => t,
+      mirror: fakeMirror({ id, result: "SUCCESS", credit: 10000n, consensusTimestamp: `${t - 60}.000000001` }),
+    });
+    expect(await old.settle(payment, req)).toMatchObject({ success: false, errorReason: "replay" });
   });
 
   test("a facilitator that reports failure is believed only if the chain agrees", async () => {

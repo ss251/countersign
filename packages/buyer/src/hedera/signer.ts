@@ -59,7 +59,7 @@ export async function signHederaTransfer(
     .addTokenTransfer(token, AccountId.fromString(req.payTo), amount)
     .setTransactionId(TransactionId.generate(AccountId.fromString(req.extra!.feePayer as string)))
     .setTransactionMemo(offerMemo(req.extra!.offerHash as string))
-    .setTransactionValidDuration(Math.min(Math.max(req.maxTimeoutSeconds, 30), 180));
+    .setTransactionValidDuration(Math.min(req.maxTimeoutSeconds, 180));
   const client = Client.forTestnet();
   try {
     tx.freezeWith(client);
