@@ -68,6 +68,7 @@ export const RAIL_CONFIG_VARS = [
   "WC_ESCROW_VERSION",
   "WC_ESCROW_V2",
   "WC_RELAY_TOKEN",
+  "WC_RELAY_FUNDER",
   "HEDERA_HELD_HUB_KEY",
 ] as const;
 
@@ -134,6 +135,11 @@ export async function railsFromEnv(
     if (version === 2 && (!escrowV2 || !isAddress(escrowV2))) {
       log("[hub] rail whitechain is off: WC_ESCROW_VERSION=2 needs WC_ESCROW_V2");
     } else {
+      // A bonded v2 job needs the payee's Lock(jobId, funder) naming the relay's submitting address.
+      const funder = env.WC_RELAY_FUNDER?.trim();
+      if (version === 2 && funder && !isAddress(funder)) {
+        log("[hub] WC_RELAY_FUNDER is not an address, so whitechain refuses bonded jobs");
+      }
       try {
         rails.push(
           whitechainRail({
@@ -141,6 +147,7 @@ export async function railsFromEnv(
             version,
             ...(version === 2 ? { escrow: escrowV2 as Address } : {}),
             relayToken: env.WC_RELAY_TOKEN?.trim() || undefined,
+            ...(version === 2 && funder && isAddress(funder) ? { funder: funder as Address } : {}),
           }),
         );
       } catch (error) {

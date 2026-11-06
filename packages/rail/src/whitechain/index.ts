@@ -25,6 +25,8 @@ export interface WhitechainRailOptions {
   escrow?: Address;
   /** Version 2 only: the bearer token the relay requires on /escrow/fail. */
   relayToken?: string;
+  /** Version 2 only: the relay's submitting address. A bonded job's Lock(jobId, funder) must name it. */
+  funder?: Address;
   fetch?: typeof fetch;
   publicClient?: PublicClient<Transport, Chain>;
 }
@@ -142,5 +144,13 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
     escrow.disputeWindowSeconds = base.escrow!.disputeWindowSeconds;
   }
 
-  return { declaration: base.declaration, challenge: base.challenge, verify, settle, escrow };
+  const funder = version === 2 && opts.funder ? getAddress(opts.funder) : undefined;
+  return {
+    declaration: base.declaration,
+    challenge: base.challenge,
+    verify,
+    settle,
+    escrow,
+    ...(funder ? { funder } : {}),
+  };
 }
