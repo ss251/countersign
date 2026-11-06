@@ -1,0 +1,12 @@
+{
+  "arbiter": "0xE37F64A73225f5eA06BABcb1cc5440F01446C267",
+  "block": 71082978,
+  "chainId": 5042002,
+  "escrow": "0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE",
+  "token": "0x3600000000000000000000000000000000000000",
+  "tollBps": 100,
+  "treasury": "0xBF9DE410d4A17781dF0D9D3DD160018Aceb3FE87",
+  "deployTx": "0x650b6fd9eaab6c4c4988a773412e063cef230610104f975df7b433ff594c1207",
+  "sourceCommit": "52b7c7cd8468fef447cc2692ad7d531a598f4540",
+  "verified": "https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE"
+}

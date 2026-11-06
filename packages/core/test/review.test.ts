@@ -47,7 +47,9 @@ describe("escrow v2 buyer decisions", () => {
   });
 
   test("Dispute hashes as the escrow's Dispute(bytes32 jobId)", () => {
-    expect(hashTypedData(disputeTypedData(CHAIN, ESCROW, JOB))).toBe(solidityDigest("Dispute(bytes32 jobId)", [JOB]));
+    expect(hashTypedData(disputeTypedData(CHAIN, ESCROW, JOB, 1))).toBe(
+      solidityDigest("Dispute(bytes32 jobId,uint8 status)", [JOB, toHex(1, { size: 32 })]),
+    );
   });
 
   test("a buyer's signature recovers to the buyer, and binds the escrow, chain, job and slip", async () => {
@@ -68,7 +70,7 @@ describe("escrow v2 buyer decisions", () => {
 
   test("an Accept signature is not a Dispute signature for the same job", async () => {
     const sig = await buyer.signTypedData(acceptTypedData(CHAIN, ESCROW, JOB, SLIP));
-    expect(await recoverTypedDataAddress({ ...disputeTypedData(CHAIN, ESCROW, JOB), signature: sig })).not.toBe(
+    expect(await recoverTypedDataAddress({ ...disputeTypedData(CHAIN, ESCROW, JOB, 1), signature: sig })).not.toBe(
       buyer.address,
     );
   });

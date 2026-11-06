@@ -6,6 +6,8 @@
  * dependency is needed.
  */
 
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { JsonSchema, Offer, RailId } from "@countersign/core";
 import type { Address } from "./account.ts";
 
@@ -65,7 +67,7 @@ const HEADING = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*\r?$/gm;
 
 /** Read a SKILL.md, parse its front matter and hash the file bytes. */
 export async function readSkill(path: string): Promise<Skill> {
-  const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+  const bytes = new Uint8Array(await readFile(path));
   const text = new TextDecoder().decode(bytes);
   const match = FRONT_MATTER.exec(text);
   if (!match) throw new Error("The skill must start with front matter between two --- lines.");
@@ -78,7 +80,7 @@ export async function readSkill(path: string): Promise<Skill> {
     name,
     description,
     body: text.slice(match[0].length).replace(/^\r?\n/, ""),
-    sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+    sha256: createHash("sha256").update(bytes).digest("hex"),
   };
 }
 

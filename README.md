@@ -4,6 +4,14 @@ countersign lets a software agent pay for a call to another piece of software wi
 
 What is built, what is on a branch and what is only designed: [docs/status.md](docs/status.md).
 
+## Get started
+
+Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
+
+- **Hire a tool from your agent.** The buyer CLI, or its OpenAI-compatible endpoint, pays in test USDC on Arc. The MCP server for Claude and Cursor is not built yet.
+- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. One `serve --openapi` command sells an operation of an API.
+- **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
+
 ## Rails
 
 One interface, one slip shape. Nothing above a rail knows which chain it is on ([docs/spec/rail.md](docs/spec/rail.md)).
@@ -28,6 +36,8 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
 - **The drop-in.** It is two files:
   - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
   - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
+
+  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Never install that name from npm: the `@countersign` scope there belongs to another project.
 
   Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
@@ -94,7 +104,7 @@ Where this is going: the person's wallet on EVM, the agent's account on Hedera, 
 
 | Class of user | Wallet | Rails | Status |
 |---|---|---|---|
-| Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
+| Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | Live on Arc: a person signed in and bought on production, in [a production run](e2e/human/runs/20261106-192916-e0f5.md). Whitechain is not configured yet, `IN PROGRESS` |
 | Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
 | Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held: the payment moves only when the seller countersigns and the hub co-signs after a checked delivery |
 
@@ -230,11 +240,12 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
 - **Direct rails pay before delivery.** On `hedera`, `eip3009`, `gateway` and `mpp` the payment settles before the seller runs, and nothing returns it if the delivery fails. The production hub offers none of them: its `/rails` lists only `escrow`, `whitechain` and `hedera-scheduled`. The escrow rails hold the money until the output checks out, and the held Hedera rail (`hedera-scheduled`) leaves it in the buyer's account until both the seller and the hub have signed, and the hub signs only after checking the delivery, so neither can release it alone. The cost: every transfer out of the seller's payee account, earnings included, needs the hub's co-signature too, done by hand tonight. Which rail returns what: [terms.md §4](docs/terms.md#4-delivery-release-and-refunds).
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
+- **The bond is declared, not collected.** The escrows production uses are v1, so nothing production runs collects it. Escrow v2, which does, is deployed on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production does not use it yet ([#93](https://github.com/ss251/countersign/issues/93)).
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
 
 ## Guides
 
+- [Get started](docs/onboarding.md): hire a tool, list your tool, or charge for your API, each as commands to copy.
 - [Seller guide](docs/guides/seller.md): publish a skill, get paid, and what you agree to.
 - [Buyer guide](docs/guides/buyer.md): set an envelope, buy, verify, and recover a failed call.
 - [Interop](docs/interop.md): what x402 clients, the Circle CLI and other buyers can read and pay.
