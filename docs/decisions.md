@@ -105,3 +105,17 @@ The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, 
 - **Why.** The seller does not attest the route: the hub chooses it and records it. Putting it inside the body would have the seller sign a claim about the hub's choice.
 - **What it does not change.** `slipCommitHash` is the same, and so is the slip hash on chain.
 - **Where to read it.** `/healthz` shows the policy and the recent decisions.
+
+## D10, amended — one human decision clears exactly one held call (06 Nov; refs #21)
+
+cs-w1 found that D10's signed decision bound only values a second call to the same offer repeats (B14). The decision covered agent, offer, amount, rail and terms hash, plus an approval id. The hub chooses that id, so it could answer a new request with an old id and serve the stored decision again: one human yes, two payments above ask-above.
+
+Rule:
+
+- **The request.** The agent's signed approval request carries a fresh random `nonce` (32 bytes, hex). It also carries `title`, `amount`, `terms` and `requestedAt`.
+- **The decision.** The decision body is version 2: `{kind, v: 2, approvalId, agent, offerHash, amount, rail, termsHash, requestHash, decision, decidedAt}`.
+  - `requestHash` is `keccak256(canonicalJson(request))`, where the request is the agent's signed request without `sig`.
+  - The agent rebuilds `requestHash` from its own request, never from the hub's copy. A decision made for any other request, even for the same offer and amount, fails.
+- **Consumed ids.** The agent records every approval id it consumes and refuses an id it has seen before.
+- **What the phone checks.** The hub stores the whole signed request. The approval view returns it with `requestSig`, so the phone checks that the agent signed exactly what it displays, title included, before it signs. A hub can no longer show the human a different title for the same offer and amount.
+- **Body caps.** Every write route caps its body at 16 KiB, including the decision route.
