@@ -1,14 +1,14 @@
-<!-- the latest human acceptance run; its own file is 20261106-214006-9660.md -->
-# human e2e run 20261106-214006-9660
+<!-- the latest human acceptance run; its own file is 20261106-215011-2e07.md -->
+# human e2e run 20261106-215011-2e07
 
 | | |
 |---|---|
-| run | `20261106-214006-9660` |
-| commit | `aa2fdfa with local changes` |
+| run | `20261106-215011-2e07` |
+| commit | `d22f91b` |
 | console | https://web-production-a58de.up.railway.app |
 | hub | https://hub-production-e85e.up.railway.app |
-| started | 2026-11-06 21:40:06 UTC |
-| duration | 3m 34s |
+| started | 2026-11-06 21:50:11 UTC |
+| duration | 31.3 s |
 
 ## privy — PASS
 
@@ -17,55 +17,54 @@ wallet: `0x90Df63D400a7242A7026cb894E1dC1dA012572fE`
 | step | status | duration |
 |---|---|---|
 | `00-open` | ok | 1.4 s |
-| `01-sign-in` | ok | 6.3 s |
-| `02-wallet` | ok | 211 ms |
-| `03-fund` | ok | 2.8 s |
-| `04-balance` | ok | 417 ms |
-| `05-buy` | ok | 3m 13s |
-| `06-prove` | ok | 1.7 s |
-| `07-slip` | ok | 2.3 s |
-| `08-return` | ok | 142 ms |
-| `09-buyer` | ok | 974 ms |
-| `10-envelope` | ok | 3.0 s |
-| `11-envelope-tab` | ok | 257 ms |
+| `01-sign-in` | ok | 5.8 s |
+| `02-wallet` | ok | 154 ms |
+| `03-fund` | ok | 1.8 s |
+| `04-balance` | ok | 388 ms |
+| `05-buy` | ok | 12.5 s |
+| `06-prove` | ok | 1.6 s |
+| `07-slip` | ok | 2.4 s |
+| `08-return` | ok | 56 ms |
+| `09-buyer` | ok | 840 ms |
+| `10-envelope` | ok | 2.9 s |
+| `11-envelope-tab` | ok | 291 ms |
 
 Notes
 
 - offer: use-arc 0.01USDC Sold by 0x6BE9…ca4a
 - review payee: 0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a
 - review amount: 10000
-- review job: 0xeb2f6b360de9ec12c78d8f17c040c9d637db39943576573cd465fe096d212e80
-- waited 180 s between the review and Sign (STEER-0300 C1 stale case)
-- the console re-prepared the terms at Sign: job 0xeb2f6b36… -> 0x55fc1855…
+- review job: 0xa1d472394c0ee1a243debcbdbf3dcc430f9a8f4b26bae240dc9768b8b0c14034
+- the console rebuilt the terms at Sign: job 0xa1d47239… -> 0x9a06c987…
 - envelope: cap 1 USDC, per seller 0.5, ask above 0.05, expires in 24 h
 
 Transactions
 
-- funding: [`0xc8b33076d1258e4c597cebc1e4a5551fee82ca057ea12b9973c143b98cb2def2`](https://explorer.testnet.arc.io/tx/0xc8b33076d1258e4c597cebc1e4a5551fee82ca057ea12b9973c143b98cb2def2)
-- escrow fund: [`0x17ef78a7070320744d485445c6c76f1f195b8d325083afc97c4547d0e8f861aa`](https://explorer.testnet.arc.io/tx/0x17ef78a7070320744d485445c6c76f1f195b8d325083afc97c4547d0e8f861aa)
-- release: [`0x437bc84dc338bfa247829410760925f644b05ad13b2bc9963233cea66ae59f29`](https://explorer.testnet.arc.io/tx/0x437bc84dc338bfa247829410760925f644b05ad13b2bc9963233cea66ae59f29)
+- funding: [`0x4a9493253025301ae019061ed2005f061441f30c4d673c019abfa142d1471e6b`](https://explorer.testnet.arc.io/tx/0x4a9493253025301ae019061ed2005f061441f30c4d673c019abfa142d1471e6b)
+- escrow fund: [`0x9811df13bf5397c2578ee96bdc93d10c888b8bd7fcd74e6bab5b1000905d1c0d`](https://explorer.testnet.arc.io/tx/0x9811df13bf5397c2578ee96bdc93d10c888b8bd7fcd74e6bab5b1000905d1c0d)
+- release: [`0x46e6932aaeff0b302c895ff1915aaff0a38b78160b09f9d99de62ba8c6c50fc0`](https://explorer.testnet.arc.io/tx/0x46e6932aaeff0b302c895ff1915aaff0a38b78160b09f9d99de62ba8c6c50fc0)
 
-slip: `0x7767144fbbf199c364c1aee81a7541e57763f539efe26891b6091cdc3f455e3a`
+slip: `0x626ea24cba6c493a44444b41c8db7de92cf3800075fe47f7fb0db319e5a4695f`
 
 verifier: VALID
 
 Artifacts
 
-- `artifacts/20261106-214006-9660/privy/console.log`
-- `artifacts/20261106-214006-9660/privy/00-open.png`
-- `artifacts/20261106-214006-9660/privy/01-sign-in.png`
-- `artifacts/20261106-214006-9660/privy/01-privy-modal.png`
-- `artifacts/20261106-214006-9660/privy/01-signed-in.png`
-- `artifacts/20261106-214006-9660/privy/02-wallet.png`
-- `artifacts/20261106-214006-9660/privy/03-fund.png`
-- `artifacts/20261106-214006-9660/privy/04-balance.png`
-- `artifacts/20261106-214006-9660/privy/05-buy.png`
-- `artifacts/20261106-214006-9660/privy/05-review.png`
-- `artifacts/20261106-214006-9660/privy/06-prove.png`
-- `artifacts/20261106-214006-9660/privy/slip.json`
-- `artifacts/20261106-214006-9660/privy/offer.json`
-- `artifacts/20261106-214006-9660/privy/07-slip.png`
-- `artifacts/20261106-214006-9660/privy/08-return.png`
-- `artifacts/20261106-214006-9660/privy/09-buyer.png`
-- `artifacts/20261106-214006-9660/privy/10-envelope.png`
-- `artifacts/20261106-214006-9660/privy/11-envelope-tab.png`
+- `artifacts/20261106-215011-2e07/privy/console.log`
+- `artifacts/20261106-215011-2e07/privy/00-open.png`
+- `artifacts/20261106-215011-2e07/privy/01-sign-in.png`
+- `artifacts/20261106-215011-2e07/privy/01-privy-modal.png`
+- `artifacts/20261106-215011-2e07/privy/01-signed-in.png`
+- `artifacts/20261106-215011-2e07/privy/02-wallet.png`
+- `artifacts/20261106-215011-2e07/privy/03-fund.png`
+- `artifacts/20261106-215011-2e07/privy/04-balance.png`
+- `artifacts/20261106-215011-2e07/privy/05-buy.png`
+- `artifacts/20261106-215011-2e07/privy/05-review.png`
+- `artifacts/20261106-215011-2e07/privy/06-prove.png`
+- `artifacts/20261106-215011-2e07/privy/slip.json`
+- `artifacts/20261106-215011-2e07/privy/offer.json`
+- `artifacts/20261106-215011-2e07/privy/07-slip.png`
+- `artifacts/20261106-215011-2e07/privy/08-return.png`
+- `artifacts/20261106-215011-2e07/privy/09-buyer.png`
+- `artifacts/20261106-215011-2e07/privy/10-envelope.png`
+- `artifacts/20261106-215011-2e07/privy/11-envelope-tab.png`
