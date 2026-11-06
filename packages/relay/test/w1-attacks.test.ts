@@ -82,3 +82,36 @@ describe("W1 B2: a pending refund does not reserve its amount", () => {
     expect(relay.chain.writes.length).toBe(1);
   });
 });
+
+describe("W1 B1b: the escrow order refund route is unauthenticated too", () => {
+  test("an anonymous caller cannot make the merchant key sign a Cancel for a held order", async () => {
+    const relay = createTestRelay();
+    const jobId = fakeHash();
+    const relayCalls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      relayCalls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith(`/orders/${jobId}`)) {
+        return new Response(
+          JSON.stringify({
+            id: jobId,
+            kind: "escrow",
+            status: "held",
+            customer: relay.buyer.address,
+            merchant: relay.merchant.address,
+            amount: "1000000",
+            refunded: "0",
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as typeof fetch;
+
+    const app = createMerchantApp({ merchant: relay.merchant, relayUrl: "http://relay.test", now: () => NOW });
+    const res = await app.request(`/orders/${jobId}/refund`, { method: "POST" });
+
+    expect([401, 403]).toContain(res.status);
+    expect(relayCalls.some((c) => c.startsWith("POST http://relay.test/escrow/cancel"))).toBe(false);
+  });
+});
