@@ -1,6 +1,6 @@
 import { slipHash, type Slip } from "@countersign/core";
 import type { Finding } from "@countersign/verify";
-import { networkName, shortHex } from "./format.ts";
+import { explorerTemplate, networkName, shortHex } from "./format.ts";
 
 /**
  * The page runs the same verifier as the CLI (@countersign/verify). Offline it checks
@@ -19,6 +19,8 @@ export interface VerifyCheck {
   detail: string;
   /** A value worth comparing by eye, shown in mono. */
   value?: string;
+  /** Where the value can be seen for oneself, e.g. the transaction on the explorer. */
+  href?: string;
 }
 
 export interface Verdict {
@@ -154,26 +156,42 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
         detail: f.ok ? "One EIP-3009 signature names the escrow and binds the amount and the job." : sentence(f.detail),
         value: buyerOf(slip),
       };
-    case "onchain":
+    case "onchain": {
       if (!slip.body.escrow) return null;
-      if (f.ok && !hashOk) {
+      const network = networkName(slip.body.network);
+      const tx = slip.settlement?.transaction;
+      const href = tx && explorerTemplate(slip.body.network) ? explorerTemplate(slip.body.network).replace("{tx}", tx) : undefined;
+      if (f.ok && hashOk) {
+        const block = /block (\d+)/.exec(f.detail)?.[1];
         return {
           id: "onchain",
-          title: "The release on chain is for another body",
+          title: "The chain holds this slip's hash",
+          state: "pass",
+          detail: `${network}${block ? ` block ${Number(block).toLocaleString("en-US")}` : ""}: the escrow's Released event for this job carries exactly the hash computed here.`,
+          value: tx,
+          href,
+        };
+      }
+      if (f.ok && !hashOk) {
+        // The event matches the hash the file claims, but the body was changed after signing.
+        return {
+          id: "onchain",
+          title: "The chain holds a different hash",
           state: "fail",
-          detail: `${networkName(slip.body.network)} released the slip hash this file claims, but its body no longer hashes to it, so that release does not cover what you are reading.`,
-          value: slip.settlement?.transaction,
+          detail: `${network}'s Released event for this job carries the hash this file claims, but the body here hashes to something else. The chain does not hold this slip.`,
+          value: tx,
+          href,
         };
       }
       return {
         id: "onchain",
-        title: f.ok ? `Released on ${networkName(slip.body.network)}` : `Not released on ${networkName(slip.body.network)}`,
-        state: f.ok ? "pass" : "fail",
-        detail: f.ok
-          ? `Read from ${networkName(slip.body.network)}'s public RPC: the escrow emitted Released for this job and this slip hash.`
-          : chainFailure(f.detail, networkName(slip.body.network)),
-        value: slip.settlement?.transaction,
+        title: /differ|mismatch/i.test(f.detail) ? "The chain holds a different hash" : `Not released on ${network}`,
+        state: "fail",
+        detail: chainFailure(f.detail, network),
+        value: tx,
+        href,
       };
+    }
     default:
       return { id: f.check, title: f.check, state: f.ok ? "pass" : "fail", detail: sentence(f.detail) };
   }
@@ -188,6 +206,9 @@ function buyerOf(slip: Slip): string | undefined {
 function chainFailure(detail: string, network: string): string {
   if (/could not be found|not found|unknown transaction/i.test(detail)) {
     return `Not found on ${network}. The transaction this slip names is not on that chain.`;
+  }
+  if (/differ|mismatch/i.test(detail)) {
+    return `${network}'s Released event for this job carries another slip hash. The chain does not hold this slip.`;
   }
   if (/does not release this slip/i.test(detail)) {
     return `Found on ${network}, but it does not release this job and this slip hash.`;

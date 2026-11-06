@@ -28,8 +28,25 @@ export default function SlipPage({ params }: PageProps) {
 
   useEffect(() => {
     setVerdict(null);
-    if (view.data) void verifySlip(view.data.slip).then(setVerdict);
-  }, [view.data]);
+    if (!view.data) return;
+    const { slip } = view.data;
+    let live = true;
+    // Show what the slip proves by itself at once, then the fifth check: the chain holding its hash.
+    void verifySlip(slip).then((offline) => {
+      if (!live) return;
+      setVerdict(offline);
+      if (view.source !== "hub" || !canReadChain(slip)) return;
+      setReading(true);
+      void verifySlip(slip, { readChain: true }).then((onchain) => {
+        if (!live) return;
+        setVerdict(onchain);
+        setReading(false);
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [view.data, view.source]);
 
   const readChain = () => {
     if (!view.data) return;

@@ -1,0 +1,66 @@
+{
+    "body": {
+        "v": 1,
+        "rail": "escrow",
+        "network": "eip155:5042002",
+        "offerHash": "0x714aebca261acc72828e1ebb12c759708cea954485a0308f1838179c894620e8",
+        "jobId": "0x9c97020701cfb6589f27cb72f7c8786f1aab83b133d324a65262a8949a70dbb6",
+        "buyer": "0xE0625e01b7c79d1E399B55F252e6Bdc820733f48",
+        "seller": "0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a",
+        "payTo": "0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a",
+        "asset": "0x3600000000000000000000000000000000000000",
+        "amount": "10000",
+        "inputHash": "0xad39be1cc71425b6887ef05359a0f4c613d7feb6a68994285b4b1b352218bb46",
+        "outputHash": "0x90ef53325feb22e0d35a154356894ea58a8e999e25afc7bf9ff90949a87c585c",
+        "deliveredAt": 1793958534,
+        "children": [],
+        "escrow": "0x44d11b8909485e3f575F6628b689383E4420f54a",
+        "chainId": 5042002
+    },
+    "hash": "0x9df8dddc1dc7c61c3dcc27b4c68a32767763f0030bbd3697bba99d13c853ff6b",
+    "sellerSig": "0xe60869fb9a2afed420a3cddb5649325e538de41e67f1204e39ad7f215aede2ed350d44577cba66a73e2d788f3c49633afc73e25126955c836c9d2582671f6be01b",
+    "payment": {
+        "x402Version": 2,
+        "accepted": {
+            "scheme": "countersign",
+            "network": "eip155:5042002",
+            "amount": "10000",
+            "asset": "0x3600000000000000000000000000000000000000",
+            "payTo": "0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a",
+            "maxTimeoutSeconds": 120,
+            "extra": {
+                "rail": "escrow",
+                "escrow": "0x44d11b8909485e3f575F6628b689383E4420f54a",
+                "chainId": 5042002,
+                "offerHash": "0x714aebca261acc72828e1ebb12c759708cea954485a0308f1838179c894620e8",
+                "deadlineSeconds": 120,
+                "tokenName": "USDC",
+                "tokenVersion": "2"
+            }
+        },
+        "payload": {
+            "terms": {
+                "offerHash": "0x714aebca261acc72828e1ebb12c759708cea954485a0308f1838179c894620e8",
+                "buyer": "0xE0625e01b7c79d1E399B55F252e6Bdc820733f48",
+                "payee": "0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a",
+                "amount": "10000",
+                "deadline": 1793958652,
+                "salt": "79136768881275134255966301808363885119731268561491876277810324460895752902135"
+            },
+            "authorization": {
+                "from": "0xE0625e01b7c79d1E399B55F252e6Bdc820733f48",
+                "to": "0x44d11b8909485e3f575F6628b689383E4420f54a",
+                "value": "10000",
+                "validAfter": "0",
+                "validBefore": "1793959132",
+                "nonce": "0x9c97020701cfb6589f27cb72f7c8786f1aab83b133d324a65262a8949a70dbb6"
+            },
+            "signature": "0x7d997a225e003a65c627b3da4770f4c83b79c96f49e8d59b2fb999f367c4e3f142590e4452795e3b8f2cbdc39b053ad24d70e459a68bbd46dcf1384c59cd36661b"
+        }
+    },
+    "settlement": {
+        "transaction": "0xaf13a37c5488ece7ec512384132349490becee2b5618b1bcb8315b6f43c83243",
+        "network": "eip155:5042002",
+        "url": "https://testnet.arcscan.app/tx/0xaf13a37c5488ece7ec512384132349490becee2b5618b1bcb8315b6f43c83243"
+    }
+}
