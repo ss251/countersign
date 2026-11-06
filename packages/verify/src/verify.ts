@@ -4,14 +4,15 @@
  */
 
 import {
-  type Address,
   createPublicClient,
-  decodeEventLog,
   getAddress,
   type Hex,
   http,
   isAddress,
+  isHex,
+  parseAbi,
   parseAbiItem,
+  type PublicClient,
 } from "viem";
 import {
   checkCountersign,
@@ -19,6 +20,7 @@ import {
   type CountersignPayload,
   jobIdOf,
   type Slip,
+  slipCommitHash,
   slipHash,
   slipSigner,
 } from "@countersign/core";
@@ -40,6 +42,13 @@ export interface Verdict {
 const releasedEvent = parseAbiItem(
   "event Released(bytes32 indexed jobId, bytes32 indexed slipHash, address indexed payee, uint256 paid, uint256 toll)",
 );
+
+const jobOfAbi = parseAbi([
+  "function jobOf(bytes32 jobId) view returns ((address buyer, uint64 deadline, uint8 status, address payee, uint256 amount, bytes32 offerHash, bytes32 slipHash))",
+]);
+
+const WINDOW = 10_000n;
+const MAX_WINDOWS = 50;
 
 export async function verifySlip(slip: Slip, opts: { rpcUrl?: string } = {}): Promise<Verdict> {
   const findings: Finding[] = [];
@@ -64,8 +73,10 @@ export async function verifySlip(slip: Slip, opts: { rpcUrl?: string } = {}): Pr
     add("countersignature", true, `rail ${body.rail} pays by ${slip.payment.accepted.scheme}; its payment is checked by its settlement`);
   }
 
-  if (opts.rpcUrl) {
-    await checkOnchain(slip, opts.rpcUrl, add);
+  if (opts.rpcUrl && body.escrow) {
+    await checkSlipHash(slip, opts.rpcUrl, add);
+  } else if (opts.rpcUrl) {
+    add("onchain", true, `rail ${body.rail} has no escrow event to check`);
   } else {
     skipped.push("onchain: not checked. Pass an RPC URL to read the Released event from the chain.");
   }
@@ -100,7 +111,7 @@ async function checkCountersigned(slip: Slip, add: (c: string, ok: boolean, d: s
   const check = await checkCountersign(p, {
     chainId: body.chainId,
     escrow: body.escrow,
-    token: body.asset as Address,
+    token: body.asset,
     tokenName: extra.tokenName,
     tokenVersion: extra.tokenVersion,
     // A signature does not expire after the fact: check it at a moment inside its window.
@@ -113,36 +124,90 @@ async function checkCountersigned(slip: Slip, add: (c: string, ok: boolean, d: s
   );
 }
 
-async function checkOnchain(slip: Slip, rpcUrl: string, add: (c: string, ok: boolean, d: string) => void): Promise<void> {
+async function checkSlipHash(
+  slip: Slip,
+  rpcUrl: string,
+  add: (c: string, ok: boolean, d: string) => void,
+): Promise<void> {
   const body = slip.body;
-  if (!body.escrow) {
-    add("onchain", true, `rail ${body.rail} has no escrow event to check`);
+  const escrow = body.escrow;
+  if (!escrow) {
+    add("slip hash", false, "the slip has no escrow address to read");
     return;
   }
+  const commit = slipCommitHash(body);
   try {
     const client = createPublicClient({ transport: http(rpcUrl) });
-    const receipt = await client.getTransactionReceipt({ hash: slip.settlement.transaction as Hex });
-    const released = receipt.logs.some((log) => {
-      if (getAddress(log.address) !== getAddress(body.escrow!)) return false;
-      try {
-        const ev = decodeEventLog({ abi: [releasedEvent], data: log.data, topics: log.topics });
-        return (
-          ev.args.jobId.toLowerCase() === body.jobId.toLowerCase() &&
-          ev.args.slipHash.toLowerCase() === slip.hash.toLowerCase()
-        );
-      } catch {
-        return false;
-      }
+    const logs = await releasedLogs(client, slip, escrow);
+    if (logs.length === 0) {
+      add("slip hash", false, `event missing: no Released event for job ${body.jobId} on ${escrow}`);
+      return;
+    }
+    if (logs.length !== 1) {
+      add("slip hash", false, `expected one Released event for job ${body.jobId}, found ${logs.length}`);
+      return;
+    }
+    const event = logs[0]!;
+    const eventHash = event.args.slipHash;
+    if (!eventHash || eventHash.toLowerCase() !== commit.toLowerCase()) {
+      add("slip hash", false, `the event hash ${eventHash ?? "missing"} differs from the recomputed hash ${commit}`);
+      return;
+    }
+    const job = await client.readContract({
+      address: escrow,
+      abi: jobOfAbi,
+      functionName: "jobOf",
+      args: [body.jobId],
     });
-    const ok = receipt.status === "success" && released;
+    if (job.status !== 2) {
+      add("slip hash", false, `jobOf says status ${job.status}, not Released (2)`);
+      return;
+    }
+    if (job.slipHash.toLowerCase() !== commit.toLowerCase()) {
+      add("slip hash", false, `jobOf holds slip hash ${job.slipHash}, not the recomputed hash ${commit}`);
+      return;
+    }
     add(
-      "onchain",
-      ok,
-      ok
-        ? `Released(job, slip) by ${body.escrow} in block ${receipt.blockNumber}`
-        : `tx ${slip.settlement.transaction} does not release this slip`,
+      "slip hash",
+      true,
+      `the chain holds this slip's hash: Released(${body.jobId}, ${commit}) in block ${event.blockNumber}, tx ${event.transactionHash}`,
     );
   } catch (e) {
-    add("onchain", false, `could not read ${slip.settlement.transaction}: ${(e as Error).message.split("\n")[0]}`);
+    add("slip hash", false, `could not read the Released event: ${(e as Error).message.split("\n")[0]}`);
   }
+}
+
+async function releasedLogs(client: PublicClient, slip: Slip, escrow: `0x${string}`) {
+  const body = slip.body;
+  const tx = slip.settlement.transaction;
+  let fromBlock: bigint;
+  let toBlock: bigint;
+  if (isHex(tx) && tx.length === 66) {
+    const receipt = await client.getTransactionReceipt({ hash: tx as Hex });
+    fromBlock = receipt.blockNumber;
+    toBlock = receipt.blockNumber;
+  } else {
+    const latest = await client.getBlockNumber();
+    for (let i = 0; i < MAX_WINDOWS; i++) {
+      toBlock = latest - BigInt(i) * WINDOW;
+      if (toBlock < 0n) return [];
+      fromBlock = toBlock >= WINDOW - 1n ? toBlock - (WINDOW - 1n) : 0n;
+      const logs = await client.getLogs({
+        address: escrow,
+        event: releasedEvent,
+        args: { jobId: body.jobId },
+        fromBlock,
+        toBlock,
+      });
+      if (logs.length > 0) return logs;
+    }
+    return [];
+  }
+  return client.getLogs({
+    address: escrow,
+    event: releasedEvent,
+    args: { jobId: body.jobId },
+    fromBlock,
+    toBlock,
+  });
 }
