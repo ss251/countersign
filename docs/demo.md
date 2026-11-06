@@ -31,7 +31,7 @@ cmp <(jq -S . /tmp/slip.json) <(jq -S . docs/demo/slip-4320274e.json) && echo "s
 
 Open two terminals:
 
-- **Terminal A** runs a hub, so the audience can watch it die. Start it with `bun run hub`, then check it answers: `curl -s localhost:8787/healthz`.
+- **Terminal A** runs a hub, so the audience can watch it die. Start it with `PORT=8797 bun run hub` (port 8787 is the local hub loop, which stays up), then check it answers: `curl -s localhost:8797/healthz`.
 - **Terminal B** runs the verifier.
 
 ## On stage
@@ -39,7 +39,7 @@ Open two terminals:
 **1. Kill the hub.** In terminal A, press Ctrl-C, then show that it is gone:
 
 ```sh
-curl -s --max-time 3 localhost:8787/healthz || echo "the hub is gone"
+curl -s --max-time 3 localhost:8797/healthz || echo "the hub is gone"
 ```
 
 The verifier never calls a hub, this local one or the production one. It reads only the slip file and Arc.
