@@ -118,8 +118,9 @@ contract CountersignedEscrowTest is Test {
         uint256 toll = PRICE * TOLL_BPS / 10_000;
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Released(jobId, SLIP, seller, PRICE - toll, toll);
-        vm.prank(stranger);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        vm.stopPrank();
 
         assertEq(token.balanceOf(seller), PRICE - toll);
         assertEq(escrow.tollAccrued(), toll, "the toll accrues (L1)");
@@ -140,7 +141,9 @@ contract CountersignedEscrowTest is Test {
         escrow.fund(OFFER, cs, "");
 
         // Even once the job is closed, the token has burned the nonce.
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.JobExists.selector, jobId));
         escrow.fund(OFFER, cs, "");
         assertTrue(token.authorizationState(buyer, jobId));
@@ -161,7 +164,9 @@ contract CountersignedEscrowTest is Test {
         vm.warp(settleBy + 1);
         bytes memory sig = _releaseSig(sellerKey, jobId, SLIP);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowClosed.selector, jobId, settleBy));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, sig);
+        vm.stopPrank();
     }
 
     function test_refund_before_settle_by_fails() public {
@@ -187,9 +192,13 @@ contract CountersignedEscrowTest is Test {
     function test_double_release_fails() public {
         (bytes32 jobId,) = _funded();
         bytes memory sig = _releaseSig(sellerKey, jobId, SLIP);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, sig);
+        vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, sig);
+        vm.stopPrank();
     }
 
     function test_double_refund_fails() public {
@@ -209,7 +218,9 @@ contract CountersignedEscrowTest is Test {
         bytes32 jobId = escrow.fund(OFFER, cs, "");
         attacker.arm(jobId, SLIP);
 
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, "");
+        vm.stopPrank();
 
         assertEq(attacker.attempts(), 3, "the hook ran and tried all three ways back in");
         assertEq(attacker.successes(), 0, "every re-entry was refused");
@@ -226,14 +237,18 @@ contract CountersignedEscrowTest is Test {
         (, uint256 strangerKey) = makeAddrAndKey("stranger-key");
         bytes memory sig = _releaseSig(strangerKey, jobId, SLIP);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotPayee.selector, jobId));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, sig);
+        vm.stopPrank();
     }
 
     function test_release_signature_is_bound_to_the_slip() public {
         (bytes32 jobId,) = _funded();
         bytes memory sig = _releaseSig(sellerKey, jobId, SLIP);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotPayee.selector, jobId));
+        vm.startPrank(arbiter);
         escrow.release(jobId, keccak256("another slip"), sig);
+        vm.stopPrank();
     }
 
     function test_swapping_the_payee_fails() public {
@@ -291,7 +306,9 @@ contract CountersignedEscrowTest is Test {
         assertEq(token.balanceOf(buyer), 100_000_000);
         bytes memory sig = _releaseSig(sellerKey, jobId, SLIP);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, sig);
+        vm.stopPrank();
     }
 
     function test_relayer_submits_the_payee_cancel() public {
@@ -316,7 +333,9 @@ contract CountersignedEscrowTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
         escrow.refund(jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, "");
+        vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
         escrow.cancel(jobId, "");
     }
@@ -335,7 +354,9 @@ contract CountersignedEscrowTest is Test {
         ICountersignedEscrow.Countersignature memory cs =
             _countersign(OFFER, seller, amount, uint64(block.timestamp + 300), amount);
         bytes32 jobId = escrow.fund(OFFER, cs, "");
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        vm.stopPrank();
         assertEq(token.balanceOf(seller) + escrow.tollAccrued(), amount);
         assertEq(escrow.tollAccrued(), amount * TOLL_BPS / 10_000);
     }
