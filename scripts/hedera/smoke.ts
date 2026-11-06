@@ -2,11 +2,15 @@
 // the mirror node, and one refused moved-price payment. Spends 0.01 testnet USDC per run.
 //   bun scripts/hedera/smoke.ts [x402.org|blocky402|local]
 import { offerHash, type Offer } from "../../packages/core/src/index.ts";
+import { spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
 import { hederaPayment } from "../../packages/buyer/src/hedera/signer.ts";
+import { appendEntry, readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
 import {
   createHederaRail,
   FACILITATORS,
+  hashscanTopic,
   hashscanTx,
+  HEDERA_TESTNET,
   httpFacilitator,
   localFacilitator,
   offerHashFromMemo,
@@ -15,7 +19,7 @@ import {
   USDC_TESTNET,
   type Facilitator,
 } from "../../packages/rail/src/hedera/index.ts";
-import { key, need, readEnv } from "./env.ts";
+import { key, need, readEnv, testnetClient } from "./env.ts";
 
 const env = readEnv();
 const which = process.argv[2] ?? "x402.org";
@@ -72,6 +76,32 @@ console.log(
 );
 console.log(hashscanTx(s.transaction));
 if (tx.result !== "SUCCESS" || memoHash !== offerHash(offer) || netFor(moved$, req.payTo) !== 10000n) process.exit(1);
+
+// Every spend made with the agent's key goes on its HCS log, exactly as the agent writes one.
+const topicId = need(env, "HD_TOPIC_ID");
+const prior = await readEntries(topicId);
+const spent = spentFromLog(prior);
+const logClient = testnetClient(need(env, "HD_AGENT_ID"), key(env, "HD_AGENT_KEY"));
+try {
+  const appended = await appendEntry(logClient, topicId, {
+    v: 1,
+    kind: "spend",
+    rail: "hedera",
+    network: HEDERA_TESTNET,
+    offerHash: offerHash(offer),
+    seller: offer.seller,
+    payTo: req.payTo,
+    asset: req.asset,
+    amount: req.amount,
+    tx: s.transaction,
+    total: (BigInt(spent.total) + BigInt(req.amount)).toString(10),
+    cap: "1000000",
+    at: Math.floor(Date.now() / 1000),
+  });
+  console.log(`hcs      sequence ${appended.sequence}  ${hashscanTopic(topicId)}`);
+} finally {
+  logClient.close();
+}
 
 // The same signed payment cannot be used twice.
 const replay = await rail.verify(payment, req);
