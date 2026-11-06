@@ -5,6 +5,7 @@ import {
   PAYMENT_RESPONSE_HEADER,
   PAYMENT_SIGNATURE_HEADER,
   toBase64Json,
+  type Offer,
   type PaymentPayload,
   type PaymentRequired,
   type PaymentRequirements,
@@ -14,6 +15,7 @@ import {
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
+import { bazaarExtension, challengeOptions, resourceFor } from "./discovery.ts";
 import type { RunnerLink } from "./runners.ts";
 import type { Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
@@ -32,11 +34,6 @@ export interface CallOutcome {
   body: unknown;
   headers?: Record<string, string>;
   railId?: string;
-}
-
-interface Option {
-  entry: PaymentRequirements;
-  rail: Rail;
 }
 
 export async function paidCall(
@@ -70,16 +67,8 @@ export async function paidCall(
     return failure(503, "seller-offline", "The seller is offline. Nothing was charged.");
   }
 
-  const resource = `${deps.publicUrl}/offers/${stored.offerHash}/call`;
-  const configured = new Map<string, Rail>();
-  for (const rail of deps.rails) configured.set(rail.declaration.id, rail);
-
-  const options: Option[] = [];
-  for (const id of offer.rails) {
-    const rail = configured.get(id);
-    if (!rail) continue;
-    options.push({ entry: rail.challenge(offer, { resource, now }), rail });
-  }
+  const resource = resourceFor(deps.publicUrl, stored.offerHash);
+  const options = challengeOptions(deps.rails, offer, resource, now);
   if (options.length === 0) {
     return failure(503, "no-rail", "Refused. No settlement rail is configured for this offer.");
   }
@@ -87,7 +76,7 @@ export async function paidCall(
 
   const signatureHeader = headers.get(PAYMENT_SIGNATURE_HEADER);
   if (!signatureHeader) {
-    return paymentRequired(offer.title, resource, accepts);
+    return paymentRequired(offer, resource, accepts);
   }
 
   let payment: PaymentPayload;
@@ -106,12 +95,12 @@ export async function paidCall(
       option.entry.scheme === payment.accepted.scheme && option.entry.network === payment.accepted.network,
   );
   if (!match) {
-    return paymentRequired(offer.title, resource, accepts, "Refused. This offer does not take that rail.");
+    return paymentRequired(offer, resource, accepts, "Refused. This offer does not take that rail.");
   }
   const railId = match.rail.declaration.id;
   if (payment.accepted.amount !== match.entry.amount) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       "Refused. The price moved after you signed.",
@@ -120,7 +109,7 @@ export async function paidCall(
   }
   if (!sameText(payment.accepted.payTo, match.entry.payTo) || !sameText(payment.accepted.asset, match.entry.asset)) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       "Refused. The payment does not match this offer.",
@@ -131,7 +120,7 @@ export async function paidCall(
   const verify = await match.rail.verify(payment, match.entry);
   if (!verify.isValid) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       verify.invalidReason ?? "Refused. The payment is not valid.",
@@ -142,7 +131,7 @@ export async function paidCall(
   const settle = await match.rail.settle(payment, match.entry);
   if (!settle.success) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       settle.errorReason ?? "Refused. The payment could not be settled.",
@@ -248,7 +237,7 @@ function failure(status: number, code: string, message: string, railId?: string)
 }
 
 function paymentRequired(
-  title: string,
+  offer: Offer,
   resource: string,
   accepts: PaymentRequirements[],
   error?: string,
@@ -256,8 +245,9 @@ function paymentRequired(
 ): CallOutcome {
   const body: PaymentRequired = {
     x402Version: 2,
-    resource: { url: resource, description: title, mimeType: "application/json" },
+    resource: { url: resource, description: offer.title, mimeType: "application/json" },
     accepts,
+    extensions: bazaarExtension(offer),
   };
   if (error !== undefined) body.error = error;
   return {
