@@ -63,7 +63,7 @@ Rule:
 
 ## D11 — collect the declared bond, and let only the hub's gate take it (06 Nov; refs #93)
 
-Status: built on a branch (#93), not merged and not deployed. No deployed contract collects the bond yet.
+Status: built (#93) and on `main`, not deployed. No deployed contract collects the bond yet. The silence rule below is withdrawn by D15 (audit C2).
 
 The offer always declared a bond, and nothing collected it.
 
@@ -105,7 +105,7 @@ The state machine, with who calls what and when, is in `docs/spec/escrow.md`, un
 
 ## D13 — the router's trace is the hub's record, outside the committed slip hash (06 Nov; refs #94)
 
-Status: built on a branch in review (#94). Not on `main`.
+Status: built (#94), on `main`.
 
 The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, and falls back when a challenge or a settle fails.
 
@@ -167,3 +167,23 @@ Rule:
 - **Nothing is dropped.** Unprotected rails stay listed, so a buyer that can only pay them (a Gateway-only client, the Hedera agent) pays as before.
 - **Health is per rail and offer.** One seller's broken offer or one buyer's late signature cannot degrade a rail for everyone else.
 - **Bounded attempt logs.** At most 20 attempts are kept per key, and at most 5 are copied into a slip.
+
+## D15 — the escrow audit's fixes: the payee signs its bond, silence forfeits it, the arbiter alone funds (06 Nov, 19:45 IST; refs #98, #93)
+
+Status: design only, in [spec/escrow.md](spec/escrow.md) under "Escrow v2". It is in Rajdeep's contract half of #98, and no escrow is redeployed until its regression tests pass and the captain re-runs the audit.
+
+The captain's audit of the escrow on `main` found four deploy blockers and three lows:
+
+- **C1:** the arbiter and a buyer it controls can take any bonded payee's bond;
+- **C2:** a silent seller keeps its bond, so silence is the cheapest strategy;
+- **H1:** the arbiter loses jurisdiction at the deadline;
+- **M1:** anyone can front-run a bonded funding with an unbonded `fund`.
+
+What is decided:
+
+- **The payee signs each lock.** The payee signs `LockBond(jobId, bond, reviewWindow)`, and the bond is capped at the job's amount. A bond moves only on a job the payee chose to serve, and the arbiter's worst case is that job's bond.
+- **Silence forfeits the bond.** A refund after the settle window pays the bond to the buyer. The payee keeps it only by cancelling by the deadline, by a buyer's dispute, or by a release. D11's rule that silence is cheaper than failing is withdrawn: a seller who cannot deliver now says so by cancelling.
+- **One settle window after the deadline.** `release` and `failDelivery` may land until `deadline + DISPUTE_WINDOW` (600 s), and `refund` opens after it. The release shares the window so that an honest release mined late does not forfeit its bond.
+- **Only the arbiter funds.** Today only the would-be arbiters submit `fund`: the hub's relayer on Arc and the Whitechain relay. So making it arbiter-only breaks nothing, and it keeps `jobId` and every client's derivation unchanged. Binding bond and window into `Countersign` is the stronger fix, but it changes `jobId`, so it waits for a later revision. Meanwhile the buyer checks `bondOfJob` and `reviewOf` after funding, and disputes at once on a mismatch.
+- **The lows.** The toll accrues and anyone can sweep it to the treasury, a payee can never be the escrow, and every time boundary follows one rule: until T means `now <= T`, after T means `now > T`.
+
