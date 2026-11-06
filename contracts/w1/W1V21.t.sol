@@ -107,8 +107,9 @@ contract W1V21Test is Test {
         return _sigOn(escrow, key, structHash);
     }
 
-    function _lock(uint256 key, bytes32 jobId) internal view returns (bytes memory) {
-        return _sig(key, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    /// The payee's Lock(jobId, funder): only `funder`, as msg.sender, may open the bonded job with it.
+    function _lock(uint256 key, bytes32 jobId, address funder) internal view returns (bytes memory) {
+        return _sig(key, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, funder)));
     }
 
     function _releaseSig(bytes32 jobId) internal view returns (bytes memory) {
@@ -129,7 +130,7 @@ contract W1V21Test is Test {
         _publish(BOND, window);
         ICountersignedEscrow.Countersignature memory cs;
         (cs, jobId) = _countersign(OFFER, PRICE, salt, BOND, window);
-        bytes memory lock = _lock(sellerKey, jobId);
+        bytes memory lock = _lock(sellerKey, jobId, relayer);
         vm.prank(relayer);
         escrow.fund(OFFER, cs, lock);
     }
@@ -141,7 +142,7 @@ contract W1V21Test is Test {
     // ------------------------------------------------------------------ the strings
 
     function test_W1_v21_the_typehashes_are_the_decided_strings() public view {
-        assertEq(escrow.LOCK_TYPEHASH(), keccak256("Lock(bytes32 jobId)"));
+        assertEq(escrow.LOCK_TYPEHASH(), keccak256("Lock(bytes32 jobId,address funder)"));
         assertEq(escrow.DISPUTE_TYPEHASH(), keccak256("Dispute(bytes32 jobId,uint8 status)"));
     }
 
@@ -155,12 +156,13 @@ contract W1V21Test is Test {
         uint256 buyerWallet = token.balanceOf(buyer);
 
         CountersignedEscrow twin = new CountersignedEscrow(address(token), treasury, 100, arbiter);
-        bytes[5] memory wrong = [
+        bytes[6] memory wrong = [
             bytes(""),
-            _lock(arbiterKey, jobId), // the arbiter is not the payee
-            _lock(buyerKey, jobId), // nor is the buyer
-            _lock(sellerKey, keccak256("w1: another job")), // the payee's lock for another job
-            _sigOn(twin, sellerKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId))) // under another escrow
+            _lock(arbiterKey, jobId, arbiter), // the arbiter is not the payee
+            _lock(buyerKey, jobId, arbiter), // nor is the buyer
+            _lock(sellerKey, keccak256("w1: another job"), arbiter), // the payee's lock for another job
+            _sigOn(twin, sellerKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, arbiter))), // another escrow
+            _lock(sellerKey, jobId, relayer) // the payee's lock, but naming another funder
         ];
         for (uint256 i; i < wrong.length; ++i) {
             vm.prank(arbiter);
@@ -185,11 +187,18 @@ contract W1V21Test is Test {
         assertEq(escrow.bondOf(seller), BOND, "the seller's bond left without its consent");
     }
 
-    function test_W1_H1_with_the_payees_lock_anyone_funds_exactly_the_signed_job_once() public {
+    function test_W1_H1_only_the_named_funder_opens_exactly_the_signed_job_once() public {
         _deposit(BOND);
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _countersign(OFFER, PRICE, 3, BOND, WINDOW);
-        bytes memory lock = _lock(sellerKey, jobId);
+        bytes memory lock = _lock(sellerKey, jobId, relayer);
+        // Anyone but the named funder is refused with the very same lock: a stranger, the buyer, the arbiter.
+        address[3] memory others = [makeAddr("w1 stranger"), buyer, arbiter];
+        for (uint256 i; i < others.length; ++i) {
+            vm.prank(others[i]);
+            vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+            escrow.fund(OFFER, cs, lock);
+        }
         vm.prank(relayer);
         assertEq(escrow.fund(OFFER, cs, lock), jobId);
         assertEq(escrow.bondOfJob(jobId), BOND);
@@ -265,6 +274,17 @@ contract W1V21Test is Test {
         escrow.setTerms(OFFER, PRICE, 0, 0, MIN_DURATION); // no bond needs no window
         vm.prank(seller);
         escrow.setTerms(OFFER, PRICE, BOND, WINDOW, MIN_DURATION);
+    }
+
+    function test_W1_bonded_terms_need_the_minimum_duration() public {
+        uint64 floor = escrow.MIN_BONDED_DURATION();
+        vm.prank(seller);
+        vm.expectRevert(ICountersignedEscrow.BondNeedsDuration.selector);
+        escrow.setTerms(OFFER, PRICE, BOND, WINDOW, floor - 1);
+        vm.prank(seller);
+        escrow.setTerms(OFFER, PRICE, BOND, WINDOW, floor);
+        (,,, uint64 minDuration) = escrow.termsOf(seller, OFFER);
+        assertEq(minDuration, floor);
     }
 
     // ------------------------------------------------------------------ Medium: one dispute signature, one outcome
