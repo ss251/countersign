@@ -47,6 +47,10 @@
   font-weight: 500;
 }
 
+/*
+ * An app shell: the bar and the tab bar frame one scroller, and the page itself never scrolls, so
+ * nothing can render past the tab bar. dvh follows the browser chrome and the keyboard.
+ */
 .phone {
   --tabbar-h: 56px;
   position: relative;
@@ -54,8 +58,9 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--phone);
-  min-height: 100dvh;
+  height: 100dvh;
   margin: 0 auto;
+  overflow: hidden;
   background: var(--paper);
 }
 
@@ -67,9 +72,9 @@
 }
 
 .phone__bar {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 10;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -105,9 +110,11 @@
 }
 
 .phone__views {
-  position: sticky;
-  top: 52px;
+  position: relative;
   z-index: 9;
+  flex: none;
+  max-height: 60dvh;
+  overflow-y: auto;
   display: grid;
   padding: var(--sp-2) var(--sp-4) var(--sp-3);
   border-bottom: var(--hair) solid var(--line);
@@ -168,13 +175,16 @@
 
 .phone__body {
   flex: 1;
-  padding: var(--sp-5) var(--sp-4) var(--sp-8);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
 }
 
 .tabbar {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 10;
+  flex: none;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
@@ -234,10 +244,13 @@
 
 /* An approval: the purchase as a pass, your envelope's checklist, then the hold under the thumb. */
 
+/*
+ * The first screen at 390 × 844 holds, in order: the endpoints, what it costs, the envelope
+ * checklist, then the hold. Every block below is sized to that budget.
+ */
 .approval {
   display: grid;
-  gap: var(--sp-5);
-  padding-bottom: var(--sp-4);
+  gap: var(--sp-3);
 }
 
 .approval__ask {
@@ -270,15 +283,14 @@
 
 .pass > * {
   min-width: 0;
-  padding: var(--sp-4);
+  padding: var(--sp-3) 14px;
 }
 
 .pass__ends {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sp-3);
-  padding-bottom: var(--sp-3);
+  align-items: end;
+  gap: var(--sp-2);
 }
 
 .pass__end {
@@ -292,15 +304,14 @@
   text-align: right;
 }
 
+/* A pass never truncates its endpoints: sized for two names at 390, and wrapping before it would cut. */
 .pass__who {
-  overflow: hidden;
-  font-size: var(--t-20);
+  max-width: 100%;
+  font-size: var(--t-16);
   font-weight: 500;
   letter-spacing: -0.02em;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .pass__sub {
@@ -327,14 +338,12 @@
 
 .pass__arrow {
   color: var(--slate);
-  align-self: end;
-  margin-bottom: 1.35em;
+  align-self: center;
 }
 
 .pass__what {
   display: grid;
-  gap: var(--sp-1);
-  padding-top: var(--sp-3);
+  gap: 2px;
   border-top: var(--hair) solid var(--line);
 }
 
@@ -347,41 +356,50 @@
 
 .pass__title {
   min-width: 0;
-  font-size: var(--t-17);
+  font-size: var(--t-16);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.pass__summary {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--slate);
-  font-size: var(--t-14);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.pass__meta {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--sp-2);
+  max-width: 55%;
+  min-width: 0;
 }
 
 .pass__source {
+  overflow: hidden;
   color: var(--slate);
   font-size: var(--t-12);
+  text-overflow: ellipsis;
+  text-underline-offset: 0.2em;
+  white-space: nowrap;
 }
 
-.pass__source a {
-  color: var(--ink);
-  overflow-wrap: anywhere;
+.pass__summary {
+  overflow: hidden;
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pass__exact {
   display: grid;
-  gap: var(--sp-1);
-  padding-top: var(--sp-2);
+  gap: 2px;
+}
+
+.pass__exact .amount--xl {
+  font-size: 2.375rem;
 }
 
 .pass__fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--sp-3) var(--sp-3);
-  padding-top: var(--sp-3);
+  gap: var(--sp-2) var(--sp-3);
   border-top: var(--hair) solid var(--line);
 }
 
@@ -394,6 +412,11 @@
 .pass__fields dd {
   min-width: 0;
   font-size: var(--t-14);
+  line-height: 1.35;
+}
+
+.pass__fields dd .hash__value {
+  font-size: var(--t-13);
 }
 
 .pass__span2 {
@@ -407,9 +430,11 @@
 /* The perforation: a dashed rule with a notch cut into each edge, then the stub. */
 .pass__stub {
   position: relative;
-  display: grid;
-  gap: var(--sp-1);
-  min-height: 72px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  min-height: 44px;
   align-content: center;
   border-top: 1.5px dashed var(--line);
 }
@@ -630,38 +655,94 @@
   color: var(--seal);
 }
 
-/* The dock: payee and amount, then the hold under the thumb. */
-
+/*
+ * The dock: what you countersign and to whom, Decline beside it, then the hold under the thumb.
+ * Kept short so the cost and the checklist stay on the first screen. Content scrolling beneath it
+ * fades into the paper over 16px instead of being cut mid-line. That fade is the product's one
+ * gradient, and it is functional, not decorative: paper over transparent paper, no hue.
+ */
 .approval__dock {
   position: sticky;
-  bottom: var(--tabbar-h);
+  bottom: 0;
   z-index: 5;
   display: grid;
   gap: var(--sp-2);
-  margin: 0 calc(var(--sp-4) * -1);
-  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  margin: var(--sp-1) calc(var(--sp-4) * -1) calc(var(--sp-4) * -1);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
   border-top: var(--hair) solid var(--line);
   background: var(--paper);
 }
 
-.approval__dock-line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  color: var(--slate);
-  font-size: var(--t-14);
+.approval__dock::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 16px;
+  background: linear-gradient(to bottom, color-mix(in oklch, var(--paper), transparent 100%), var(--paper));
+  pointer-events: none;
 }
 
-.approval__dock-to {
+.approval__dock-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 32px;
+}
+
+.approval__dock-what {
   min-width: 0;
   overflow: hidden;
+  color: var(--slate);
+  font-size: var(--t-14);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .approval__decline {
-  min-height: 44px;
+  position: relative;
+  flex: none;
+  min-height: 32px;
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 0.25em;
+}
+
+/* 32px to the eye, 44px to the thumb. */
+.approval__decline::after {
+  content: "";
+  position: absolute;
+  inset: -6px -8px;
+}
+
+.approval__decline:disabled {
+  color: var(--muted);
+}
+
+/* The hold, compact in the dock: the signature line and its label, no party captions. */
+.approval__dock .hold {
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.approval__dock .hold__svg {
+  height: 40px;
+}
+
+.approval__dock .hold__parties {
+  display: none;
+}
+
+.approval__dock .hold__label {
+  padding-top: 0;
 }
 
 .env {
@@ -961,4 +1042,20 @@
 .limit__off {
   color: var(--slate);
   font-size: var(--t-14);
+}
+
+/* The checklist on the phone: the same rules, set tighter so all four sit on the first screen. */
+.approval .checks {
+  gap: var(--sp-1);
+}
+
+.approval .check {
+  gap: 10px;
+  padding: 7px 0;
+  font-size: var(--t-13);
+  line-height: 1.4;
+}
+
+.approval .check__glyph {
+  margin-top: 0;
 }

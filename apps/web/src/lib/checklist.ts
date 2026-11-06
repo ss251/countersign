@@ -36,7 +36,7 @@ export function envelopeChecklist(
   );
   out.push(
     amount <= BigInt(sellerLeft)
-      ? { kind: "pass", text: `Under the per-seller cap, ${n(sellerLeft)} left for ${call.sellerName}` }
+      ? { kind: "pass", text: `Under the per-seller cap, ${n(sellerLeft)} left` }
       : { kind: "fail", text: `Over the per-seller cap, only ${n(sellerLeft)} left for ${call.sellerName}` },
   );
   out.push(

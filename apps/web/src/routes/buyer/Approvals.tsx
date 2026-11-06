@@ -4,13 +4,11 @@ import { Link } from "../../app/router.tsx";
 import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
 import {
   ESCROW_RAILS,
-  formatAmount,
   formatClock,
   formatDuration,
   formatMoney,
   nowUnix,
   RAIL_LABEL,
-  remainingAtomic,
   shortHex,
   usd,
 } from "../../lib/format.ts";
@@ -173,23 +171,18 @@ function ApprovalFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [final]);
 
-  const left = remainingAtomic(seen.envelope.cap, seen.spent.total);
   const slip = job?.step === "released" ? job.slipHash : undefined;
 
   return (
     <article className="approval" aria-labelledby="approval-title">
-      <p className="approval__ask">
-        <span className="approval__agent">{approval.agentName}</span> asks you to countersign
-        {live ? <span className="num"> · {formatClock(approval.requestedAt)}</span> : null}
-      </p>
-
       {/* The purchase, as a pass: who pays whom, for what, exactly how much, and the stub that becomes the slip. */}
       <section className={cx("pass", slip && "pass--slipped")} aria-label="The purchase">
         <div className="pass__ends">
           <div className="pass__end">
-            <span className="label">Agent</span>
+            <span className="label">
+              Agent{live ? <span className="num"> · asked {formatClock(approval.requestedAt)}</span> : null}
+            </span>
             <span className="pass__who mono">{approval.agentName}</span>
-            <span className="pass__sub num">{blind ? "Checked its own envelope" : `${formatAmount(usd(left))} left in the envelope`}</span>
           </div>
           <svg className="pass__arrow" viewBox="0 0 28 12" width="28" height="12" aria-hidden="true">
             <path d="M1 6h24M20 1.5L25.5 6 20 10.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -213,18 +206,18 @@ function ApprovalFlow({
             <h1 id="approval-title" className="pass__title">
               {offer.title}
             </h1>
-            <Tag>{offer.adapter}</Tag>
-          </div>
-          <p className="pass__summary">{offer.summary}</p>
-          {offer.upstream ? (
-            <p className="pass__source">
-              From{" "}
-              <a href={offer.upstream.url} target="_blank" rel="noreferrer">
-                {upstreamLabel(offer.upstream.url)}
-              </a>
-              , found through {approval.discoveredVia === "circle" ? "Circle discovery" : "the countersign registry"}
+            <p className="pass__meta">
+              <Tag>{offer.adapter}</Tag>
+              {offer.upstream ? (
+                <a href={offer.upstream.url} target="_blank" rel="noreferrer" className="pass__source">
+                  {upstreamLabel(offer.upstream.url)}
+                </a>
+              ) : null}
             </p>
-          ) : null}
+          </div>
+          <p className="pass__summary" title={offer.summary}>
+            {offer.summary}
+          </p>
         </div>
 
         <div className="pass__exact">
@@ -255,7 +248,7 @@ function ApprovalFlow({
                   <Amount money={usd(toll.toll, approval.rail)} size="sm" />
                 </dd>
               </div>
-              <div className="pass__span2">
+              <div>
                 <dt className="label">Seller gets</dt>
                 <dd>
                   <Amount money={usd(toll.net, approval.rail)} size="sm" />
@@ -263,10 +256,10 @@ function ApprovalFlow({
               </div>
             </>
           ) : null}
-          <div className="pass__span3">
-            <dt className="label">Offer hash</dt>
+          <div>
+            <dt className="label">Offer</dt>
             <dd>
-              <Hash value={listing.hash} head={12} tail={10} label="offer hash" />
+              <Hash value={listing.hash} head={6} tail={4} copy={false} label="offer hash" />
             </dd>
           </div>
         </dl>
@@ -311,10 +304,17 @@ function ApprovalFlow({
         </div>
       ) : (
         <div className="approval__dock">
-          <p className="approval__dock-line">
-            <span className="approval__dock-to">To {listing.seller.named === false ? "an unnamed seller" : listing.seller.name}</span>
-            <Amount money={money} size="sm" flight />
-          </p>
+          <div className="approval__dock-line">
+            <p className="approval__dock-what">
+              <Amount money={money} size="sm" flight />{" "}
+              <span className="approval__dock-to">to {listing.seller.named === false ? "an unnamed seller" : listing.seller.name}</span>
+            </p>
+            {job ? null : (
+              <button type="button" className="approval__decline" disabled={sending !== null} onClick={() => void decline()}>
+                {sending === "decline" ? "Declining" : "Decline"}
+              </button>
+            )}
+          </div>
           {problem ? (
             <p className="approval__problem" role="alert">
               {problem}
@@ -340,11 +340,6 @@ function ApprovalFlow({
               doneLabel={sending === "countersign" ? "Sending to the hub" : "Countersigned"}
               onSigned={() => void countersign()}
             />
-          )}
-          {job ? null : (
-            <Button variant="quiet" block className="approval__decline" disabled={sending !== null} onClick={() => void decline()}>
-              {sending === "decline" ? "Declining" : "Decline"}
-            </Button>
           )}
         </div>
       )}
