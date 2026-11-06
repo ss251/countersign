@@ -103,6 +103,29 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Failures where the server never answered: the request may not even have reached it. */
+export const TRANSPORT_ERROR =
+  /socket connection was closed|ECONNRESET|ECONNREFUSED|ConnectionClosed|ConnectionRefused|fetch failed|Unable to connect|operation timed out/i;
+
+/**
+ * Run a read that moves nothing against a third-party API (Circle's Gateway, the Hedera mirror),
+ * repeating it while it fails before the server answers, up to `attempts` times. An answer of any
+ * kind, an error included, is returned or thrown at once. Calls to the hub under test never come
+ * through here.
+ */
+export async function readWithRetry<T>(read: () => Promise<T>, onRetry?: (why: string) => void, attempts = 3): Promise<T> {
+  for (let n = 1; ; n++) {
+    try {
+      return await read();
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      if (n >= attempts || !TRANSPORT_ERROR.test(why)) throw e;
+      onRetry?.(why.split("\n")[0]!.slice(0, 160));
+      await sleep(500 * n);
+    }
+  }
+}
+
 /**
  * The status a logged-out client gets for a public link, without following redirects: a link
  * a judge clicks must answer 200 itself. Retried, because explorers stall now and then.
