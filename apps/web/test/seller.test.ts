@@ -81,6 +81,18 @@ describe("publish commands", () => {
     );
   });
 
+  test("quotes values a shell would misread, such as a URL with & and ?", () => {
+    const cmd = publishCommand({
+      ...options,
+      rails: ["escrow"],
+      upstreamUrl: "https://github.com/circlefin/skills/tree/main?a=1&b=2",
+      licence: "MIT",
+    });
+    expect(cmd).toContain("--upstream-url 'https://github.com/circlefin/skills/tree/main?a=1&b=2'");
+    expect(cmd).toContain("--licence MIT");
+    expect(publishCommand({ ...options, rails: ["escrow"], licence: "it's fine" })).toContain("--licence 'it'\\''s fine'");
+  });
+
   test("builds the same command with serve", () => {
     expect(serveCommand({ ...options, rails: [...options.rails] })).toBe(
       "bun packages/runner/src/cli.ts serve --hub https://hub.example --skill ./SKILL.md --price 50000 --deadline 120 --rails escrow,whitechain --upstream-url https://example.com/skill --licence 'Apache 2.0'",

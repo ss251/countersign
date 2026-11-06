@@ -165,9 +165,12 @@ function runnerCommand(verb: "publish" | "serve", options: CommandOptions): stri
   return parts.join(" ");
 }
 
-/** The runner's parser takes no quoted YAML, but a shell needs a value with spaces wrapped. */
+/**
+ * Quote any value a shell could misread: spaces, and also &, ?, ;, $, * and friends, which
+ * real upstream URLs carry. Plain values stay bare so the command reads cleanly.
+ */
 function quoteIfSpaced(value: string): string {
-  if (!/\s/.test(value)) return value;
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
