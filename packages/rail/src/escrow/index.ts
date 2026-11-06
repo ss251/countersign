@@ -150,6 +150,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
 
   // One sender, one queue: transactions go out in order so nonces never collide.
   let queue: Promise<unknown> = Promise.resolve();
+  let toll: Promise<number> | null = null;
   function send(write: () => Promise<Hex>): Promise<Hex> {
     const next = queue.then(write, write);
     queue = next.catch(() => undefined);
@@ -281,6 +282,12 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     status: async (jobId) => {
       const job = await pub.readContract({ address: cfg.escrow, abi: escrowAbi, functionName: "jobOf", args: [jobId] });
       return STATUS[job.status] ?? "none";
+    },
+    tollBps: () => {
+      toll ??= pub
+        .readContract({ address: cfg.escrow, abi: escrowAbi, functionName: "tollBps" })
+        .then((bps) => Number(bps));
+      return toll;
     },
   };
 

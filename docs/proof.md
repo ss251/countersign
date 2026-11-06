@@ -40,8 +40,8 @@ First deployment, made with `forge script` and verified on the explorer. The sam
 
 ## Whitechain Sepolia (chain 1874)
 
-See `docs/whitechain.md` on the Whitechain lane for the full list.
+See [whitechain.md](whitechain.md) for the full list.
 
 ## Hedera testnet
 
-See `docs/hedera.md` on the Hedera lane for the full list.
+See [hedera.md](hedera.md) for the full list.

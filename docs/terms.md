@@ -16,7 +16,7 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
   - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator ([hedera.md](hedera.md)).
   - On the Gateway rail the buyer's deposit sits in Circle Gateway. Gateway debits the buyer at once and credits the seller in a later batch.
 - **Keys.** The hub holds no buyer key and no seller key. The seller's key stays with its runner, and the buyer's with its agent. On the Arc escrow rail the hub holds one relayer key (`CS_RELAYER_KEY`). It submits the buyer's `fund` and the seller's `release` and pays their gas. It cannot change what they signed: the escrow checks the buyer's countersignature on `fund` and the seller's signature on `release`. On the Whitechain rail the hub holds no key: it passes `fund`, `release`, `refund` and `cancel` to the relay (`WC_RELAY_URL`), which submits them and pays the gas. On the Hedera rail the hub holds no Hedera key.
-- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery and is never released ([spec/offer.md](spec/offer.md)).
+- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery. On an escrow rail it is never released; on a direct rail the payment has already settled (§4) ([spec/offer.md](spec/offer.md)).
 
 ## 3. What the buyer's countersignature binds
 
@@ -26,7 +26,7 @@ The buyer's agent signs only inside its envelope: not revoked, not expired, on t
 
 ## 4. Delivery, release and refunds
 
-As `contracts/src/CountersignedEscrow.sol` has them. Each job closes once: release, refund and cancel each require the job to be `Funded`.
+As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md](spec/escrow.md)); the bond and review changes described there as Escrow v2 are not deployed. Each job closes once: release, refund and cancel each require the job to be `Funded`.
 
 | Action | Who | When | Money goes to |
 |---|---|---|---|
@@ -53,7 +53,7 @@ As `contracts/src/CountersignedEscrow.sol` has them. Each job closes once: relea
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against.** Release needs only the payee's signature, so the escrow pays a funded job whenever the payee signs a release before the deadline. It cannot judge the output. The hub's output check is the delivery gate, and it runs off chain.
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not held.** No contract collects it ([spec/offer.md](spec/offer.md)).
+- **The bond is declared, not collected.** No deployed contract holds it ([spec/offer.md](spec/offer.md)). The contract change is on a branch ([#93](https://github.com/ss251/countersign/issues/93)) and needs a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, every release reverts until the deadline and buyers recover by refund. If it blocklists a buyer, refund and cancel to that buyer revert ([spec/escrow.md](spec/escrow.md)).
 
 ## 7. Seller names

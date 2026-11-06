@@ -7,12 +7,12 @@ What a seller publishes. Type `Offer` in `packages/core/src/types.ts`; checks in
 | `v` | Always `1`. |
 | `seller` | The seller's identity key. It signs every slip and is the payee on EVM rails unless `payTo` says otherwise. |
 | `title`, `summary` | What a person reads. |
-| `adapter` | `skill`, `mcp` or `openapi`: how the runner serves it. |
+| `adapter` | `skill`, `mcp` or `openapi`: how the runner serves it. The runner serves `skill` only today. The `mcp` adapter is in progress and `openapi` is not built ([status.md](../status.md)). |
 | `upstream` | For catalogue items, the upstream URL and licence. |
-| `input`, `output` | JSON Schema 2020-12. A call whose input fails is refused before payment. An output that fails is a failed delivery and is never released. |
+| `input`, `output` | JSON Schema 2020-12. A call whose input fails is refused before payment. An output that fails is a failed delivery. On an escrow rail it is never released, and the buyer gets the money back after the deadline. A direct rail (Hedera, Gateway) settles before the seller runs, so that payment is not returned. |
 | `price` | Atomic units of a 6-decimal USD stablecoin, as a digit string. |
 | `deadline` | Seconds the seller has to deliver once the escrow is funded, from 10 s to 7 days. |
-| `bond` | Atomic amount the seller declares. Declared only: no contract collects it. |
+| `bond` | Atomic amount the seller declares. Declared only: no deployed contract collects it. Collection is on a branch ([#93](https://github.com/ss251/countersign/issues/93)), not deployed. |
 | `rails` | Accepted rails, most preferred first. |
 | `payTo` | Payee per rail where it is not `seller`, for example a Hedera account id. |
 | `issuedAt` | Unix seconds. |
