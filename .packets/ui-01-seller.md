@@ -82,7 +82,7 @@ Back and Next buttons on every step. Next is disabled while the step has an erro
 - No new dependencies. React 19, TypeScript strict. No `any`.
 - Accessibility: every input has a `<label>`, errors are tied with `aria-describedby`, buttons are real `<button>` elements, and focus moves to the step heading on each step change.
 - Do not read any directory outside this repository.
-- **No browser of any kind on this machine**: no Chrome or Chromium (headless or not), no Playwright, no Puppeteer, no screenshot tools. It is the captain's standing rule. Check your work with typecheck, tests and the build; UI checks go back to the lane (cs-ui), which raises NEEDS-BROWSER.
+- **No browser of any kind on this machine**: no Chrome or Chromium (headless or not), no Playwright, no Puppeteer, no screenshot tools. It is the project lead's standing rule. Check your work with typecheck, tests and the build; UI checks go back to the lane (cs-ui), which raises NEEDS-BROWSER.
 - Do not start a dev server or any long-running process.
 
 ## Acceptance

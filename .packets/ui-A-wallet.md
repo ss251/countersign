@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else. You are on `cs/ui-A`, cut from `origin/main`.
 
-## The captain's words
+## The project lead's words
 
 "Add wagmi with the injected connector plus a visible Connect button in the shell, show the address and chain when connected, and make every action that needs a signature say so instead of silently doing nothing."
 

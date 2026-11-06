@@ -99,6 +99,22 @@ export function approvalDecisionMessage(body: ApprovalDecisionBody): string {
   return canonicalJson(body);
 }
 
+export interface EnvelopeRevokeBody {
+  kind: "countersign-envelope-revoke";
+  v: 1;
+  agent: string;
+  revokedAt: number;
+}
+
+export function envelopeRevokeBody(agent: string, revokedAt: number): EnvelopeRevokeBody {
+  return { kind: "countersign-envelope-revoke", v: 1, agent: agent.toLowerCase(), revokedAt };
+}
+
+/** D20: the EIP-191 personal_sign message for a revoke, the canonical JSON of its body. */
+export function envelopeRevokeMessage(agent: string, revokedAt: number): string {
+  return canonicalJson(envelopeRevokeBody(agent, revokedAt));
+}
+
 /** Recover the approver's address, or null when the signature does not parse. */
 export async function approvalDecisionSigner(body: ApprovalDecisionBody, sig: string): Promise<Address | null> {
   try {

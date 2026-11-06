@@ -2,7 +2,7 @@
 
 ## Goal
 
-The captain's decision (06 Nov 17:10 IST): MPP leads with its native Tempo method, which needs no Stripe at all. Stripe's card method stays in the code behind a flag that is off by default. The lane will make a real Tempo testnet payment with the `mppx` CLI against our localhost endpoint. Your job is to make the code ready for that payment; you never run it yourself. Tracked by issue #5.
+The project lead's decision (06 Nov 17:10 IST): MPP leads with its native Tempo method, which needs no Stripe at all. Stripe's card method stays in the code behind a flag that is off by default. The lane will make a real Tempo testnet payment with the `mppx` CLI against our localhost endpoint. Your job is to make the code ready for that payment; you never run it yourself. Tracked by issue #5.
 
 The Tempo method is pathUSD on Tempo Moderato (chain 42431), with a floor of 0.01.
 
@@ -11,14 +11,14 @@ The Tempo method is pathUSD on Tempo Moderato (chain 42431), with a floor of 0.0
 - `packages/rail/src/mpp/**`, tests included
 - `scripts/mpp/server.ts`
 - `docs/mpp.md`: the method description and the server section only. The lane adds the live proof afterwards.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06c-tempo-first.md`
+- Report: `$M/reports/hd-06c-tempo-first.md`
 
 ## Context
 
 Read first:
 
 - `packages/rail/src/mpp/rail.ts`, `constants.ts`, `mppx.ts`, `test/rail.test.ts`, and `scripts/mpp/server.ts` on this branch;
-- the reports `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06-mpp-rail.md` and `hd-06b-mpp-testnet.md`.
+- the reports `$M/reports/hd-06-mpp-rail.md` and `hd-06b-mpp-testnet.md`.
 
 From mppx 0.17.1 (installed under `node_modules/.bun/mppx@0.17.1*/node_modules/mppx/dist/`):
 

@@ -1,0 +1,5 @@
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
+
+# Re-review c5f7e22 (cs/wc, wc-05 merged)
+Result: **blockers=0 should-fix=0**. My relay attack tests (B1, B1b, B2) pass; `bun test packages/relay` 127/127.
+Closed: B1 and B1b (one bearer gate over every merchant route, `/me` aside; constant-time compare, fails closed with no token, CORS limited to configured origins); B2 (a pending refund is recorded under the exclusive lock, counted against `refundable`, and reconciled by receipt or dropped after `validBefore + 60`, when the authorisation can no longer land); S1 (payee allowlist and minimum amount on exact and countersign); S2 (spends persisted, `SpendCeiling.seed` at startup); S3 (zero or missing fee estimate refused); S4 (list routes need a filter). The toll decision (merchant absorbs it, balance pre-checked) is explicit.

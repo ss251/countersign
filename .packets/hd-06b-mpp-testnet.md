@@ -8,7 +8,7 @@ Review of hd-06 found that the rail's Tempo (stablecoin) method points at **Temp
 
 - `packages/rail/src/mpp/**` and `docs/mpp.md`.
 - `scripts/mpp/server.ts`, only if it needs a change for the above.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06b-mpp-testnet.md`.
+- Report: `$M/reports/hd-06b-mpp-testnet.md`.
 
 ## Context
 
@@ -16,7 +16,7 @@ Review of hd-06 found that the rail's Tempo (stablecoin) method points at **Temp
 - mppx 0.17.1:
   - `node_modules/mppx/dist/tempo/internal/defaults.d.ts`: `chainId.testnet = 42431`, `chainId.mainnet = 4217`, and testnet default currency `0x20c0000000000000000000000000000000000000` (pathUSD);
   - `dist/tempo/server/Charge.d.ts`: its `testnet` option, plus `chainId` and `currency`.
-- The report from hd-06: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06-mpp-rail.md`.
+- The report from hd-06: `$M/reports/hd-06-mpp-rail.md`.
 
 ## Required
 
