@@ -1,6 +1,6 @@
 import { declareDiscoveryExtension } from "@x402/extensions";
 import type { Hex } from "viem";
-import type { JsonSchema, Offer, PaymentRequirements, Rail, RailId } from "./deps.ts";
+import { GATEWAY_BATCHED, type JsonSchema, type Offer, type PaymentRequirements, type Rail, type RailId } from "./deps.ts";
 import type { Store, StoredOffer } from "./store.ts";
 import { isRecord } from "./util.ts";
 
@@ -31,8 +31,11 @@ export interface DiscoveryMetadata {
   method: "POST";
   description: string;
   mimeType: "application/json";
-  input: { body: JsonSchema };
+  /** The wire body of a call, `{input, lineage?}`, in Circle's catalogue form. */
+  input: { type: "http"; method: "POST"; bodyType: "json"; body: JsonSchema };
   output: { schema: JsonSchema };
+  /** True when one of `accepts` is a Circle Gateway batched payment. */
+  supportsCircleGateway: boolean;
   offerHash: Hex;
   upstream?: { url: string; licence: string };
 }
@@ -46,15 +49,23 @@ export interface DiscoveryItem {
   metadata: DiscoveryMetadata;
 }
 
+/** The shape of Circle's public catalogue, read live on 06 Nov: no `data` wrapper. */
 export interface DiscoveryList {
-  data: {
-    x402Version: 2;
-    items: DiscoveryItem[];
-    pagination: { limit: number; offset: number; total: number };
-  };
+  x402Version: 2;
+  items: DiscoveryItem[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
+export interface DiscoveryParams {
+  limit?: string | undefined;
+  offset?: string | undefined;
+  query?: string | undefined;
+  category?: string | undefined;
+  type?: string | undefined;
 }
 
 const PROVIDER_DESCRIPTION = "Escrowed, countersigned x402 calls to software that sells itself.";
+const CATEGORY = "INFRASTRUCTURE";
 
 export function resourceFor(publicUrl: string, offerHash: Hex): string {
   return `${publicUrl}/offers/${offerHash}/call`;
@@ -106,31 +117,43 @@ export function exampleInput(schema: JsonSchema): Record<string, unknown> {
   return example;
 }
 
+/** The JSON body a call actually sends: the offer's input wrapped as `{input, lineage?}`. */
+export function callBodySchema(offer: Offer): JsonSchema {
+  return {
+    type: "object",
+    properties: {
+      input: offer.input,
+      lineage: { type: "array", items: { type: "string" } },
+    },
+    required: ["input"],
+  };
+}
+
 export function bazaarExtension(offer: Offer): Record<string, unknown> {
   return declareDiscoveryExtension({
     bodyType: "json",
-    input: exampleInput(offer.input),
-    inputSchema: offer.input,
+    input: { input: exampleInput(offer.input) },
+    inputSchema: callBodySchema(offer),
     output: { schema: offer.output },
   });
 }
 
-export function listResources(
-  deps: DiscoveryDeps,
-  params: { limit?: string | undefined; offset?: string | undefined; query?: string | undefined },
-): DiscoveryList {
+export function listResources(deps: DiscoveryDeps, params: DiscoveryParams): DiscoveryList {
   const now = deps.now();
   const limit = clamp(parseIntParam(params.limit, 50), 1, 200);
   const offset = parseIntParam(params.offset, 0);
   const query = (params.query ?? "").trim().toLowerCase();
-  const listed = deps.store.listOffers().filter((stored) => matches(stored.offer, query));
+  const category = (params.category ?? "").trim().toUpperCase();
+  const type = (params.type ?? "").trim().toLowerCase();
+  const listed =
+    (category !== "" && category !== CATEGORY) || (type !== "" && type !== "http")
+      ? []
+      : deps.store.listOffers().filter((stored) => matches(stored, query));
 
   return {
-    data: {
-      x402Version: 2,
-      items: listed.slice(offset, offset + limit).map((stored) => itemFor(deps, stored, now)),
-      pagination: { limit, offset, total: listed.length },
-    },
+    x402Version: 2,
+    items: listed.slice(offset, offset + limit).map((stored) => itemFor(deps, stored, now)),
+    pagination: { limit, offset, total: listed.length },
   };
 }
 
@@ -228,31 +251,40 @@ function itemFor(deps: DiscoveryDeps, stored: StoredOffer, now: number): Discove
       website: deps.publicUrl,
       docsUrl: `${deps.publicUrl}/openapi.json`,
       description: PROVIDER_DESCRIPTION,
-      category: "INFRASTRUCTURE",
+      category: CATEGORY,
       tags: ["x402", "escrow", stored.offer.adapter, ...stored.offer.rails],
     },
     path,
     method: "POST",
     description: stored.offer.summary || stored.offer.title,
     mimeType: "application/json",
-    input: { body: stored.offer.input },
+    input: { type: "http", method: "POST", bodyType: "json", body: callBodySchema(stored.offer) },
     output: { schema: stored.offer.output },
+    supportsCircleGateway: false,
     offerHash: stored.offerHash,
   };
   if (stored.offer.upstream) metadata.upstream = stored.offer.upstream;
+  const accepts = acceptsFor(deps.rails, stored.offer, resource, now);
+  metadata.supportsCircleGateway = accepts.some((entry) => entry.extra?.name === GATEWAY_BATCHED);
 
   return {
     resource,
     type: "http",
     x402Version: 2,
     lastUpdated: new Date(stored.offer.issuedAt * 1000).toISOString(),
-    accepts: acceptsFor(deps.rails, stored.offer, resource, now),
+    accepts,
     metadata,
   };
 }
 
-function matches(offer: Offer, query: string): boolean {
+/**
+ * Text match on title, summary or adapter. A query that contains an offer's hash, such as its
+ * resource URL, matches that offer: `circle services inspect <url>` looks itself up that way.
+ */
+function matches(stored: StoredOffer, query: string): boolean {
   if (query === "") return true;
+  if (query.includes(stored.offerHash.toLowerCase())) return true;
+  const { offer } = stored;
   return [offer.title, offer.summary, offer.adapter].some((value) =>
     value.toLowerCase().includes(query),
   );
