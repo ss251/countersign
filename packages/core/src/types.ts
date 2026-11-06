@@ -207,7 +207,7 @@ export interface SlipBody {
   inputHash: Hex;
   outputHash: Hex;
   deliveredAt: number;
-  /** Slip hashes of purchases the seller made while serving this call. Always empty today: receipt trees are not built (#18). */
+  /** Slip hashes of offers bought through the hub while this call was served, in the order they settled. */
   children: Hex[];
   /** EIP-712 domain of the seller signature: present on escrow rails, where the contract checks it. */
   escrow?: Address;

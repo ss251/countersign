@@ -58,13 +58,14 @@ export function startRunner(options: RunnerOptions): RunnerHandle {
       send({ t: "fail", jobId: order.jobId, reason: answer.fail });
       return;
     }
+    const children = await slipsBought(options.url, order.jobId);
     const body = slipBodyFor(
       order,
       options.account.address,
       canonicalHash(order.input),
       canonicalHash(answer.output),
       options.now(),
-      [],
+      children,
     );
     const hash = slipHash(body);
     const sellerSig = await options.account.signTypedData(slipTypedData(body));
@@ -134,4 +135,21 @@ export function startRunner(options: RunnerOptions): RunnerHandle {
       socket.close();
     },
   };
+}
+
+/** Slip hashes the hub recorded for purchases made while this job was open. */
+async function slipsBought(wsUrl: string, jobId: string): Promise<Hex[]> {
+  const url = new URL(wsUrl);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = `/jobs/${jobId}`;
+  url.search = "";
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return [];
+    const job = (await response.json()) as { children?: unknown };
+    if (!Array.isArray(job.children)) return [];
+    return job.children.filter((item): item is Hex => typeof item === "string" && /^0x[0-9a-fA-F]+$/.test(item));
+  } catch {
+    return [];
+  }
 }

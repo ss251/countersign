@@ -129,13 +129,15 @@ export function call(
   hash: Hex,
   input: unknown,
   payment?: PaymentPayload,
+  lineage?: Hex[],
 ): Promise<Response> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (payment) headers[PAYMENT_SIGNATURE_HEADER] = toBase64Json(payment);
+  const body = lineage !== undefined && lineage.length > 0 ? { input, lineage } : { input };
   return fetch(`${hub.url}/offers/${hash}/call`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ input }),
+    body: JSON.stringify(body),
   });
 }
 

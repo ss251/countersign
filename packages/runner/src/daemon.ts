@@ -163,12 +163,14 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
     }
 
     try {
+      const children = await slipsBought(cfg.hubUrl, order.jobId);
       const body = slipBodyFor(
         order,
         cfg.account.address,
         canonicalHash(order.input),
         canonicalHash(output),
         clock(),
+        children,
       );
       const hash = slipHash(body);
       const sellerSig = await cfg.account.signTypedData(slipTypedData(body));
@@ -283,6 +285,19 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       socket = null;
     },
   };
+}
+
+/** Slip hashes the hub recorded for purchases made while this job was open. Empty when it recorded none. */
+async function slipsBought(hubUrl: string, jobId: string): Promise<Array<`0x${string}`>> {
+  try {
+    const response = await fetch(new URL(`/jobs/${jobId}`, hubUrl), { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return [];
+    const job = (await response.json()) as { children?: unknown };
+    if (!Array.isArray(job.children)) return [];
+    return job.children.filter((item): item is `0x${string}` => typeof item === "string" && /^0x[0-9a-fA-F]+$/.test(item));
+  } catch {
+    return [];
+  }
 }
 
 function connectUrl(hubUrl: string): string {

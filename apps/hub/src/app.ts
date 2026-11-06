@@ -206,6 +206,7 @@ export function createHub(deps: HubDeps) {
       settleTx: job.settleTx,
       closeTx: job.closeTx,
       slipHash: job.slipHash,
+      children: deps.store.childSlips(job.jobId),
     });
   });
 

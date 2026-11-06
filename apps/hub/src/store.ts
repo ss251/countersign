@@ -203,6 +203,8 @@ interface ApprovalRow {
 
 export class Store {
   private readonly db: Database;
+  /** Slip hashes bought through the hub while a job was still open, keyed by lowercase job id. */
+  private readonly openChildren = new Map<string, Hex[]>();
 
   constructor(path: string) {
     this.db = new Database(path);
@@ -663,6 +665,30 @@ export class Store {
           .query<ApprovalRow, []>("SELECT * FROM approvals ORDER BY created_at DESC, rowid DESC")
           .all();
     return rows.map(approvalFromRow);
+  }
+
+  /**
+   * Slip hashes bought through the hub while this job was open, in the order they settled.
+   * Empty once the job has its own slip: that slip's body is then the record.
+   */
+  childSlips(jobId: string): Hex[] {
+    const job = this.getJob(jobId);
+    if (!job || job.slipHash !== null) return [];
+    return [...(this.openChildren.get(jobId.toLowerCase()) ?? [])];
+  }
+
+  /**
+   * Record a slip bought while `parentJobId` was still being served.
+   * Ignored when that job is unknown or already has a slip: the signature has committed its children.
+   */
+  recordChildSlip(parentJobId: string, child: Hex): void {
+    const job = this.getJob(parentJobId);
+    if (!job || job.slipHash !== null) return;
+    const key = parentJobId.toLowerCase();
+    const list = this.openChildren.get(key) ?? [];
+    if (list.some((hash) => hash.toLowerCase() === child.toLowerCase())) return;
+    list.push(child);
+    this.openChildren.set(key, list);
   }
 
   /** Set a pending approval's decision and signature. False when it was already decided. */

@@ -60,6 +60,7 @@ export async function checksOut(
   payment: PaymentPayload,
   settle: SettleResult,
   delivered: { output: unknown; slip: DeliveredSlip },
+  children: Hex[],
 ): Promise<boolean> {
   try {
     const slip = delivered.slip;
@@ -72,7 +73,7 @@ export async function checksOut(
       inputHash,
       outputHash,
       body.deliveredAt,
-      body.children,
+      children,
     );
 
     if (slip.hash !== slipHash(body)) return false;

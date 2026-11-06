@@ -289,7 +289,7 @@ export async function paidCall(
     return failedDelivery(deps, jobId, railId, dispatchFault(delivered, hubLimitMs < deadlineMs), escrowRail);
   }
 
-  if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
+  if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered, deps.store.childSlips(jobId)))) {
     const gate = await failOnGate(match.rail, jobId, deps.store, now);
     return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
   }
@@ -351,6 +351,8 @@ export async function paidCall(
     settlement,
   };
   deps.store.putSlip(slip.hash, jobId, slip, now);
+  const parentJob = order.lineage.at(-1);
+  if (parentJob !== undefined) deps.store.recordChildSlip(parentJob, slip.hash);
   deps.store.updateJob(
     jobId,
     review === null
