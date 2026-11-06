@@ -92,6 +92,8 @@ export interface PaymentRequired {
   error?: string;
   resource: { url: string; description?: string; mimeType?: string };
   accepts: PaymentRequirements[];
+  /** x402 v2 extensions, e.g. `bazaar` discovery metadata. */
+  extensions?: Record<string, unknown>;
 }
 
 export interface PaymentPayload {
