@@ -45,9 +45,9 @@ As the escrows production uses have them. Each is v1 ([spec/escrow.md](spec/escr
   |---|---|---|
   | Escrow: `escrow` (Arc), `whitechain` | In `CountersignedEscrow` | It returns to the buyer in full by `refund` after the deadline. The hub sweeps those refunds every 30 seconds, and anyone else may call `refund` too. |
   | Held Hedera: `hedera-scheduled` | In the buyer's own account, inside a schedule | The hub does not co-sign, so the schedule cannot execute and expires with nothing moved: [`0.0.11343208`](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.11343208) was signed by the seller but not the hub, and never executed. |
-  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` (none of them on the production hub) | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
+  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` (none of them live on the production hub; `gateway` and `hedera` are listed, because older offers name them) | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
 
-  Which rails a given hub offers is on its `/rails`. Which of them run on the production hub is in [status.md](status.md).
+  A rail is live when the hub declares it on its `/rails`, and listed when offers or discovery name it but the hub does not settle it. The production hub's live rails are on [`/rails`](https://hub-production-e85e.up.railway.app/rails) and in [status.md](status.md).
 
 ## 5. Fees and the toll
 
