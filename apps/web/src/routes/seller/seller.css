@@ -34,7 +34,7 @@
 
 .seller-table {
   width: 100%;
-  min-width: 780px;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: var(--t-14);
   text-align: left;
