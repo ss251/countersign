@@ -50,7 +50,9 @@ export function exampleNeeds(listings: Listing[]): Array<{ need: string; hits: L
   const listed = listings.filter((l) => l.status === "listed");
   const candidates: string[] = [];
   if (listed.some((l) => /\barc\b/i.test(`${l.offer.title} ${l.offer.summary}`))) candidates.push("deploy a contract on arc");
-  for (const l of listed) candidates.push(l.offer.title.replace(/[-_]+/g, " ").trim());
+  // A need is what a person would type: the title's head before any colon, at most four words, never the
+  // whole marketing title, so the card under it can say what it finds without repeating it.
+  for (const l of listed) candidates.push(needOf(l.offer.title));
   const out: Array<{ need: string; hits: Listing }> = [];
   const used = new Set<string>();
   for (const need of candidates) {
@@ -61,6 +63,12 @@ export function exampleNeeds(listings: Listing[]): Array<{ need: string; hits: L
     out.push({ need, hits: top.listing });
   }
   return out;
+}
+
+/** "Hedera Agent Kit: an HBAR transfer, built for you to sign" reads as "hedera agent kit". */
+export function needOf(title: string): string {
+  const head = (title.split(":")[0] ?? title).replace(/[-_]+/g, " ").trim().toLowerCase();
+  return head.split(/\s+/).slice(0, 4).join(" ");
 }
 
 /** The modifier people press for ⌘K: Cmd on Apple platforms, Ctrl elsewhere. */

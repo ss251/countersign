@@ -493,3 +493,19 @@ kbd {
   color: var(--slate);
   font-size: var(--t-13);
 }
+
+/* The empty card column: what the card will show, and when it can open a wallet (STEER-2225). */
+.ask__placeholder {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.ask__placeholder-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Equal cards: the need on top, what it finds pinned to the bottom. */
+.example {
+  grid-template-rows: 1fr auto;
+}

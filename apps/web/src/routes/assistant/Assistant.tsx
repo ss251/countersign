@@ -318,7 +318,9 @@ export function Assistant({
                   <li key={x.need}>
                     <button type="button" className="example" onClick={() => setQuery(x.need)}>
                       <span className="example__need mono">{x.need}</span>
-                      <span className="example__hits">finds {x.hits.offer.title}</span>
+                      <span className="example__hits">
+                        {`finds ${x.hits.offer.title} · ${formatMoney(usd(x.hits.offer.price, x.hits.offer.rails[0]))}`}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -355,7 +357,17 @@ export function Assistant({
         {chosen ? (
           <PurchaseCard key={chosen.listing.hash} listing={chosen.listing} view={view ?? null} />
         ) : layout === "page" ? (
-          <p className="ask__placeholder">Choose a match with Enter, or click it, to see exactly what your agent would countersign.</p>
+          <div className="ask__placeholder" data-testid="ask-placeholder">
+            <p className="ask__placeholder-title">The purchase card</p>
+            <p>
+              Choose a match, with Enter or a click, to see exactly what your agent would countersign: the amount, the payee,
+              the rail and its deadline, each checked against your envelope.
+            </p>
+            <p>
+              If the offer takes Arc's escrow rail and your wallet is on Arc testnet, you can review it and sign it yourself.
+              Otherwise the card is a labelled preview that hands your agent the command, and opens no wallet.
+            </p>
+          </div>
         ) : null}
       </div>
     </div>
