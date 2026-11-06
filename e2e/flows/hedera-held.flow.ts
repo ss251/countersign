@@ -80,7 +80,6 @@ async function heldListing(ctx: FlowCtx, base: string, input: unknown): Promise<
     check(mine.length > 0, `the public hub has no online MCP offer from ${MCP_SELLER} (it lists ${offers.length})`);
     const l = mine.find((x) => x.offer.rails[0] === HELD);
     if (!l) throw new NotRun(`the Agent Kit offer does not list ${HELD} first yet (its rails: ${mine.map((x) => x.offer.rails.join("+")).join(", ")})`);
-    check(l.offer.rails.includes("hedera"), "the held offer keeps the exact Hedera rail beside it");
     check(BigInt(l.offer.price) <= MAX_PRICE, `the offer costs ${l.offer.price}, above the suite's 0.05 USDC`);
     sameHex(canonicalHash(l.offer), l.offerHash, "the offer hashes to its offerHash");
     const heldPayTo = l.offer.payTo?.[HELD] ?? "";
@@ -89,7 +88,7 @@ async function heldListing(ctx: FlowCtx, base: string, input: unknown): Promise<
     return { offerHash: l.offerHash, offer: l.offer, heldPayTo };
   });
 
-  const holdSeconds = await ctx.step("the 402 offers the held payment beside the exact one", async () => {
+  const holdSeconds = await ctx.step("the 402 offers the held payment and no plain x402 Hedera", async () => {
     const res = await ctx.http("unpaid call", `${base}/offers/${found.offerHash}/call`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -107,9 +106,7 @@ async function heldListing(ctx: FlowCtx, base: string, input: unknown): Promise<
     equal(held.maxTimeoutSeconds, found.offer.deadline, "held timeout is the offer's deadline");
     sameHex(String(held.extra?.offerHash ?? ""), found.offerHash, "held offer hash");
     equal(held.extra?.holdSeconds, found.offer.deadline + 180, "hold length");
-    const exact = hederaExact(required);
-    check(exact, "the 402 still offers the exact Hedera payment");
-    equal(exact.payTo, found.offer.payTo?.hedera, "exact payee");
+    check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (captain, 23:40 IST)");
     return held.extra?.holdSeconds as number;
   });
 

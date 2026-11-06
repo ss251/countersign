@@ -229,7 +229,7 @@ Both first check the same three things:
 
 1. **production declares the held rail** in `/rails`.
 2. **the offer lists it first** and keeps the exact Hedera rail beside it; it hashes to its offer hash, and its `hedera-scheduled` payee is an account.
-3. **the 402 offers both payments.** The held accept (scheme `countersign`, `extra.name` `hedera-scheduled`) pays the offer's held payee exactly the price in USDC, with the offer's hash, the offer's deadline as its timeout, and a hold of the deadline plus 180 s. The exact accept still pays the offer's Hedera account.
+3. **the 402 offers the held payment and no plain x402 Hedera.** The held accept (scheme `countersign`, `extra.name` `hedera-scheduled`) pays the offer's held payee exactly the price in USDC, with the offer's hash, the offer's deadline as its timeout, and a hold of the deadline plus 180 s. The 402 offers no plain x402 Hedera accept: production removed that rail by flag.
 
 21, `--flow hedera-held`:
 
