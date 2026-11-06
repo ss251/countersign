@@ -84,6 +84,7 @@ function ledger(seller: ReturnType<typeof signerFromKey>) {
         seller: seller.address,
         now: NOW,
         known: [{ chainId: CHAIN_ID, escrow: ESCROW }],
+        retryMs: 0,
         read: async (_chainId, _escrow, jobId) => {
           const job = jobs.get(jobId.toLowerCase());
           if (!job) throw new Error("no such job");

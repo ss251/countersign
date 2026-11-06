@@ -52,6 +52,7 @@ function check(job: ChainJob | Error, reads: Hex[] = []): FundingCheck {
     seller: SELLER,
     now: NOW,
     known: [{ chainId: 5042002, escrow: ESCROW }],
+    retryMs: 0,
     read: async (_chainId, _escrow, jobId) => {
       reads.push(jobId);
       if (job instanceof Error) throw job;
@@ -106,6 +107,28 @@ describe("the job on chain", () => {
     expect(await fundingRefusal(order({ chainId: 1874 }), offer, check(funded(), reads))).toBe(UNPAID.terms);
     expect(await fundingRefusal(order({ escrow: undefined }), offer, check(funded(), reads))).toBe(UNPAID.escrow);
     expect(reads).toEqual([]);
+  });
+
+  test("a fund the public node has not seen yet is read again, then served", async () => {
+    const seen: ChainJob[] = [funded({ status: STATUS.None }), funded({ status: STATUS.None }), funded()];
+    let reads = 0;
+    const lagging: FundingCheck = {
+      ...check(funded()),
+      read: async () => seen[Math.min(reads++, seen.length - 1)] as ChainJob,
+    };
+    expect(await fundingRefusal(order(), offer, lagging)).toBeNull();
+    expect(reads).toBe(3);
+  });
+
+  test("a job never seen is refused after the retries, and a final status is not retried", async () => {
+    const reads: Hex[] = [];
+    expect(await fundingRefusal(order(), offer, { ...check(funded({ status: STATUS.None }), reads), retries: 2 })).toBe(
+      UNPAID.notFunded,
+    );
+    expect(reads).toHaveLength(3);
+    const once: Hex[] = [];
+    expect(await fundingRefusal(order(), offer, check(funded({ status: STATUS.Released }), once))).toBe(UNPAID.notFunded);
+    expect(once).toHaveLength(1);
   });
 
   test("a chain that cannot be read is a refusal, never a pass", async () => {

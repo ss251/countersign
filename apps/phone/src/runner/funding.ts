@@ -69,6 +69,12 @@ export interface FundingCheck {
   now: number;
   known: readonly PinnedEscrow[];
   read: JobReader;
+  /**
+   * The hub dispatches as soon as its own node has the fund, and a public node can be a block
+   * behind. A job not seen yet (status None, or a failed read) is read again this many times.
+   */
+  retries?: number;
+  retryMs?: number;
 }
 
 /** Null when the job is paid for as the offer says; otherwise the sentence the hub is sent. */
@@ -82,11 +88,18 @@ export async function fundingRefusal(order: JobOrder, offer: Offer, check: Fundi
   const pinned = check.known.some((e) => e.chainId === chainId && e.escrow.toLowerCase() === escrow.toLowerCase());
   if (!pinned) return UNPAID.escrow;
 
-  let job: ChainJob;
-  try {
-    job = await check.read(chainId, escrow, order.jobId);
-  } catch {
-    return UNPAID.unread;
+  const retries = check.retries ?? 4;
+  let job: ChainJob | null = null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      job = await check.read(chainId, escrow, order.jobId);
+    } catch {
+      job = null;
+    }
+    // Released and Refunded are final; only a job not seen yet is worth reading again.
+    if (job !== null && job.status !== STATUS.None) break;
+    if (attempt >= retries) return job === null ? UNPAID.unread : UNPAID.notFunded;
+    await new Promise((resolve) => setTimeout(resolve, check.retryMs ?? 750));
   }
   if (job.status !== STATUS.Funded) return UNPAID.notFunded;
   if (job.payee.toLowerCase() !== check.seller.toLowerCase()) return UNPAID.payee;
