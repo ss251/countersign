@@ -175,7 +175,11 @@ describe("merchant one-click refund", () => {
     expect(relay.ledger.getJob(job.jobId)!.status).toBe("cancelled");
   });
 
-  test("an in_review order cancels only when the whole amount is named", async () => {
+  // Corrected per the project lead's ruling: an order in review offers and signs no refund.
+  // OLD: a whole-amount refund of an in_review order signed a cancel and posted it (200).
+  // NEW: every refund of an in_review order answers 409 not_refundable and posts nothing.
+  // EVIDENCE: CountersignedEscrow.cancel reverts unless the job is Funded (v1 NotFunded; v2 NotOpen).
+  test("an in_review order offers and signs no refund, because cancel reverts unless Funded", async () => {
     const relay = createTestRelay();
     const jobId = fakeNonce();
     const calls: string[] = [];
@@ -217,21 +221,15 @@ describe("merchant one-click refund", () => {
           body: JSON.stringify(body),
         });
 
-      const partial = await call({ amount: "750000" });
-      expect(partial.status).toBe(400);
-      expect(await partial.json()).toEqual({
-        ok: false,
-        reason: "partial_cancel_not_possible",
-      });
+      for (const body of [{}, { amount: "750000" }, { amount: "1500000", reason: "not_delivered" }]) {
+        const res = await call(body);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ ok: false, reason: "not_refundable" });
+      }
       expect(calls.some((entry) => entry.startsWith("POST http://relay.test/escrow/cancel"))).toBe(
         false,
       );
-
-      const whole = await call({ amount: "1500000", reason: "not_delivered" });
-      expect(whole.status).toBe(200);
-      expect(calls.some((entry) => entry.startsWith("POST http://relay.test/escrow/cancel"))).toBe(
-        true,
-      );
+      expect(calls.some((entry) => entry.startsWith("POST http://relay.test/refund"))).toBe(false);
     } finally {
       globalThis.fetch = realFetch;
     }

@@ -1,4 +1,4 @@
-import { whitechainPaywall } from "@countersign/relay";
+import { whitechainPaywall } from "@countersign-hub/relay/paywall";
 import type { Address } from "viem";
 
 // Charge 0.01 USDT on Whitechain for one route. The relay pays the gas.

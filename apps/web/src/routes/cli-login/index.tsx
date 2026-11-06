@@ -1,5 +1,5 @@
-import { useContext } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { useContext, useRef } from "react";
+import { useLogin, usePrivy } from "@privy-io/react-auth";
 import { WalletModeContext } from "../../app/Providers.tsx";
 import type { PageProps } from "../../app/routes.ts";
 import { FOREIGN_HUB, isOwnHub } from "../../lib/hub.ts";
@@ -21,7 +21,24 @@ export default function CliLoginPage({ query }: PageProps) {
 
 /** The only component on this page that touches Privy; the view stays renderable without it. */
 function PrivyConnect({ code }: { code: string | null }) {
-  const { ready, authenticated, login, getAccessToken } = usePrivy();
-  const signIn: CliSignIn = { ready, authenticated, login, getAccessToken };
+  const { ready, authenticated, getAccessToken } = usePrivy();
+  const settle = useRef<((completed: boolean) => void) | null>(null);
+  const { login } = useLogin({
+    onComplete: () => settle.current?.(true),
+    onError: () => settle.current?.(false),
+  });
+  const signIn: CliSignIn = {
+    ready,
+    authenticated,
+    login: () =>
+      new Promise<boolean>((resolve) => {
+        settle.current = (completed) => {
+          settle.current = null;
+          resolve(completed);
+        };
+        login();
+      }),
+    getAccessToken,
+  };
   return <CliLoginView code={code} signIn={signIn} />;
 }

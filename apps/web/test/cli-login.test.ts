@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { FOREIGN_HUB, HubError, hubPost } from "../src/lib/hub.ts";
 import { approveCliLogin, readCode, type ApproveOutcome } from "../src/routes/cli-login/approve.ts";
 import { CliLoginView, type CliSignIn } from "../src/routes/cli-login/View.tsx";
+import { claimApproval, loginSettled, type LoginPhase } from "../src/routes/cli-login/View.tsx";
 
 const CODE = "ABCD-1234";
 const PRIVY = "eyJ.victim-privy-access-token.sig";
@@ -179,6 +180,14 @@ describe("the CLI login view", () => {
     expect(html).not.toContain("Connect this CLI");
   });
 
+  test("a valid code warns against a link someone else sent", () => {
+    const html = view({ code: CODE, signIn: signedOut });
+    expect(html).toContain("If you did not just run countersign login yourself, close this page.");
+    expect(view({ code: null, signIn: null, reason: FOREIGN_HUB })).not.toContain(
+      "If you did not just run countersign login yourself",
+    );
+  });
+
   test("with no code, it shows only the error line", () => {
     const html = view({ code: null, signIn: null, reason: FOREIGN_HUB });
     expect(html).toContain("This page needs the code your terminal printed. Run countersign login again.");
@@ -193,6 +202,44 @@ describe("the CLI login view", () => {
     const html = view({ code: CODE, signIn: signedOut });
     expect(html).toContain("Connect this CLI");
     expect(html).toContain("Check that this code matches the one in your terminal.");
+  });
+});
+
+describe("a dismissed CLI sign-in", () => {
+  test("clears pending and does not approve a later sign-in from the top bar", async () => {
+    const dismissed: CliSignIn = { ...signedOut, login: async () => false };
+    let phase: LoginPhase = "pending";
+    phase = loginSettled(await dismissed.login());
+    expect(phase).toBe("idle");
+
+    let approvals = 0;
+    const authenticatedChanged = (authenticated: boolean) => {
+      const step = claimApproval(phase, authenticated);
+      phase = step.phase;
+      if (step.approve) approvals += 1;
+    };
+    authenticatedChanged(true);
+    authenticatedChanged(true);
+
+    expect(approvals).toBe(0);
+  });
+
+  test("approves once when the sign-in this page started completes", async () => {
+    const completed: CliSignIn = { ...signedOut, login: async () => true };
+    let phase: LoginPhase = "pending";
+    phase = loginSettled(await completed.login());
+
+    let approvals = 0;
+    const authenticatedChanged = (authenticated: boolean) => {
+      const step = claimApproval(phase, authenticated);
+      phase = step.phase;
+      if (step.approve) approvals += 1;
+    };
+    authenticatedChanged(false);
+    authenticatedChanged(true);
+    authenticatedChanged(true);
+
+    expect(approvals).toBe(1);
   });
 });
 

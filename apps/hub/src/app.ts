@@ -19,6 +19,8 @@ import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
 import { registerBuyerPlumbing } from "./buyerplumbing.ts";
+import { registerCliAuth, type CliAuthDeps } from "./cli-auth/routes.ts";
+import type { KnownEscrow } from "./cli-auth/policy.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
@@ -45,6 +47,8 @@ export interface HubDeps {
   humanApprovalToken?: string;
   /** Privy access-token verifier. Without it, the Privy header is ignored. */
   privy?: PrivyVerifier;
+  /** CLI device login, sessions and signing, when Privy server wallets are configured. */
+  cliAuth?: Omit<CliAuthDeps, "privy" | "hubStore" | "now" | "escrows">;
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
@@ -77,6 +81,15 @@ export function createHub(deps: HubDeps) {
   registerBuyerPlumbing(app, deps);
   registerOrders(app, deps);
   registerReview(app, deps);
+  if (deps.cliAuth) {
+    registerCliAuth(app, {
+      ...deps.cliAuth,
+      privy: deps.privy,
+      hubStore: deps.store,
+      now: deps.now,
+      escrows: () => escrowRails(deps.rails),
+    });
+  }
 
   app.get("/healthz", (c) =>
     json({
@@ -300,6 +313,22 @@ function listing(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The escrow contracts this hub runs on EVM chains. Hedera rails are not signed for. */
+function escrowRails(rails: Rail[]): KnownEscrow[] {
+  const escrows: KnownEscrow[] = [];
+  for (const rail of rails) {
+    const declaration = rail.declaration;
+    if (declaration.kind !== "escrow" || declaration.escrow === undefined) continue;
+    const network = declaration.network;
+    if (!network.startsWith("eip155:")) continue;
+    escrows.push({
+      chainId: Number(network.split(":")[1]),
+      escrow: declaration.escrow.toLowerCase(),
+    });
+  }
+  return escrows;
 }
 
 /** The refusal's one-line reason, at most 200 characters. Never a header, payment, input or output. */

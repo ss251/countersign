@@ -706,15 +706,16 @@ describe("escrow v2 review states (built against the hub's served fields; nothin
     for (const order of samples) expect(isStandIn(order.settleTx)).toBe(true);
   });
 
-  test("in review is held, pending and never in Net; the payee may still cancel it whole", () => {
+  test("in review is held, pending and never in Net; the desk offers no refund, since a delivered job cannot be cancelled", () => {
     expect(statusLabel("in_review")).toBe("In review");
     expect(statusTone("in_review")).toBe("money");
     expect(isPending(inReview)).toBe(true);
     expect(contribution(inReview)).toBe(0n);
     expect(equation([inReview]).held).toBe(200_000n);
     expect(equation([inReview]).net).toBe(0n);
-    expect(canRefund(inReview)).toBe(true);
-    expect(refundLabel(inReview)).toBe("Cancel and refund 0.20");
+    // Evidence: CountersignedEscrow.cancel reverts unless the job is Funded (v1 NotFunded; v2 52b7c7c
+    // NotOpen), so no refund of a delivered job could settle (captain's ruling, 06 Nov 03:12 IST).
+    expect(canRefund(inReview)).toBe(false);
     expect(matchesFilter(inReview, "held")).toBe(true);
     expect(adjustments(inReview)).toEqual([{ kind: "review", endsAt: inReview.reviewEndsAt ?? null }]);
   });

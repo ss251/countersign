@@ -558,7 +558,13 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
               Sending to the hub
             </p>
           ) : null}
-          <PurchaseResult signature={purchase.signature} note={purchase.note} outcome={purchase.outcome} testIdPrefix="pcard" />
+          <PurchaseResult
+            signature={purchase.signature}
+            signer={purchase.signer}
+            note={purchase.note}
+            outcome={purchase.outcome}
+            testIdPrefix="pcard"
+          />
           {retryable ? (
             <Button
               data-testid="pcard-again"
