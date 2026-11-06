@@ -361,7 +361,7 @@ function failedDelivery(
   const message =
     gateMessage ??
     (railId === "hedera-scheduled"
-      ? "Not delivered. Nothing was charged: the scheduled payment was never countersigned, so it expires unsigned and no money moves."
+      ? "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires."
       : escrow
         ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
         : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");

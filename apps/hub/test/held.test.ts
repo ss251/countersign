@@ -38,7 +38,7 @@ const SCHEDULE_ID = "0.0.500";
 const CREATE_TX = `${PAYER}@1700000000.000000000`;
 const COUNTERSIGN = "c2lnbmVk";
 const NOTHING_CHARGED =
-  "Not delivered. Nothing was charged: the scheduled payment was never countersigned, so it expires unsigned and no money moves.";
+  "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires.";
 
 interface ReleaseArgs {
   jobId: Hex;
