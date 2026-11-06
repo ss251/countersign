@@ -1,0 +1,72 @@
+/* The developer desk (STEER-0440): three ruled sections, copied from the onboarding guide, in the console's own tokens. */
+
+.gs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+  padding: var(--sp-8) 0;
+}
+
+.gs > * {
+  min-width: 0;
+}
+
+.gs__title {
+  font-size: var(--t-20);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.gs__text,
+.gs__list {
+  color: var(--ink);
+  max-width: 68ch;
+}
+
+.gs__pending,
+.gs__foot {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.dev__note {
+  color: var(--slate);
+  font-size: var(--t-13);
+  max-width: 68ch;
+}
+
+/*
+ * The twenty-line block's long code lines scroll inside their own box, never the page (firstmate 23:24:44Z).
+ * .mx-integrate is a grid with an implicit auto column, which grows to its longest line's min-content
+ * (837px at 390). Here its column and children may shrink, and the wrapper keeps the page's own cap.
+ */
+.developers {
+  min-width: 0;
+  max-width: min(100%, var(--content));
+}
+
+.developers .mx-integrate {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.developers .mx-integrate > *,
+.developers .mx-snippet {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.developers .mx-snippet__code {
+  overflow-x: auto;
+}
+
+/*
+ * Long unbroken strings in the guide's own text (bare URLs, an explorer tx/<hash>, a file path) break
+ * where they must instead of widening the page at phone width (firstmate 23:27:47Z).
+ */
+.gs__text,
+.gs__text code,
+.gs__list,
+.gs__list code {
+  overflow-wrap: anywhere;
+}

@@ -41,9 +41,12 @@ describe("the site's views", () => {
     const html = renderToString(createElement(SiteLinks, { className: "landing__link" }));
     const links = anchors(html);
 
-    expect(VIEWS).toHaveLength(6);
+    // Evidence (captain via firstmate, STEER-0440): the developer surface joins the bar under Sell, after
+    // Merchant, so there are seven views and Registry is the sixth link. Nothing else about the bar changes.
+    expect(VIEWS).toHaveLength(7);
     expect(links.map((a) => a.text)).toEqual([...VIEWS.map((v) => v.label), "GitHub"]);
     expect(links.map((a) => a.tag.includes('aria-current="page"'))).toEqual([
+      false,
       false,
       false,
       false,
@@ -54,9 +57,9 @@ describe("the site's views", () => {
     ]);
 
     VIEWS.forEach((v, i) => expect(links[i]!.tag).toContain(`href="#/${v.name}"`));
-    expect(links[6]!.tag).toContain(`href="${REPO}"`);
-    expect(links[6]!.tag).toContain('target="_blank"');
-    expect(links[6]!.tag).toContain('rel="noreferrer"');
+    expect(links[7]!.tag).toContain(`href="${REPO}"`);
+    expect(links[7]!.tag).toContain('target="_blank"');
+    expect(links[7]!.tag).toContain('rel="noreferrer"');
   });
 
   test("the footer says what countersign is in one sentence", () => {
