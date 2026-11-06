@@ -7,10 +7,13 @@
 import {
   chooseRail,
   offerHash,
+  protectionContext,
+  protectionNote,
   RAIL_IDS,
   type BuyerCaps,
   type Offer,
   type PaymentRequirements,
+  type ProtectionContext,
   type Rail,
   type RailHealth,
   type RailId,
@@ -20,9 +23,12 @@ import {
 } from "./deps.ts";
 
 export const ROUTER_POLICY =
-  "eligible by buyer rails and finality; healthy first, then lowest cost, then fastest finality, then rail id";
+  "eligible by buyer rails and finality; healthy first, then protected (escrow) before unprotected unless the buyer opts in, then lowest cost, then fastest finality, then rail id";
 
 const ATTEMPT_WINDOW_SECONDS = 600;
+const ATTEMPT_LIMIT = 20;
+const SLIP_ATTEMPT_LIMIT = 5;
+const DEGRADED_FAILURES = 2;
 const RECENT_LIMIT = 20;
 
 export type RouteAttempt = RouteTrace["attempts"][number];
@@ -65,12 +71,17 @@ export function planChallenges(
   now: number,
   hooks: ChallengeHooks = {},
 ): ChallengePlan {
+  const caps = hooks.caps ?? {};
   const choice = chooseRail(
     offer,
-    hooks.caps ?? {},
+    caps,
     rails.map((rail) => rail.declaration),
     hooks.health ?? {},
     now,
+  );
+  const protection = protectionContext(
+    caps,
+    rails.map((rail) => rail.declaration),
   );
   const configured = new Map<RailId, Rail>();
   for (const rail of rails) configured.set(rail.declaration.id, rail);
@@ -116,13 +127,23 @@ export function planChallenges(
     if (!entry.eligible) continue;
     const rank = ordered.indexOf(entry.rail);
     if (rank === -1) continue;
-    entry.why = rank === 0 ? "chosen" : `fallback ${rank}`;
+    entry.why =
+      rank === 0
+        ? "chosen"
+        : `fallback ${rank}${protectionNote(entry.rail, rank, ordered, protection)}`;
   }
 
   const route: RouteChoice = {
     candidates: ordered,
     chosen: ordered[0] ?? null,
-    reason: describeRoute(ordered, choice.trace, hooks.health ?? {}, now, demoted),
+    reason: describeRoute(
+      ordered,
+      choice.trace,
+      hooks.health ?? {},
+      now,
+      demoted,
+      protection,
+    ),
     trace: choice.trace,
   };
 
@@ -145,7 +166,7 @@ export function planChallenges(
 /** The in-memory router state of one hub process. */
 export class HubRouter {
   private readonly rails: Rail[];
-  private readonly health = new Map<RailId, RailHealth>();
+  private readonly health = new Map<string, Map<RailId, RailHealth>>();
   private readonly attempts = new Map<string, RouteAttempt[]>();
   private readonly settleFailures = new Map<string, Map<RailId, number>>();
   private readonly recent: Decision[] = [];
@@ -154,7 +175,7 @@ export class HubRouter {
     this.rails = rails;
   }
 
-  /** The buyer's caps, read only from the two optional request headers. Malformed values are absent. */
+  /** The buyer's caps, read only from the three optional request headers. Malformed values are absent. */
   buyerCaps(headers: Headers): BuyerCaps {
     const caps: BuyerCaps = {};
     const rails = headers.get("X-Countersign-Rails");
@@ -167,24 +188,34 @@ export class HubRouter {
       const parsed = parsePositiveInteger(max);
       if (parsed !== null) caps.maxFinalitySeconds = parsed;
     }
+    if (headers.get("X-Countersign-Allow-Unprotected")?.trim() === "1") {
+      caps.allowUnprotected = true;
+    }
     return caps;
   }
 
-  recordFailure(railId: RailId, now: number): void {
-    const current = this.health.get(railId);
-    this.health.set(railId, {
+  recordFailure(offerHash: string, railId: RailId, now: number): void {
+    const byRail = this.health.get(offerHash) ?? new Map<RailId, RailHealth>();
+    const current = byRail.get(railId);
+    byRail.set(railId, {
       failures: (current?.failures ?? 0) + 1,
       lastFailureAt: now,
     });
+    this.health.set(offerHash, byRail);
   }
 
-  recordSuccess(railId: RailId): void {
-    const current = this.health.get(railId);
-    if (current) {
-      current.failures = 0;
+  recordSuccess(offerHash: string, railId: RailId): void {
+    const byRail = this.health.get(offerHash);
+    if (byRail) {
+      const current = byRail.get(railId);
+      if (current) {
+        current.failures = 0;
+        return;
+      }
+      byRail.set(railId, { failures: 0, lastFailureAt: 0 });
       return;
     }
-    this.health.set(railId, { failures: 0, lastFailureAt: 0 });
+    this.health.set(offerHash, new Map([[railId, { failures: 0, lastFailureAt: 0 }]]));
   }
 
   recordAttempt(
@@ -197,6 +228,7 @@ export class HubRouter {
     const key = attemptKey(offerHash, payer);
     const list = this.attempts.get(key) ?? [];
     list.push({ rail, outcome, at });
+    if (list.length > ATTEMPT_LIMIT) list.splice(0, list.length - ATTEMPT_LIMIT);
     this.attempts.set(key, list);
 
     if (outcome === "settle-failed") {
@@ -219,32 +251,52 @@ export class HubRouter {
       .sort((a, b) => a.at - b.at);
   }
 
+  /** The most recent attempts that a slip carries. */
+  slipAttempts(offerHash: string, payer: string, now: number): RouteAttempt[] {
+    return this.attemptsFor(offerHash, payer, now).slice(-SLIP_ATTEMPT_LIMIT);
+  }
+
   challengeOptions(offer: Offer, resource: string, now: number, caps: BuyerCaps = {}): ChallengePlan {
     const hash = offerHash(offer);
     return planChallenges(this.rails, offer, resource, now, {
       caps,
-      health: this.healthRecord(),
+      health: this.healthRecord(hash),
       demoted: (railId) => this.recentSettleFailure(hash, railId, now),
       onChallengeFailure: (railId, error) => {
         console.warn(`[hub] rail ${railId} challenge failed: ${firstLine(error)}`);
-        this.recordFailure(railId, now);
+        this.recordFailure(hash, railId, now);
         this.recordAttempt(hash, "", railId, "challenge-failed", now);
       },
       onDecision: (decision) => this.recordDecision(decision),
     });
   }
 
-  healthz(): { policy: string; health: Record<string, RailHealth>; recent: Decision[] } {
+  healthz(now: number = Math.floor(Date.now() / 1000)): {
+    policy: string;
+    health: Record<string, { degradedOffers: number }>;
+    recent: Decision[];
+  } {
+    const health: Record<string, { degradedOffers: number }> = {};
+    for (const byRail of this.health.values()) {
+      for (const [railId, state] of byRail) {
+        if (state.failures < DEGRADED_FAILURES || now - state.lastFailureAt > ATTEMPT_WINDOW_SECONDS) {
+          continue;
+        }
+        const summary = health[railId] ?? { degradedOffers: 0 };
+        summary.degradedOffers += 1;
+        health[railId] = summary;
+      }
+    }
     return {
       policy: ROUTER_POLICY,
-      health: this.healthRecord(),
+      health,
       recent: this.recent.map((decision) => ({ ...decision, candidates: [...decision.candidates] })),
     };
   }
 
-  private healthRecord(): Record<string, RailHealth> {
+  private healthRecord(offerHash: string): Record<string, RailHealth> {
     const record: Record<string, RailHealth> = {};
-    for (const [id, state] of this.health) record[id] = { ...state };
+    for (const [id, state] of this.health.get(offerHash) ?? []) record[id] = { ...state };
     return record;
   }
 
@@ -301,6 +353,7 @@ function describeRoute(
   health: Record<string, RailHealth>,
   now: number,
   demoted: Set<RailId>,
+  protection: ProtectionContext,
 ): string {
   const chosen = candidates[0];
   if (chosen === undefined) return "no acceptable rail";
@@ -310,7 +363,10 @@ function describeRoute(
   const blocked = candidates
     .slice(1)
     .map((id) => trace.find((entry) => entry.rail === id))
-    .find((entry): entry is RailTraceEntry => entry !== undefined && preference(entry, winner) < 0);
+    .find(
+      (entry): entry is RailTraceEntry =>
+        entry !== undefined && preference(entry, winner, protection) < 0,
+    );
 
   if (blocked) {
     if (isDegraded(blocked.rail, health, now)) {
@@ -323,10 +379,33 @@ function describeRoute(
 
   const finality =
     winner.finalitySeconds === null ? "finality not declared" : `finality ${winner.finalitySeconds} s`;
+  if (
+    protection.protectionFirst &&
+    protection.protectedIds.has(chosen) &&
+    candidates.some((id) => !protection.protectedIds.has(id))
+  ) {
+    return `${chosen}: protected rail, listed before unprotected rails (cost ${winner.cost ?? "0"}, ${finality})`;
+  }
+  if (
+    !protection.protectionFirst &&
+    !protection.protectedIds.has(chosen) &&
+    candidates.some((id) => protection.protectedIds.has(id))
+  ) {
+    return `${chosen}: cheapest acceptable rail, the buyer allows unprotected rails (cost ${winner.cost ?? "0"}, ${finality})`;
+  }
   return `${chosen}: cheapest acceptable rail (cost ${winner.cost ?? "0"}, ${finality})`;
 }
 
-function preference(a: RailTraceEntry, b: RailTraceEntry): number {
+function preference(
+  a: RailTraceEntry,
+  b: RailTraceEntry,
+  protection: ProtectionContext,
+): number {
+  if (protection.protectionFirst) {
+    const aProtected = protection.protectedIds.has(a.rail);
+    const bProtected = protection.protectedIds.has(b.rail);
+    if (aProtected !== bProtected) return aProtected ? -1 : 1;
+  }
   const aCost = BigInt(a.cost ?? "0");
   const bCost = BigInt(b.cost ?? "0");
   if (aCost !== bCost) return aCost < bCost ? -1 : 1;

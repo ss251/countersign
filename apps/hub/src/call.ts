@@ -185,7 +185,7 @@ export async function paidCall(
     settle = await match.rail.settle(payment, match.entry);
   } catch (error) {
     console.warn(`[hub] rail ${railId} settle failed: ${firstLine(error)}`);
-    deps.router.recordFailure(railId, now);
+    deps.router.recordFailure(stored.offerHash, railId, now);
     deps.router.recordAttempt(stored.offerHash, payer, railId, "settle-failed", now);
     const retry = deps.router.challengeOptions(offer, resource, now, caps);
     return paymentRequired(
@@ -198,7 +198,7 @@ export async function paidCall(
     );
   }
   if (!settle.success) {
-    deps.router.recordFailure(railId, now);
+    deps.router.recordFailure(stored.offerHash, railId, now);
     deps.router.recordAttempt(
       stored.offerHash,
       settle.payer ?? payer,
@@ -221,7 +221,7 @@ export async function paidCall(
   const deadline = termsDeadline(payment.payload) ?? now + offer.deadline;
   const buyer = settle.payer ?? verify.payer ?? "";
   const escrowRail = match.rail.escrow !== undefined;
-  deps.router.recordSuccess(railId);
+  deps.router.recordSuccess(stored.offerHash, railId);
   deps.router.recordAttempt(stored.offerHash, buyer, railId, "settled", now);
 
   const claimed = deps.store.claimJob({
@@ -289,7 +289,7 @@ export async function paidCall(
     route: {
       chosen: railId,
       reason: route.chosen === railId ? route.reason : `${railId}: chosen by the buyer`,
-      attempts: deps.router.attemptsFor(stored.offerHash, buyer, now),
+      attempts: deps.router.slipAttempts(stored.offerHash, buyer, now),
     },
   };
   if (match.rail.declaration.explorerTx !== "") {

@@ -56,12 +56,12 @@ describe("paid calls", () => {
     expect(body.x402Version).toBe(2);
     expect(body.resource.url).toBe(`http://hub.test/offers/${hash}/call`);
     expect(body.resource.description).toBe(offer.title);
-    expect(body.accepts.map((item) => item.network)).toEqual(["eip155:1874", "eip155:5042002"]);
+    expect(body.accepts.map((item) => item.network)).toEqual(["eip155:5042002", "eip155:1874"]);
 
     const entry = body.accepts[0];
     if (!entry) throw new Error("missing accepts entry");
     expect(entry.scheme).toBe("countersign");
-    expect(entry.network).toBe("eip155:1874");
+    expect(entry.network).toBe("eip155:5042002");
     expect(entry.amount).toBe(offer.price);
     expect(entry.payTo).toBe(offer.seller);
     expect(entry.extra).toMatchObject({ escrow: "0x4444444444444444444444444444444444444444", chainId: 5042002 });

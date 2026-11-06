@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  offerHash,
   slipCommitHash,
   type CallResult,
   type PaymentRequired,
   type RailId,
   type RouteChoice,
 } from "../src/deps.ts";
-import { ROUTER_POLICY, type Decision } from "../src/route.ts";
+import { HubRouter, ROUTER_POLICY, type Decision } from "../src/route.ts";
 import {
   call,
   makeOffer,
@@ -24,7 +25,7 @@ import { startRunner, type RunnerHandle } from "./runner-client.ts";
 interface HealthBody {
   router: {
     policy: string;
-    health: Record<string, { failures: number; lastFailureAt: number }>;
+    health: Record<string, { degradedOffers: number }>;
     recent: Decision[];
   };
 }
@@ -73,7 +74,7 @@ describe("rail routing", () => {
     });
 
     const health = (await fetch(`${hub.url}/healthz`).then((res) => res.json())) as HealthBody;
-    expect(health.router.health.escrow).toEqual({ failures: 1, lastFailureAt: NOW });
+    expect(health.router.health).toEqual({});
   });
 
   test("a settle failure moves the next candidate first, and the slip records both attempts", async () => {
@@ -164,6 +165,138 @@ describe("rail routing", () => {
       chosen: "escrow",
       candidates: ["escrow", "gateway"],
     });
+  });
+
+  test("protection orders the accepts, and either opt-in puts the gateway first", async () => {
+    hub.close();
+    const escrowRail = new FakeRail("escrow");
+    escrowRail.declaration.cost = { tollBps: 100, fixed: "0" };
+    hub = startHub({ rails: [escrowRail, new FakeRail("gateway", "eip155:1874")] });
+    const hash = await publishOk(hub, makeOffer({ rails: ["escrow", "gateway"] }));
+    runners.push(await connect(hub, hash));
+
+    const standard = await call(hub, hash, { q: "hello" });
+    expect(standard.status).toBe(402);
+    const body = (await standard.json()) as PaymentRequired & {
+      extensions: { route: RouteExtension };
+    };
+    expect(body.accepts.map((entry) => entry.network)).toEqual([
+      "eip155:5042002",
+      "eip155:1874",
+    ]);
+    expect(body.extensions.route.chosen).toBe("escrow");
+    expect(body.extensions.route.trace.find((entry) => entry.rail === "gateway")?.why).toBe(
+      "fallback 1: does not refund the buyer, listed after the escrow rails",
+    );
+
+    const allowed = await callWith(hub, hash, { "X-Countersign-Allow-Unprotected": "1" });
+    expect(allowed.status).toBe(402);
+    const opted = (await allowed.json()) as PaymentRequired;
+    expect(opted.accepts.map((entry) => entry.network)).toEqual([
+      "eip155:1874",
+      "eip155:5042002",
+    ]);
+  });
+
+  test("a Gateway-only buyer still finds and pays the gateway entry", async () => {
+    hub.close();
+    hub = startHub({ rails: [new FakeRail("escrow"), new FakeRail("gateway", "eip155:1874")] });
+    const hash = await publishOk(hub, makeOffer({ rails: ["escrow", "gateway"] }));
+    runners.push(await connect(hub, hash));
+
+    const body = await requirements(hub, hash);
+    expect(body.accepts.map((entry) => entry.network)).toEqual([
+      "eip155:5042002",
+      "eip155:1874",
+    ]);
+    const gatewayEntry = body.accepts.find((entry) => entry.network === "eip155:1874");
+    if (!gatewayEntry) throw new Error("missing gateway entry");
+
+    const paid = await call(hub, hash, { q: "hello" }, paymentFor(gatewayEntry));
+    expect(paid.status).toBe(200);
+    const result = (await paid.json()) as CallResult;
+    expect(result.slip.settlement.route?.chosen).toBe("gateway");
+  });
+
+  test("health is keyed by rail and offer, and healthz counts degraded offers", () => {
+    const escrowRail = new FakeRail("escrow");
+    escrowRail.declaration.cost = { tollBps: 100, fixed: "0" };
+    const gatewayRail = new FakeRail("gateway", "eip155:1874");
+    const router = new HubRouter([escrowRail, gatewayRail]);
+    const offerA = makeOffer({ title: "Offer A", rails: ["escrow", "gateway"] });
+    const offerB = makeOffer({ title: "Offer B", rails: ["escrow", "gateway"] });
+    const hashA = offerHash(offerA);
+    const caps = { allowUnprotected: true };
+
+    const before = router.challengeOptions(offerB, "http://hub.test/b", NOW, caps);
+    expect(before.route.chosen).toBe("gateway");
+
+    router.recordFailure(hashA, "gateway", NOW);
+    router.recordFailure(hashA, "gateway", NOW + 1);
+
+    const a = router.challengeOptions(offerA, "http://hub.test/a", NOW + 1, caps);
+    expect(a.route.chosen).toBe("escrow");
+    expect(a.route.trace.find((entry) => entry.rail === "gateway")?.why).toBe("fallback 1");
+
+    const b = router.challengeOptions(offerB, "http://hub.test/b", NOW + 1, caps);
+    expect(b.route.chosen).toBe("gateway");
+    expect(b.route.candidates).toEqual(["gateway", "escrow"]);
+
+    expect(router.healthz(NOW + 1).health).toEqual({ gateway: { degradedOffers: 1 } });
+    expect(router.healthz(NOW + 602).health).toEqual({});
+  });
+
+  test("attempts are capped per key, copied five at a time, and evicted when idle", () => {
+    const router = new HubRouter([new FakeRail("escrow")]);
+    const hash = `0x${"aa".repeat(32)}`;
+    const payer = "0x5555555555555555555555555555555555555555";
+
+    for (let index = 0; index < 30; index += 1) {
+      router.recordAttempt(hash, payer, "escrow", "settle-failed", NOW + index);
+    }
+
+    const kept = router.attemptsFor(hash, payer, NOW + 30);
+    expect(kept).toHaveLength(20);
+    expect(kept[0]?.at).toBe(NOW + 10);
+    expect(router.slipAttempts(hash, payer, NOW + 30).map((attempt) => attempt.at)).toEqual([
+      NOW + 25,
+      NOW + 26,
+      NOW + 27,
+      NOW + 28,
+      NOW + 29,
+    ]);
+    expect(router.attemptsFor(hash, payer, NOW + 630)).toEqual([]);
+  });
+
+  test("a slip carries at most the last five attempts", async () => {
+    hub.close();
+    const rail = new FakeRail("escrow");
+    rail.failSettle = true;
+    hub = startHub({ rails: [rail] });
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash));
+
+    const entry = (await requirements(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    for (let index = 0; index < 6; index += 1) {
+      const failed = await call(hub, hash, { q: "hello" }, paymentFor(entry));
+      expect(failed.status).toBe(402);
+    }
+
+    rail.failSettle = false;
+    const paid = await call(hub, hash, { q: "hello" }, paymentFor(entry));
+    expect(paid.status).toBe(200);
+    const result = (await paid.json()) as CallResult;
+
+    const attempts = result.slip.settlement.route?.attempts ?? [];
+    expect(attempts).toHaveLength(5);
+    expect(attempts.map((attempt) => attempt.outcome)).toEqual([
+      "settle-failed",
+      "settle-failed",
+      "settle-failed",
+      "settle-failed",
+      "settled",
+    ]);
   });
 });
 
