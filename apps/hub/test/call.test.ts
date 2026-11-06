@@ -3,11 +3,13 @@ import {
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
+  slipCommitHash,
   type CallResult,
   type ErrorBody,
   type JobOrder,
   type PaymentRequired,
   type SettleResult,
+  ZERO_HASH,
 } from "../src/deps.ts";
 import { runJanitor } from "../src/janitor.ts";
 import {
@@ -122,6 +124,9 @@ describe("paid calls", () => {
       slipHash: result.slip.hash,
       sellerSig: result.slip.sellerSig,
     });
+    const releasedHash = hub.rail.releaseCalls[0]!.slipHash;
+    expect(releasedHash).toBe(slipCommitHash(result.slip.body));
+    expect(releasedHash.toLowerCase()).not.toBe(ZERO_HASH);
 
     const paymentHeader = response.headers.get(PAYMENT_RESPONSE_HEADER);
     expect(paymentHeader).not.toBeNull();
