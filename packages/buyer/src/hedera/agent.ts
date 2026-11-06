@@ -14,11 +14,20 @@ import {
   type Envelope,
   type EnvelopeSpend,
   type Offer,
+  type PaymentPayload,
   type PaymentRequired,
   type PaymentRequirements,
   type SettleResult,
 } from "@countersign/core";
-import { getTransaction, HEDERA_TESTNET, netFor, toSdkTxId, type MirrorOptions } from "@countersign/rail/hedera";
+import {
+  FACILITATORS,
+  getTransaction,
+  HEDERA_TESTNET,
+  httpFacilitator,
+  netFor,
+  toSdkTxId,
+  type MirrorOptions,
+} from "@countersign/rail/hedera";
 import type { Client } from "@hiero-ledger/sdk";
 import { hederaPayment, type HederaPayer } from "./signer.ts";
 import { appendEntry, type LoggedEntry, type SpendEntry } from "./spendlog.ts";
@@ -40,6 +49,8 @@ export interface HederaAgentOptions {
   /** Append one entry. When given, used instead of appending with `logClient` and `topicId`. */
   appendLog?: (entry: SpendEntry) => Promise<{ sequence: number }>;
   spent?: EnvelopeSpend;
+  /** Fee payers the agent will sign for. Omitted: read once from `FACILITATORS` on the first buy. */
+  trustedFeePayers?: string[];
   fetch?: typeof fetch;
   mirror?: MirrorOptions;
   now?: () => number;
@@ -71,6 +82,59 @@ export function createHederaAgent(opts: HederaAgentOptions) {
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   let spent: EnvelopeSpend = opts.spent ?? { total: "0", bySeller: {} };
   const hub = opts.hub.replace(/\/$/, "");
+  const reservations = new Map<number, { seller: string; offerHash: string; amount: string }>();
+  let nextReservation = 0;
+  let trusted: Set<string> | null = opts.trustedFeePayers ? new Set(opts.trustedFeePayers) : null;
+  let trustLookup: Promise<Set<string>> | null = null;
+
+  /** Fee payers this agent will sign for, read from the hosted facilitators once when not configured. */
+  function trustedFeePayers(): Promise<Set<string>> {
+    if (trusted) return Promise.resolve(trusted);
+    trustLookup ??= (async () => {
+      const found = new Set<string>();
+      await Promise.all(
+        FACILITATORS.map(async ({ name, url }) => {
+          try {
+            const feePayer = await httpFacilitator(name, url).feePayer();
+            if (feePayer) found.add(feePayer);
+          } catch {
+            // An unreachable facilitator contributes no fee payer.
+          }
+        }),
+      );
+      trusted = found;
+      return found;
+    })();
+    return trustLookup;
+  }
+
+  /** Settled spend plus every reserved amount. Rebuilt from the reservations so a release cannot drift. */
+  function spendIncludingPending(): EnvelopeSpend {
+    let held: EnvelopeSpend = { total: "0", bySeller: {} };
+    for (const req of reservations.values()) held = recordSpend(held, req);
+    const bySeller = { ...spent.bySeller };
+    for (const [seller, amount] of Object.entries(held.bySeller)) {
+      bySeller[seller] = (BigInt(bySeller[seller] ?? "0") + BigInt(amount)).toString(10);
+    }
+    return { total: (BigInt(spent.total) + BigInt(held.total)).toString(10), bySeller };
+  }
+
+  function reserve(req: { seller: string; offerHash: string; amount: string }): number {
+    const id = nextReservation++;
+    reservations.set(id, req);
+    return id;
+  }
+
+  function release(id: number): void {
+    reservations.delete(id);
+  }
+
+  function settleReservation(id: number): void {
+    const held = reservations.get(id);
+    if (!held) return;
+    reservations.delete(id);
+    spent = recordSpend(spent, held);
+  }
 
   async function log(
     kind: SpendEntry["kind"],
@@ -142,20 +206,53 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         return { kind: "refused", reason: "challenge-mismatch", message: "Refused. The hub asked for terms that differ from the offer." };
       }
 
+      const trustedNow = await trustedFeePayers();
+      if (typeof req.extra?.feePayer !== "string" || !trustedNow.has(req.extra.feePayer)) {
+        return {
+          kind: "refused",
+          reason: "untrusted-fee-payer",
+          message: "Refused. The hub named a fee payer this agent does not trust.",
+        };
+      }
+
+      // No await between this check and the reservation: one JavaScript turn, so parallel buys serialise.
+      const request = { seller: listing.offer.seller, offerHash: listing.offerHash, amount: req.amount };
       const decision = needsHuman(opts.envelope, req.amount)
         ? { ok: false as const, reason: "needs-human", message: "Refused. This amount needs a human; the agent does not ask." }
-        : checkEnvelope(opts.envelope, spent, { seller: listing.offer.seller, offerHash: listing.offerHash, amount: req.amount }, now());
+        : checkEnvelope(opts.envelope, spendIncludingPending(), request, now());
       if (!decision.ok) {
         const seq = await log("refused", listing, req, { reason: decision.reason });
         return { kind: "refused", reason: decision.reason, message: decision.message, logSequence: seq };
       }
+      const reservation = reserve(request);
 
-      const { payment, transactionId } = await hederaPayment(opts.payer, req, url);
-      const paid = await f(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", [PAYMENT_SIGNATURE_HEADER]: toBase64Json(payment) },
-        body,
-      });
+      let payment: PaymentPayload;
+      let transactionId: string;
+      try {
+        ({ payment, transactionId } = await hederaPayment(opts.payer, req, url));
+      } catch (error) {
+        // Nothing signed, so nothing can land.
+        release(reservation);
+        throw error;
+      }
+      let paid: Response;
+      try {
+        paid = await f(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", [PAYMENT_SIGNATURE_HEADER]: toBase64Json(payment) },
+          body,
+        });
+      } catch (error) {
+        // The request left without an answer: hold the reservation until the chain can rule it out.
+        const wasCharged = await charged(transactionId, req);
+        if (wasCharged) {
+          settleReservation(reservation);
+          await log("spend", listing, req, { tx: transactionId });
+        } else {
+          release(reservation);
+        }
+        throw error;
+      }
       if (paid.status === 200) {
         const result = (await paid.json()) as CallResult;
         const responseHeader = paid.headers.get(PAYMENT_RESPONSE_HEADER);
@@ -165,7 +262,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         if (toSdkTxId(settlement.transaction) !== toSdkTxId(transactionId)) {
           throw new Error(`hub reported settlement ${settlement.transaction}, but this agent signed ${transactionId}`);
         }
-        spent = recordSpend(spent, { seller: listing.offer.seller, offerHash: listing.offerHash, amount: req.amount });
+        settleReservation(reservation);
         const seq = await log("spend", listing, req, { tx: transactionId });
         return { kind: "paid", output: result.output, slip: result.slip, settlement, transactionId, logSequence: seq };
       }
@@ -175,8 +272,10 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       const wasCharged = await charged(transactionId, req);
       let seq: number | undefined;
       if (wasCharged) {
-        spent = recordSpend(spent, { seller: listing.offer.seller, offerHash: listing.offerHash, amount: req.amount });
+        settleReservation(reservation);
         seq = await log("spend", listing, req, { tx: transactionId });
+      } else {
+        release(reservation);
       }
       return { kind: "failed", status: paid.status, message, charged: wasCharged, transactionId, logSequence: seq };
     },

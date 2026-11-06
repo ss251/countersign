@@ -3,6 +3,7 @@
 import { formatUnits, type Envelope } from "../../packages/core/src/index.ts";
 import { createHederaAgent, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
 import { readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
+import { FACILITATORS, httpFacilitator } from "../../packages/rail/src/hedera/index.ts";
 import { hashscanTopic, hashscanTx } from "../../packages/rail/src/hedera/txid.ts";
 import { key, need, readEnv, testnetClient } from "./env.ts";
 
@@ -35,6 +36,7 @@ const env = readEnv();
 const agentId = need(env, "HD_AGENT_ID");
 const topicId = need(env, "HD_TOPIC_ID");
 const agentKey = key(env, "HD_AGENT_KEY");
+const operatorId = need(env, "HD_OPERATOR_ID");
 const logClient = testnetClient(agentId, agentKey);
 const envelope: Envelope = {
   v: 1,
@@ -48,6 +50,17 @@ const envelope: Envelope = {
 const topicLink = hashscanTopic(topicId);
 const prior = await readEntries(topicId);
 const spent = spentFromLog(prior);
+const trustedFeePayers = new Set<string>([operatorId]);
+await Promise.all(
+  FACILITATORS.map(async ({ name, url }) => {
+    try {
+      const feePayer = await httpFacilitator(name, url).feePayer();
+      if (feePayer) trustedFeePayers.add(feePayer);
+    } catch {
+      // A facilitator that cannot answer is not trusted for this run.
+    }
+  }),
+);
 const agent = createHederaAgent({
   hub,
   payer: { accountId: agentId, key: agentKey },
@@ -55,6 +68,7 @@ const agent = createHederaAgent({
   topicId,
   logClient,
   spent,
+  trustedFeePayers: [...trustedFeePayers],
 });
 
 console.log(`hub      ${hub}`);

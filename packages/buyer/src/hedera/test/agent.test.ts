@@ -188,17 +188,25 @@ function mirrorShows(landed: boolean) {
   };
 }
 
-function agentFor(hub: string, env: Envelope, entries: SpendEntry[], mirror = mirrorShows(true)) {
+function agentFor(
+  hub: string,
+  env: Envelope,
+  entries: SpendEntry[],
+  mirror = mirrorShows(true),
+  over: { trustedFeePayers?: string[] } = {},
+) {
   return createHederaAgent({
     hub,
     payer,
     envelope: env,
     topicId: TOPIC,
+    trustedFeePayers: [FEE_PAYER],
     appendLog: async (entry) => {
       entries.push(entry);
       return { sequence: entries.length };
     },
     mirror,
+    ...over,
   });
 }
 
@@ -267,6 +275,76 @@ describe("hedera agent", () => {
       const signedId = decodeTransfer(signedPayment.payload.transaction as string).transactionId;
       expect(signedId).toBe(outcome.transactionId);
       expect(entries[0]!.tx).toBe(signedId);
+    });
+  });
+
+  test("two parallel buys under a cap for one price pay once and refuse the other over-cap", async () => {
+    const target = listing(offer());
+    const entries: SpendEntry[] = [];
+    await withHub({ listings: [target] }, async (hub) => {
+      const agent = agentFor(hub.url, envelope({ cap: "10000", perMerchant: "10000" }), entries);
+      const outcomes = await Promise.all([agent.buy(target, {}), agent.buy(target, {})]);
+      expect(outcomes.filter((o) => o.kind === "paid")).toHaveLength(1);
+      const refused = outcomes.filter((o) => o.kind === "refused");
+      expect(refused).toHaveLength(1);
+      expect(refused[0]).toMatchObject({ kind: "refused", reason: "over-cap" });
+      expect(hub.signed).toHaveLength(1);
+      expect(agent.spent).toEqual({ total: "10000", bySeller: { [SELLER]: "10000" } });
+      expect(entries.filter((entry) => entry.kind === "spend")).toHaveLength(1);
+    });
+  });
+
+  test("a failed call whose transfer did not land releases its reservation for the next buy", async () => {
+    const target = listing(offer());
+    const entries: SpendEntry[] = [];
+    let calls = 0;
+    await withHub(
+      {
+        listings: [target],
+        afterPayment: () => (++calls === 1 ? { status: 500, body: "hub fell over", header: null } : {}),
+      },
+      async (hub) => {
+        const agent = agentFor(hub.url, envelope({ cap: "10000", perMerchant: "10000" }), entries, mirrorShows(false));
+        const first = await agent.buy(target, {});
+        expect(first).toMatchObject({ kind: "failed", status: 500, charged: false });
+        expect(agent.spent.total).toBe("0");
+        const second = await agent.buy(target, {});
+        expect(second.kind).toBe("paid");
+        expect(agent.spent).toEqual({ total: "10000", bySeller: { [SELLER]: "10000" } });
+        expect(hub.signed).toHaveLength(2);
+      },
+    );
+  });
+
+  test("an untrusted fee payer is refused before the envelope, signing and logging nothing", async () => {
+    const target = listing(offer());
+    const entries: SpendEntry[] = [];
+    await withHub(
+      { listings: [target], challenge: (req) => ({ ...req, extra: { ...req.extra, feePayer: "0.0.999999" } }) },
+      async (hub) => {
+        const agent = agentFor(hub.url, envelope(), entries);
+        const outcome = await agent.buy(target, {});
+        expect(outcome).toEqual({
+          kind: "refused",
+          reason: "untrusted-fee-payer",
+          message: "Refused. The hub named a fee payer this agent does not trust.",
+        });
+        expect(hub.signed).toHaveLength(0);
+        expect(entries).toHaveLength(0);
+        expect(agent.spent.total).toBe("0");
+      },
+    );
+  });
+
+  test("a trusted fee payer from the explicit list pays", async () => {
+    const target = listing(offer());
+    const entries: SpendEntry[] = [];
+    await withHub({ listings: [target] }, async (hub) => {
+      const agent = agentFor(hub.url, envelope(), entries, mirrorShows(true), { trustedFeePayers: [FEE_PAYER] });
+      const outcome = await agent.buy(target, {});
+      expect(outcome.kind).toBe("paid");
+      expect(hub.signed).toHaveLength(1);
+      expect(agent.spent.total).toBe("10000");
     });
   });
 
