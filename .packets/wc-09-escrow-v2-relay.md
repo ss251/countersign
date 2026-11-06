@@ -2,7 +2,7 @@
 
 Issue: #98. **Design: decided.** cs-wc wrote it on Opus against Rajdeep's v2 contract (PR #164, `9240aec`) and the fleet's v2 wiring on `cs/int`: `EscrowOps` in `packages/rail/src/rail.ts`, the hub's `review.ts`, `bond.ts`, `janitor.ts` and `call.ts`, and core's v2 terms. Implement it exactly as written. If something here cannot work, stop and report; do not choose another mechanism.
 
-This replaces the earlier wc-09, which followed a design the captain replaced at 19:40 IST: an arbiter-supplied bond in `fundBonded`, and a hub token on funding.
+This replaces the earlier wc-09, which followed a design the project lead replaced at 19:40 IST: an arbiter-supplied bond in `fundBonded`, and a hub token on funding.
 
 ## Starts now, in parallel with #164 and the 1874 deploy
 
@@ -13,7 +13,7 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 - Tests use any fixed test address.
 - After the 1874 deploy, cs-wc sets the real address as Railway config, and the pins' owners add the buyer and verifier pins (see "After the worker").
 
-**Decided by the captain at about 21:20 IST:**
+**Decided by the project lead at about 21:20 IST:**
 
 - **Production on v2: yes.** After the deploy, the live Whitechain path switches to v2. v1 is the one-step fallback.
 - **Option (d):** a bonded job (`cs.bond > 0`) funds only through the arbiter. That is the relay key, which already submits every fund on 1874.
@@ -178,7 +178,7 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - The version 1 rail is unchanged.
 7b. **The fallback.** A v2 job's release, cancel and refund go to the v2 escrow, and a v1 job's go to v1, with both allowed. With `WC_ESCROW_V2` unset, the relay allows only v1 and every existing test passes as today. On the hub, `WC_ESCROW_VERSION=2` without `WC_ESCROW_V2` leaves the whitechain rail off with the log line.
 7c. **Option (d).** A bonded v2 settle funds through the relay. In the simulated chain, its account is the arbiter.
-8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (captain's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
+8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (project lead's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
 
 ## Constraints
 

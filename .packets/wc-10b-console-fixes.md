@@ -12,7 +12,7 @@ Issue: #14. This is the corrective for wc-10 (`cbef082`), found by cs-wc in revi
   - `bun.lock` carries `configVersion: 1`, so a fresh `bun install --frozen-lockfile` uses bun's isolated linker. Each workspace then sees only the dependencies it declares.
   - `apps/web/server.ts` now imports `hono`, which `apps/web` does not declare. `examples/whitechain/checkout-merchant.ts` imports `@countersign/relay`, which the isolated layout links only into workspaces that declare it.
   - So `apps/web/deploy.sh`, which installs a `git archive` snapshot, cannot bundle `server.ts`: `Could not resolve: "hono"`.
-  - cs-wc reproduced this on devcube from `cbef082`. The same tree installed with `--linker hoisted` builds, and the console answers `/healthz` 200 and `/checkout/sticker-pack` 402.
+  - cs-wc reproduced this on the build machine from `cbef082`. The same tree installed with `--linker hoisted` builds, and the console answers `/healthz` 200 and `/checkout/sticker-pack` 402.
 - **Decision:** in `apps/web/deploy.sh`, the archive install becomes `bun install --frozen-lockfile --linker hoisted`. That is the layout every gate runs.
 - **Nothing else in `deploy.sh` changes.**
 - **Not in this packet:** orch-cs changes `deploy/railway/web.Dockerfile`, the same way, in its own edit. Do not touch that file.

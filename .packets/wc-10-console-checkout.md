@@ -1,6 +1,6 @@
 # wc-10: the merchant console's checkout runs on our own drop-in
 
-Issue: #14 (the drop-in). This implements cs-wc's part of STEER-2210's amendment, the captain's at about 22:15 IST:
+Issue: #14 (the drop-in). This implements cs-wc's part of STEER-2210's amendment, the project lead's at about 22:15 IST:
 - the merchant console serves its checkout through our own paywall and pay-fetch;
 - the "integrate this in twenty lines" block shows the code the console actually runs;
 - refunds go through one path;

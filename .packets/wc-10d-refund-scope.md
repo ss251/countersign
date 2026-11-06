@@ -2,7 +2,7 @@
 
 Issue: #14. This implements STEER-2225 Fix 3, point 4, for the merchant's refunds. cs-phone found the gap while building the merchant screen on `refundOrder`.
 
-**Not in this packet:** what happens to `in_review` orders (point 5). It changes an existing test, so it waits for the captain's ruling on cs-phone's 17:43:20Z NEEDS-CAPTAIN and goes in its own packet. Leave the `in_review` branch exactly as it is.
+**Not in this packet:** what happens to `in_review` orders (point 5). It changes an existing test, so it waits for the project lead's ruling on cs-phone's 17:43:20Z question to the project lead and goes in its own packet. Leave the `in_review` branch exactly as it is.
 
 **Design: decided.** cs-wc wrote it on Opus. Implement it exactly as written. If something here cannot work, stop and report; do not choose another mechanism.
 
