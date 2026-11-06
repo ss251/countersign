@@ -18,7 +18,7 @@ bash apps/web/deploy.sh                    # console: builds apps/web, uploads d
 bash deploy/railway/deploy-hub.sh cs/int   # hub: uploads `git archive cs/int`, production dependencies only
 ```
 
-- `apps/web/deploy.sh` builds with `VITE_HUB_URL=/hub` by default. With `VITE_HUB_URL` set but empty, it builds a console that shows labelled fixture data. `DRY_RUN=1` stages the upload without sending it.
+- `apps/web/deploy.sh` builds with `VITE_HUB_URL=https://hub-production-e85e.up.railway.app` by default, so the console reads the live hub unless a visitor opens it with `?hub=off`. The hub answers CORS for every route the console calls. `VITE_HUB_URL=/hub` builds against the console's same-origin proxy instead. `DRY_RUN=1` stages the upload without sending it.
 - `deploy-hub.sh` deploys an exact commit: only committed files, nothing from the working tree.
 
 ### Variables

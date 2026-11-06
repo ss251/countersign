@@ -15,13 +15,14 @@ import {
 import { approvalToken, HubError, rememberApprovalToken } from "../../lib/hub.ts";
 import { envelopeChecklist, type Check } from "../../lib/checklist.ts";
 import type { Approval, EnvelopeView } from "../../lib/types.ts";
+import { Absent } from "../../ui/Absent.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { Amount, Button, cx, Empty, Hash, Tag } from "../../ui/primitives.tsx";
 
 interface Props {
-  approvals: Resource<Approval[]>;
-  envelope: Resource<EnvelopeView>;
+  approvals: Resource<Approval[] | null>;
+  envelope: Resource<EnvelopeView | null>;
   query: URLSearchParams;
   onSigned: (a: Approval) => void;
   onSettled: (a: Approval, job: JobView) => void;
@@ -31,9 +32,23 @@ interface Props {
 export function Approvals({ approvals, envelope, query, onSigned, onSettled, onClose }: Props) {
   const current = approvals.data?.[0];
 
-  if (approvals.loading && !approvals.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
+  if (approvals.source === "absent") {
+    return (
+      <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload}>
+        {approvals.needsToken && !approvalToken() ? (
+          <TokenForm
+            onSave={(t) => {
+              rememberApprovalToken(t);
+              approvals.reload();
+            }}
+          />
+        ) : null}
+      </Absent>
+    );
+  }
+  if (approvals.loading && approvals.data === undefined) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
-  if (!current || !envelope.data) {
+  if (!current) {
     const ask = envelope.data?.askAbove;
     return (
       <Empty title="Nothing is waiting for you.">
@@ -53,7 +68,7 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
     <ApprovalFlow
       key={current.id}
       approval={current}
-      view={envelope.data}
+      view={envelope.data ?? null}
       scenario={scenario}
       onSigned={() => onSigned(current)}
       onSettled={(job) => onSettled(current, job)}
@@ -71,7 +86,8 @@ function ApprovalFlow({
   onClose,
 }: {
   approval: Approval;
-  view: EnvelopeView;
+  /** Null when the hub holds no envelope for this agent: the phone then says what the agent checked. */
+  view: EnvelopeView | null;
   scenario: Scenario;
   onSigned: () => void;
   onSettled: (job: JobView) => void;
@@ -92,13 +108,14 @@ function ApprovalFlow({
    * signed mirror the phone holds only stand-in limits, and re-checking against those could only refuse
    * falsely, so it says what the agent checked instead.
    */
-  const blind = live && seen.mirror === undefined;
-  const checks = blind
-    ? AGENT_CHECKED
-    : envelopeChecklist(seen, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount, sellerName: listing.seller.name });
-  const decision: EnvelopeDecision = blind
-    ? { ok: true }
-    : checkEnvelope(seen.envelope, seen.spent, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount }, nowUnix());
+  const real = seen && !(live && seen.mirror === undefined) ? seen : null;
+  const blind = real === null;
+  const checks = real
+    ? envelopeChecklist(real, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount, sellerName: listing.seller.name })
+    : AGENT_CHECKED;
+  const decision: EnvelopeDecision = real
+    ? checkEnvelope(real.envelope, real.spent, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount }, nowUnix())
+    : { ok: true };
   const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded" || job.step === "failed");
   const [token, setToken] = useState(approvalToken);
   const [sending, setSending] = useState<"countersign" | "decline" | null>(null);
@@ -354,7 +371,7 @@ const AGENT_CHECKED: Check[] = [
 ];
 
 /** The human's approval token for this hub. Pasted once; it stays on this phone. */
-function TokenForm({ onSave }: { onSave: (token: string) => void }) {
+export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const id = useId();
