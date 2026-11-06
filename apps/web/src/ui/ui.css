@@ -1,0 +1,390 @@
+/* Money */
+
+.amount {
+  color: var(--usdc);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.amount__asset {
+  margin-left: 0.3em;
+  font-size: 0.72em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.amount--sm {
+  font-size: var(--t-14);
+}
+.amount--md {
+  font-size: var(--t-17);
+}
+.amount--lg {
+  font-size: var(--t-24);
+  letter-spacing: -0.01em;
+}
+.amount--xl {
+  font-size: var(--t-44);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+.amount--xl .amount__asset {
+  font-size: 0.4em;
+  letter-spacing: 0.04em;
+}
+
+/* Hashes and addresses */
+
+.hash {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
+.hash__value {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hash--full .hash__value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+a.hash__value {
+  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
+}
+
+.copy {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-1);
+  background: none;
+  color: var(--slate);
+  transition: color var(--d-1) var(--ease-out);
+}
+
+/* A 40px touch target around a 24px glyph. */
+.copy::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+@media (hover: hover) {
+  .copy:hover {
+    color: var(--ink);
+  }
+}
+
+/* Status words */
+
+.status {
+  font-size: var(--t-13);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+}
+
+.status--released,
+.status--refunded {
+  color: var(--settle);
+}
+.status--refused,
+.status--countersigned {
+  color: var(--seal);
+}
+.status--held {
+  color: var(--usdc);
+}
+
+/* Tags */
+
+.rail-tag,
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  color: var(--slate);
+  font-size: var(--t-12);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Key and value rows */
+
+.kv {
+  display: grid;
+}
+
+.kv__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.kv__row:first-child {
+  border-top: 0;
+}
+
+.kv__key {
+  flex: none;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.kv__value {
+  min-width: 0;
+  text-align: right;
+  font-size: var(--t-14);
+}
+
+/* Buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+  font-size: var(--t-15);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    transform var(--d-1) var(--ease-out),
+    background-color var(--d-1) var(--ease-out),
+    border-color var(--d-1) var(--ease-out);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn--secondary {
+  background: var(--raised);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.btn--quiet {
+  background: none;
+  color: var(--slate);
+  padding: 0 var(--sp-2);
+}
+
+.btn--seal {
+  background: none;
+  border-color: color-mix(in oklab, var(--seal) 45%, var(--line));
+  color: var(--seal);
+}
+
+@media (hover: hover) {
+  .btn--secondary:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--ink) 30%, var(--line));
+  }
+  .btn--quiet:hover:not(:disabled) {
+    color: var(--ink);
+  }
+  .btn--seal:hover:not(:disabled) {
+    background: var(--seal-wash);
+  }
+}
+
+/* Surfaces */
+
+.card {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+}
+
+.empty {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-10) var(--sp-5);
+  text-align: center;
+  justify-items: center;
+}
+
+.empty__title {
+  font-weight: 600;
+}
+
+.empty__body {
+  max-width: 34ch;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.fixture-note {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-1);
+  color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Money that never moved: a refusal, or a refund that returned it. */
+.amount--void {
+  color: var(--slate);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* Meter */
+
+.meter {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--line);
+}
+
+.meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--usdc);
+  transition: width var(--d-3) var(--ease-out);
+}
+
+/* Inputs: 16px so iOS does not zoom. */
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.input.mono {
+  font-size: 15px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+  border-color: var(--ink);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--seal);
+}
+
+.input::placeholder {
+  color: color-mix(in oklab, var(--slate) 70%, transparent);
+}
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.field__label {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+/* Confirmation sheet, built on <dialog>. A bottom sheet on a phone, a card elsewhere. */
+
+.sheet {
+  width: min(100% - 2 * var(--sp-4), 420px);
+  max-width: none;
+  margin: auto auto var(--sp-4);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  color: var(--ink);
+}
+
+@media (min-width: 640px) {
+  .sheet {
+    margin: auto;
+  }
+}
+
+.sheet::backdrop {
+  background: color-mix(in oklab, var(--ink) 30%, transparent);
+}
+
+.sheet[open] {
+  animation: sheet-in var(--d-3) var(--ease-out);
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.sheet__body {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+}
+
+.sheet__title {
+  font-size: var(--t-20);
+}
+
+.sheet__text {
+  color: var(--slate);
+}
+
+.sheet__buttons {
+  display: grid;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
