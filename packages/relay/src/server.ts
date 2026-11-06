@@ -59,7 +59,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     if (feeSplitUsdtCache && at - feeSplitUsdtCache.at < 30) return feeSplitUsdtCache.value;
     try {
       const value = await reader.readContract({
-        address: feeSplit,
+        address: USDT.address,
         abi: tokenAbi,
         functionName: "balanceOf",
         args: [feeSplit],
