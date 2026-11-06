@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { Hex } from "viem";
+import { keccak256, toBytes, type Hex } from "viem";
 import {
   canonicalHash,
   runnerAuthMessage,
@@ -139,7 +139,7 @@ describe("settle after delivery", () => {
     );
     expect(log.filter((entry) => entry === "verify")).toHaveLength(1);
     expect(log).not.toContain("settle");
-    expect(hub.store.getJob(NONCE)?.status).toBe("failed");
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("failed");
   });
 
   test("a slip whose hash does not match its body never settles", async () => {
@@ -152,7 +152,7 @@ describe("settle after delivery", () => {
     const body = (await response.json()) as ErrorBody;
     expect(body.code).toBe("failed-delivery");
     expect(log).not.toContain("settle");
-    expect(hub.store.getJob(NONCE)?.status).toBe("failed");
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("failed");
   });
 
   test("a passing delivery verifies, dispatches, then settles", async () => {
@@ -165,7 +165,7 @@ describe("settle after delivery", () => {
     const result = (await response.json()) as CallResult;
     expect(log).toEqual(["verify", "dispatch", "settle"]);
     expect(result.slip.settlement.transaction).toBe(rail.settleTx);
-    expect(hub.store.getJob(NONCE)?.status).toBe("settled");
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("settled");
   });
 
   test("a 120-second offer accepts a 180-second transfer signed 8 seconds ago", async () => {
@@ -188,7 +188,7 @@ describe("settle after delivery", () => {
     const response = await call(hub, hash, { q: "hello" }, payment);
     expect(response.status).toBe(200);
     expect(log).toEqual(["verify", "dispatch", "settle"]);
-    expect(hub.store.getJob(NONCE)?.status).toBe("settled");
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("settled");
   });
 
   test("a transfer that expires before the deadline is refused before dispatch", async () => {
@@ -213,7 +213,7 @@ describe("settle after delivery", () => {
     );
     expect(log).not.toContain("dispatch");
     expect(log).not.toContain("settle");
-    expect(hub.store.getJob(NONCE)).toBeNull();
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))).toBeNull();
   });
 
   test("a settle failure after delivery withholds the output", async () => {
@@ -226,8 +226,11 @@ describe("settle after delivery", () => {
 
     const body = (await response.json()) as ErrorBody & { output?: unknown };
     expect(body.code).toBe("settle-failed");
+    expect(body.message).toContain(rail.settleTx);
+    expect(body.message).toContain(new Date((NOW + 600) * 1000).toISOString());
+    expect(body.message).not.toContain("Nothing moved");
     expect("output" in body).toBe(false);
-    expect(hub.store.getJob(NONCE)?.status).toBe("failed");
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("failed");
   });
 
   test("a settle that throws after delivery stores no slip", async () => {
@@ -240,9 +243,12 @@ describe("settle after delivery", () => {
 
     const body = (await response.json()) as ErrorBody & { output?: unknown };
     expect(body.code).toBe("settle-failed");
+    expect(body.message).toContain(rail.settleTx);
+    expect(body.message).toContain(new Date((NOW + 600) * 1000).toISOString());
+    expect(body.message).not.toContain("Nothing moved");
     expect("output" in body).toBe(false);
-    expect(hub.store.getJob(NONCE)?.status).toBe("failed");
-    const job = hub.store.ratingJobs().find((row) => row.jobId === NONCE);
+    expect(hub.store.getJob(keccak256(toBytes(rail.settleTx)))?.status).toBe("failed");
+    const job = hub.store.ratingJobs().find((row) => row.jobId === keccak256(toBytes(rail.settleTx)));
     expect(job?.slip).toBeNull();
   });
 
@@ -260,6 +266,29 @@ describe("settle after delivery", () => {
     const second = await call(hub, hash, { q: "hello" }, payment);
     expect(second.status).toBe(409);
     expect(((await second.json()) as ErrorBody).code).toBe("duplicate-payment");
+    expect(log.filter((entry) => entry === "dispatch")).toHaveLength(1);
+  });
+
+  test("one signed transfer dispatches once whatever unsigned nonce and terms it carries", async () => {
+    const hash = await publishOk(hub, OFFER);
+    await connect(hash);
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const payments = [
+      paymentFor(entry, NONCE, NOW + 60),
+      paymentFor(entry, `0x${"22".repeat(32)}` as Hex, NOW + 90),
+      paymentFor(entry, `0x${"33".repeat(32)}` as Hex, NOW + 30),
+    ];
+
+    const first = await call(hub, hash, { q: "hello" }, payments[0]);
+    expect(first.status).toBe(200);
+
+    for (const payment of payments.slice(1)) {
+      const again = await call(hub, hash, { q: "hello" }, payment);
+      expect(again.status).toBe(409);
+      expect(((await again.json()) as ErrorBody).code).toBe("duplicate-payment");
+    }
     expect(log.filter((entry) => entry === "dispatch")).toHaveLength(1);
   });
 
@@ -288,7 +317,8 @@ describe("settle after delivery", () => {
   test("the dispatch timeout stays inside the signed transfer's window", async () => {
     const patient = startHub({ rails: [rail], jobTimeoutMs: 180_000 });
     closes.push(() => patient.close());
-    const hash = await publishOk(patient, OFFER);
+    // The transfer must outlast the offer's own deadline: 60 s leaves room under the 100 s window.
+    const hash = await publishOk(patient, makeOffer({ rails: ["hedera"], deadline: 60 }));
     await connectOn(patient, hash);
     const validUntil = NOW + 100;
     rail.pendingResult = { transaction: rail.settleTx, validUntil };

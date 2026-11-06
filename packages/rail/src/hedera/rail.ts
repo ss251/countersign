@@ -288,6 +288,7 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     refresh,
 
     pending(payment: PaymentPayload): { transaction: string; validUntil: number } | null {
+      if (walletPayloadOf(payment.payload)) return null;
       const transaction = payment.payload?.transaction;
       if (typeof transaction !== "string") return null;
       try {

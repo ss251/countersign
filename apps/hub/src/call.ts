@@ -35,8 +35,6 @@ import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
 const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
-const SETTLE_FAILED_AFTER_DELIVERY =
-  "Not charged. The seller delivered, but the payment could not be settled, so the hub withholds the output. Nothing moved; sign a fresh payment to retry.";
 
 /** How much of its validity window a payment that settles after delivery must keep past the deadline. */
 export const SETTLE_MARGIN_SECONDS = 30;
@@ -228,7 +226,8 @@ export async function paidCall(
     );
   }
 
-  const nonce = authorizationNonce(payment.payload);
+  // The hedera rail signs no nonce: a wallet-paid claim there is keyed on settle.transaction alone.
+  const nonce = match.rail.declaration.id === "hedera" ? null : authorizationNonce(payment.payload);
   if (nonce !== null && deps.store.getJob(nonce) !== null) {
     return duplicatePayment(railId);
   }
@@ -257,6 +256,8 @@ export async function paidCall(
   // A rail that settles after delivery: verify, dispatch, gate, then settle. The buyer's signed
   // transfer is never submitted when the seller fails or the gate refuses, so nothing moves.
   if (pending !== null) {
+    // The buyer signs only the transfer: terms.deadline is plain JSON anyone can add.
+    const deadline = now + offer.deadline;
     if (pending.validUntil < deadline + SETTLE_MARGIN_SECONDS) {
       return paymentRequired(
         offer,
@@ -268,7 +269,7 @@ export async function paidCall(
       );
     }
 
-    const jobId = nonce ?? keccak256(toBytes(pending.transaction));
+    const jobId = keccak256(toBytes(pending.transaction));
     const buyer = verify.payer ?? "";
     const claimed = deps.store.claimJob({
       jobId,
@@ -283,7 +284,7 @@ export async function paidCall(
       closeTx: null,
       slipHash: null,
       createdAt: now,
-      reviewWindow: termsReviewWindow(payment),
+      reviewWindow: null,
       parentJobId: parentOf(deps.store, lineage),
     });
     if (!claimed) return duplicatePayment(railId);
@@ -337,13 +338,13 @@ export async function paidCall(
       deps.router.recordFailure(stored.offerHash, railId, now);
       deps.router.recordAttempt(stored.offerHash, payer, railId, "settle-failed", now);
       deps.store.updateJob(jobId, { status: "failed", fault: "hub" });
-      return failure(502, "settle-failed", SETTLE_FAILED_AFTER_DELIVERY, railId);
+      return settleFailedAfterDelivery(pending, railId);
     }
     if (!settle.success) {
       deps.router.recordFailure(stored.offerHash, railId, now);
       deps.router.recordAttempt(stored.offerHash, settle.payer ?? payer, railId, "settle-failed", now);
       deps.store.updateJob(jobId, { status: "failed", fault: "hub" });
-      return failure(502, "settle-failed", SETTLE_FAILED_AFTER_DELIVERY, railId);
+      return settleFailedAfterDelivery(pending, railId);
     }
 
     deps.router.recordSuccess(stored.offerHash, railId);
@@ -727,6 +728,19 @@ function namesMatch(
   const b = entry?.name;
   if (a === undefined && b === undefined) return true;
   return typeof a === "string" && typeof b === "string" && a === b;
+}
+
+/** The signed transfer may still land: tell the buyer to check it after it expires instead of paying again. */
+function settleFailedAfterDelivery(
+  pending: { transaction: string; validUntil: number },
+  railId: string,
+): CallOutcome {
+  return failure(
+    502,
+    "settle-failed",
+    `Not settled. The seller delivered, but the hub could not confirm your payment, so it withholds the output. Your signed transfer ${pending.transaction} cannot land after ${new Date(pending.validUntil * 1000).toISOString()}; check it on HashScan after then before you sign a fresh payment.`,
+    railId,
+  );
 }
 
 function duplicatePayment(railId: string): CallOutcome {

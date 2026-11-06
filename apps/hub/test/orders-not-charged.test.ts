@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { Hex } from "viem";
+import { keccak256, toBytes, type Hex } from "viem";
 import {
   offerHash,
   type JobOrder,
@@ -14,7 +14,6 @@ import { startRunner, type JobAnswer } from "./runner-client.ts";
 import {
   call,
   makeOffer,
-  NONCE,
   NOW,
   paymentFor,
   publishOk,
@@ -196,7 +195,7 @@ describe("settle-after-delivery records a settle transaction only when it lands"
     const response = await paid(hash);
     expect(response.status).toBe(200);
 
-    const job = hub.store.getJob(NONCE);
+    const job = hub.store.getJob(keccak256(toBytes(rail.settleTx)));
     expect(job?.status).toBe("settled");
     expect(job?.settleTx).toBe(rail.settleTx);
   });
@@ -208,7 +207,7 @@ describe("settle-after-delivery records a settle transaction only when it lands"
     const response = await paid(hash);
     expect(response.status).toBe(502);
 
-    const job = hub.store.getJob(NONCE);
+    const job = hub.store.getJob(keccak256(toBytes(rail.settleTx)));
     expect(job?.status).toBe("failed");
     expect(job?.settleTx).toBeNull();
   });
@@ -221,7 +220,7 @@ describe("settle-after-delivery records a settle transaction only when it lands"
     const response = await paid(hash);
     expect(response.status).toBe(502);
 
-    const job = hub.store.getJob(NONCE);
+    const job = hub.store.getJob(keccak256(toBytes(rail.settleTx)));
     expect(job?.status).toBe("failed");
     expect(job?.settleTx).toBeNull();
   });
