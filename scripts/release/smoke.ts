@@ -132,6 +132,24 @@ function smokeTarball(tarball: string): void {
       );
       check(`${short} export ${spec}`, result.code === 0, output(result));
     }
+
+    if (short === "relay") {
+      const result = run(
+        [
+          "node",
+          "--input-type=module",
+          "-e",
+          `await import(${JSON.stringify(installed.name)});`,
+        ],
+        work,
+      );
+      const detail = output(result);
+      check(
+        `${short} root is not resolvable`,
+        result.code !== 0 && detail.includes("ERR_PACKAGE_PATH_NOT_EXPORTED"),
+        detail,
+      );
+    }
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

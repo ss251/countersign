@@ -24,6 +24,7 @@ import {
 } from "./manifest.ts";
 import { tarballPrefix } from "./published.ts";
 import { withNodeShebang } from "./shebang.ts";
+import { omittedExportLines, PUBLISH_SURFACE } from "./surface.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
 const SOURCE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
@@ -304,8 +305,11 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
   const packageDir = join(ROOT, "packages", short);
   const source = readPackageManifest(short);
   const manifest = source.manifest;
+  for (const line of omittedExportLines(short, source.label, manifest.exports)) {
+    console.log(line);
+  }
   const dependencies = dependencyUnion(short, readPackageManifest);
-  const entries = entrySources(manifest);
+  const entries = entrySources(manifest, { short, surface: PUBLISH_SURFACE });
   if (entries.length === 0) {
     throw new Error(`packages/${short}/package.json has no bin or exports source entries`);
   }
@@ -340,7 +344,13 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
     targets,
   });
 
-  const staged = stagedManifest({ short, manifest, dependencies, targets });
+  const staged = stagedManifest({
+    short,
+    manifest,
+    dependencies,
+    targets,
+    surface: PUBLISH_SURFACE,
+  });
   if (typeof staged.version !== "string") throw new Error(`staged ${short} manifest has no version`);
   writeFileSync(join(stageDir, "package.json"), `${JSON.stringify(staged, null, 2)}\n`);
   rewriteBins(stageDir, staged);

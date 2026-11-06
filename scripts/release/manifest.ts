@@ -1,5 +1,6 @@
 import { isRecord, type JsonObject } from "./json.ts";
 import { publishedName } from "./published.ts";
+import { publishExports, type PublishSurface } from "./surface.ts";
 
 export type PackageManifest = JsonObject;
 
@@ -110,10 +111,22 @@ function exportSources(exportsValue: unknown): string[] {
   return sources;
 }
 
-/** Every source file referenced by the package's own bin and exports values. */
-export function entrySources(manifest: PackageManifest): string[] {
+export type EntryOptions = {
+  short?: string;
+  surface?: PublishSurface;
+};
+
+/** Every source file referenced by the package's own bin and published exports values. */
+export function entrySources(
+  manifest: PackageManifest,
+  options: EntryOptions = {},
+): string[] {
+  const exportsValue =
+    options.short === undefined || options.surface === undefined
+      ? manifest.exports
+      : publishExports(options.short, manifest.exports, options.surface);
   const seen = new Set<string>();
-  for (const source of [...exportSources(manifest.exports), ...binSources(manifest.bin)]) {
+  for (const source of [...exportSources(exportsValue), ...binSources(manifest.bin)]) {
     seen.add(source);
   }
   return [...seen];
@@ -187,6 +200,7 @@ export type StagedManifestInput = {
   dependencies: Record<string, string>;
   targets: Record<string, string>;
   scope?: string;
+  surface?: PublishSurface;
 };
 
 /**
@@ -195,7 +209,7 @@ export type StagedManifestInput = {
  * published package, and no workspace or private field survives.
  */
 export function stagedManifest(input: StagedManifestInput): JsonObject {
-  const { short, manifest, dependencies, targets, scope } = input;
+  const { short, manifest, dependencies, targets, scope, surface } = input;
   if (typeof manifest.version !== "string" || manifest.version.length === 0) {
     throw new Error(`packages/${short}/package.json has no version`);
   }
@@ -222,8 +236,10 @@ export function stagedManifest(input: StagedManifestInput): JsonObject {
     dependencies: sortedDependencies(publishedDependencies),
   };
   if (manifest.bin !== undefined) staged.bin = rewriteBin(manifest.bin, targets);
-  if (manifest.exports !== undefined) {
-    staged.exports = rewriteValue(manifest.exports, targets, "exports");
+  const exportsValue =
+    surface === undefined ? manifest.exports : publishExports(short, manifest.exports, surface);
+  if (exportsValue !== undefined) {
+    staged.exports = rewriteValue(exportsValue, targets, "exports");
   }
   return staged;
 }
