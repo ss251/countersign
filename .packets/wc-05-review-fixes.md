@@ -20,7 +20,15 @@ Do not touch `packages/rail/**`, `packages/core/**`, `apps/**`, `contracts/**`, 
 
 ## Fixes
 
-### B1 — the merchant server must authenticate
+The list also covers cs-w1's second review (`/Users/thescoho/Developer/countersign-mumbai/reports/review-5444ec5.md`). That review adds three items:
+
+- **B1b**, the same defect as B1 on `POST /orders/:id/refund`;
+- **B2** now also covering released escrow jobs;
+- a **toll decision**, written up below.
+
+Copy the latest `packages/relay/test/w1-attacks.test.ts` from `cs/w1`. It has B1, B2 and B1b.
+
+### B1 + B1b — the merchant server must authenticate
 
 `POST /refund/:paymentId` and `POST /orders/:id/refund` currently make the merchant key sign for anyone. Fix:
 
@@ -91,6 +99,25 @@ A refund whose receipt timed out records nothing today, so a second click can re
 
 **Test.** A new relayer and ceiling, seeded from a ledger that already holds a full hour's spend, refuses with `ceiling_wei`.
 
+### Toll decision — a full refund, and the merchant absorbs the toll
+
+A released escrow order paid the merchant `amount - toll`. The one-click refund still returns the **full** amount to the customer. The merchant absorbs the 1% toll, as with card fees.
+
+Make that explicit:
+
+- **Fee on orders.** `Order` gains `fee`: the toll for released escrow orders, `0` for everything else.
+  - Read it from `escrow.tollOf(amount)` through `chainClient.readContract`, or compute it from the escrow's `tollBps` with the same rounding: `amount * tollBps / 10000`, rounded down.
+  - Cache the value per escrow.
+- **CSV columns.** The CSV gains a `fee_usdt` column after `amount_usdt`, and `net_usdt = amount - fee - refunded`, which can be negative. Update the header and the tests.
+- **Balance check.** Before a refund by transfer, `refundPayment` reads the merchant's USDT `balanceOf`. If it cannot cover the value, refuse with `merchant_balance_low` before signing anything is relayed.
+- **Merchant server.** It passes that reason straight through.
+
+Tests:
+
+- a released order shows the fee;
+- the CSV `net` accounts for the fee;
+- a refund is refused when the merchant balance is low.
+
 ### S3 — no fee estimate, no send
 
 If `estimateFeesPerGas` returns `maxFeePerGas` as undefined or `0n`, refuse with `fee_too_high` and the detail `no fee estimate`.
@@ -123,6 +150,7 @@ Add a test.
 
 ## Constraints
 
+- **No browser of any kind on this machine.** No Chrome, Chromium, headless browsers, Playwright or Puppeteer, and no screenshots. Verify with tests and `curl` only. This is the captain's standing rule; a breach stops the run.
 - Never log tokens, signatures or keys.
 - No floats for money.
 - Small present-tense commits, no emoji, no `Co-authored-by`.
