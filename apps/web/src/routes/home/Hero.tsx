@@ -73,6 +73,11 @@ export function Hero({ stats, missing, railsLive, reduced, onDown }: HeroProps) 
   );
 }
 
+/** The total's honest name: USDT settles on Whitechain, so a total holding any of it is not "USDC". */
+export function settledLabel(stats: HubStats): string {
+  return Number(stats.byRail?.whitechain?.volume ?? "0") > 0 ? "Settled (USDC + USDT)" : "USDC settled";
+}
+
 /** The hub's own figures, read while you look. Never a fixture: with no read, it says so. */
 export function Figures({ stats, missing, railsLive }: { stats: HubStats | null; missing: string | undefined; railsLive: number | undefined }) {
   if (!stats) {
@@ -89,7 +94,7 @@ export function Figures({ stats, missing, railsLive }: { stats: HubStats | null;
         <dd className="num">{stats.delivered}</dd>
       </div>
       <div className="hero__fig">
-        <dt>USDC settled</dt>
+        <dt>{settledLabel(stats)}</dt>
         <dd className="num">{formatAmount(usd(stats.volume))}</dd>
       </div>
       <div className="hero__fig">
