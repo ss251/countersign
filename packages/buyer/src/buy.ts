@@ -9,6 +9,7 @@ import {
   slipSigner,
   type CallResult,
   type CountersignExtra,
+  type CountersignPayload,
   type Envelope,
   type PaymentPayload,
   type PaymentRequirements,
@@ -266,12 +267,15 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       throw e;
     }
     const { payment, jobId } = signed;
+    const signedTerms = (payment.payload as unknown as Partial<CountersignPayload>).terms;
     await record({
       ...base,
       kind: "signed",
       reservationId,
       jobId,
       ...(rail !== undefined ? { escrow: rail.escrow, chainId: rail.chainId } : {}),
+      ...(signedTerms?.bond !== undefined ? { bond: signedTerms.bond } : {}),
+      ...(signedTerms?.reviewWindow !== undefined ? { reviewWindow: signedTerms.reviewWindow } : {}),
     });
 
     const paid = await hub.call(offerHash, input, payment, a.lineage);
