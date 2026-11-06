@@ -229,11 +229,22 @@ describe("bond terms", () => {
 
   test("refuses a missing escrow and a malformed offer", () => {
     expect(() =>
-      parseBondArgs(["terms", "--offer", offer, "--price", "1", "--bond", "0", "--review-window", "0", "--min-duration", "0"]),
+      parseBondArgs(["terms", "--offer", offer, "--price", "1", "--bond", "0", "--review-window", "0", "--min-duration", "60"]),
     ).toThrow("--escrow is required");
     expect(() => parseBondArgs(["terms", "--offer", "0x01", "--show", "--escrow", escrowAddr])).toThrow(
       "--offer must be a 32-byte hex offer hash",
     );
+  });
+
+  test("refuses a --min-duration under 60 seconds, which would let a buyer force a default (cs-w1 on 9240aec)", () => {
+    const args = termsArgs();
+    const at = args.indexOf("--min-duration");
+    const short = [...args];
+    short[at + 1] = "59";
+    expect(() => parseBondArgs(short)).toThrow("--min-duration must be at least 60 seconds");
+    const floor = [...args];
+    floor[at + 1] = "60";
+    expect(parseBondArgs(floor).command).toBe("terms");
   });
 
   test("--show decodes termsOf for the seller", async () => {
