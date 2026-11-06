@@ -5,6 +5,7 @@ import {
   approvalDecisionBody,
   approvalDecisionMessage,
   canonicalJson,
+  offerHash,
   type Envelope,
   type EnvelopeSpend,
   type ErrorBody,
@@ -19,6 +20,7 @@ import {
   makeOffer,
   NONCE,
   NOW,
+  other,
   paymentFor,
   publishOk,
   requirementsFor,
@@ -374,6 +376,63 @@ describe("jobs by buyer", () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as ErrorBody;
     expect(body.code).toBe("bad-request");
+  });
+
+  test("/jobs?seller= lists that seller's jobs with both addresses", async () => {
+    hub = startHub();
+    const offer = makeOffer({ title: "Sold by the seller" });
+    const hash = await publishOk(hub, offer);
+    const otherOffer = makeOffer({ seller: other.address, title: "Sold by another" });
+    const otherHash = offerHash(otherOffer);
+    hub.store.putOffer(otherHash, other.address, otherOffer, NOW);
+
+    hub.store.putJob({
+      jobId: `0x${"07".repeat(32)}`,
+      offerHash: hash,
+      rail: "escrow",
+      buyer: BUYER_A,
+      amount: "1000",
+      deadline: NOW + 60,
+      status: "released",
+      payment: payment(),
+      settleTx: `0x${"17".repeat(32)}`,
+      closeTx: `0x${"27".repeat(32)}`,
+      slipHash: null,
+      createdAt: NOW + 10,
+    });
+    hub.store.putJob({
+      jobId: `0x${"08".repeat(32)}`,
+      offerHash: otherHash,
+      rail: "escrow",
+      buyer: BUYER_B,
+      amount: "2000",
+      deadline: NOW + 60,
+      status: "released",
+      payment: payment("2000"),
+      settleTx: `0x${"18".repeat(32)}`,
+      closeTx: `0x${"28".repeat(32)}`,
+      slipHash: null,
+      createdAt: NOW + 20,
+    });
+
+    const response = await fetch(`${hub.url}/jobs?seller=${seller.address}`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      jobs: { jobId: string; buyer: string; seller: string; title: string }[];
+    };
+    expect(body.jobs.map((job) => job.jobId)).toEqual([`0x${"07".repeat(32)}`]);
+    expect(body.jobs[0]?.buyer).toBe(BUYER_A);
+    expect(body.jobs[0]?.seller).toBe(seller.address);
+    expect(body.jobs[0]?.title).toBe("Sold by the seller");
+  });
+
+  test("/jobs with both a buyer and a seller is a 400", async () => {
+    hub = startHub();
+    const response = await fetch(`${hub.url}/jobs?buyer=${BUYER_A}&seller=${seller.address}`);
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as ErrorBody;
+    expect(body.code).toBe("bad-request");
+    expect(body.message).toBe("Refused. Name the buyer or the seller.");
   });
 });
 
