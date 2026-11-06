@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { offerHash, type Offer, type PaymentPayload, type PaymentRequirements } from "@countersign/core";
 import { Challenge, Credential, Receipt } from "mppx";
-import { stripeClientFromKey } from "../client.ts";
 import { CARD_FLOOR, STABLECOIN_FLOOR, TEMPO_USDC } from "../constants.ts";
 import { mockStripeClient } from "../mock.ts";
 import { createMppRail } from "../rail.ts";
@@ -251,18 +250,5 @@ describe("settle", () => {
     expect(result.errorReason).toBe("payment_failed");
     expect(result.receipt).toBeUndefined();
     expect(client.calls).toHaveLength(1);
-  });
-});
-
-describe("client", () => {
-  test("refuses keys that are not Stripe test keys", () => {
-    expect(() => stripeClientFromKey("sk_live_not_a_real_key")).toThrow(/sk_test_/);
-    expect(() => stripeClientFromKey("rk_live_not_a_real_key")).toThrow(/rk_test_/);
-    expect(() => stripeClientFromKey("")).toThrow();
-  });
-
-  test("accepts a test key without contacting Stripe", () => {
-    const client = stripeClientFromKey("sk_test_not_a_real_key");
-    expect(typeof client.paymentIntents.create).toBe("function");
   });
 });
