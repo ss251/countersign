@@ -56,7 +56,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
   - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
 
   Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
-- **The merchant's view.** It is live on the production console at [`/#/merchant`](https://web-production-a58de.up.railway.app/#/merchant). It has:
+- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://web-production-a58de.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
   - the live order list, with a one-click refund on each paid order;
   - the CSV export;
   - the gas relayer's panel, read from the relay's live `/status`;
