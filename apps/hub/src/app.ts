@@ -4,6 +4,8 @@ import { cors } from "hono/cors";
 import {
   assertOffer,
   assertSchema,
+  checkEnsLock,
+  type EnsResolve,
   offerHash,
   publishMessage,
   RUNNER_PATH,
@@ -30,6 +32,8 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Sepolia ENS lookups. Without it, an offer that names an ENS seller is refused. */
+  ens?: EnsResolve;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
 }
@@ -48,6 +52,7 @@ export function createHub(deps: HubDeps) {
       isOnline: (offerHash) => runners.isOnline(offerHash),
     };
     if (deps.identity) view.identity = deps.identity;
+    if (deps.ens) view.ens = deps.ens;
     return view;
   };
 
@@ -95,6 +100,10 @@ export function createHub(deps: HubDeps) {
     if (signer.toLowerCase() !== request.offer.seller.toLowerCase()) {
       return fail(401, "bad-signature", "Refused. The offer signature is not the seller's.");
     }
+
+    // A named seller is listed only while its name resolves to it and locks its EVM payees.
+    const lock = await checkEnsLock(request.offer, deps.ens);
+    if (lock && !lock.ok) return fail(lock.code === "ens-unavailable" ? 503 : 422, lock.code, lock.message);
 
     const fresh = deps.store.putOffer(hash, request.offer.seller, request.offer, deps.now());
     return json({ offerHash: hash }, fresh ? 201 : 200);

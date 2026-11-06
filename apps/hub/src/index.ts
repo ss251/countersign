@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createHub } from "./app.ts";
+import { sepoliaEnsResolver } from "./deps.ts";
 import { runJanitor } from "./janitor.ts";
 import { railsFromEnv } from "./rails.ts";
 import { Store } from "./store.ts";
@@ -14,7 +15,10 @@ const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
 
-const { app, websocket } = createHub({ store, rails, now, publicUrl });
+// Forward ENS lookups on Sepolia; HUB_ENS_RPC_URL overrides viem's public Sepolia endpoint.
+const ens = sepoliaEnsResolver(process.env.HUB_ENS_RPC_URL ? { rpcUrl: process.env.HUB_ENS_RPC_URL } : {});
+
+const { app, websocket } = createHub({ store, rails, now, publicUrl, ens });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
 setInterval(() => {
