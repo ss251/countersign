@@ -5,12 +5,20 @@ Lease: `scripts/release/**`, plus each package's `package.json` `files`, `bin` a
 not touch the root `package.json`, `bun.lock`, `tsconfig.json` or `.gitignore` (orch-cs's, serialized).
 Publishing is NOT part of this packet: nothing goes to npm, nothing is tagged, nothing is uploaded.
 
+**Published names (firstmate STEER 19:12:50Z, the captain chose npm).** The `@countersign` scope and the
+`countersign` name are taken on npm by other projects. The packages are therefore published as
+`@countersign-hub/mcp`, `@countersign-hub/cli` (its `bin` is still `countersign`) and
+`@countersign-hub/relay`. The workspace imports stay `@countersign/*`; **only the generated, staged
+`package.json` carries the published name.** Keep the scope in ONE constant (`PUBLISH_SCOPE =
+"@countersign-hub"`, in one small module under `scripts/release/`, used by the build, the smoke test and the
+tests) so that a rename is a one-line edit.
+
 ## Why
 
 Every package is private or source-only, so nobody outside this repository can install anything.
 `scripts/release/pack.ts` already packs the relay as raw TypeScript tarballs. The onboarding kit needs
 tarballs that run on plain Node 20+, with no Bun and no `workspace:` dependency, so that a stranger can
-run `npm i ./countersign-cli-0.1.0.tgz && npx countersign --help`. K1 (`packages/mcp`) and K2
+run `npm i ./countersign-hub-cli-0.1.0.tgz && npx countersign --help`. K1 (`packages/mcp`) and K2
 (`packages/cli`) are being written by other lanes at the same time, so your tooling must work for
 whichever of `mcp`, `cli` and `relay` exist, and pick up the others when they land, without edits.
 
@@ -37,8 +45,10 @@ Read `scripts/release/pack.ts` first, and leave it as it is (it stays the raw-so
   `dependencies` of every `@countersign/*` package it transitively imports (read from the repository
   manifests, recursively), with the `@countersign/*` names removed. If two manifests give different
   ranges for the same package, fail loudly and name both. Never emit a `workspace:` specifier.
-- **The staged `package.json`** is generated, not copied: `name`, `version` (from the repository manifest),
-  `type: "module"`, `license: "MIT"`, `engines: { "node": ">=20" }`, `files: ["dist"]`, no `private`,
+- **The staged `package.json`** is generated, not copied: `name` (`PUBLISH_SCOPE` + `/` + the short name:
+  `@countersign-hub/mcp`, `@countersign-hub/cli`, `@countersign-hub/relay`), `version` (from the repository
+  manifest), `type: "module"`, `license: "MIT"`, `publishConfig: { "access": "public" }`,
+  `engines: { "node": ">=20" }`, `files: ["dist"]`, no `private`,
   the dependency union, `bin` and `exports` rewritten to the built `dist/*.js` paths. If a package has no
   `bin`, the staged manifest has none.
 - **Bin files** must start with exactly one `#!/usr/bin/env node` line (replace a `#!/usr/bin/env bun`
@@ -48,10 +58,11 @@ Read `scripts/release/pack.ts` first, and leave it as it is (it stays the raw-so
   outside a string literal that is clearly data. If the existing source of a package uses one of these,
   the build must fail and say which source file it came from if the source map or the bundle comment
   shows it. **Do not edit another lane's source to make the guard pass.** Report the failure instead.
-- **Pack.** Run `npm pack --pack-destination <out>` in each staged directory, so each lands as
-  `<out>/countersign-<name>-<version>.tgz` (for `@countersign/relay` that is
-  `countersign-relay-<version>.tgz`; the unscoped CLI `countersign` is `countersign-<version>.tgz`; name
-  the files as `npm pack` names them, and have the script print each path it produced).
+- **Pack.** Run `npm pack --pack-destination <out>` in each staged directory. `npm pack` names a scoped
+  package `<scope>-<name>-<version>.tgz`, so the three files are
+  `countersign-hub-mcp-<version>.tgz`, `countersign-hub-cli-<version>.tgz` and
+  `countersign-hub-relay-<version>.tgz`. Have the script print each path it produced, and require that
+  every produced tarball matches `countersign-hub-*.tgz`.
 - Print, per package, the tarball path, its size, and the file list.
 
 ### 2. `scripts/release/smoke.ts` (also runs under Bun, but everything it launches runs under Node)
@@ -62,9 +73,11 @@ For each tarball in the directory, in a fresh temporary directory outside the re
 `os.tmpdir()`, never a path inside the repo):
 
 - `npm init -y`, then `npm i <tarball>` (third-party dependencies come from the registry; that is fine).
-- If the package has a `bin`, run `npx <bin> --help` under Node and require exit code 0 and non-empty
+- If the package has a `bin`, run `npx <bin-name> --help` under Node (the bin name, for example
+  `countersign`, is a key of the staged `bin`, not the package name) and require exit code 0 and non-empty
   output.
-- For every `exports` entry, run `node --input-type=module -e "await import('<name>/<subpath>')"` and
+- For every `exports` entry, run `node --input-type=module -e "await import('<published name>/<subpath>')"`,
+  where the published name is `@countersign-hub/<short>`, and
   require exit code 0. (If an export needs a browser, `browser` for the relay, that is still a plain
   import and must succeed under Node; if it does not, report it, do not skip it.)
 - Print one PASS or FAIL line per check and exit 1 if any failed. Clean the temporary directory up.
@@ -84,8 +97,9 @@ be tested without building anything real. Cover at least:
 
 - the dependency union: a diamond of two workspace packages sharing a dependency, a conflicting range
   (must throw naming both), a `workspace:` specifier (must throw), `@countersign/*` names removed;
-- the staged manifest: `bin` and `exports` rewritten to `dist/*.js`, no `private`, `engines` set,
-  `files` is `["dist"]`;
+- the staged manifest: `name` is `@countersign-hub/<short>`, `publishConfig.access` is `public`, `bin` and
+  `exports` rewritten to `dist/*.js`, no `private`, `engines` set, `files` is `["dist"]`, and changing
+  `PUBLISH_SCOPE` in the one module changes every name (test it by calling the function with another scope);
 - the shebang rewrite: bun shebang replaced, missing shebang added, exactly one line;
 - the Node guard: a fixture string with `Bun.file(` fails, `import.meta.dir` fails, plain code passes,
   and the failure names the file;
@@ -104,11 +118,13 @@ unit tests.
 2. `bun test scripts/release` all pass. Count the tests.
 3. **The relay, for real:** `bun scripts/release/build.ts --only relay --out .release`, then
    `bun scripts/release/smoke.ts --dir .release`, run on a machine with Node 20+. The relay tarball
-   installs from a clean directory and every one of its four exports (`.`, `./paywall`, `./pay-fetch`,
-   `./browser`) imports under Node. Paste the PASS lines and `node --version`.
+   installs from a clean directory as `countersign-hub-relay-<version>.tgz` and every one of its four
+   exports (`@countersign-hub/relay`, `/paywall`, `/pay-fetch`, `/browser`) imports under Node. Paste the PASS lines and `node --version`.
 4. `bun scripts/release/build.ts --require mcp,cli,relay --out .release` **must fail** today with a
    message naming `mcp` and `cli` as missing (they land later). Paste it. This proves `--require`.
-5. Open the built relay `dist/*.js` and show with `grep -c` that it contains no `@countersign/core`
+5. Show the staged relay `package.json` (name, version, `publishConfig`, `engines`, `files`, the dependency
+   names): the name is `@countersign-hub/relay` and no dependency starts with `@countersign/`.
+6. Open the built relay `dist/*.js` and show with `grep -c` that it contains no `@countersign/core`
    import specifier (it was inlined) and still imports `viem` and `hono` as bare specifiers.
 
 ## Constraints
