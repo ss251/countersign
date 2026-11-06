@@ -16,6 +16,7 @@ import {
 import type {
   Approval,
   EnvelopeView,
+  HubStats,
   Listing,
   Purchase,
   RailDeclaration,
@@ -180,6 +181,15 @@ export const api = {
     const rows = await orMissing(hubGet<{ settlements: Settlement[] } | Settlement[]>(`/settlements?limit=${limit}`));
     if (!rows) return live(null);
     return live(Array.isArray(rows) ? rows : rows.settlements);
+  },
+  /** The hub's own totals. Never fixtures: without a hub there is nothing to count, and the landing says so. */
+  stats: async (): Promise<Loaded<HubStats | null>> => {
+    if (!hubBase()) return absent("No hub is connected, so there is nothing live to count. Open the page without ?hub=off.");
+    try {
+      return live(await hubGet<HubStats>("/stats"));
+    } catch (e) {
+      return absence(e, "totals", "This hub has no totals yet.");
+    }
   },
   /** The hub's sellers with slip-derived counts and identity; null until the hub serves /sellers. */
   sellers: async (): Promise<Loaded<SellerRecord[] | null>> => {

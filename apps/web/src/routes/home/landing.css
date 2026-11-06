@@ -1,0 +1,990 @@
+/*
+ * The landing, v2: scroll as a story (DESIGN-NOTE "The landing, v2"). Two pinned stages and a
+ * closing list: one statement per frame, and evidence that stays and changes state between beats.
+ * Native scroll only. Movement is transform and opacity only. The dark tokens are scoped to
+ * .landing (tokens.css); the one red, green and blue keep their meanings.
+ */
+
+.landing {
+  /* The content edge: a 16 to 40 px gutter, and never wider than the content width. */
+  --side: max(clamp(16px, 4vw, 40px), calc((100% - var(--content)) / 2));
+  /* One beat's statement. */
+  --beat: clamp(2rem, 1.1rem + 2.4vw, 3.25rem);
+  --move: 560ms;
+  position: relative;
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.landing a {
+  color: var(--ink);
+  text-underline-offset: 0.22em;
+}
+
+/* Texture, CSS only: a paper grain at 5%, fixed, over everything and under no pointer. */
+.landing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+/* Almost no chrome: the wordmark and four links, fixed on the paper so nothing passes under bare text. */
+.landing__bar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-5) clamp(16px, 4vw, 40px);
+  background: var(--paper);
+}
+
+.landing__brand {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  text-decoration: none;
+}
+
+.landing__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2) var(--sp-5);
+  font-size: var(--t-14);
+}
+
+.landing__links a {
+  position: relative;
+  color: var(--slate);
+  text-decoration: none;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+/* 20px to the eye, 44px to the thumb. */
+.landing__links a::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing__links a:hover {
+    color: var(--ink);
+  }
+}
+
+/* A stage pins for `--span` screens (its beats' weights) and is one screen taller, around one sticky frame. */
+.story--pinned {
+  height: calc((var(--span) + 1) * 100svh);
+}
+
+/* Room for each stage's statements, in lines of the beat's type: the evidence starts under it. */
+.story--evidence,
+.story--clears {
+  --lines: 3.5;
+}
+
+.story__frame {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+}
+
+/*
+ * The frame's content box, under the bar and inside the content edge. It lies over the claim, so
+ * it and its quiet layers let the pointer through; only a layer on screen with something to press
+ * (the receipt, the ask box, the try-out, the release) takes it back.
+ */
+.story__box {
+  position: absolute;
+  top: 112px;
+  right: var(--side);
+  bottom: 40px;
+  left: var(--side);
+  pointer-events: none;
+}
+
+/* One statement at a time: the beat's line crossfades in place over 240 ms, rising 8 px. */
+.story__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 20ch;
+  font-size: var(--beat);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+
+.story__line.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* Beat 0, the claim: the statement low on the field like a signature line, as in round 2. */
+.story__claim {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: end;
+  padding: 128px var(--side) clamp(40px, 8vh, 88px);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+  pointer-events: none;
+}
+
+.story__claim.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.landing__first-inner {
+  position: relative;
+  display: grid;
+  gap: clamp(28px, 5vh, 48px);
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+}
+
+.landing__statement {
+  max-width: 12.5ch;
+  font-size: clamp(3.5rem, 1.6rem + 7vw, 7.5rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+/* Under the statement, one column on its left edge: what countersign is, the hub's own figures, the way in. */
+.landing__under {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-5);
+}
+
+.landing__what {
+  max-width: 46ch;
+  color: var(--slate);
+  font-size: var(--t-17);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* The first screen's number, in one mono line: figures in ink, words in slate, the live dot ahead. */
+.landing__figures {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.6em;
+  min-height: 1.5em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: clamp(0.8125rem, 0.75rem + 0.25vw, 0.9375rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: left;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+.landing__figures .tick {
+  color: var(--ink);
+}
+
+/* A figure and its words never part; a narrow screen wraps between figures, at a dot. */
+.landing__fig {
+  white-space: nowrap;
+}
+
+.landing__sep {
+  margin-right: 0.6em;
+}
+
+/* One line to the eye, 44px to the thumb, and still clear of the call to action under it. */
+button.landing__figures::after {
+  content: "";
+  position: absolute;
+  inset: -13px -8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.landing__figures:hover {
+    color: var(--ink);
+  }
+}
+
+.landing__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
+}
+
+.landing__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--t-17);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--ink) 40%, transparent);
+}
+
+.landing__cue {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-13);
+}
+
+.landing a.landing__cue {
+  display: inline-flex;
+  align-items: center;
+  color: var(--slate);
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing__cue:hover,
+  .landing a.landing__cue:hover {
+    color: var(--ink);
+  }
+}
+
+/*
+ * Beats 1 to 4: the plane under the statement. Marks and labels are placed in percent of its box
+ * (container units) plus px, so they move by transform alone and never touch at any size.
+ */
+.story__plane {
+  position: absolute;
+  top: calc(var(--beat) * var(--lines));
+  right: 0;
+  bottom: 104px;
+  left: 0;
+  container-type: size;
+}
+
+.story__field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* The line the payments stand on, and the first and newest times at its ends. */
+.story__baseline {
+  position: absolute;
+  top: calc(var(--base) * 1%);
+  right: 0;
+  left: 0;
+  border-top: var(--hair) solid var(--line);
+  transition: opacity 240ms var(--ease-out);
+}
+
+.story__end {
+  position: absolute;
+  top: calc(var(--base) * 1% + 10px);
+  left: 0;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  transition: opacity 240ms var(--ease-out);
+}
+
+.story__end--last {
+  right: 0;
+  left: auto;
+}
+
+/* One mark per real settlement: a small ink square, never a decoration. */
+.story__mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--m);
+  height: var(--m);
+  border-radius: 1px;
+  background: var(--ink);
+  opacity: var(--o);
+  transform: translate(calc(var(--x) * 1cqw + var(--dx) * 1px - 50%), calc(var(--y) * 1cqh + var(--dy) * 1px - 50%))
+    scale(var(--s));
+  transition:
+    transform var(--move) var(--ease-in-out) var(--d),
+    opacity 240ms var(--ease-out) var(--d);
+}
+
+/* Each rail's group is named under its marks: the rail, its chain, its settled count. */
+.story__group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 10rem;
+  text-align: center;
+  opacity: var(--o);
+  transform: translate(calc(var(--x) * 1cqw - 50%), calc(var(--base) * 1cqh + var(--dy) * 1px));
+  transition:
+    transform var(--move) var(--ease-in-out),
+    opacity 240ms var(--ease-out);
+}
+
+.story__group-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: var(--t-14);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.story__group-chain,
+.story__group-n {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+/* The receipt and the ask box share one plane: side by side on a wide screen, stacked on a phone. */
+.story__aside {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-areas: "ask . receipt";
+  grid-template-columns: 46fr 10fr 44fr;
+  align-items: start;
+  transform: translateY(calc(var(--y) * 1cqh + var(--dy) * 1px));
+  transition: transform var(--move) var(--ease-in-out);
+}
+
+/* The receipt: a slip of plain lines under one hairline, no box. The lifted mark is its stamp. */
+.story__receipt {
+  display: grid;
+  grid-area: receipt;
+  justify-items: start;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 240ms var(--ease-out) 160ms,
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
+}
+
+.story__receipt.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story__receipt-title {
+  padding-left: 28px;
+  font-size: var(--t-15);
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* Plain lines: small caps over values, no rules between them. */
+.story__lines {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.story__lines > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.story__lines dd {
+  min-width: 0;
+  font-size: var(--t-15);
+}
+
+.story__lines--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--sp-5);
+}
+
+.story__wide {
+  grid-column: 1 / -1;
+}
+
+.story__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.story__quiet {
+  color: var(--slate);
+  font-size: var(--t-13);
+  line-height: 1.5;
+}
+
+/* The ask box slides in beside the receipt. */
+.story__ask {
+  display: grid;
+  grid-area: ask;
+  gap: var(--sp-4);
+  min-width: 0;
+  opacity: 0;
+  transform: translateX(-16px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
+}
+
+.story__ask.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.askbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  transition: border-color var(--d-1) var(--ease-out);
+}
+
+.askbox:focus-within {
+  border-color: var(--ink);
+}
+
+/* 16px or more under a finger, so iOS never zooms. */
+.askbox__input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(16px, 0.9rem + 0.4vw, 18px);
+  outline: none;
+}
+
+.askbox__input::placeholder {
+  color: var(--slate);
+}
+
+.askbox__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.askbox__go {
+  min-width: 80px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-left: var(--hair) solid var(--line);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-15);
+  font-weight: 500;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.askbox__go:active {
+  transform: scale(0.97);
+}
+
+/* Three needs from the live offers, as plain lines: the words to type, and what they find. */
+.story__needs {
+  display: grid;
+}
+
+.story__need {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-2) 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.story__need .mono {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--ink) 30%, transparent);
+  text-underline-offset: 0.22em;
+}
+
+.story__need:active {
+  transform: scale(0.98);
+}
+
+/* The totals, label over value in mono, in the frame's corner. */
+.story__totals {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  gap: var(--sp-3);
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out);
+}
+
+.story__totals.is-on {
+  opacity: 1;
+}
+
+.story__sums {
+  display: flex;
+  gap: var(--sp-8);
+}
+
+.story__sums > div {
+  display: grid;
+  gap: 2px;
+}
+
+.story__sums dd {
+  font-family: var(--mono);
+  font-size: clamp(1.25rem, 1rem + 0.8vw, 1.75rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.story__wait {
+  display: block;
+  width: 2.5ch;
+  height: 1em;
+}
+
+.story__updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+/* A total changed: it ticks once. Never counts up. */
+.tick {
+  display: inline-block;
+}
+
+.tick.is-ticked {
+  animation: landing-tick 280ms var(--ease-out);
+}
+
+@keyframes landing-tick {
+  from {
+    opacity: 0.35;
+    transform: translateY(-4px);
+  }
+}
+
+/* The live dot breathes slowly while the page is reading the hub. */
+.live-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: landing-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes landing-breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Stage two: the desk under the statement, one artifact changing state. */
+.story__desk {
+  position: absolute;
+  top: calc(var(--beat) * var(--lines));
+  right: 0;
+  bottom: 0;
+  left: 0;
+  container-type: size;
+}
+
+/*
+ * The envelope, as plain lines: the stage's left anchor. From beat 1 it steps back a little and
+ * stays readable while the try-out, then the release, sit beside it at the same scale.
+ */
+.story__env {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  gap: var(--sp-4);
+  width: 40%;
+  transform-origin: top left;
+  transition:
+    transform var(--move) var(--ease-in-out),
+    opacity 240ms var(--ease-out);
+}
+
+.story__env.is-back {
+  opacity: 0.85;
+}
+
+/* The exit: the envelope leaves with the rest of the stage's evidence (and wins over a phone's stepped-back state). */
+.story__desk .story__env.is-gone {
+  opacity: 0;
+}
+
+.story__meta {
+  font-family: var(--mono);
+  text-transform: none;
+}
+
+/* The try-out and then the release sit beside the envelope, one at a time. */
+.story__try,
+.story__release {
+  position: absolute;
+  top: 0;
+  left: 48%;
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-4);
+  width: 52%;
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform var(--move) var(--ease-out);
+  pointer-events: none;
+}
+
+.story__try.is-on,
+.story__release.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story__try .hold {
+  width: 100%;
+}
+
+.story__offer {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--t-15);
+  font-weight: 500;
+}
+
+.story__exact {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-1);
+}
+
+/* Check it without us: five lines, no table, then the way in. It fills the last screen from its top third. */
+.story__proof {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-8);
+  min-height: 100svh;
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: max(136px, 30svh) clamp(16px, 4vw, 40px) 64px;
+}
+
+.story__proof .story__line {
+  position: static;
+}
+
+.story__proof-list {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.story__proof-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-4);
+  font-size: var(--t-17);
+}
+
+.story__proof-list li span {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.story__close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
+}
+
+.landing__fine {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* A phone: the same beats, the statement at the top of the frame and its evidence under it. */
+@media (max-width: 720px) {
+  .landing__links {
+    gap: var(--sp-2) var(--sp-4);
+    font-size: var(--t-13);
+  }
+
+  .story__box {
+    top: 96px;
+    bottom: 16px;
+  }
+
+  .story__line {
+    max-width: none;
+  }
+
+  .story__plane {
+    bottom: 92px;
+  }
+
+  .story__group {
+    width: 7.2rem;
+  }
+
+  .story__group-name {
+    font-size: var(--t-13);
+  }
+
+  .story__aside {
+    grid-template-areas:
+      "receipt"
+      "ask";
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--sp-6);
+  }
+
+  .story__ask {
+    transform: translateY(12px);
+  }
+
+  .story__sums {
+    gap: var(--sp-5);
+  }
+
+  .story__env {
+    width: 100%;
+  }
+
+  .story__env.is-back {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+
+  .story__try,
+  .story__release {
+    top: calc(var(--env-h) * 0.8 + 16px);
+    left: 0;
+    width: 100%;
+  }
+
+  .story__proof {
+    padding-top: 136px;
+  }
+}
+
+/*
+ * 1440 and every wide screen: the evidence carries the frame (firstmate review of 35d4c0a, fix 1).
+ * Statements at about twice the old weight, marks at 16 px (field.ts), totals at 30 px, and no text
+ * in the evidence under 14 px; labels stay small caps.
+ */
+@media (min-width: 721px) {
+  .landing {
+    --beat: clamp(40px, 4.4vw, 64px);
+  }
+
+  .story--evidence {
+    --lines: 2.6;
+  }
+
+  .story--clears {
+    --lines: 3.6;
+  }
+
+  .story__plane {
+    bottom: 120px;
+  }
+
+  .story__box .label {
+    font-size: 15px;
+    font-variant-caps: all-small-caps;
+    letter-spacing: 0.05em;
+    text-transform: none;
+  }
+
+  .story__box .status {
+    font-size: 15px;
+  }
+
+  .story__lines dd {
+    font-size: 17px;
+  }
+
+  .story__quiet {
+    font-size: 15px;
+  }
+
+  .story__go {
+    font-size: 16px;
+  }
+
+  .story__end,
+  .story__updated {
+    font-size: 14px;
+  }
+
+  .story__group-name {
+    font-size: 17px;
+  }
+
+  .story__group-chain,
+  .story__group-n {
+    font-size: 15px;
+  }
+
+  .story__receipt-title {
+    padding-left: 40px;
+    font-size: 20px;
+    line-height: 28px;
+  }
+
+  .story__sums {
+    gap: 48px;
+  }
+
+  .story__sums dd {
+    font-size: 30px;
+  }
+
+  .story__need .mono {
+    font-size: 16px;
+  }
+
+  .story__offer {
+    font-size: 18px;
+  }
+}
+
+/*
+ * Less motion: nothing pins. Every beat is its own full-height section with the same content, in
+ * its own state, and nothing moves or is placed by a transform.
+ */
+.story--static .story__frame {
+  position: relative;
+  height: auto;
+  min-height: 100svh;
+  overflow: visible;
+}
+
+.story--static
+  :is(
+    .story__line,
+    .story__claim,
+    .story__mark,
+    .story__group,
+    .story__baseline,
+    .story__end,
+    .story__aside,
+    .story__receipt,
+    .story__ask,
+    .story__totals,
+    .story__env,
+    .story__try,
+    .story__release
+  ) {
+  transition: none;
+}
+
+.story--static :is(.story__line, .story__claim, .story__receipt, .story__ask, .story__totals, .story__try, .story__release) {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.story--static .story__mark {
+  top: calc(var(--y) * 1% + var(--dy) * 1px - var(--m) * var(--s) / 2);
+  left: calc(var(--x) * 1% + var(--dx) * 1px - var(--m) * var(--s) / 2);
+  width: calc(var(--m) * var(--s));
+  height: calc(var(--m) * var(--s));
+  transform: none;
+}
+
+.story--static .story__group {
+  top: calc(var(--base) * 1% + var(--dy) * 1px);
+  left: calc(var(--x) * 1% - 5rem);
+  transform: none;
+}
+
+.story--static .story__aside {
+  top: calc(var(--y) * 1% + var(--dy) * 1px);
+  transform: none;
+}
+
+/* Unpinned, the envelope keeps its place and full size; on a phone the try-out and the release stack under it. */
+.story--static .story__env.is-back {
+  transform: none;
+}
+
+@media (max-width: 720px) {
+  .story--static .story__group {
+    left: calc(var(--x) * 1% - 3.6rem);
+  }
+
+  .story--static .story__try,
+  .story--static .story__release {
+    top: calc(var(--env-h) + 16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .tick.is-ticked {
+    animation: none;
+  }
+}

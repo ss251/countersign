@@ -158,3 +158,22 @@ export interface Settlement {
   /** Unix seconds. */
   at: number;
 }
+
+/** The hub's totals, derived from its own job ledger (GET /stats). The landing's numbers come only from here. */
+export interface HubStats {
+  offers: { listed: number; delisted: number };
+  sellers: number;
+  buyers: number;
+  calls: number;
+  /** Jobs whose payment reached the seller. */
+  delivered: number;
+  failed: number;
+  refunded: number;
+  closed: number;
+  /** Atomic USDC across every rail's settled jobs. */
+  volume: string;
+  byRail: Partial<Record<RailId, { calls: number; delivered: number; volume: string }>>;
+  /** Unix seconds. */
+  asOf: number;
+  runnersOnline: number;
+}
