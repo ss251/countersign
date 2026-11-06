@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { checkEnvelope, type EnvelopeDecision } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
+import { hasRoute } from "../../app/routes.ts";
 import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
 import {
   ESCROW_RAILS,
@@ -37,12 +38,29 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
     return (
       <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload}>
         {approvals.needsToken && !approvalToken() ? (
-          <TokenForm
-            onSave={(t) => {
-              rememberApprovalToken(t);
-              approvals.reload();
-            }}
-          />
+          <>
+            <p className="phone__newcomer">
+              New here? Connect a wallet in the top bar.
+              {hasRoute("start") ? (
+                <>
+                  {" "}
+                  Or <Link to="/start">start here</Link>.
+                </>
+              ) : null}
+            </p>
+            <details className="disclose" data-testid="buyer-own-hub">
+              <summary>I run my own hub</summary>
+              <p className="disclose__body">
+                Paste the approval token your hub was started with. It stays on this phone and goes only to that hub.
+              </p>
+              <TokenForm
+                onSave={(t) => {
+                  rememberApprovalToken(t);
+                  approvals.reload();
+                }}
+              />
+            </details>
+          </>
         ) : null}
       </Absent>
     );
@@ -353,13 +371,19 @@ function ApprovalFlow({
             </p>
           ) : null}
           {live && !token ? (
-            <TokenForm
-              onSave={(t) => {
-                rememberApprovalToken(t);
-                setToken(t);
-                setProblem(null);
-              }}
-            />
+            <details className="disclose" data-testid="buyer-own-hub">
+              <summary>I run my own hub</summary>
+              <p className="disclose__body">
+                Paste the approval token your hub was started with. It stays on this phone and goes only to that hub.
+              </p>
+              <TokenForm
+                onSave={(t) => {
+                  rememberApprovalToken(t);
+                  setToken(t);
+                  setProblem(null);
+                }}
+              />
+            </details>
           ) : live && !approver ? (
             <ApproverKey
               named={named}

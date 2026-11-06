@@ -25,6 +25,14 @@ export {
   type JobReader,
   type PinnedEscrow,
 } from "./funding.ts";
+export {
+  openApiInputSchema,
+  openApiOffer,
+  openApiOutputSchema,
+  readOperation,
+  runOpenApi,
+  type OpenApiSpec,
+} from "./openapi.ts";
 export { publishOffer, type PublishOptions } from "./publish.ts";
 export {
   readSkill,
