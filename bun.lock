@@ -48,6 +48,7 @@
         "@countersign/verify": "workspace:*",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
+        "viem": "^2.57.16",
       },
       "devDependencies": {
         "@types/react": "^19.3.0",
@@ -130,6 +131,7 @@
       "dependencies": {
         "@countersign/buyer": "workspace:*",
         "@countersign/core": "workspace:*",
+        "@countersign/verify": "workspace:*",
         "@modelcontextprotocol/sdk": "1.32.2",
         "viem": "^2.57.16",
       },

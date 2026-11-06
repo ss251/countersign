@@ -4,7 +4,7 @@
  * a purchase is a job as the buyer's phone lists it.
  */
 
-import type { AdapterKind, Envelope, EnvelopeSpend, Offer, RailId, Slip } from "@countersign/core";
+import type { AdapterKind, ApprovalRequest, Envelope, EnvelopeSpend, Offer, RailId, Slip } from "@countersign/core";
 import type { RailDeclaration } from "@countersign/rail";
 
 export type {
@@ -61,6 +61,11 @@ export interface Approval {
   discoveredVia: DiscoverySource;
   /** Unix seconds. */
   requestedAt: number;
+  /**
+   * What a version 2 decision is signed over, as the hub holds it: the agent's signed request and
+   * its terms. The phone checks the agent's signature before it signs. Fixture approvals have none.
+   */
+  signing?: { offerHash: string; terms: unknown; request: ApprovalRequest | null; requestSig: string | null };
 }
 
 export type JobStatus = "countersigned" | "held" | "delivered" | "released" | "refused" | "refunded";
@@ -157,4 +162,23 @@ export interface Settlement {
   slipHash?: string | null;
   /** Unix seconds. */
   at: number;
+}
+
+/** The hub's totals, derived from its own job ledger (GET /stats). The landing's numbers come only from here. */
+export interface HubStats {
+  offers: { listed: number; delisted: number };
+  sellers: number;
+  buyers: number;
+  calls: number;
+  /** Jobs whose payment reached the seller. */
+  delivered: number;
+  failed: number;
+  refunded: number;
+  closed: number;
+  /** Atomic USDC across every rail's settled jobs. */
+  volume: string;
+  byRail: Partial<Record<RailId, { calls: number; delivered: number; volume: string }>>;
+  /** Unix seconds. */
+  asOf: number;
+  runnersOnline: number;
 }

@@ -14,6 +14,7 @@ import {
   type Offer,
 } from "../../packages/core/src/index.ts";
 import { offerInputSchema } from "../../packages/rail/src/hedera/mcp-schema.ts";
+import { prepareCountersign } from "../../packages/rail/src/hedera/schedule.ts";
 import type { Hex, RunnerAccount } from "../../packages/runner/src/account.ts";
 import { startRunner } from "../../packages/runner/src/daemon.ts";
 import type { McpSpec } from "../../packages/runner/src/mcp.ts";
@@ -154,21 +155,25 @@ async function inputSchema(): Promise<JsonSchema> {
   }
 }
 
-function makeOffer(seller: Offer["seller"], price: string, input: JsonSchema): Offer {
+function makeOffer(seller: Offer["seller"], price: string, input: JsonSchema, heldPayTo: string): Offer {
   return {
     v: 1,
     seller,
     title: "Hedera Agent Kit: an HBAR transfer, built for you to sign",
     summary:
-      "The Hedera Agent Kit's transfer_hbar_tool in RETURN_BYTES mode: the result is unsigned transaction bytes built for the paying account to sign and submit. The seller holds no key. Amounts are whole HBAR.",
+      "The Hedera Agent Kit's transfer_hbar_tool in RETURN_BYTES mode: the result is unsigned transaction bytes built for the paying account to sign and submit. The seller holds no key. Amounts are whole HBAR. On Hedera it is paid as a held schedule by default: nothing moves until the seller countersigns after delivery.",
     adapter: "mcp",
     input,
-    output: { type: "object", required: ["tool", "server", "inputHash", "result"] },
+    output: {
+      type: "object",
+      required: ["tool", "server", "inputHash", "result"],
+      properties: { result: { type: "object", required: ["bytes"] } },
+    },
     price,
     deadline: 120,
     bond: "0",
-    rails: ["hedera"],
-    payTo: { hedera: SELLER_ACCOUNT_ID },
+    rails: ["hedera-scheduled", "hedera"],
+    payTo: { "hedera-scheduled": heldPayTo, hedera: SELLER_ACCOUNT_ID },
     upstream: { url: "https://github.com/hashgraph/hedera-agent-kit-js", licence: "Apache-2.0" },
     issuedAt: Math.floor(Date.now() / 1000),
   };
@@ -178,6 +183,8 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const env = readEnv();
   const raw = key(env, "HD_SELLER_KEY").toStringRaw();
+  const HD_SELLER_SIGN_ID = need(env, "HD_SELLER_SIGN_ID");
+  const HD_SELLER_SIGN_KEY = key(env, "HD_SELLER_SIGN_KEY");
   const { privateKeyToAccount } = await loadAccounts();
   const account = privateKeyToAccount(`0x${raw}` as Hex);
   if (account.address.toLowerCase() !== need(env, "HD_SELLER_EVM").toLowerCase()) {
@@ -185,7 +192,7 @@ async function main(): Promise<void> {
   }
 
   const toolSpec = spec();
-  const offer = makeOffer(account.address, args.price, await inputSchema());
+  const offer = makeOffer(account.address, args.price, await inputSchema(), HD_SELLER_SIGN_ID);
   const skillSha256 = createHash("sha256").update(canonicalJson(toolSpec)).digest("hex");
   const published = await publishOffer(args.hub, account, offer, {
     stateDir: args.state,
@@ -197,6 +204,27 @@ async function main(): Promise<void> {
     hubUrl: args.hub,
     account,
     served: [{ offer: published.offer, spec: toolSpec }],
+    countersign: async (order) => {
+      if (order.rail !== "hedera-scheduled" || !order.schedule) {
+        throw new Error("Refused. Not a held Hedera order.");
+      }
+      if (order.payTo !== HD_SELLER_SIGN_ID) {
+        throw new Error("Refused. The held payment is not to this seller's account.");
+      }
+      const { bytes } = await prepareCountersign(
+        HD_SELLER_SIGN_ID,
+        HD_SELLER_SIGN_KEY,
+        order.schedule.id,
+        {
+          asset: order.asset,
+          amount: BigInt(order.amount),
+          payTo: order.payTo,
+          offerHash: order.offerHash,
+          payer: order.buyer,
+        },
+      );
+      return bytes;
+    },
     onJob: (event) => {
       const jobId = event.jobId.length > 10 ? `${event.jobId.slice(0, 10)}…` : event.jobId;
       console.log(`${jobId} ${event.title} ${event.ok ? "ok" : event.reason ?? "refused"}`);

@@ -7,10 +7,21 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Subprocess, spawn, spawnSync } from "bun";
-import { type Address, createPublicClient, createWalletClient, defineChain, type Hex, http } from "viem";
+import {
+  type Address,
+  createPublicClient,
+  createWalletClient,
+  custom,
+  decodeFunctionData,
+  defineChain,
+  encodeFunctionData,
+  encodeFunctionResult,
+  type Hex,
+  http,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { escrowAbi } from "../../rail/src/escrow/abi.ts";
-import { parseBondArgs, runBond } from "../src/bond.ts";
+import { TERMS_ABI, parseBondArgs, runBond, setTermsArgs } from "../src/bond.ts";
 
 const ROOT = join(import.meta.dir, "../../..");
 const deployer = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
@@ -152,5 +163,102 @@ describe("bond commands on anvil", () => {
     ]);
     expect(overridden.tokenName).toBe("Tether USD");
     expect(overridden.tokenVersion).toBe("1");
+  });
+});
+
+describe("bond terms", () => {
+  const offer = `0x${"aa".repeat(32)}` as Hex;
+  const termsArgs = (over: { price?: string; bond?: string; reviewWindow?: string } = {}) => [
+    "terms",
+    "--offer",
+    offer,
+    "--price",
+    over.price ?? "500000",
+    "--bond",
+    over.bond ?? "250000",
+    "--review-window",
+    over.reviewWindow ?? "600",
+    "--min-duration",
+    "120",
+    "--escrow",
+    escrowAddr,
+  ];
+
+  test("encodes setTerms with exactly the five arguments, from the seller's key", async () => {
+    const command = parseBondArgs(termsArgs());
+    expect(command.command).toBe("terms");
+    if (command.command !== "terms") throw new Error("expected a terms command");
+
+    const encoded = encodeFunctionData({ abi: TERMS_ABI, functionName: "setTerms", args: setTermsArgs(command) });
+    const decoded = decodeFunctionData({ abi: TERMS_ABI, data: encoded });
+    expect(decoded.functionName).toBe("setTerms");
+    expect(decoded.args).toEqual([offer, 500_000n, 250_000n, 600n, 120n]);
+
+    let captured: { escrow: Address; args: readonly unknown[] } | undefined;
+    const log: string[] = [];
+    await runBond(command, SELLER_KEY, (line) => log.push(line), {
+      writeTerms: async (escrow, args) => {
+        captured = { escrow, args };
+        return `0x${"ab".repeat(32)}`;
+      },
+    });
+    expect(captured?.escrow.toLowerCase()).toBe(escrowAddr.toLowerCase());
+    expect(captured?.args).toEqual([offer, 500_000n, 250_000n, 600n, 120n]);
+    expect(log).toEqual([`0x${"ab".repeat(32)}`]);
+  });
+
+  test("refuses a bond above the price and a review window over 86400 seconds before any call", async () => {
+    let calls = 0;
+    const writeTerms = async (): Promise<Hex> => {
+      calls++;
+      return `0x${"ab".repeat(32)}`;
+    };
+    expect(() => parseBondArgs(termsArgs({ bond: "500001" }))).toThrow("bond cannot be more than the price");
+    expect(() => parseBondArgs(termsArgs({ reviewWindow: "86401" }))).toThrow(
+      "review window cannot be more than 86400 seconds",
+    );
+    // A command built past the parser is refused by runBond itself, still before the writer.
+    const parsed = parseBondArgs(termsArgs());
+    if (parsed.command !== "terms") throw new Error("expected a terms command");
+    const over = { ...parsed, bond: 600_000n };
+    await expect(runBond(over, SELLER_KEY, () => {}, { writeTerms })).rejects.toThrow(
+      "bond cannot be more than the price",
+    );
+    expect(calls).toBe(0);
+  });
+
+  test("refuses a missing escrow and a malformed offer", () => {
+    expect(() =>
+      parseBondArgs(["terms", "--offer", offer, "--price", "1", "--bond", "0", "--review-window", "0", "--min-duration", "0"]),
+    ).toThrow("--escrow is required");
+    expect(() => parseBondArgs(["terms", "--offer", "0x01", "--show", "--escrow", escrowAddr])).toThrow(
+      "--offer must be a 32-byte hex offer hash",
+    );
+  });
+
+  test("--show decodes termsOf for the seller", async () => {
+    const result = encodeFunctionResult({
+      abi: TERMS_ABI,
+      functionName: "termsOf",
+      result: { price: 500_000n, bond: 25_000n, reviewWindow: 600n, minDuration: 120n },
+    });
+    const methods: string[] = [];
+    const transport = custom({
+      async request({ method }) {
+        methods.push(method);
+        if (method === "eth_chainId") return "0x7a69";
+        if (method === "eth_call") return result;
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+    });
+    const log: string[] = [];
+    await runBond(
+      parseBondArgs(["terms", "--show", "--offer", offer, "--escrow", escrowAddr]),
+      SELLER_KEY,
+      (line) => log.push(line),
+      { transport },
+    );
+    expect(methods).toContain("eth_call");
+    expect(JSON.parse(log[0] as string)).toEqual({ price: "500000", bond: "25000", reviewWindow: 600, minDuration: 120 });
   });
 });

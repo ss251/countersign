@@ -11,7 +11,7 @@ import {
   type RunnerToHub,
 } from "../src/deps.ts";
 
-export type JobAnswer = { output: unknown } | { fail: string };
+export type JobAnswer = { output: unknown; countersign?: string } | { fail: string };
 
 export interface RunnerOptions {
   url: string;
@@ -73,6 +73,7 @@ export function startRunner(options: RunnerOptions): RunnerHandle {
       jobId: order.jobId,
       output: answer.output,
       slip: { body, hash, sellerSig },
+      ...(typeof answer.countersign === "string" ? { countersign: answer.countersign } : {}),
     });
   };
 

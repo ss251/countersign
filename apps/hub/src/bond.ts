@@ -18,10 +18,23 @@ export const GATE_FAILED =
  * success, or null so the caller keeps today's message. On success the tx is stored as the job's
  * closeTx before the caller marks the job failed.
  */
-export async function failOnGate(rail: Rail, jobId: Hex, store: Store): Promise<string | null> {
+export async function failOnGate(
+  rail: Rail,
+  jobId: Hex,
+  store: Store,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<string | null> {
   const escrow = rail.escrow;
   const failDelivery = escrow?.failDelivery;
   if (!escrow || !failDelivery) return null;
+
+  // On v2 the arbiter's power ends with the settle window. After it the deadline refund pays the
+  // buyer the amount plus the bond, so a gate failure has nothing left to do.
+  const disputeWindow = escrow.disputeWindowSeconds ?? 0;
+  if (disputeWindow > 0) {
+    const job = store.getJob(jobId);
+    if (job !== null && now > job.deadline + disputeWindow) return null;
+  }
 
   let result: SettleResult;
   try {
