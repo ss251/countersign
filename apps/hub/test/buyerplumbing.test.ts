@@ -4,6 +4,7 @@ import type { Address, Hex } from "viem";
 import {
   approvalDecisionBody,
   approvalDecisionMessage,
+  approvalRequestHash,
   canonicalJson,
   type Envelope,
   type EnvelopeSpend,
@@ -59,6 +60,7 @@ const APPROVAL_REQUEST = {
   rail: "escrow",
   terms: { deadline: NOW + 120, seller: seller.address },
   requestedAt: NOW,
+  nonce: `0x${"aa".repeat(32)}` as Hex,
 };
 type ApprovalRequest = typeof APPROVAL_REQUEST;
 
@@ -200,6 +202,7 @@ async function signDecision(
     amount?: string;
     rail?: string;
     terms?: unknown;
+    requestHash?: string;
   } = {},
 ): Promise<{ decision: "countersign" | "decline"; decidedAt: number; sig: Hex }> {
   const decision = overrides.decision ?? "countersign";
@@ -211,6 +214,7 @@ async function signDecision(
     amount: overrides.amount ?? APPROVAL_REQUEST.amount,
     rail: overrides.rail ?? APPROVAL_REQUEST.rail,
     terms: overrides.terms ?? APPROVAL_REQUEST.terms,
+    requestHash: overrides.requestHash ?? approvalRequestHash(APPROVAL_REQUEST),
     decision,
     decidedAt,
   });
@@ -495,7 +499,8 @@ describe("human approvals", () => {
     const tokenHub = startTokenHub(TOKEN);
     try {
       await seedMirror(tokenHub.url);
-      const created = await createApproval(tokenHub.url);
+      const request = await approvalRequest();
+      const created = await postApproval(tokenHub.url, request);
       expect(created.status).toBe(201);
       const { id } = (await created.json()) as { id: string };
       expect(id).toMatch(/^[0-9a-f]{32}$/);
@@ -508,7 +513,14 @@ describe("human approvals", () => {
 
       const one = await fetch(`${tokenHub.url}/approvals/${id}`);
       expect(one.status).toBe(200);
-      expect(((await one.json()) as { status: string }).status).toBe("pending");
+      const oneBody = (await one.json()) as {
+        status: string;
+        request: ApprovalRequest;
+        requestSig: string | null;
+      };
+      expect(oneBody.status).toBe("pending");
+      expect(oneBody.request).toEqual(request.body);
+      expect(oneBody.requestSig).toBe(request.sig);
 
       const signed = await signDecision(id);
       expect((await postDecision(tokenHub.url, id, signed, "wrong")).status).toBe(401);
@@ -662,6 +674,68 @@ describe("human approvals", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ pad: "x".repeat(17_000) }),
+      });
+      expect(response.status).toBe(413);
+      expect(((await response.json()) as ErrorBody).code).toBe("too-large");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a missing or malformed nonce is a 400", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const withoutNonce: Record<string, unknown> = { ...APPROVAL_REQUEST };
+      delete withoutNonce.nonce;
+      const sig = await AGENT.signMessage({ message: canonicalJson(withoutNonce) });
+      const missing = await fetch(`${tokenHub.url}/approvals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...withoutNonce, sig }),
+      });
+      expect(missing.status).toBe(400);
+      expect(((await missing.json()) as ErrorBody).code).toBe("bad-request");
+
+      const malformed = await createApproval(tokenHub.url, { nonce: "0x1234" });
+      expect(malformed.status).toBe(400);
+      expect(((await malformed.json()) as ErrorBody).code).toBe("bad-request");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a decision bound to another request's hash is a 401", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const otherHash = approvalRequestHash({ ...APPROVAL_REQUEST, nonce: `0x${"bb".repeat(32)}` });
+      const signed = await signDecision(id, { requestHash: otherHash });
+      const response = await postDecision(tokenHub.url, id, signed, TOKEN);
+      expect(response.status).toBe(401);
+      expect(((await response.json()) as ErrorBody).code).toBe("bad-signature");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("an oversized decision is a 413", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const response = await fetch(`${tokenHub.url}/approvals/${id}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({
+          decision: "countersign",
+          decidedAt: NOW,
+          sig: `0x${"11".repeat(65)}`,
+          pad: "x".repeat(17_000),
+        }),
       });
       expect(response.status).toBe(413);
       expect(((await response.json()) as ErrorBody).code).toBe("too-large");

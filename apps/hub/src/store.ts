@@ -1,5 +1,13 @@
 import { Database } from "bun:sqlite";
-import type { Envelope, EnvelopeSpend, Offer, PaymentPayload, RailId, Slip } from "./deps.ts";
+import type {
+  ApprovalRequest,
+  Envelope,
+  EnvelopeSpend,
+  Offer,
+  PaymentPayload,
+  RailId,
+  Slip,
+} from "./deps.ts";
 import type { Hex } from "viem";
 
 export type JobStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
@@ -67,6 +75,8 @@ export interface ApprovalRecord {
   status: ApprovalStatus;
   createdAt: number;
   decidedAt: number | null;
+  /** The agent's signed request, without sig. Null for rows stored before version 2. */
+  request: ApprovalRequest | null;
   /** The agent's signature over the request body, unique per request. */
   requestSig: string | null;
   /** The approver's signature over the decision body. */
@@ -152,6 +162,7 @@ interface ApprovalRow {
   status: string;
   created_at: number;
   decided_at: number | null;
+  request_json: string | null;
   request_sig: string | null;
   decision_sig: string | null;
 }
@@ -224,11 +235,15 @@ export class Store {
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         decided_at INTEGER NULL,
+        request_json TEXT NULL,
         request_sig TEXT NULL,
         decision_sig TEXT NULL
       )
     `);
     const approvalColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(approvals)").all();
+    if (!approvalColumns.some((column) => column.name === "request_json")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN request_json TEXT NULL");
+    }
     if (!approvalColumns.some((column) => column.name === "request_sig")) {
       this.db.run("ALTER TABLE approvals ADD COLUMN request_sig TEXT NULL");
     }
@@ -478,7 +493,7 @@ export class Store {
   putApproval(approval: ApprovalRecord): boolean {
     const result = this.db
       .query(
-        "INSERT OR IGNORE INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at, request_sig, decision_sig) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at, request_json, request_sig, decision_sig) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         approval.id,
@@ -491,6 +506,7 @@ export class Store {
         approval.status,
         approval.createdAt,
         approval.decidedAt,
+        approval.request === null ? null : JSON.stringify(approval.request),
         approval.requestSig,
         approval.decisionSig,
       );
@@ -583,6 +599,7 @@ function approvalFromRow(row: ApprovalRow): ApprovalRecord {
     status: row.status as ApprovalStatus,
     createdAt: row.created_at,
     decidedAt: row.decided_at,
+    request: row.request_json === null ? null : (JSON.parse(row.request_json) as ApprovalRequest),
     requestSig: row.request_sig,
     decisionSig: row.decision_sig,
   };

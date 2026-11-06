@@ -4,9 +4,11 @@ import { recoverMessageAddress, type Hex } from "viem";
 import {
   approvalDecisionBody,
   approvalDecisionSigner,
+  approvalRequestHash,
   canonicalJson,
   explorerUrl,
   RAIL_IDS,
+  type ApprovalRequest,
   type Envelope,
   type EnvelopeSpend,
   type Rail,
@@ -168,7 +170,7 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   const body = parsed.value;
   if (!isRecord(body)) return fail(400, "bad-request", "Refused. The approval is malformed.");
 
-  const { agent, offerHash, title, amount, rail, terms, requestedAt, sig } = body;
+  const { agent, offerHash, title, amount, rail, terms, requestedAt, nonce, sig } = body;
   if (
     typeof agent !== "string" ||
     typeof offerHash !== "string" ||
@@ -177,6 +179,8 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
     typeof rail !== "string" ||
     terms === undefined ||
     !Number.isSafeInteger(requestedAt) ||
+    typeof nonce !== "string" ||
+    !/^0x[0-9a-fA-F]{64}$/.test(nonce) ||
     typeof sig !== "string"
   ) {
     return fail(400, "bad-request", "Refused. The approval is malformed.");
@@ -186,9 +190,19 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   }
 
   const at = requestedAt as number;
+  const request: ApprovalRequest = {
+    agent,
+    offerHash,
+    title,
+    amount,
+    rail,
+    terms,
+    requestedAt: at,
+    nonce: nonce as Hex,
+  };
   let message: string;
   try {
-    message = canonicalJson({ agent, offerHash, title, amount, rail, terms, requestedAt: at });
+    message = canonicalJson(request);
   } catch {
     return fail(400, "bad-request", "Refused. The approval is malformed.");
   }
@@ -228,6 +242,7 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
       status: "pending",
       createdAt: at,
       decidedAt: null,
+      request,
       requestSig: sig,
       decisionSig: null,
     })
@@ -276,14 +291,17 @@ async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   if (status === "expired") return fail(409, "expired", "Refused. This approval has expired.");
   if (status !== "pending") return fail(409, "already-decided", "Refused. This approval is already decided.");
 
-  const body = await readJson(c);
-  if (!isRecord(body)) return fail(400, "bad-request", "Refused. The decision is malformed.");
-  const decision = body.decision;
+  const body = await readJsonLimited(c);
+  if (body.kind === "too-large") return fail(413, "too-large", "Refused. The request body is too large.");
+  if (body.kind === "malformed") return fail(400, "bad-request", "Refused. The decision is malformed.");
+  const value = body.value;
+  if (!isRecord(value)) return fail(400, "bad-request", "Refused. The decision is malformed.");
+  const decision = value.decision;
   if (decision !== "countersign" && decision !== "decline") {
     return fail(400, "bad-request", "Refused. The decision is not countersign or decline.");
   }
-  const decidedAt = body.decidedAt;
-  const sig = body.sig;
+  const decidedAt = value.decidedAt;
+  const sig = value.sig;
   if (!Number.isSafeInteger(decidedAt) || typeof sig !== "string") {
     return fail(400, "bad-request", "Refused. The decision needs a signed decision time.");
   }
@@ -295,6 +313,9 @@ async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   if (approver === undefined) {
     return fail(409, "no-approver", "Refused. This agent's envelope names no approver key.");
   }
+  if (row.request === null) {
+    return fail(400, "bad-request", "Refused. The approval has no stored request.");
+  }
 
   const signer = await approvalDecisionSigner(
     approvalDecisionBody({
@@ -304,6 +325,7 @@ async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
       amount: row.amount,
       rail: row.rail,
       terms: row.terms,
+      requestHash: approvalRequestHash(row.request),
       decision,
       decidedAt: decidedAt as number,
     }),
@@ -335,6 +357,8 @@ function view(row: ApprovalRecord, now: number): {
   status: EffectiveStatus;
   createdAt: number;
   requestedAt: number;
+  request: ApprovalRequest | null;
+  requestSig: string | null;
   decidedAt: number | null;
   decisionSig: string | null;
 } {
@@ -349,6 +373,8 @@ function view(row: ApprovalRecord, now: number): {
     status: effectiveStatus(row, now),
     createdAt: row.createdAt,
     requestedAt: row.createdAt,
+    request: row.request,
+    requestSig: row.requestSig,
     decidedAt: row.decidedAt,
     decisionSig: row.decisionSig,
   };
@@ -384,14 +410,6 @@ function sameToken(provided: string, expected: string): boolean {
     return false;
   }
   return timingSafeEqual(a, b);
-}
-
-async function readJson(c: Context): Promise<unknown> {
-  try {
-    return await c.req.json<unknown>();
-  } catch {
-    return undefined;
-  }
 }
 
 type LimitedJson =
