@@ -207,6 +207,37 @@ function slipFieldsOf(value: unknown): SlipFields {
   return { jobId: jobId as Hex, offerHash: offerHash as Hex, amount: BigInt(amount), buyer: buyer as Address };
 }
 
+interface ListedOffer {
+  price: bigint;
+  payee: Address;
+}
+
+/** The hub wraps an offer in `{ offer, ... }`; a bare offer is accepted too. */
+function listedOfferOf(value: unknown): ListedOffer {
+  if (typeof value !== "object" || value === null) throw new Error("the hub's offer is not an object");
+  const record = value as Record<string, unknown>;
+  const offer =
+    typeof record.offer === "object" && record.offer !== null
+      ? (record.offer as Record<string, unknown>)
+      : record;
+  const price = offer.price;
+  const seller = offer.seller;
+  if (typeof price !== "string" || !/^[0-9]+$/.test(price)) {
+    throw new Error("the offer has no atomic price");
+  }
+  if (typeof seller !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(seller)) {
+    throw new Error("the offer has no seller address");
+  }
+  const payTo = offer.payTo;
+  const escrow =
+    typeof payTo === "object" && payTo !== null ? (payTo as Record<string, unknown>).escrow : undefined;
+  const payee = escrow === null || escrow === undefined ? seller : escrow;
+  if (typeof payee !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(payee)) {
+    throw new Error("the offer's escrow payee is not an address");
+  }
+  return { price: BigInt(price), payee: payee as Address };
+}
+
 const runHuman = async (
   { page, context }: PlaywrightTestArgs & PlaywrightWorkerArgs,
   testInfo: TestInfo,
@@ -369,6 +400,26 @@ const runHuman = async (
         throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
       }
 
+      const offerResponse = await fetch(`${hub}/offers/${slip.offerHash}`);
+      if (offerResponse.status !== 200) {
+        throw new Error(`the hub answered ${offerResponse.status} for the offer`);
+      }
+      const offerText = await offerResponse.text();
+      const offerFile = rec.file("offer.json");
+      writeFileSync(offerFile, offerText);
+      rec.addArtifact(offerFile);
+
+      let listedValue: unknown;
+      try {
+        listedValue = JSON.parse(offerText);
+      } catch {
+        throw new Error("the hub's offer is not JSON");
+      }
+      const listed = listedOfferOf(listedValue);
+      if (slip.amount !== listed.price) {
+        throw new Error(`the slip amount is ${slip.amount}, but the offer lists ${listed.price}`);
+      }
+
       const fundedLogs = await client.getLogs({
         address: ARC.escrow,
         event: FUNDED,
@@ -384,9 +435,15 @@ const runHuman = async (
       const fundArgs = fundLog.args;
       if (!fundArgs) throw new Error(`the Funded log for job ${slip.jobId} has no arguments`);
       const fundBuyer = fundArgs.buyer;
+      const fundPayee = fundArgs.payee;
       const fundAmount = fundArgs.amount;
       const fundOfferHash = fundArgs.offerHash;
-      if (fundBuyer === undefined || fundAmount === undefined || fundOfferHash === undefined) {
+      if (
+        fundBuyer === undefined ||
+        fundPayee === undefined ||
+        fundAmount === undefined ||
+        fundOfferHash === undefined
+      ) {
         throw new Error(`the Funded log for job ${slip.jobId} has incomplete arguments`);
       }
       if (fundBuyer.toLowerCase() !== wallet.toLowerCase()) {
@@ -394,6 +451,11 @@ const runHuman = async (
       }
       if (fundAmount !== slip.amount) {
         throw new Error(`the Funded amount is ${fundAmount}, not the slip amount ${slip.amount}`);
+      }
+      if (fundAmount !== listed.price || fundPayee.toLowerCase() !== listed.payee.toLowerCase()) {
+        throw new Error(
+          `the buyer paid ${fundAmount} to ${fundPayee}, but the offer lists ${listed.price} to ${listed.payee}`,
+        );
       }
       if (fundOfferHash.toLowerCase() !== slip.offerHash.toLowerCase()) {
         throw new Error(`the Funded offer hash is ${fundOfferHash}, not the slip's ${slip.offerHash}`);
