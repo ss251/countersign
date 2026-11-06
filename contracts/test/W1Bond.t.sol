@@ -72,11 +72,12 @@ contract W1BondTest is Test {
     }
 
     function _sellerDeposits(uint256 amount) internal {
-        bytes32 nonce = keccak256("seller bond");
+        bytes32 salt = keccak256("seller bond");
+        bytes32 nonce = keccak256(abi.encode(escrow.BOND_DEPOSIT_TYPEHASH(), seller, amount, salt));
         uint256 validBefore = block.timestamp + 600;
         (uint8 v, bytes32 r, bytes32 s) = _authorization(sellerKey, seller, amount, validBefore, nonce);
         vm.prank(seller);
-        escrow.depositBond(seller, amount, 0, validBefore, nonce, v, r, s);
+        escrow.depositBond(seller, amount, 0, validBefore, salt, v, r, s);
     }
 
     /// B16. A buyer's countersignature is an EIP-3009 ReceiveWithAuthorization naming this escrow,

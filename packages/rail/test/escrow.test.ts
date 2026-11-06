@@ -13,11 +13,14 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  encodeAbiParameters,
   getAddress,
   type Hex,
   http,
+  keccak256,
   parseAbi,
   parseSignature,
+  toBytes,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import {
@@ -152,9 +155,15 @@ const receiveTypes = {
 } as const;
 
 async function depositBond(payee: PrivateKeyAccount, amount: bigint): Promise<void> {
-  const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+  const salt = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("")}` as Hex;
+  const nonce = keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "address" }, { type: "uint256" }, { type: "bytes32" }],
+      [keccak256(toBytes("BondDeposit(address payee,uint256 amount,bytes32 salt)")), payee.address, amount, salt],
+    ),
+  );
   const now = await blockTime();
   const validAfter = BigInt(Math.max(0, now - 60));
   const validBefore = BigInt(now + 600);
@@ -170,7 +179,7 @@ async function depositBond(payee: PrivateKeyAccount, amount: bigint): Promise<vo
     address: escrowAddr,
     abi: escrowAbi,
     functionName: "depositBond",
-    args: [payee.address, amount, validAfter, validBefore, nonce, v, sig.r, sig.s],
+    args: [payee.address, amount, validAfter, validBefore, salt, v, sig.r, sig.s],
   });
   const receipt = await pub.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error("depositBond failed");

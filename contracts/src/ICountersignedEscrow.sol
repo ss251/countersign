@@ -73,18 +73,20 @@ interface ICountersignedEscrow {
     /// @notice Pull `cs.amount` from the buyer into escrow and open the job.
     function fund(bytes32 offerHash, Countersignature calldata cs) external returns (bytes32 jobId);
 
-    /// @notice Fund a job and lock `bond` from the payee's free bond into it.
+    /// @notice Fund a job and lock `bond` from the payee's free bond into it. Arbiter only.
     function fundBonded(bytes32 offerHash, Countersignature calldata cs, uint256 bond)
         external
         returns (bytes32 jobId);
 
     /// @notice Credit a payee's free bond with an EIP-3009 authorisation. Anyone may submit it.
+    ///         The token nonce is derived from `salt`: keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH,
+    ///         payee, amount, salt)), so it can never equal a jobId.
     function depositBond(
         address payee,
         uint256 amount,
         uint256 validAfter,
         uint256 validBefore,
-        bytes32 nonce,
+        bytes32 salt,
         uint8 v,
         bytes32 r,
         bytes32 s

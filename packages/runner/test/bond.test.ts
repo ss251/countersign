@@ -100,13 +100,24 @@ describe("bond commands on anvil", () => {
     expect(deposit[0]).toMatch(/^0x[0-9a-f]{64}$/);
     expect(await bondOf()).toBe(500_000n);
 
+    // A second deposit uses a fresh random salt and credits exactly its amount.
+    const second: string[] = [];
+    await runBond(
+      parseBondArgs(["deposit", "250000", "--escrow", escrowAddr, "--rpc", rpcUrl]),
+      SELLER_KEY,
+      (line) => second.push(line),
+    );
+    expect(second[0]).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(second[0]).not.toBe(deposit[0]);
+    expect(await bondOf()).toBe(750_000n);
+
     const show: string[] = [];
     await runBond(
       parseBondArgs(["show", "--escrow", escrowAddr, "--rpc", rpcUrl]),
       SELLER_KEY,
       (line) => show.push(line),
     );
-    expect(show).toEqual(["500000"]);
+    expect(show).toEqual(["750000"]);
 
     const withdraw: string[] = [];
     await runBond(
@@ -115,7 +126,7 @@ describe("bond commands on anvil", () => {
       (line) => withdraw.push(line),
     );
     expect(withdraw[0]).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(await bondOf()).toBe(300_000n);
+    expect(await bondOf()).toBe(550_000n);
   }, 30_000);
 
   test("parsing refuses a missing escrow, a zero amount and an unknown flag", () => {

@@ -28,6 +28,19 @@ export const escrowAbi = [
   },
   {
     "type": "function",
+    "name": "BOND_DEPOSIT_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "CANCEL_TYPEHASH",
     "inputs": [],
     "outputs": [
@@ -185,7 +198,7 @@ export const escrowAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "nonce",
+        "name": "salt",
         "type": "bytes32",
         "internalType": "bytes32"
       },
