@@ -8,7 +8,7 @@ import { HubClient } from "./hub-client.ts";
 import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
-import { countersignPayer, gatewayPayer } from "./payer.ts";
+import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
 import { resume } from "./resume.ts";
 import { State } from "./state.ts";
 
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
       hub,
       offerHash: hash,
       input: JSON.parse(raw),
-      payers: [countersignPayer(account), gatewayPayer(account)],
+      payers: [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)],
       envelope: state.loadEnvelope(),
       journal,
       state,
