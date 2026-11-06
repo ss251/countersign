@@ -147,7 +147,7 @@ export const productionHub: Flow = {
     });
 
     await ctx.step("production declares every rail it claims", async () => {
-      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
+      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera,hedera-scheduled,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
       const res = await ctx.http("rails", `${hub}/rails`);
       equal(res.status, 200, "rails status");
       const ids = ((res.json as { rails?: Array<{ id: string }> }).rails ?? []).map((r) => r.id);

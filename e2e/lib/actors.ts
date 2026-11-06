@@ -217,11 +217,12 @@ export interface Verdict {
 }
 
 /** The standalone verifier: the slip file and a public RPC, nothing else. */
-export async function verifyCli(ctx: FlowCtx, label: string, slipPath: string, rpc: string): Promise<Verdict> {
+/** Run the standalone verifier. With `mirror`, it proves a held Hedera payment on that mirror node. */
+export async function verifyCli(ctx: FlowCtx, label: string, slipPath: string, rpc: string, opts: { mirror?: string } = {}): Promise<Verdict> {
   const r = await runCmd(
     {
       name: `verify ${label}`,
-      cmd: ["bun", "packages/verify/src/cli.ts", slipPath, "--rpc", rpc],
+      cmd: ["bun", "packages/verify/src/cli.ts", slipPath, "--rpc", rpc, ...(opts.mirror ? ["--mirror", opts.mirror] : [])],
       log: join(ctx.dir, `verify-${label}.log`),
       redact: (s) => ctx.env.secrets.redact(s),
     },

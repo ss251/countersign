@@ -48,7 +48,7 @@ export const publicGateway: Flow = {
       equal(r.code, 0, "envelope set exit code");
     });
 
-    const before = await ctx.step("buyer's Gateway balance before", () => gatewayAvailable(s, buyer));
+    const before = await ctx.step("buyer's Gateway balance before", () => gatewayAvailable(s, buyer, (why) => ctx.note(`a Gateway balance read was repeated after a transport failure: ${why}`)));
 
     const slipHash = await ctx.step("buyer pays through Gateway on the public hub", async () => {
       const r = await buyerCli(ctx, "buy", base, state, "CS_BUYER_KEY", ["buy", listing.offerHash, "--input", "{}", "--rail", "gateway"]);
@@ -63,7 +63,7 @@ export const publicGateway: Flow = {
     await ctx.step("Gateway debits the buyer at once", async () => {
       let after = before;
       for (let i = 0; i < 10 && before - after < price; i++) {
-        after = await gatewayAvailable(s, buyer);
+        after = await gatewayAvailable(s, buyer, (why) => ctx.note(`a Gateway balance read was repeated after a transport failure: ${why}`));
         if (before - after < price) await sleep(1500);
       }
       equal(before - after, price, "Gateway balance drop");
