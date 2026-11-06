@@ -111,6 +111,7 @@ verifier pin. It also says Whitechain stays v1 until wc-09.
   lane runs them.
 - Touch only `e2e/**` and `docs/e2e.md`. Never edit `contracts/`, `packages/`, `apps/` or `scripts/`.
   Never read, print or log a key.
+- Never run `git stash` (the worktrees share one stash stack); use a temporary commit or a second worktree.
 - Never push, merge or deploy. Small present-tense commits on `cs/cs-62`. No emoji, no Co-authored-by
   and no other trailers.
 - **No assertion is weakened.** Each v2 change replaces a v1-only fact with the v2 fact the contract
