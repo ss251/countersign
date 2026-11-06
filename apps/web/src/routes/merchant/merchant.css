@@ -1310,7 +1310,8 @@
   .mx-eq__term:first-child {
     grid-template-columns: 1.25rem minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 0;
+    /* A column gap, so a long label (REFUNDED) never touches its value at phone width. */
+    gap: 0 var(--sp-2);
     padding: 6px 0;
   }
   .mx-eq__term[data-op]::before {
