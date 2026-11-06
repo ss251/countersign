@@ -37,3 +37,11 @@ PLAN §6 says the escrow pulls by `transferWithAuthorization`. It uses `receiveW
 `arc-studio deployments` for the countersign app listed nothing while the escrow lived only at the `forge script` address `0x44d11b8909485e3f575F6628b689383E4420f54a`. So we sent the three contract files into the Studio session unchanged. Studio reviewed them, wrote its own Foundry tests (43 pass) and deployed `FeeSplit` `0xbf9de410d4a17781df0d9d3dd160018aceb3fe87` and `CountersignedEscrow` `0x19c27d770969291e6a0a305dc1be1a845e7c1b76` on Arc testnet, with solc 0.8.28, 200 runs and cancun, the same settings as `foundry.toml`. We pulled the sources back and diffed them: byte-identical. We read the constructor state on chain: USDC, the new `FeeSplit` with our two payees at 5000/5000, and a 100 bps toll.
 
 From here the hub's `escrow` rail and the buyer's pinned rail table use the Studio-deployed escrow. The forge deployment stays valid and stays in the pinned table. The first live proofs (the 15:19 release and the two refusals) ran on it and are recorded under that address.
+
+## D9 — the slip hash committed on chain is the hash of the body, never of the settlement (06 Nov, 16:45 IST; refs #37)
+
+The captain approved using the existing on-chain commitment: `release(jobId, slipHash, sellerSig)` stores `job.slipHash` and emits `Released(jobId, slipHash, payee, paid, toll)`. This needs no contract change and no redeploy.
+
+Rule: the committed hash is `keccak256(canonicalJson(slip.body))`. `SlipBody` holds everything known at delivery: the offer, job, parties, amount, input and output hashes, delivery time, children, and the escrow domain. It does not hold the settlement tx, the payment payload, the seller signature or any receipt. A hash over the settlement tx could not exist until the release that commits it was mined, so including it would deadlock release.
+
+The release path never sends `bytes32(0)`. The hash released is exactly `slip.hash`, the hash of the slip the buyer is handed, so the seller signs the very receipt the buyer keeps. With an RPC, the verifier fetches the job's `Released` event and requires `event.slipHash` to equal the hash it recomputes from the body. A tampered body that carries a recomputed `hash` of its own still fails, because the chain holds the original.
