@@ -212,6 +212,12 @@ export default function VerifyPage({ params }: PageProps) {
 
         <aside className="page__rail" aria-label="Result">
           {verdict || checking ? (
+            // e2e/human reads the verdict's state here: pending while it checks, then valid or invalid.
+            <div
+              data-testid="verify-verdict"
+              data-state={!verdict ? "pending" : verdict.valid ? "valid" : "invalid"}
+              style={{ display: "contents" }}
+            >
             <Verdict
               verdict={verdict}
               chain={
@@ -225,6 +231,7 @@ export default function VerifyPage({ params }: PageProps) {
                   : undefined
               }
             />
+            </div>
           ) : (
             <div className="verify__idle">
               <p className="verify__idle-title">What gets checked</p>

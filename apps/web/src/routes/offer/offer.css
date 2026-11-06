@@ -244,6 +244,18 @@
   color: var(--slate);
 }
 
+.terms__rail + .terms__rail {
+  margin-top: var(--sp-6);
+}
+
+.terms__rail-title {
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
 .offer__rail-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as fx from "../src/fixtures/index.ts";
 import type { Match } from "../src/routes/buyer/assistant.ts";
-import { exampleNeeds, groupMatches, modKey, plainReason, selectable, type Verdict } from "../src/routes/assistant/palette.ts";
+import { exampleNeeds, groupMatches, modKey, needOf, plainReason, selectable, type Verdict } from "../src/routes/assistant/palette.ts";
 
 const m = (id: string): Match => ({ listing: { ...fx.listings[0]!, hash: `0x${id}` as Match["listing"]["hash"] }, score: 1, why: [] });
 const ok = (asks: boolean): Verdict => ({ decision: { ok: true }, asks });
@@ -46,5 +46,14 @@ describe("assistant palette", () => {
     expect(modKey("iPhone")).toBe("⌘");
     expect(modKey("Win32")).toBe("Ctrl");
     expect(modKey("Linux x86_64")).toBe("Ctrl");
+  });
+});
+
+describe("an example need is what a person would type", () => {
+  test("the title's head before a colon, at most four words, never the whole title", () => {
+    expect(needOf("Hedera Agent Kit: an HBAR transfer, built for you to sign")).toBe("hedera agent kit");
+    expect(needOf("use-arc")).toBe("use arc");
+    expect(needOf("whitechain-dev")).toBe("whitechain dev");
+    expect(needOf("one two three four five six")).toBe("one two three four");
   });
 });

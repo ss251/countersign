@@ -63,7 +63,7 @@ file is not an error. Names: `E2E_HUMAN_FUNDER_KEY`, `CS_DEPLOYER_KEY`, `PRIVY_T
 the leak scan knows it. **No secret is ever printed, logged, put in argv, a screenshot name, a report, or
 a trace.**
 
-Funder: `E2E_HUMAN_FUNDER_KEY` if present (CI), else `CS_DEPLOYER_KEY` (devcube, tonight's on-demand
+Funder: `E2E_HUMAN_FUNDER_KEY` if present (CI), else `CS_DEPLOYER_KEY` (the build machine, tonight's on-demand
 runs). If neither, the funding step fails with "no funder key".
 
 ### Playwright config

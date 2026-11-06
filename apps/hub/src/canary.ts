@@ -15,14 +15,16 @@ export interface CanaryDeps {
   runners: RunnerLink;
   now: () => number;
   log?: (line: string) => void;
+  report?: boolean;
 }
 
 export async function runCanary(
   deps: CanaryDeps,
   options: CanaryOptions = CANARY_DEFAULTS,
-): Promise<{ checked: Hex[]; delisted: Hex[] }> {
+): Promise<{ checked: Hex[]; delisted: Hex[]; failed: Hex[] }> {
   const checked: Hex[] = [];
   const delisted: Hex[] = [];
+  const failed: Hex[] = [];
 
   for (const stored of deps.store.listOffers()) {
     const offerHash = stored.offerHash;
@@ -46,14 +48,22 @@ export async function runCanary(
       if (attempt + 1 < options.attempts) await wait(options.gapMs);
     }
 
-    if (passed || offline) continue;
-
+    if (offline) continue;
+    if (passed) {
+      deps.log?.(`[canary] ok ${offerHash}`);
+      continue;
+    }
+    failed.push(offerHash);
+    if (deps.report === true) {
+      deps.log?.(`[canary] would delist ${offerHash}: ${lastReason}`);
+      continue;
+    }
     deps.store.delistOffer(offerHash, deps.now());
     delisted.push(offerHash);
     deps.log?.(`[canary] delisted ${offerHash}: ${lastReason}`);
   }
 
-  return { checked, delisted };
+  return { checked, delisted, failed };
 }
 
 function wait(ms: number): Promise<void> {

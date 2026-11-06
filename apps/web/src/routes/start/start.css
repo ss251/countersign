@@ -1,0 +1,76 @@
+/* The start desk: three roles in one column, ruled like the rest of the desk. */
+
+.start {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.start__head {
+  margin-bottom: 0;
+}
+
+.start__section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+  padding: var(--sp-8) 0;
+}
+
+.start__section > * {
+  min-width: 0;
+}
+
+.start__title {
+  font-size: var(--t-20);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.start__text {
+  color: var(--slate);
+  font-size: var(--t-15);
+  max-width: 62ch;
+}
+
+.start__link {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+.start__offer {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.start__offer-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-4);
+}
+
+.start__offer-title {
+  font-size: var(--t-17);
+  font-weight: 600;
+}
+
+.start__seller {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.start__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 640px) {
+  .start {
+    max-width: none;
+  }
+}

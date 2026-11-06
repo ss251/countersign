@@ -1,30 +1,28 @@
-import { useAccount, useConnect } from "wagmi";
+import { useAccount } from "wagmi";
+import { Link } from "../app/router.tsx";
+import { hasRoute } from "../app/routes.ts";
 import { chainName, shortAddress } from "../lib/wallet.ts";
 
+/*
+ * What a wallet can do from here, and no more (STEER-2120). The assistant's hold signs nothing, so
+ * a real purchase with your own wallet happens on the start-here page. The line shows only once that
+ * page exists; until then the card's own lines say how the agent signs.
+ */
 export function NeedsSignature() {
   const account = useAccount();
-  const connect = useConnect();
-
-  if (account.status === "connected") {
-    return (
-      <p className="needs-sig">
-        Your wallet <span className="mono">{shortAddress(account.address)}</span> is connected on {chainName(account.chainId)}.
-      </p>
-    );
-  }
-
-  const startConnect = () => {
-    connect.reset();
-    const connector = connect.connectors[0];
-    if (connector) connect.connect({ connector });
-  };
-
+  if (!hasRoute("start")) return null;
   return (
     <p className="needs-sig">
-      To sign in this browser instead, connect a wallet.{" "}
-      <button type="button" className="wallet__go" onClick={startConnect} disabled={connect.isPending}>
-        Connect wallet
-      </button>
+      {account.status === "connected" ? (
+        <>
+          Your wallet <span className="mono">{shortAddress(account.address)}</span> on {chainName(account.chainId)} can
+          countersign a real purchase on <Link to="/start">Start here</Link>.
+        </>
+      ) : (
+        <>
+          To buy with your own wallet instead, go to <Link to="/start">Start here</Link>.
+        </>
+      )}
     </p>
   );
 }
