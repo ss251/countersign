@@ -19,7 +19,10 @@ import {
 } from "@countersign/core";
 import type { RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
+import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
 import { substituteBuyer } from "./mcp.ts";
+
+export type { FundingConfig, JobReader, PinnedEscrow } from "./funding.ts";
 
 export interface ServedOffer {
   offer: Offer;
@@ -44,6 +47,8 @@ export interface RunnerConfig {
   served: ServedOffer[];
   limits?: RunnerLimits;
   now?: () => number;
+  /** When present, an escrow order must show its funded job on chain before work starts. */
+  funding?: FundingConfig;
   onJob?: (event: RunnerJobEvent) => void;
 }
 
@@ -60,6 +65,10 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const maxOutputBytes = cfg.limits?.maxOutputBytes ?? 1_000_000;
   const served = cfg.served.map((entry) => ({ ...entry, hash: offerHash(entry.offer) }));
   const url = connectUrl(cfg.hubUrl);
+  const funding =
+    cfg.funding === undefined
+      ? null
+      : { ...cfg.funding, read: fundingReader(cfg.funding) };
 
   let stopped = false;
   let socket: WebSocket | null = null;
@@ -101,6 +110,20 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       const reason = "Refused. The input does not match the offer's schema.";
       notify(order, entry.offer.title, false, reason);
       return fail(target, order, reason);
+    }
+
+    if (funding !== null) {
+      const unpaid = await fundingRefusal(order, entry.offer, {
+        now: clock,
+        known: funding.known,
+        read: funding.read,
+        retries: funding.retries,
+        retryMs: funding.retryMs,
+      });
+      if (unpaid !== null) {
+        notify(order, entry.offer.title, false, unpaid);
+        return fail(target, order, unpaid);
+      }
     }
 
     let output: unknown;

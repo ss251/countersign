@@ -18,6 +18,8 @@ export interface MirrorOptions {
   fetch?: typeof fetch;
   /** One delay per retry after a transient failure; `[]` means one attempt. */
   retryDelaysMs?: readonly number[];
+  /** Abort one attempt after this many milliseconds. Defaults to MIRROR_ATTEMPT_TIMEOUT_MS. */
+  attemptTimeoutMs?: number;
 }
 
 export interface GetTransactionOptions extends MirrorOptions {
@@ -26,6 +28,7 @@ export interface GetTransactionOptions extends MirrorOptions {
 }
 
 export const MIRROR_RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000];
+export const MIRROR_ATTEMPT_TIMEOUT_MS = 5_000;
 
 function isTransient(r: Response): boolean {
   return r.status === 429 || r.status >= 500;
@@ -35,11 +38,12 @@ function isTransient(r: Response): boolean {
 export async function mirrorFetch(url: string, opts: MirrorOptions = {}): Promise<Response> {
   const f = opts.fetch ?? fetch;
   const delays = opts.retryDelaysMs ?? MIRROR_RETRY_DELAYS_MS;
+  const attemptTimeoutMs = opts.attemptTimeoutMs ?? MIRROR_ATTEMPT_TIMEOUT_MS;
   let lastError: unknown;
   for (let retry = 0; ; retry++) {
     let response: Response | undefined;
     try {
-      response = await f(url);
+      response = await f(url, { signal: AbortSignal.timeout(attemptTimeoutMs) });
     } catch (error) {
       lastError = error;
     }
