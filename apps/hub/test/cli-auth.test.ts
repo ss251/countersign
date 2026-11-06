@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { recoverMessageAddress, recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createHub, type HubDeps } from "../src/app.ts";
@@ -6,7 +7,11 @@ import { CliAuthStore } from "../src/cli-auth/store.ts";
 import type { Envelope, ErrorBody } from "../src/deps.ts";
 import { PRIVY_HEADER, PrivySessionError, type Person, type PrivyVerifier } from "../src/privy.ts";
 import { Store } from "../src/store.ts";
-import type { TypedDataInput, WalletApi } from "../src/wallets/privy-wallets.ts";
+import {
+  privyWalletApi,
+  type TypedDataInput,
+  type WalletApi,
+} from "../src/wallets/privy-wallets.ts";
 import { ESCROW, FakeRail } from "./fake-rail.ts";
 import { NOW } from "./support.ts";
 
@@ -22,20 +27,22 @@ const NOT_SIGNED_IN = "Not signed in. Run: npx -y @countersign-hub/cli login";
 const verifier: PrivyVerifier = {
   async verify(token: string): Promise<Person> {
     if (token === "alice") return { userId: "did:privy:alice", wallets: [] };
+    if (token === "bob") return { userId: "did:privy:bob", wallets: [] };
     throw new PrivySessionError("nope");
   },
 };
 
 interface WalletCalls {
   created: string[];
+  found: string[];
   typed: Array<{ walletId: string; typed: TypedDataInput }>;
   messages: Array<{ walletId: string; message: string }>;
 }
 
 type FakeWallet = WalletApi & { calls: WalletCalls };
 
-function fakeWallet(): FakeWallet {
-  const calls: WalletCalls = { created: [], typed: [], messages: [] };
+function fakeWallet(options: { found?: { id: string; address: string } } = {}): FakeWallet {
+  const calls: WalletCalls = { created: [], found: [], typed: [], messages: [] };
   let serial = 0;
   return {
     calls,
@@ -43,6 +50,10 @@ function fakeWallet(): FakeWallet {
       calls.created.push(externalId);
       serial += 1;
       return { id: `privy-wallet-${serial}`, address: ADDRESS };
+    },
+    async findWallet(externalId) {
+      calls.found.push(externalId);
+      return options.found ?? null;
     },
     async signTypedData(walletId, typed) {
       calls.typed.push({ walletId, typed });
@@ -63,6 +74,7 @@ function fakeWallet(): FakeWallet {
 interface TestHub {
   url: string;
   store: Store;
+  cliStore: CliAuthStore;
   rail: FakeRail;
   wallets: FakeWallet;
   setNow: (at: number) => void;
@@ -104,9 +116,10 @@ function remember(secret: string): void {
   secrets.add(secret);
 }
 
-function startCliHub(): TestHub {
+function startCliHub(options: { found?: { id: string; address: string } } = {}): TestHub {
   const store = new Store(":memory:");
-  const wallets = fakeWallet();
+  const wallets = fakeWallet(options);
+  const cliStore = new CliAuthStore(":memory:");
   const rail = new FakeRail("escrow");
   let now = NOW;
   const deps: HubDeps = {
@@ -116,7 +129,7 @@ function startCliHub(): TestHub {
     publicUrl: "http://hub.test",
     privy: verifier,
     cliAuth: {
-      store: new CliAuthStore(":memory:"),
+      store: cliStore,
       wallets,
       consoleUrl: "https://console.test",
     },
@@ -130,6 +143,7 @@ function startCliHub(): TestHub {
   const hub: TestHub = {
     url: `http://127.0.0.1:${server.port}`,
     store,
+    cliStore,
     rail,
     wallets,
     setNow: (at) => {
@@ -365,6 +379,126 @@ describe("the CLI device flow", () => {
     const second = await postJson(hub, "/cli/login/poll", { deviceSecret: started.deviceSecret });
     expect(second.status).toBe(410);
     expect(((await second.json()) as ErrorBody).code).toBe("used");
+  });
+
+  test("a lost wallet mapping finds the Privy wallet by external id instead of creating one", async () => {
+    const hub = startCliHub({ found: { id: "w-existing", address: ADDRESS } });
+    const session = await login(hub);
+
+    expect(session.address).toBe(ADDRESS);
+    expect(hub.wallets.calls.created).toHaveLength(0);
+    expect(hub.wallets.calls.found).toHaveLength(1);
+    expect(hub.wallets.calls.found[0]).toMatch(/^cs_[0-9a-f]{40}$/);
+  });
+
+  test("a code approves once", async () => {
+    const hub = startCliHub();
+    const started = await startLogin(hub);
+
+    const first = await postJson(
+      hub,
+      "/cli/login/approve",
+      { code: started.code },
+      { [PRIVY_HEADER]: "alice" },
+    );
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ code: started.code, address: ADDRESS });
+
+    const second = await postJson(
+      hub,
+      "/cli/login/approve",
+      { code: started.code },
+      { [PRIVY_HEADER]: "bob" },
+    );
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as ErrorBody).code).toBe("already-approved");
+    expect(hub.wallets.calls.created).toHaveLength(1);
+
+    const polled = await postJson(hub, "/cli/login/poll", { deviceSecret: started.deviceSecret });
+    expect(polled.status).toBe(200);
+    const session = (await polled.json()) as { status: string; sessionToken: string; address: string };
+    expect(session.status).toBe("approved");
+    expect(session.address).toBe(ADDRESS);
+    remember(session.sessionToken);
+
+    const stored = hub.cliStore.getSession(
+      createHash("sha256").update(session.sessionToken).digest("hex"),
+    );
+    expect(stored?.userId).toBe("did:privy:alice");
+    expect(stored?.walletId).toBe("privy-wallet-1");
+  });
+});
+
+describe("the Privy wallet API", () => {
+  test("createWallet sends only fields Privy accepts", async () => {
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      requests.push({
+        url,
+        method,
+        headers: new Headers(init?.headers),
+        body: typeof init?.body === "string" ? init.body : "",
+      });
+      if (method === "GET") {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "w1",
+                address: "0xABCDEF0123456789abcdef0123456789ABCDEF01",
+                chain_type: "ethereum",
+                external_id: "cs_x",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ id: "w1", address: "0x1111111111111111111111111111111111111111" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+
+    const api = privyWalletApi("app", "secret", { fetchImpl });
+    const created = await api.createWallet("cs_x");
+    expect(created).toEqual({ id: "w1", address: "0x1111111111111111111111111111111111111111" });
+
+    const plain = requests[0]!;
+    expect(plain.method).toBe("POST");
+    expect(plain.url).toBe("https://api.privy.io/v1/wallets");
+    expect(Object.keys(JSON.parse(plain.body) as Record<string, unknown>).sort()).toEqual([
+      "chain_type",
+      "external_id",
+    ]);
+    expect(plain.headers.get("content-type")).toBe("application/json");
+    for (const name of plain.headers.keys()) {
+      expect(name.toLowerCase().includes("idempotency")).toBe(false);
+    }
+
+    const withPolicy = privyWalletApi("app", "secret", { policyId: "p1", fetchImpl });
+    await withPolicy.createWallet("cs_x");
+
+    const policy = requests[1]!;
+    const policyBody = JSON.parse(policy.body) as Record<string, unknown>;
+    expect(Object.keys(policyBody).sort()).toEqual(["chain_type", "external_id", "policy_ids"]);
+    expect(policyBody.policy_ids).toEqual(["p1"]);
+    for (const name of policy.headers.keys()) {
+      expect(name.toLowerCase().includes("idempotency")).toBe(false);
+    }
+
+    expect(await api.findWallet("cs_x")).toEqual({
+      id: "w1",
+      address: "0xabcdef0123456789abcdef0123456789abcdef01",
+    });
+    expect(await api.findWallet("cs_y")).toBeNull();
+
+    const lookup = requests[2]!;
+    expect(lookup.method).toBe("GET");
+    expect(lookup.url).toContain("external_id=cs_x");
+    expect(lookup.headers.get("content-type")).toBeNull();
   });
 });
 

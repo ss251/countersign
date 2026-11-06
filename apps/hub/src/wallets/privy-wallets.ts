@@ -7,6 +7,7 @@ export interface TypedDataInput {
 
 export interface WalletApi {
   createWallet(externalId: string): Promise<{ id: string; address: string }>;
+  findWallet(externalId: string): Promise<{ id: string; address: string } | null>;
   signTypedData(walletId: string, typed: TypedDataInput): Promise<string>;
   personalSign(walletId: string, message: string): Promise<string>;
 }
@@ -28,20 +29,47 @@ export function privyWalletApi(
   const headers = {
     authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString("base64")}`,
     "privy-app-id": appId,
-    "content-type": "application/json",
   };
   async function post(path: string, body: unknown): Promise<Record<string, unknown>> {
-    const response = await doFetch(`${base}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+    const response = await doFetch(`${base}${path}`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new WalletApiError(response.status);
+    return (await response.json()) as Record<string, unknown>;
+  }
+  async function get(path: string): Promise<Record<string, unknown>> {
+    const response = await doFetch(`${base}${path}`, { method: "GET", headers });
     if (!response.ok) throw new WalletApiError(response.status);
     return (await response.json()) as Record<string, unknown>;
   }
   return {
     async createWallet(externalId) {
-      const body: Record<string, unknown> = { chain_type: "ethereum", external_id: externalId, idempotency_key: externalId };
+      const body: Record<string, unknown> = { chain_type: "ethereum", external_id: externalId };
       if (options.policyId) body.policy_ids = [options.policyId];
       const out = await post("/v1/wallets", body);
       if (typeof out.id !== "string" || typeof out.address !== "string") throw new WalletApiError(502);
       return { id: out.id, address: out.address.toLowerCase() };
+    },
+    async findWallet(externalId) {
+      const out = await get(
+        `/v1/wallets?chain_type=ethereum&external_id=${encodeURIComponent(externalId)}`,
+      );
+      const data = out.data;
+      if (!Array.isArray(data)) return null;
+      for (const entry of data) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const wallet = entry as Record<string, unknown>;
+        if (
+          wallet.external_id === externalId &&
+          typeof wallet.id === "string" &&
+          typeof wallet.address === "string"
+        ) {
+          return { id: wallet.id, address: wallet.address.toLowerCase() };
+        }
+      }
+      return null;
     },
     async signTypedData(walletId, typed) {
       const out = await post(`/v1/wallets/${encodeURIComponent(walletId)}/rpc`, {

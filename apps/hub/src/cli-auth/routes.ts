@@ -68,12 +68,17 @@ async function approveLogin(c: Context, deps: CliAuthDeps): Promise<Response> {
   if (login === null || login.consumed || login.expiresAt <= now) {
     return fail(404, "unknown-code", "Refused. That code is not valid.");
   }
+  if (login.userId !== null) {
+    return fail(409, "already-approved", "Refused. That code was already approved.");
+  }
 
   let wallet = deps.store.getWallet(signIn.person.userId);
   if (wallet === null) {
     try {
       const externalId = `cs_${hash(signIn.person.userId).slice(0, 40)}`;
-      const created = await deps.wallets.createWallet(externalId);
+      const created =
+        (await deps.wallets.findWallet(externalId)) ??
+        (await deps.wallets.createWallet(externalId));
       deps.store.putWallet(
         signIn.person.userId,
         created.id,

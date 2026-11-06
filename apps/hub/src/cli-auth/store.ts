@@ -112,7 +112,9 @@ export class CliAuthStore {
   }
 
   approveLogin(code: string, userId: string): void {
-    this.db.query("UPDATE cli_logins SET user_id = ? WHERE code = ?").run(userId, code);
+    this.db
+      .query("UPDATE cli_logins SET user_id = ? WHERE code = ? AND user_id IS NULL")
+      .run(userId, code);
   }
 
   consumeLogin(code: string): void {

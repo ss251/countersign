@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
 import { runCanary } from "./canary.ts";
@@ -53,7 +53,10 @@ const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(priv
 const cliAuth =
   privyAppId !== "" && privySecret !== ""
     ? {
-        store: new CliAuthStore(process.env.HUB_CLI_DB ?? ":memory:"),
+        store: new CliAuthStore(
+          process.env.HUB_CLI_DB ??
+            (dbPath === ":memory:" ? ":memory:" : join(dirname(resolve(dbPath)), "cli-auth.sqlite")),
+        ),
         wallets: privyWalletApi(privyAppId, privySecret, {
           policyId: process.env.PRIVY_WALLET_POLICY_ID,
         }),
