@@ -67,3 +67,62 @@ Every test passes, with none skipped. Commit on `cs/hd-06` with short present-te
 
 - mppx cannot verify a credential for a recipient chosen per request without a new method instance per recipient, and per-recipient instances break replay protection: stop and explain.
 - A change outside the lease looks necessary: stop and explain in the report.
+
+---
+
+# Part B: the hedera agent tests become hermetic (orch-cs's flake report)
+
+Do Part B after Part A, in the same worktree, with separate commits ending `refs #6`.
+
+## Goal
+
+Two tests in `packages/buyer/src/hedera/test/agent.test.ts` have each failed once inside a full `bun test` run, and passed on every rerun:
+
+- "a non-200 after paying logs a spend when the mirror shows the transfer landed";
+- "a trusted fee payer from the explicit list pays".
+
+Each failure came about 30 ms into the test. Neither has reproduced since: not in 18 full-suite runs, and not in 48 contended runs of the file alone. No root cause is known.
+
+These tests still touch three things outside themselves:
+
+1. real sockets to a `Bun.serve` hub;
+2. the process-wide `fetch`;
+3. a `Client.forTestnet()` built inside the signer for every payment, which picks testnet nodes at random.
+
+Remove all three from the tests, so that nothing outside the test can change their outcome. Then make a future failure say what happened.
+
+## Lease (Part B)
+
+- `packages/buyer/src/hedera/test/agent.test.ts`
+- `packages/buyer/src/hedera/signer.ts`: one new optional field in `SignOptions`, and the branch that uses it
+- `packages/buyer/src/hedera/agent.ts`: one new optional field in `HederaAgentOptions`, passed through to the signer
+- the same report file, with a Part B section
+
+## Required (Part B)
+
+1. **`signer.ts`.**
+   - `SignOptions` gains `nodeAccountIds?: string[]`.
+   - When it is set and non-empty, `signHederaTransfer` sets those node account ids on the transfer and freezes it without creating any `Client`.
+   - When it is unset, behaviour is exactly as today. Production code never sets it.
+2. **`agent.ts`.** `HederaAgentOptions` gains `sign?: SignOptions`, passed as the fourth argument to `hederaPayment`. Nothing else changes.
+3. **`agent.test.ts`.**
+   - Every agent the file builds gets two options:
+     - `fetch`, which dispatches to the in-process fake hub with Bun's `server.fetch(new Request(input, init))`, so no request leaves the process or opens a socket;
+     - `sign: { nodeAccountIds: ["0.0.3"] }`.
+   - Every test that checks an outcome uses `expect(outcome).toMatchObject({ kind: … })`, adding fields where the test checked them one by one, so a failure prints the whole outcome: status, message, reason.
+   - Add `beforeAll`/`afterAll` hooks that make `globalThis.fetch` throw `Error("network used in a hermetic test")` for the duration of this file, and restore the original afterwards. The mirror mocks already pass their own `fetch`.
+   - The two tests named above keep their names and assertions. Only their plumbing changes.
+
+## Tests (Part B)
+
+- A signer unit test: with `nodeAccountIds: ["0.0.3"]`, the signed transfer decodes (`decodeTransfer`) with node `0.0.3`, and the same id, memo and amounts as before.
+- The whole agent file passes with the network-throwing global `fetch` installed.
+
+## Acceptance (Part B, in addition to Part A's)
+
+```
+for i in $(seq 1 30); do bun test packages/buyer/src/hedera/test/agent.test.ts > /dev/null 2>&1 || { echo "failed on run $i"; exit 1; }; done; echo "30/30"
+bun test
+```
+
+The loop prints `30/30`, and the full suite passes. Say in the report that the original failure never reproduced locally, so these changes remove its possible causes rather than fix a known one.
