@@ -299,16 +299,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
         maxTimeoutSeconds,
         extra: {
           offerHash: hash,
-          mpp: {
-            wwwAuthenticate,
-            methods,
-            amounts: Object.fromEntries(
-              methods.map((method) => [
-                method,
-                method === "stripe" ? (price / ATOMIC_PER_CENT).toString() : price.toString(),
-              ]),
-            ),
-          },
+          mpp: { wwwAuthenticate, methods },
         },
       };
     },

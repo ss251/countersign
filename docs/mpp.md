@@ -30,7 +30,9 @@ is `mpp:stripe` when the card method is offered, otherwise `mpp:tempo`.
 `extra.mpp.wwwAuthenticate` carries every eligible MPP method, and
 `extra.mpp.methods` lists them. `extra.offerHash` binds the challenge to the
 offer; the MPP challenges repeat it as `externalId`, so a receipt names the
-offer.
+offer. When both methods are offered, `requirements.amount` is the card amount
+in cents; the stablecoin amount lives in the Tempo challenge, which the rail
+also HMAC-binds.
 
 ## Why the declaration describes the stablecoin method
 
