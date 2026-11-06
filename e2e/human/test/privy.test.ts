@@ -6,6 +6,7 @@ import {
   recordPrivyRequestFailure,
   recordPrivyResponse,
   signIn,
+  waitForModalClosed,
 } from "../lib/privy.ts";
 
 describe("the Privy outage filter", () => {
@@ -100,6 +101,39 @@ describe("the Privy sign-in click", () => {
   });
 });
 
+describe("the Privy modal close", () => {
+  test("resolves once #privy-modal-content turns hidden", async () => {
+    let checks = 0;
+    const content = fakeLocator({
+      count: async () => 1,
+      isVisible: async () => {
+        checks += 1;
+        return checks < 2;
+      },
+    });
+    const page = fakeLocator({
+      locator: (selector: string) => (selector === "#privy-modal-content" ? content : emptyLocator()),
+      getByText: () => emptyLocator(),
+    });
+
+    await waitForModalClosed(page as unknown as Page, 2_000);
+
+    expect(checks).toBe(2);
+  });
+
+  test("throws when the content stays visible past the timeout", async () => {
+    const content = fakeLocator({ count: async () => 1, isVisible: async () => true });
+    const page = fakeLocator({
+      locator: (selector: string) => (selector === "#privy-modal-content" ? content : emptyLocator()),
+      getByText: () => emptyLocator(),
+    });
+
+    await expect(waitForModalClosed(page as unknown as Page, 300)).rejects.toThrow(
+      "Privy's modal did not close within 0.3 s",
+    );
+  });
+});
+
 interface SignInLog {
   placeholder: RegExp | undefined;
   buttonQueries: string[];
@@ -117,6 +151,7 @@ function fakeLocator(overrides: Record<string, unknown> = {}): Locator {
     count: async () => 1,
     nth: () => fake,
     isVisible: async () => true,
+    isEnabled: async () => true,
     first: () => fake,
     or: () => fake,
     waitFor: async () => undefined,
@@ -294,6 +329,21 @@ function fakeSignPrompt(errors: number): { page: Page; prompt: SignPrompt } {
   return { page: page as unknown as Page, prompt };
 }
 
+/** A fake dialog that offers `button` as its only sign button. */
+function fakePromptPage(button: Locator): Page {
+  const dialog = fakeLocator({
+    getByRole: (role: string) => (role === "button" ? button : emptyLocator()),
+    getByText: () => emptyLocator(),
+  });
+
+  const page = fakeLocator({
+    getByRole: (role: string) => (role === "dialog" ? dialog : emptyLocator()),
+    waitForTimeout: async () => undefined,
+  });
+
+  return page as unknown as Page;
+}
+
 describe("the Privy signature retry", () => {
   test("an error once and then a closed prompt takes two clicks", async () => {
     const { page, prompt } = fakeSignPrompt(1);
@@ -330,5 +380,95 @@ describe("the Privy signature retry", () => {
     expect(clicks).toBe(1);
     expect(prompt.clicks).toBe(1);
     expect(prompt.waits).not.toContain(2_000);
+  });
+
+  test("a disabled button that goes away is not a prompt", async () => {
+    let checks = 0;
+    let gone = false;
+    let clickAttempts = 0;
+    const button = fakeLocator({
+      count: async () => (gone ? 0 : 1),
+      isVisible: async () => !gone,
+      isEnabled: async () => {
+        checks += 1;
+        if (checks >= 3) gone = true;
+        return false;
+      },
+      click: async () => {
+        clickAttempts += 1;
+      },
+    });
+
+    const clicks = await approveIfPrompted(fakePromptPage(button), 300);
+
+    expect(clicks).toBe(0);
+    expect(clickAttempts).toBe(0);
+  });
+
+  test("a button disabled at first is clicked once it is enabled", async () => {
+    let checks = 0;
+    let open = true;
+    let clickAttempts = 0;
+    const button = fakeLocator({
+      count: async () => (open ? 1 : 0),
+      isVisible: async () => open,
+      isEnabled: async () => {
+        checks += 1;
+        return checks > 2;
+      },
+      click: async () => {
+        clickAttempts += 1;
+        open = false;
+      },
+    });
+
+    const clicks = await approveIfPrompted(fakePromptPage(button), 300);
+
+    expect(clicks).toBe(1);
+    expect(clickAttempts).toBe(1);
+  });
+
+  test("a click that fails because the button went away goes back to waiting", async () => {
+    let open = true;
+    let clickAttempts = 0;
+    const button = fakeLocator({
+      count: async () => (open ? 1 : 0),
+      isVisible: async () => open,
+      isEnabled: async () => open,
+      click: async () => {
+        clickAttempts += 1;
+        open = false;
+        throw new Error("Timeout 5000ms exceeded");
+      },
+    });
+
+    const clicks = await approveIfPrompted(fakePromptPage(button), 300);
+
+    expect(clicks).toBe(0);
+    expect(clickAttempts).toBe(1);
+  });
+
+  test("a click that fails while the button is still ready rethrows", async () => {
+    const failure = new Error("Timeout 5000ms exceeded");
+    let clickAttempts = 0;
+    const button = fakeLocator({
+      count: async () => 1,
+      isVisible: async () => true,
+      isEnabled: async () => true,
+      click: async () => {
+        clickAttempts += 1;
+        throw failure;
+      },
+    });
+    let caught: unknown;
+
+    try {
+      await approveIfPrompted(fakePromptPage(button), 300);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(clickAttempts).toBe(1);
+    expect(caught).toBe(failure);
   });
 });

@@ -21,6 +21,7 @@ export const HUMAN_DIR = fileURLToPath(new URL("..", import.meta.url));
 export const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 export const ARTIFACTS_DIR = join(HUMAN_DIR, "artifacts");
 export const RUNS_DIR = join(HUMAN_DIR, "runs");
+export const TEST_RESULTS_DIR = join(HUMAN_DIR, "test-results");
 
 export const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
 export const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
@@ -146,6 +147,7 @@ export class Recorder {
   slip?: string;
   verifier?: string;
   private readonly startedAt = Date.now();
+  private guard?: { leaks(text: string): boolean };
 
   constructor(
     readonly runId: string,
@@ -165,10 +167,27 @@ export class Recorder {
     this.artifacts.push(relative(HUMAN_DIR, file).split(sep).join("/"));
   }
 
-  async screenshot(page: Page, nn: string, slug: string): Promise<void> {
-    mkdirSync(this.dir(), { recursive: true });
+  guardWith(guard: { leaks(text: string): boolean }): void {
+    this.guard = guard;
+  }
+
+  async screenshot(
+    page: Page,
+    nn: string,
+    slug: string,
+    options?: { showPrivy?: boolean },
+  ): Promise<void> {
     const file = this.file(`${nn}-${slug}.png`);
-    await page.screenshot({ path: file });
+    if (this.guard) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      if (this.guard.leaks(text)) {
+        this.note(`${nn}-${slug}: screenshot withheld, the page showed a secret`);
+        return;
+      }
+    }
+    mkdirSync(this.dir(), { recursive: true });
+    const mask = options?.showPrivy ? [] : [page.locator("#privy-modal-content")];
+    await page.screenshot({ path: file, mask });
     this.addArtifact(file);
   }
 
@@ -325,6 +344,7 @@ export interface FinalizeOptions {
   secrets: Secrets;
   artifactsDir?: string;
   runsDir?: string;
+  testResultsDir?: string;
 }
 
 export interface FinalizeResult {
@@ -338,9 +358,12 @@ export interface FinalizeResult {
 export function finalizeReport(options: FinalizeOptions): FinalizeResult {
   const artifactsDir = options.artifactsDir ?? ARTIFACTS_DIR;
   const runsDir = options.runsDir ?? RUNS_DIR;
+  const testResultsDir = options.testResultsDir ?? TEST_RESULTS_DIR;
   const runDir = join(artifactsDir, options.meta.runId);
   const leaked = existsSync(runDir) ? leakScan(runDir, options.secrets) : [];
-  for (const file of leaked) rmSync(file, { force: true });
+  const leakingResults = existsSync(testResultsDir) ? leakScan(testResultsDir, options.secrets) : [];
+  const leaks = [...leaked, ...leakingResults];
+  for (const file of leaks) rmSync(file, { force: true });
 
   const projects = options.projects.map((project) => {
     let artifacts = project.artifacts;
@@ -359,11 +382,11 @@ export function finalizeReport(options: FinalizeOptions): FinalizeResult {
   const latest = join(runsDir, "LATEST.md");
   writeFileSync(latest, `<!-- the latest human acceptance run; its own file is ${options.meta.runId}.md -->\n${text}`);
 
-  for (const file of leaked) {
+  for (const file of leaks) {
     const shown = file.startsWith(`${REPO_ROOT}/`) ? relative(REPO_ROOT, file) : file;
     console.error(`leak: ${shown}`);
   }
-  return { path, latest, leaks: leaked, exitCode: leaked.length > 0 ? 1 : 0, text };
+  return { path, latest, leaks, exitCode: leaks.length > 0 ? 1 : 0, text };
 }
 
 export function gitInfo(): { commit: string; dirty: boolean } {

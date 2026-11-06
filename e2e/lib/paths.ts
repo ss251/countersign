@@ -1,6 +1,6 @@
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Repository root: every child process runs from here. */
@@ -37,4 +37,15 @@ export function redactPaths(text: string, root: string = REAL_ROOT, home: string
     out = out.replace(new RegExp(`${escapeRegExp(home)}(?=/|$)`, "g"), "~");
   }
   return out;
+}
+
+/**
+ * The pinned mppx CLI. An isolated install keeps the rail's copy in its own node_modules; a
+ * hoisted install puts the same binary at the root. The isolated path wins when both exist.
+ */
+export function mppxBin(root: string = ROOT): string {
+  for (const candidate of [join(root, "packages/rail/node_modules/.bin/mppx"), join(root, "node_modules/.bin/mppx")]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`the pinned mppx binary is not installed under ${redactPaths(root)}: run bun install`);
 }
