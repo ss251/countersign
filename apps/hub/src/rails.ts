@@ -1,0 +1,34 @@
+import { privateKeyToAccount } from "viem/accounts";
+import { escrowRail, type Rail } from "@countersign/rail";
+import type { Address, Hex } from "viem";
+
+const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
+
+/**
+ * The rails this hub settles on, from the environment. Keys arrive only by environment.
+ *   ARC_ESCROW, ARC_RPC_URL, CS_RELAYER_KEY  -> rail "escrow" (CountersignedEscrow on Arc testnet, USDC)
+ * Rails from other lanes are added here as they integrate.
+ */
+export async function railsFromEnv(env: Record<string, string | undefined>): Promise<Rail[]> {
+  const rails: Rail[] = [];
+  if (env.ARC_ESCROW && env.ARC_RPC_URL) {
+    rails.push(
+      escrowRail({
+        id: "escrow",
+        chainId: 5042002,
+        rpcUrl: env.ARC_RPC_URL,
+        escrow: env.ARC_ESCROW as Address,
+        token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
+        tokenName: "USDC",
+        tokenVersion: "2",
+        symbol: "USDC",
+        decimals: 6,
+        explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+        finality: "Final in the Arc block that includes the release.",
+        gasPaidBy: "hub",
+        ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
+      }),
+    );
+  }
+  return rails;
+}

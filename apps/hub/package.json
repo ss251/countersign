@@ -8,6 +8,9 @@
     "dev": "bun --watch src/index.ts"
   },
   "dependencies": {
+    "@countersign/core": "workspace:*",
+    "@countersign/rail": "workspace:*",
+    "@x402/extensions": "2.30.0",
     "hono": "^4.13.16",
     "viem": "^2.57.16"
   }

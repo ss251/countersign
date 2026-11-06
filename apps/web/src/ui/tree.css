@@ -1,0 +1,81 @@
+.tree,
+.tree__children {
+  display: grid;
+}
+
+.tree__children {
+  position: relative;
+  margin-left: var(--sp-3);
+  padding-left: var(--sp-5);
+}
+
+/* The trunk: one hairline from the parent down to its last child. */
+.tree__children::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 22px;
+  border-left: 1px solid var(--line);
+}
+
+.tree__children > .tree__node {
+  position: relative;
+}
+
+/* Each branch: a short hairline into the child's row. */
+.tree__children > .tree__node::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--sp-5));
+  top: 22px;
+  width: calc(var(--sp-5) - 6px);
+  border-top: 1px solid var(--line);
+}
+
+.tree__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+}
+
+.tree__row--current {
+  border-color: var(--line);
+  background: var(--raised);
+}
+
+.tree__row--missing {
+  color: var(--seal);
+}
+
+.tree__main {
+  display: grid;
+  min-width: 0;
+}
+
+.tree__title {
+  font-weight: 600;
+}
+
+a.tree__title {
+  color: var(--ink);
+}
+
+.tree__meta {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+@media (max-width: 560px) {
+  .tree__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .tree__row > .hash {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,0 +1,177 @@
+.slip {
+  display: grid;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-8) var(--sp-8);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--raised);
+}
+
+@media (max-width: 640px) {
+  .slip {
+    padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  }
+}
+
+.slip__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.slip__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--slate);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.slip__head-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.slip__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4) var(--sp-8);
+}
+
+.slip__lead-text {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.slip__title {
+  font-size: var(--t-32);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.slip__sub {
+  color: var(--slate);
+}
+
+/* A tear line with a notch at each edge, like the stub of a cheque. */
+.slip__perf {
+  position: relative;
+  height: 0;
+  margin: 0 calc(-1 * var(--sp-8));
+  border-top: 1px dashed var(--line);
+}
+
+.slip__perf::before,
+.slip__perf::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.slip__perf::before {
+  left: -10px;
+  clip-path: inset(0 0 0 50%);
+}
+
+.slip__perf::after {
+  right: -10px;
+  clip-path: inset(0 50% 0 0);
+}
+
+@media (max-width: 640px) {
+  .slip__perf {
+    margin: 0 calc(-1 * var(--sp-4));
+  }
+}
+
+/* The seam: the seller's half and the buyer's half, a hairline apart. */
+.slip__seam {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-6);
+  position: relative;
+}
+
+.slip__seam::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  .slip__seam {
+    grid-template-columns: 1fr;
+  }
+  .slip__seam::before {
+    display: none;
+  }
+}
+
+.slip__half {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding-top: var(--sp-3);
+  border-top: 2px solid var(--ink);
+}
+
+.slip__half--buyer {
+  border-top-color: var(--seal);
+}
+
+.slip__half-title {
+  font-size: var(--t-17);
+}
+
+.slip__half-who {
+  margin-bottom: var(--sp-2);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.slip__half--buyer .slip__half-who {
+  color: var(--seal);
+}
+
+.slip__amount {
+  display: inline-grid;
+  justify-items: end;
+}
+
+.slip__atomic {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.slip__section {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.slip__section-title {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.slip__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+}
