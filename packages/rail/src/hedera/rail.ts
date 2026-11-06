@@ -19,6 +19,7 @@ import { offerMemo } from "./memo.ts";
 import {
   ACCOUNT,
   checkWalletPayment,
+  WALLET_SECRET,
   WALLET_TX_ID,
   walletPayloadOf,
   type WalletPayload,
@@ -209,10 +210,16 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     return { ok: true, payer: result.payer, transaction, transactionId: inspected.transactionId, facilitator };
   }
 
-  /** The wallet id is well formed, its payer is an account, and the id's account is that payer. */
+  /** The wallet id is well formed, its payer is an account, the id's account is that payer, and the secret has a shape. */
   function walletShape(w: WalletPayload): boolean {
     const id = w.walletTransactionId;
-    return WALLET_TX_ID.test(id) && ACCOUNT.test(w.payer) && id.split("@")[0] === w.payer;
+    return (
+      WALLET_TX_ID.test(id) &&
+      ACCOUNT.test(w.payer) &&
+      id.split("@")[0] === w.payer &&
+      typeof w.secret === "string" &&
+      WALLET_SECRET.test(w.secret)
+    );
   }
 
   /** A wallet has already moved the money: shape, replay, the mirror record, then the offer's terms. */
@@ -228,7 +235,7 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
       await new Promise((r) => setTimeout(r, walletPollMs));
     }
     if (!record) return { isValid: false, invalidReason: "payment_not_found", payer: w.payer };
-    const checked = checkWalletPayment(record, requirements, w.payer, now());
+    const checked = checkWalletPayment(record, requirements, w.payer, w.secret, now());
     if (!checked.ok) return { isValid: false, invalidReason: checked.reason, payer: w.payer };
     return { isValid: true, payer: w.payer };
   }
@@ -311,8 +318,15 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     async settle(payment, requirements): Promise<SettleResult> {
       const w = walletPayloadOf(payment.payload);
       if (w) {
-        if (!walletShape(w)) {
-          return { success: false, errorReason: "malformed", payer: w.payer, transaction: "", network: HEDERA_TESTNET };
+        const v = await verifyWallet(w, requirements);
+        if (!v.isValid) {
+          return {
+            success: false,
+            errorReason: v.invalidReason ?? "claim_unproven",
+            payer: w.payer,
+            transaction: "",
+            network: HEDERA_TESTNET,
+          };
         }
         if (!(await seen.claim(w.walletTransactionId))) {
           return { success: false, errorReason: "replay", payer: w.payer, transaction: "", network: HEDERA_TESTNET };

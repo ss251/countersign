@@ -3,38 +3,58 @@
 // This module is browser-safe: the web connector and the headless test wallet share the builder.
 import type { PaymentPayload, PaymentRequirements } from "@countersign/core";
 import { AccountId, Client, TokenId, TransactionId, TransferTransaction } from "@hiero-ledger/sdk";
+import { sha256, type Hex } from "viem";
 import { HEDERA_TESTNET } from "./constants.ts";
-import { offerHashFromMemo, offerMemo } from "./memo.ts";
+import { offerMemo } from "./memo.ts";
 import type { MirrorTransaction } from "./mirror.ts";
 
 export const WALLET_TX_ID = /^0\.0\.\d+@\d+\.\d+$/;
 export const ACCOUNT = /^0\.0\.\d+$/;
+export const WALLET_SECRET = /^[0-9a-f]{64}$/;
 
 export interface WalletPayload {
   walletTransactionId: string;
   payer: string;
+  secret: string;
 }
 
 /** The wallet payload when the payment names one, or null for the facilitator-signed exact path. */
 export function walletPayloadOf(payload: unknown): WalletPayload | null {
   if (typeof payload !== "object" || payload === null) return null;
-  const p = payload as { walletTransactionId?: unknown; payer?: unknown };
+  const p = payload as { walletTransactionId?: unknown; payer?: unknown; secret?: unknown };
   if (typeof p.walletTransactionId !== "string") return null;
-  return { walletTransactionId: p.walletTransactionId, payer: p.payer as string };
+  return { walletTransactionId: p.walletTransactionId, payer: p.payer as string, secret: p.secret as string };
 }
 
-/** Check an executed transfer against the offer it claims to pay. Pure: no clock, no network. */
+/** The 24 hex characters a wallet memo commits to without revealing the secret. */
+export function walletCommitment(secret: string): string {
+  return sha256(`0x${secret}` as Hex).slice(2, 26);
+}
+
+/** The transfer memo: the offer binding plus the buyer's commitment. */
+export function walletMemo(offerHash: string, secret: string): string {
+  return `${offerMemo(offerHash)}.${walletCommitment(secret)}`;
+}
+
+/** A fresh 32-byte secret, lowercase hex. */
+export function newWalletSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Check an executed transfer against the offer and secret it claims to pay. Pure: no clock, no network. */
 export function checkWalletPayment(
   record: MirrorTransaction,
   req: PaymentRequirements,
   payer: string,
+  secret: string,
   nowSeconds: number,
 ): { ok: true } | { ok: false; reason: string } {
   if (record.result !== "SUCCESS" || record.name !== "CRYPTOTRANSFER") {
     return { ok: false, reason: "payment_failed" };
   }
-  if (offerHashFromMemo(record.memo)?.toLowerCase() !== String(req.extra?.offerHash).toLowerCase()) {
-    return { ok: false, reason: "memo_mismatch" };
+  if (record.memo.toLowerCase() !== walletMemo(String(req.extra?.offerHash), secret)) {
+    return { ok: false, reason: "claim_unproven" };
   }
   const amount = BigInt(req.amount);
   const nets = new Map<string, bigint>();
@@ -64,14 +84,14 @@ export function findHederaExact(accepts: PaymentRequirements[]): PaymentRequirem
 export function buildWalletTransfer(
   req: PaymentRequirements,
   payer: string,
-  opts: { nodeAccountIds?: string[] } = {},
+  opts: { secret: string; nodeAccountIds?: string[] },
 ): TransferTransaction {
   const amount = BigInt(req.amount);
   const token = TokenId.fromString(req.asset);
   const tx = new TransferTransaction()
     .addTokenTransfer(token, AccountId.fromString(payer), -amount)
     .addTokenTransfer(token, AccountId.fromString(req.payTo), amount)
-    .setTransactionMemo(offerMemo(String(req.extra?.offerHash)))
+    .setTransactionMemo(walletMemo(String(req.extra?.offerHash), opts.secret))
     .setTransactionId(TransactionId.generate(AccountId.fromString(payer)))
     .setTransactionValidDuration(120);
   const nodeAccountIds = opts.nodeAccountIds;
@@ -114,6 +134,7 @@ export function walletPaymentPayload(
   req: PaymentRequirements,
   transactionId: string,
   payer: string,
+  secret: string,
 ): PaymentPayload {
-  return { x402Version: 2, accepted: req, payload: { walletTransactionId: transactionId, payer } };
+  return { x402Version: 2, accepted: req, payload: { walletTransactionId: transactionId, payer, secret } };
 }

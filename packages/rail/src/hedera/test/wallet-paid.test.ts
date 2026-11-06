@@ -3,7 +3,6 @@ import type { PaymentPayload, PaymentRequirements } from "@countersign/core";
 import { TransferTransaction } from "@hiero-ledger/sdk";
 import { HEDERA_TESTNET, USDC_TESTNET } from "../constants.ts";
 import type { Facilitator } from "../facilitator.ts";
-import { offerMemo } from "../memo.ts";
 import type { MirrorTransaction } from "../mirror.ts";
 import { createHederaRail, type HederaRailOptions } from "../rail.ts";
 import { toMirrorTxId } from "../txid.ts";
@@ -14,6 +13,7 @@ import {
   findHederaExact,
   signAndExecuteParams,
   WALLET_TX_ID,
+  walletMemo,
   walletPaymentPayload,
   walletPayloadOf,
   walletTransactionList,
@@ -22,6 +22,7 @@ import { FEE_PAYER, OFFER_HASH, PAYEE, PAYER } from "./fixtures.ts";
 
 const NOW = 1_793_957_000;
 const TX = `${PAYER}@${NOW}.000000001`;
+const SECRET = "5c".repeat(32);
 
 function requirement(over: Partial<PaymentRequirements> = {}): PaymentRequirements {
   return {
@@ -42,7 +43,7 @@ function record(over: Partial<MirrorTransaction> = {}): MirrorTransaction {
     result: "SUCCESS",
     name: "CRYPTOTRANSFER",
     consensusTimestamp: `${NOW - 1}.000000001`,
-    memo: offerMemo(OFFER_HASH),
+    memo: walletMemo(OFFER_HASH, SECRET),
     hbar: [],
     tokens: {
       [USDC_TESTNET]: [
@@ -109,7 +110,11 @@ async function makeRail(over: Partial<HederaRailOptions> = {}, known: MirrorTran
 
 describe("wallet payload and checks", () => {
   test("walletPayloadOf takes a string id and leaves every other payload to the exact path", () => {
-    expect(walletPayloadOf({ walletTransactionId: TX, payer: PAYER })).toEqual({ walletTransactionId: TX, payer: PAYER });
+    expect(walletPayloadOf({ walletTransactionId: TX, payer: PAYER, secret: SECRET })).toEqual({
+      walletTransactionId: TX,
+      payer: PAYER,
+      secret: SECRET,
+    });
     expect(walletPayloadOf({ transaction: "base64" })).toBeNull();
     expect(walletPayloadOf({ walletTransactionId: 7, payer: PAYER })).toBeNull();
     expect(walletPayloadOf(null)).toBeNull();
@@ -120,9 +125,9 @@ describe("wallet payload and checks", () => {
     const req = requirement();
     expect(WALLET_TX_ID.test(TX)).toBe(true);
     expect(ACCOUNT.test(PAYER)).toBe(true);
-    expect(checkWalletPayment(record(), req, PAYER, NOW)).toEqual({ ok: true });
+    expect(checkWalletPayment(record(), req, PAYER, SECRET, NOW)).toEqual({ ok: true });
     // The freshness floor is inclusive: maxTimeoutSeconds + 300 seconds old still passes.
-    expect(checkWalletPayment(record({ consensusTimestamp: `${NOW - 420}.000000001` }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ consensusTimestamp: `${NOW - 420}.000000001` }), req, PAYER, SECRET, NOW)).toEqual({
       ok: true,
     });
   });
@@ -131,21 +136,21 @@ describe("wallet payload and checks", () => {
     const req = requirement();
     const tokens = (rows: { account: string; amount: bigint }[]) => ({ [USDC_TESTNET]: rows });
 
-    expect(checkWalletPayment(record({ result: "FAILED" }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ result: "FAILED" }), req, PAYER, SECRET, NOW)).toEqual({
       ok: false,
       reason: "payment_failed",
     });
-    expect(checkWalletPayment(record({ name: "TOKENASSOCIATE" }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ name: "TOKENASSOCIATE" }), req, PAYER, SECRET, NOW)).toEqual({
       ok: false,
       reason: "payment_failed",
     });
-    expect(checkWalletPayment(record({ memo: "cs1:" + "0".repeat(64) }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ memo: "cs1:" + "0".repeat(64) }), req, PAYER, SECRET, NOW)).toEqual({
       ok: false,
-      reason: "memo_mismatch",
+      reason: "claim_unproven",
     });
-    expect(checkWalletPayment(record({ memo: "not a countersign memo" }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ memo: "not a countersign memo" }), req, PAYER, SECRET, NOW)).toEqual({
       ok: false,
-      reason: "memo_mismatch",
+      reason: "claim_unproven",
     });
     expect(
       checkWalletPayment(
@@ -157,6 +162,7 @@ describe("wallet payload and checks", () => {
         }),
         req,
         PAYER,
+        SECRET,
         NOW,
       ),
     ).toEqual({ ok: false, reason: "amount_mismatch" });
@@ -170,6 +176,7 @@ describe("wallet payload and checks", () => {
         }),
         req,
         PAYER,
+        SECRET,
         NOW,
       ),
     ).toEqual({ ok: false, reason: "amount_mismatch" });
@@ -184,10 +191,11 @@ describe("wallet payload and checks", () => {
         }),
         req,
         PAYER,
+        SECRET,
         NOW,
       ),
     ).toEqual({ ok: false, reason: "amount_mismatch" });
-    expect(checkWalletPayment(record({ consensusTimestamp: `${NOW - 421}.000000001` }), req, PAYER, NOW)).toEqual({
+    expect(checkWalletPayment(record({ consensusTimestamp: `${NOW - 421}.000000001` }), req, PAYER, SECRET, NOW)).toEqual({
       ok: false,
       reason: "stale_payment",
     });
@@ -209,13 +217,13 @@ describe("wallet payload and checks", () => {
 describe("buildWalletTransfer", () => {
   test("freezes the payer's debit, the seller's credit, the memo and a 120 s window", () => {
     const req = requirement();
-    const tx = buildWalletTransfer(req, PAYER, { nodeAccountIds: ["0.0.3"] });
+    const tx = buildWalletTransfer(req, PAYER, { secret: SECRET, nodeAccountIds: ["0.0.3"] });
     const list = walletTransactionList(tx);
 
     const decoded = TransferTransaction.fromBytes(Buffer.from(list, "base64"));
     expect(decoded).toBeInstanceOf(TransferTransaction);
     const t = decoded as TransferTransaction;
-    expect(t.transactionMemo).toBe(offerMemo(String(req.extra!.offerHash)));
+    expect(t.transactionMemo).toBe(walletMemo(String(req.extra!.offerHash), SECRET));
     expect(t.transactionMemo.startsWith("cs1:")).toBe(true);
     expect(t.transactionId!.accountId!.toString()).toBe(PAYER);
     expect(t.transactionValidDuration).toBe(120);
@@ -245,7 +253,7 @@ describe("hedera rail wallet branch", () => {
   test("a wallet payment verifies on the mirror and settles without a facilitator", async () => {
     const { rail, calls } = await makeRail();
     const req = requirement();
-    const payment = walletPaymentPayload(req, TX, PAYER);
+    const payment = walletPaymentPayload(req, TX, PAYER, SECRET);
 
     expect(await rail.verify(payment, req)).toEqual({ isValid: true, payer: PAYER });
     expect(await rail.settle(payment, req)).toEqual({
@@ -260,7 +268,7 @@ describe("hedera rail wallet branch", () => {
   test("a settled wallet payment is a replay on both paths", async () => {
     const { rail, calls } = await makeRail();
     const req = requirement();
-    const payment = walletPaymentPayload(req, TX, PAYER);
+    const payment = walletPaymentPayload(req, TX, PAYER, SECRET);
 
     expect((await rail.settle(payment, req)).success).toBe(true);
     expect(await rail.verify(payment, req)).toEqual({ isValid: false, invalidReason: "replay", payer: PAYER });
@@ -278,9 +286,9 @@ describe("hedera rail wallet branch", () => {
     const { rail, calls } = await makeRail({}, null);
     const req = requirement();
     const cases: { payment: PaymentPayload; payer: string }[] = [
-      { payment: walletPaymentPayload(req, "0.0.1", PAYER), payer: PAYER },
-      { payment: walletPaymentPayload(req, TX, "0.0"), payer: "0.0" },
-      { payment: walletPaymentPayload(req, `${PAYEE}@${NOW}.000000001`, PAYER), payer: PAYER },
+      { payment: walletPaymentPayload(req, "0.0.1", PAYER, SECRET), payer: PAYER },
+      { payment: walletPaymentPayload(req, TX, "0.0", SECRET), payer: "0.0" },
+      { payment: walletPaymentPayload(req, `${PAYEE}@${NOW}.000000001`, PAYER, SECRET), payer: PAYER },
     ];
     for (const c of cases) {
       expect(await rail.verify(c.payment, req)).toEqual({
@@ -302,7 +310,7 @@ describe("hedera rail wallet branch", () => {
   test("an unseen wallet payment is payment_not_found once the wait is over", async () => {
     const { rail } = await makeRail({ walletWaitMs: 0 }, null);
     const req = requirement();
-    expect(await rail.verify(walletPaymentPayload(req, TX, PAYER), req)).toEqual({
+    expect(await rail.verify(walletPaymentPayload(req, TX, PAYER, SECRET), req)).toEqual({
       isValid: false,
       invalidReason: "payment_not_found",
       payer: PAYER,
@@ -314,7 +322,7 @@ describe("hedera rail wallet branch", () => {
     const tokens = (rows: { account: string; amount: bigint }[]) => ({ [USDC_TESTNET]: rows });
     const cases: { why: string; known: MirrorTransaction; reason: string }[] = [
       { why: "failed", known: record({ result: "FAILED" }), reason: "payment_failed" },
-      { why: "another memo", known: record({ memo: "cs1:" + "1".repeat(64) }), reason: "memo_mismatch" },
+      { why: "another memo", known: record({ memo: "cs1:" + "1".repeat(64) }), reason: "claim_unproven" },
       {
         why: "29999",
         known: record({
@@ -354,7 +362,7 @@ describe("hedera rail wallet branch", () => {
     ];
     for (const c of cases) {
       const { rail } = await makeRail({}, c.known);
-      expect({ why: c.why, result: await rail.verify(walletPaymentPayload(req, TX, PAYER), req) }).toEqual({
+      expect({ why: c.why, result: await rail.verify(walletPaymentPayload(req, TX, PAYER, SECRET), req) }).toEqual({
         why: c.why,
         result: { isValid: false, invalidReason: c.reason, payer: PAYER },
       });
