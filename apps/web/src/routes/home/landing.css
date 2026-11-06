@@ -988,3 +988,120 @@ button.landing__figures::after {
     animation: none;
   }
 }
+
+/* The life of one payment: four steps from the hub's own records (STEER-2058). */
+.story--life {
+  --lines: 3.6;
+}
+
+/* Under the statement: one row of steps over a single hairline rail. */
+.story__life {
+  position: absolute;
+  top: calc(var(--beat) * var(--lines));
+  right: 0;
+  left: 0;
+  pointer-events: auto;
+}
+
+.life {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding-top: var(--sp-5);
+  border-top: var(--hair) solid var(--line);
+}
+
+.life__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-2);
+  align-content: start;
+  min-width: 0;
+  color: var(--slate);
+  opacity: 0.35;
+  transform: translateY(8px);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+
+.life__step.is-on,
+.life__step.is-done {
+  color: var(--ink);
+  opacity: 1;
+  transform: none;
+}
+
+.life__step.is-exit {
+  opacity: 0;
+}
+
+.life__n {
+  min-width: 4ch;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.life__step.is-on .life__n,
+.life__step.is-done .life__n {
+  color: var(--ink);
+}
+
+.life__label {
+  font-size: var(--t-15);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.life__step .story__lines,
+.life__step .story__go,
+.life__quiet {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.life__step .story__go {
+  justify-self: start;
+}
+
+.life__quiet {
+  font-size: var(--t-13);
+}
+
+/* A phone: one column of steps, and only the current step says its lines. */
+@media (max-width: 720px) {
+  .life__step:not(.is-on) :is(.story__lines, .story__go, .life__quiet) {
+    display: none;
+  }
+}
+
+/* 1440 and every wide screen: four equal columns, all of them legible, nothing under 14 px. */
+@media (min-width: 721px) {
+  .life {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--sp-6);
+  }
+
+  .life__n {
+    font-size: var(--t-14);
+  }
+
+  .life__label {
+    font-size: var(--t-16);
+  }
+
+  .life__quiet {
+    font-size: var(--t-14);
+  }
+}
+
+/* Less motion: a static section already holds its own state; nothing moves or is placed by a transform. */
+.story--static .life__step {
+  transform: none;
+  transition: none;
+}
