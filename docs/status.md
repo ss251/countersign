@@ -2,7 +2,7 @@
 
 What countersign has built, what is still on a branch, and what is only a design. Every row was checked against the code, not against another page. If any other page in this repository disagrees with this one, the other page is wrong.
 
-Checked on 06 Nov 2026 against `cs/int` at `232ce7f`. This file reaches `main` in the same promotion as the code it describes, so each status holds for `main` from that promotion on. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
+Checked on 06 Nov 2026 against `cs/int` at `232ce7f`. `SHIPPED` means on `main`. A row merged into `cs/int` says so, and the promotion that carries it to `main` flips it. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
 
 | Status | Meaning |
 |---|---|
@@ -78,7 +78,7 @@ A pull request that changes a row's status changes it here too.
 | `mcp` adapter | `IN PROGRESS` | Merged into `cs/int` via [#107](https://github.com/ss251/countersign/pull/107) (`4cc957c`), not on `main` until promoted. A runner built from it serves the production hub's MCP offer (next row) | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` in `packages/core/src/types.ts` |
 | Hedera Agent Kit MCP server as a metered listing, paid per call on Hedera | `IN PROGRESS` | [#42](https://github.com/ss251/countersign/issues/42). Merged into `cs/int` via [#107](https://github.com/ss251/countersign/pull/107) (`4cc957c`), not on `main` until promoted. Live on the production hub as offer `0xa594…d04f`: paid with no human in [`0.0.9185802@1793969029.758994311`](https://hashscan.io/testnet/transaction/0.0.9185802@1793969029.758994311) | |
 | `openapi` adapter | `NOT BUILT` | No branch | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` |
-| Phone runner: a phone serves location and photo jobs | `IN PROGRESS` | Merged into `cs/int` via [#104](https://github.com/ss251/countersign/pull/104) and [#121](https://github.com/ss251/countersign/pull/121), not on `main` or hosted yet. Acceptance passed in a browser with phone emulation against the production hub: both jobs released on Arc, [`0xa3898552…ff73`](https://explorer.testnet.arc.io/tx/0xa3898552f658247fc3e4e259ec61e1e99259af762e68a5b885171e41ca98ff73) and [`0xd3fc7654…94a8`](https://explorer.testnet.arc.io/tx/0xd3fc76540f0d91767b56f1c0ebceef077eb0208a044614e207b6bb53bb0994a8) ([#96](https://github.com/ss251/countersign/issues/96)). The photo came from a file, so a real phone camera is not checked yet | |
+| Phone runner: a phone serves location and photo jobs | `IN PROGRESS` | Merged into `cs/int` via #104 (`f2a23f6`) and #121 (`42b28dc`, the escrow is read on Arc before a job is served), not on `main` until promoted, and not hosted on the console yet ([#96](https://github.com/ss251/countersign/issues/96)). Acceptance passed in a browser against the production hub, and both jobs released on Arc: [`0xa389…ff73`](https://explorer.testnet.arc.io/tx/0xa3898552f658247fc3e4e259ec61e1e99259af762e68a5b885171e41ca98ff73), [`0xd3fc…94a8`](https://explorer.testnet.arc.io/tx/0xd3fc76540f0d91767b56f1c0ebceef077eb0208a044614e207b6bb53bb0994a8). The photo came from a file in an emulated browser; a real phone camera is not checked yet | |
 
 ## Buyer agent
 
