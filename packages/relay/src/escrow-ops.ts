@@ -1,5 +1,5 @@
 import { getAddress, type Address, type Chain, type Hex, type PublicClient, type Transport } from "viem";
-import { escrowRail } from "@countersign/rail";
+import { escrowRail, type ReviewState } from "@countersign/rail";
 import { txUrl } from "./chain.ts";
 import { readNow } from "./exact.ts";
 import type { CountersignContext } from "./countersign-scheme.ts";
@@ -91,16 +91,32 @@ async function close(
   const outcome = await ctx.relayer.submit(call(escrow), (known?.buyer ?? escrow) as Address);
   switch (outcome.status) {
     case "confirmed": {
+      const closedAt = readNow(ctx.now) * 1000;
       if (version === 2 && status === "released") {
         const reviewOf = rail(ctx, escrow, version).escrow!.reviewOf;
         if (reviewOf) {
-          const review = await reviewOf(jobId);
-          if (review.endsAt > 0) {
+          let review: ReviewState | null = null;
+          try {
+            review = await reviewOf(jobId);
+          } catch {
+            // The release landed; a failed read must not turn it into an error.
+          }
+          if (review && review.endsAt > 0) {
             ctx.ledger.deliverJob(jobId, {
               slipHash: options.slipHash,
               deliveredAt: review.deliveredAt * 1000,
               reviewEndsAt: review.endsAt * 1000,
               reviewWindow: review.window,
+            });
+            return { ok: true, transaction: outcome.txHash, url: txUrl(outcome.txHash), status: "delivered" };
+          }
+          const recordedWindow = known?.reviewWindow ?? 0;
+          if (!review && recordedWindow > 0) {
+            ctx.ledger.deliverJob(jobId, {
+              slipHash: options.slipHash,
+              deliveredAt: closedAt,
+              reviewEndsAt: closedAt + recordedWindow * 1000,
+              reviewWindow: recordedWindow,
             });
             return { ok: true, transaction: outcome.txHash, url: txUrl(outcome.txHash), status: "delivered" };
           }
@@ -111,7 +127,7 @@ async function close(
         status,
         outcome.txHash,
         options.slipHash,
-        readNow(ctx.now) * 1000,
+        closedAt,
         options.closeReason ?? null,
         options.closeVia ?? null,
       );

@@ -211,6 +211,7 @@ export async function settleCountersign(
       status,
       escrow,
       bond,
+      reviewWindow: version === 2 ? (terms.reviewWindow ?? 0) : undefined,
       createdAt: readNow(ctx.now) * 1000,
       resource,
       description,

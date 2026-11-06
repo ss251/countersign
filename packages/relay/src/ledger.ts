@@ -147,6 +147,8 @@ export type NewJob = {
   description?: string | null;
   escrow?: string | null;
   bond?: string;
+  /** The review window in seconds; v2 only, null on v1 rows. */
+  reviewWindow?: number;
 };
 
 export type JobFilter = {
@@ -529,8 +531,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO jobs
-          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description, escrow, bond)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description, escrow, bond, review_window)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.jobId,
@@ -547,6 +549,7 @@ export class Ledger {
         job.description ?? null,
         job.escrow ?? null,
         job.bond ?? "0",
+        job.reviewWindow ?? null,
       );
   }
 
@@ -608,7 +611,7 @@ export class Ledger {
   ): boolean {
     const result = this.db
       .query(
-        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?, close_reason = ?, close_via = ?
+        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = COALESCE(?, slip_hash), closed_at = ?, close_reason = ?, close_via = ?
          WHERE LOWER(job_id) = LOWER(?) AND status IN ('funded', 'delivered')`,
       )
       .run(status, closeTx, slipHash ?? null, closedAt, closeReason ?? null, closeVia ?? null, jobId);
