@@ -1,7 +1,8 @@
-import { canonicalJson } from "@countersign/core";
+import type { Address } from "viem";
+import { approvalDecisionBody, approvalDecisionSigner, canonicalJson } from "@countersign/core";
 import type { SigningAccount } from "./mirror.ts";
 
-export type ApprovalOutcome = "countersign" | "decline" | "expired" | "timeout";
+export type ApprovalOutcome = "countersign" | "decline" | "expired" | "timeout" | "unverified";
 
 export interface ApprovalHub {
   readonly url: string;
@@ -15,12 +16,14 @@ function hubUrl(hub: HubRef): string {
 
 /**
  * Ask the hub for a human countersignature on a held call, then poll until the phone
- * decides or the wait times out. The signature names the agent and every term shown
- * to the human, so a decision is bound to this exact call.
+ * decides or the wait times out. A `countersign` answer only counts when it carries a
+ * signature by `approver` over the agent's own request values; the hub's word alone is
+ * never enough.
  */
 export async function requestApproval(args: {
   hub: HubRef;
   account: SigningAccount;
+  approver: Address;
   offerHash: string;
   title: string;
   amount: string;
@@ -29,12 +32,14 @@ export async function requestApproval(args: {
   now: number;
   timeoutMs?: number;
   pollMs?: number;
+  fetchTimeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<ApprovalOutcome> {
   const load = args.fetchImpl ?? fetch;
   const base = hubUrl(args.hub);
   const timeoutMs = args.timeoutMs ?? 120_000;
   const pollMs = args.pollMs ?? 2_000;
+  const fetchTimeoutMs = args.fetchTimeoutMs ?? 10_000;
   const request = {
     agent: args.account.address,
     offerHash: args.offerHash,
@@ -50,6 +55,7 @@ export async function requestApproval(args: {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...request, sig }),
+    signal: AbortSignal.timeout(fetchTimeoutMs),
   });
   if (!created.ok) {
     throw new Error(`The hub refused the approval request with ${created.status}.`);
@@ -61,25 +67,62 @@ export async function requestApproval(args: {
 
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const status = await readStatus(load, `${base}/approvals/${body.id}`);
-    if (status === "countersign" || status === "decline" || status === "expired") return status;
+    const status = await readStatus(load, `${base}/approvals/${body.id}`, fetchTimeoutMs);
+    if (status.status === "decline" || status.status === "expired") return status.status;
+    if (status.status === "countersign") {
+      if (typeof status.decidedAt !== "number" || typeof status.decisionSig !== "string") {
+        return "unverified";
+      }
+      const decidedAt = status.decidedAt;
+      if (!Number.isSafeInteger(decidedAt)) return "unverified";
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (decidedAt < args.now - 30 || decidedAt > args.now + 900 || decidedAt > nowSec + 30) {
+        return "unverified";
+      }
+      const expected = approvalDecisionBody({
+        approvalId: body.id,
+        agent: args.account.address,
+        offerHash: args.offerHash,
+        amount: args.amount,
+        rail: args.rail,
+        terms: args.terms,
+        decision: "countersign",
+        decidedAt,
+      });
+      const signer = await approvalDecisionSigner(expected, status.decisionSig);
+      if (signer === null || signer.toLowerCase() !== args.approver.toLowerCase()) {
+        return "unverified";
+      }
+      return "countersign";
+    }
     const left = deadline - Date.now();
     if (left <= 0) return "timeout";
     await sleep(Math.min(pollMs, left));
   }
 }
 
-async function readStatus(load: typeof fetch, url: string): Promise<ApprovalOutcome | "pending"> {
+type PollResult =
+  | { status: "pending" }
+  | { status: "decline" }
+  | { status: "expired" }
+  | { status: "countersign"; decidedAt: unknown; decisionSig: unknown };
+
+async function readStatus(load: typeof fetch, url: string, timeoutMs: number): Promise<PollResult> {
   try {
-    const response = await load(url);
-    if (!response.ok) return "pending";
-    const body = (await response.json()) as { status?: unknown };
-    if (body.status === "countersign" || body.status === "decline" || body.status === "expired") {
-      return body.status;
+    const response = await load(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return { status: "pending" };
+    const body = (await response.json()) as {
+      status?: unknown;
+      decidedAt?: unknown;
+      decisionSig?: unknown;
+    };
+    if (body.status === "countersign") {
+      return { status: "countersign", decidedAt: body.decidedAt, decisionSig: body.decisionSig };
     }
-    return "pending";
+    if (body.status === "decline" || body.status === "expired") return { status: body.status };
+    return { status: "pending" };
   } catch {
-    return "pending";
+    return { status: "pending" };
   }
 }
 

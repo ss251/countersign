@@ -6,6 +6,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { recoverMessageAddress, type Address, type Hex } from "viem";
 import {
   PAYMENT_SIGNATURE_HEADER,
+  approvalDecisionBody,
+  approvalDecisionMessage,
   canonicalHash,
   canonicalJson,
   checkCountersign,
@@ -27,8 +29,10 @@ import type { KnownRail } from "../src/index.ts";
 
 const SELLER_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 const AGENT_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const APPROVER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
 const seller = privateKeyToAccount(SELLER_KEY);
 const agent = privateKeyToAccount(AGENT_KEY);
+const approver = privateKeyToAccount(APPROVER_KEY);
 const TOKEN: Address = "0x3600000000000000000000000000000000000000";
 const ESCROW: Address = "0x4444444444444444444444444444444444444444";
 const PRICE = "250000";
@@ -78,6 +82,7 @@ const accepts = [
     extra,
   },
 ];
+const APPROVAL_ID = "ab".repeat(16);
 
 const servers: { stop: (force?: boolean) => void }[] = [];
 afterAll(() => {
@@ -99,6 +104,7 @@ function envelope(over: Partial<Envelope> = {}): Envelope {
     allowlist: [],
     revoked: false,
     askAbove: "100000",
+    approver: approver.address,
     ...over,
   };
 }
@@ -136,24 +142,45 @@ async function makeSlip(payment: PaymentPayload, input: unknown, output: unknown
   };
 }
 
+interface ApprovalRequest {
+  agent: string;
+  offerHash: string;
+  title: string;
+  amount: string;
+  rail: string;
+  terms: unknown;
+  requestedAt: number;
+}
+
 interface BuyHub {
   url: string;
-  approvals: number;
-  paid: number;
-  mirrors: number;
-  approvedAtPayment: boolean;
+  readonly approvals: number;
+  readonly paid: number;
+  readonly mirrors: number;
+  readonly approvedAtPayment: boolean;
   approvalStatus: () => string;
 }
 
-function startBuyHub(options: {
-  decision?: "countersign" | "decline";
+interface BuyHubOptions {
+  decision?: "countersign" | "decline" | "pending";
+  pollsBeforeDecision?: number;
+  decisionSigner?: typeof seller;
+  decisionAmount?: string;
   mirrorStatus?: number;
   verifyMirror?: boolean;
-} = {}): BuyHub {
+  mirrorHang?: boolean;
+  onMirror?: () => void;
+  approvalRejectStatus?: number;
+}
+
+function startBuyHub(options: BuyHubOptions = {}): BuyHub {
   let approvalStatus = "pending";
   let approvalCount = 0;
   let mirrorCount = 0;
+  let paidCount = 0;
   let approvedAtPayment = false;
+  let polls = 0;
+  let lastRequest: ApprovalRequest | null = null;
   const state: BuyHub = {
     url: "",
     get approvals() {
@@ -170,7 +197,6 @@ function startBuyHub(options: {
     },
     approvalStatus: () => approvalStatus,
   };
-  let paidCount = 0;
 
   const server = Bun.serve({
     port: 0,
@@ -180,6 +206,9 @@ function startBuyHub(options: {
         return Response.json({ offerHash, offer, online: true, status: "listed" });
       }
       if (req.method === "POST" && url.pathname === "/approvals") {
+        if (options.approvalRejectStatus !== undefined) {
+          return new Response("{}", { status: options.approvalRejectStatus });
+        }
         approvalCount += 1;
         const body = (await req.json()) as Record<string, unknown>;
         const { sig, ...signed } = body;
@@ -188,15 +217,46 @@ function startBuyHub(options: {
         if (signer.toLowerCase() !== agent.address.toLowerCase()) {
           return new Response("{}", { status: 401 });
         }
+        lastRequest = signed as unknown as ApprovalRequest;
         approvalStatus = "pending";
-        return Response.json({ id: "ab".repeat(16) }, { status: 201 });
+        return Response.json({ id: APPROVAL_ID }, { status: 201 });
       }
       if (req.method === "GET" && url.pathname.startsWith("/approvals/")) {
-        approvalStatus = options.decision ?? "countersign";
-        return Response.json({ id: url.pathname.slice("/approvals/".length), status: approvalStatus });
+        if (options.decision === "pending") return Response.json({ status: "pending" });
+        polls += 1;
+        if (polls < (options.pollsBeforeDecision ?? 1)) return Response.json({ status: "pending" });
+        if (options.decision === "decline") {
+          approvalStatus = "decline";
+          return Response.json({ status: "decline" });
+        }
+        if (lastRequest === null) return Response.json({ status: "pending" });
+        const id = url.pathname.slice("/approvals/".length);
+        const decidedAt = lastRequest.requestedAt;
+        const decisionBody = approvalDecisionBody({
+          approvalId: id,
+          agent: lastRequest.agent,
+          offerHash: lastRequest.offerHash,
+          amount: options.decisionAmount ?? lastRequest.amount,
+          rail: lastRequest.rail,
+          terms: lastRequest.terms,
+          decision: "countersign",
+          decidedAt,
+        });
+        const decisionSig = await (options.decisionSigner ?? approver).signMessage({
+          message: approvalDecisionMessage(decisionBody),
+        });
+        approvalStatus = "countersign";
+        return Response.json({
+          id,
+          status: "countersign",
+          decidedAt,
+          decisionSig,
+        });
       }
       if (req.method === "PUT" && url.pathname.startsWith("/envelopes/")) {
+        if (options.mirrorHang) return await new Promise<Response>(() => undefined);
         mirrorCount += 1;
+        options.onMirror?.();
         if (options.mirrorStatus !== undefined && options.mirrorStatus !== 200) {
           return new Response("{}", { status: options.mirrorStatus });
         }
@@ -250,7 +310,11 @@ function startBuyHub(options: {
   return state;
 }
 
-function run(f: ReturnType<typeof fresh>, hub: BuyHub, over: { envelope?: Envelope; mirror?: boolean } = {}) {
+function run(
+  f: ReturnType<typeof fresh>,
+  hub: BuyHub,
+  over: { envelope?: Envelope; mirror?: boolean; mirrorTimeoutMs?: number } = {},
+) {
   return buy({
     hub: new HubClient(hub.url),
     offerHash,
@@ -264,66 +328,56 @@ function run(f: ReturnType<typeof fresh>, hub: BuyHub, over: { envelope?: Envelo
     approvals: "hub",
     account: agent,
     ...(over.mirror !== undefined ? { mirror: over.mirror } : {}),
+    ...(over.mirrorTimeoutMs !== undefined ? { mirrorTimeoutMs: over.mirrorTimeoutMs } : {}),
   });
 }
 
 describe("requestApproval", () => {
   test("returns countersign after two polls", async () => {
-    let polls = 0;
-    const captured: { posted?: Record<string, unknown> } = {};
-    const server = Bun.serve({
-      port: 0,
-      async fetch(req) {
-        if (req.method === "POST") {
-          captured.posted = (await req.json()) as Record<string, unknown>;
-          return Response.json({ id: "1".repeat(32) }, { status: 201 });
-        }
-        polls += 1;
-        return Response.json({ status: polls < 2 ? "pending" : "countersign" });
-      },
-    });
-    servers.push(server);
-    const hub = new HubClient(`http://127.0.0.1:${server.port}`);
-
+    const hub = startBuyHub({ pollsBeforeDecision: 2 });
     const outcome = await requestApproval({
-      hub,
+      hub: new HubClient(hub.url),
       account: agent,
-      offerHash: "0x11",
+      approver: approver.address,
+      offerHash,
       title: "A call",
-      amount: "1000",
+      amount: PRICE,
       rail: "escrow",
-      terms: { deadline: 1 },
-      now: 1_700_000_000,
+      terms: accepts[0],
+      now: Math.floor(Date.now() / 1000),
       timeoutMs: 1_000,
       pollMs: 1,
     });
 
     expect(outcome).toBe("countersign");
-    expect(polls).toBe(2);
-    const posted = captured.posted ?? {};
-    expect(posted.agent).toBe(agent.address);
-    expect(posted.title).toBe("A call");
-    const { sig, ...signed } = posted;
-    expect(typeof sig).toBe("string");
-    const signer = await recoverMessageAddress({ message: canonicalJson(signed), signature: sig as Hex });
-    expect(signer).toBe(agent.address);
+    expect(hub.approvals).toBe(1);
+  });
+
+  test("a countersign the approver did not sign is unverified", async () => {
+    const hub = startBuyHub({ decisionSigner: seller });
+    const outcome = await requestApproval({
+      hub: new HubClient(hub.url),
+      account: agent,
+      approver: approver.address,
+      offerHash,
+      title: "A call",
+      amount: PRICE,
+      rail: "escrow",
+      terms: accepts[0],
+      now: Math.floor(Date.now() / 1000),
+      timeoutMs: 1_000,
+      pollMs: 1,
+    });
+    expect(outcome).toBe("unverified");
   });
 
   test("times out", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        if (req.method === "POST") return Response.json({ id: "2".repeat(32) }, { status: 201 });
-        return Response.json({ status: "pending" });
-      },
-    });
-    servers.push(server);
-    const hub = new HubClient(`http://127.0.0.1:${server.port}`);
-
+    const hub = startBuyHub({ decision: "pending" });
     const outcome = await requestApproval({
-      hub,
+      hub: new HubClient(hub.url),
       account: agent,
-      offerHash: "0x11",
+      approver: approver.address,
+      offerHash,
       title: "A call",
       amount: "1000",
       rail: "escrow",
@@ -337,7 +391,7 @@ describe("requestApproval", () => {
 });
 
 describe("buy with hub approvals", () => {
-  test("signs only after the human countersigns", async () => {
+  test("signs only after the approver countersigns", async () => {
     const hub = startBuyHub();
     const f = fresh();
     const result = await run(f, hub);
@@ -346,6 +400,52 @@ describe("buy with hub approvals", () => {
     expect(hub.approvals).toBe(1);
     expect(hub.approvedAtPayment).toBe(true);
     expect(f.journal.entries().map((e) => e.kind)).toEqual(["countersigned", "signed", "released"]);
+  });
+
+  test("a hub that answers countersign with another key's signature ends human-unverified", async () => {
+    const hub = startBuyHub({ decisionSigner: seller });
+    const f = fresh();
+    await expect(run(f, hub)).rejects.toThrow(
+      "Held. The hub's answer is not signed by your approver key; nothing was signed.",
+    );
+
+    expect(hub.paid).toBe(0);
+    expect(f.journal.entries()).toHaveLength(1);
+    expect(f.journal.entries()[0]?.kind).toBe("refused");
+    expect(f.journal.entries()[0]?.reason).toBe("human-unverified");
+  });
+
+  test("a hub that signs over a changed amount ends human-unverified", async () => {
+    const hub = startBuyHub({ decisionAmount: "1" });
+    const f = fresh();
+    await expect(run(f, hub)).rejects.toThrow(BuyError);
+
+    expect(hub.paid).toBe(0);
+    expect(f.journal.entries()[0]?.reason).toBe("human-unverified");
+  });
+
+  test("an envelope with no approver makes no request", async () => {
+    const hub = startBuyHub();
+    const f = fresh();
+    await expect(run(f, hub, { envelope: envelope({ approver: undefined }) })).rejects.toThrow(
+      "Held. This envelope names no approver key, so a held call can be approved only on this machine.",
+    );
+
+    expect(hub.approvals).toBe(0);
+    expect(hub.paid).toBe(0);
+    expect(f.journal.entries()).toHaveLength(1);
+    expect(f.journal.entries()[0]?.reason).toBe("no-approver");
+  });
+
+  test("a hub that cannot take the request ends approval-unavailable", async () => {
+    const hub = startBuyHub({ approvalRejectStatus: 500 });
+    const f = fresh();
+    await expect(run(f, hub)).rejects.toThrow(
+      "Held. The hub could not take the approval request; nothing was signed.",
+    );
+
+    expect(hub.paid).toBe(0);
+    expect(f.journal.entries()[0]?.reason).toBe("approval-unavailable");
   });
 
   test("a decline journals human-declined and never signs", async () => {
@@ -386,21 +486,44 @@ describe("buy with hub approvals", () => {
     await run(f, hub, { mirror: true });
     expect(hub.mirrors).toBeGreaterThan(0);
   });
+
+  test("buy publishes the mirror once, after the outcome", async () => {
+    const f = fresh();
+    let entriesAtMirror = -1;
+    const hub = startBuyHub({
+      onMirror: () => {
+        entriesAtMirror = f.journal.entries().length;
+      },
+    });
+    await run(f, hub, { envelope: envelope({ askAbove: "5000000" }), mirror: true });
+
+    expect(hub.mirrors).toBe(1);
+    expect(entriesAtMirror).toBe(f.journal.entries().length);
+  });
+
+  test("a mirror that never answers delays a buy by at most its timeout", async () => {
+    const hub = startBuyHub({ mirrorHang: true });
+    const f = fresh();
+    const started = Date.now();
+    const result = await run(f, hub, {
+      envelope: envelope({ askAbove: "5000000" }),
+      mirror: true,
+      mirrorTimeoutMs: 50,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(result.output).toEqual({ a: "hi" });
+    expect(elapsed).toBeLessThan(1_000);
+  });
 });
 
 describe("publishEnvelope", () => {
   test("a rejected mirror returns false instead of throwing", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response("{}", { status: 500 });
-      },
-    });
-    servers.push(server);
+    const hub = startBuyHub({ mirrorStatus: 500 });
     const spent: EnvelopeSpend = { total: "0", bySeller: {} };
 
     const ok = await publishEnvelope({
-      hub: new HubClient(`http://127.0.0.1:${server.port}`),
+      hub: new HubClient(hub.url),
       account: agent,
       envelope: envelope({ agent: agent.address }),
       spent,

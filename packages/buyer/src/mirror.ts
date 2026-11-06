@@ -17,6 +17,9 @@ function hubUrl(hub: HubRef): string {
   return typeof hub === "string" ? hub.replace(/\/+$/, "") : hub.url;
 }
 
+/** The process-local high-water mark per agent, so every mirror in one buy is strictly newer. */
+const lastSignedAt = new Map<string, number>();
+
 /**
  * Publish the agent's signed view of its envelope and spend to the hub. The hub stores
  * only what verifies, so nothing there can loosen the human's limits. Never throws: a
@@ -28,17 +31,24 @@ export async function publishEnvelope(args: {
   envelope: Envelope;
   spent: EnvelopeSpend;
   now: number;
+  /** Abort the PUT after this many milliseconds. Default 5000. */
+  timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<boolean> {
   try {
     const load = args.fetchImpl ?? fetch;
-    const signedAt = args.now;
+    const key = args.account.address.toLowerCase();
+    const base = Math.floor(args.now);
+    const previous = lastSignedAt.get(key);
+    const signedAt = previous === undefined ? base : Math.max(base, previous + 1);
+    lastSignedAt.set(key, signedAt);
     const message = canonicalJson({ envelope: args.envelope, spent: args.spent, signedAt });
     const sig = await args.account.signMessage({ message });
     const response = await load(`${hubUrl(args.hub)}/envelopes/${args.account.address}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ envelope: args.envelope, spent: args.spent, signedAt, sig }),
+      signal: AbortSignal.timeout(args.timeoutMs ?? 5_000),
     });
     if (!response.ok) {
       console.warn(`[buyer] envelope mirror refused with ${response.status}`);
