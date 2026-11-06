@@ -5,7 +5,6 @@ import { fromHubOrder, fromHubRecord, normalizeRefundReply } from "./model.ts";
 interface MerchantEnv {
   readonly VITE_MERCHANT_URL?: string;
   readonly VITE_RELAY_URL?: string;
-  readonly VITE_MERCHANT_TOKEN?: string;
   readonly VITE_MERCHANT_ADDRESS?: string;
 }
 
@@ -22,15 +21,14 @@ export const RELAY_URL = baseUrl(env.VITE_RELAY_URL ?? "/relay");
 export const CONFIGURED_MERCHANT = env.VITE_MERCHANT_ADDRESS?.trim() ?? "";
 
 /*
- * The token signs refunds and nothing else. A local build may carry it; a hosted build never
- * does. There the merchant types it in, and it lives in this module for the life of the tab:
- * never in storage, never in the URL.
+ * The token signs refunds and nothing else, so no build ever carries it: anything compiled into a
+ * bundle is public. The merchant types it into the page, and it lives in this module for the life
+ * of the tab: never in storage, never in the URL, sent only to the merchant's own service.
  */
-const BUILD_TOKEN = env.VITE_MERCHANT_TOKEN?.trim() ?? "";
 let sessionToken = "";
 
 export function canSignRefunds(): boolean {
-  return (sessionToken || BUILD_TOKEN) !== "";
+  return sessionToken !== "";
 }
 
 export const TOKEN_REFUSED = "The merchant service refused the token.";
@@ -61,7 +59,7 @@ async function relayGet(path: string, base = RELAY_URL): Promise<Response> {
 }
 
 /** The merchant's own service, which holds the signing key. Every call carries the token. */
-async function merchantFetch(path: string, init: RequestInit = {}, token = sessionToken || BUILD_TOKEN): Promise<Response> {
+async function merchantFetch(path: string, init: RequestInit = {}, token = sessionToken): Promise<Response> {
   if (!token) throw new Error("Refunds need the merchant token.");
   let response: Response;
   try {
@@ -232,7 +230,7 @@ export async function refundOrder(id: string, request: RefundRequest): Promise<R
   if (typeof request?.amount !== "bigint" || request.amount <= 0n) {
     throw new Error("A refund needs the amount the merchant confirmed.");
   }
-  const token = sessionToken || BUILD_TOKEN;
+  const token = sessionToken;
   if (!token) throw new Error("Refunds need the merchant token.");
   let response: Response;
   try {
