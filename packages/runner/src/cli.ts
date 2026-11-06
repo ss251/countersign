@@ -20,11 +20,10 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
 import { isEnsName, parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
 import { KNOWN_ESCROWS } from "@countersign/verify";
 import { isAddress } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
 import { bondFromEnv } from "./bond.ts";
 import { startRunner, type ServedOffer } from "./daemon.ts";
@@ -279,24 +278,12 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
   });
 }
 
-interface AccountsModule {
-  privateKeyToAccount(key: Hex): RunnerAccount;
-}
-
 async function sellerAccount(): Promise<RunnerAccount> {
   const key = process.env.CS_SELLER_KEY;
   if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
     throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
   }
-  const module = await loadAccounts();
-  return module.privateKeyToAccount(key as Hex);
-}
-
-/** Resolve viem through @countersign/core, which declares it as a dependency. */
-async function loadAccounts(): Promise<AccountsModule> {
-  const require = createRequire(import.meta.resolve("@countersign/core"));
-  const path = require.resolve("viem/accounts");
-  return (await import(pathToFileURL(path).href)) as AccountsModule;
+  return privateKeyToAccount(key as Hex);
 }
 
 export function parseOptions(args: string[]): Options {
