@@ -141,7 +141,8 @@ a.hash__value.is-tx {
 .status--settled {
   color: var(--settle);
 }
-.status--refused {
+.status--refused,
+.status--disputed {
   color: var(--seal);
 }
 .status--refunded::before {

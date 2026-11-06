@@ -108,6 +108,7 @@ const STATUS_LABEL: Record<JobStatus, string> = {
   released: "Released",
   refunded: "Refunded",
   refused: "Refused",
+  disputed: "Disputed",
 };
 
 export function Status({ status, className }: { status: JobStatus; className?: string }) {

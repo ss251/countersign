@@ -326,12 +326,21 @@ interface HubBuyerJob {
   amount: string;
   rail: Purchase["rail"];
   network: string;
-  status: "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
+  status: "funded" | "paid" | "delivered" | "released" | "settled" | "failed" | "refunded" | "disputed";
   at: number;
   settleTx: string | null;
   closeTx: string | null;
   slipHash: string | null;
   explorer: string | null;
+  /* Escrow v2 review fields (docs/spec/escrow.md, cs-21). Absent on a v1 escrow or a direct rail. */
+  deliveredAt?: number | null;
+  reviewEndsAt?: number | null;
+  reviewWindow?: number | null;
+  acceptedAt?: number | null;
+  acceptTx?: string | null;
+  disputedAt?: number | null;
+  disputeTx?: string | null;
+  releasedAfterWindow?: boolean | null;
 }
 
 /** The hub speaks unix seconds; milliseconds are tolerated so a unit slip never shows a date in the year 57000. */
@@ -387,11 +396,15 @@ function toPurchase(j: HubBuyerJob, listings: HubListing[], decided: HubApproval
   const status: Purchase["status"] =
     j.status === "funded" || j.status === "paid"
       ? "held"
-      : j.status === "released" || j.status === "settled"
-        ? "released"
-        : j.status === "refunded"
-          ? "refunded"
-          : "refused";
+      : j.status === "delivered"
+        ? "delivered"
+        : j.status === "released" || j.status === "settled"
+          ? "released"
+          : j.status === "refunded"
+            ? "refunded"
+            : j.status === "disputed"
+              ? "disputed"
+              : "refused";
   return {
     jobId: j.jobId as Purchase["jobId"],
     offerHash: j.offerHash as Purchase["offerHash"],
@@ -408,7 +421,15 @@ function toPurchase(j: HubBuyerJob, listings: HubListing[], decided: HubApproval
     slipHash: (j.slipHash ?? undefined) as Purchase["slipHash"],
     approvedBy: you ? "you" : "envelope",
     reason:
-      j.status === "failed" ? `Not released. ${failedReason(j.rail)}` : j.status === "refunded" ? "Refunded. The deadline passed." : undefined,
+      j.status === "failed"
+        ? `Not released. ${failedReason(j.rail)}`
+        : j.status === "refunded"
+          ? "Refunded. The deadline passed."
+          : j.status === "disputed"
+            ? "Disputed. The payment went back to your agent at once."
+            : j.status === "delivered" && j.reviewEndsAt
+              ? "In review: releases to the seller when the window closes, unless your agent disputes."
+              : undefined,
   };
 }
 
@@ -446,6 +467,8 @@ export interface JobView {
   reviewEndsAt?: number;
   /** How the review ended: the buyer accepted, the buyer disputed, or the window passed unchallenged. */
   ended?: "accepted" | "disputed" | "elapsed";
+  /** The hub's job id, once the job exists there: the agent's accept and dispute commands name it. */
+  jobId?: string;
 }
 
 /** A running job the human can still act on: accept or dispute inside the review window. */
@@ -490,9 +513,22 @@ export function followJob(approval: Approval, known: Set<string>, onChange: (job
         onChange(job);
       }
     } else if (j.status === "funded" || j.status === "paid") {
-      if (job.step !== "held") push({ fundTx: j.settleTx ?? undefined }, "held");
+      if (job.step !== "held") push({ fundTx: j.settleTx ?? undefined, jobId: j.jobId }, "held");
+    } else if (j.status === "delivered") {
+      // Escrow v2: the slip is on chain and the buyer's review window is running.
+      if (job.step !== "review") {
+        push({ jobId: j.jobId, reviewEndsAt: j.reviewEndsAt ?? undefined }, "delivered");
+        push({}, "review");
+      }
+    } else if (j.status === "disputed") {
+      push({ jobId: j.jobId, ended: "disputed" }, "disputed");
+      return;
     } else if (j.status === "released" || j.status === "settled") {
-      push({ fundTx: j.settleTx ?? job.fundTx, slipHash: j.slipHash ?? undefined }, "released");
+      const ended = j.acceptedAt ? "accepted" : j.releasedAfterWindow ? "elapsed" : undefined;
+      push(
+        { fundTx: j.settleTx ?? job.fundTx, slipHash: j.slipHash ?? undefined, jobId: j.jobId, ...(ended ? { ended } : {}) },
+        "released",
+      );
       return;
     } else if (j.status === "refunded") {
       push({}, "refunded");
@@ -545,8 +581,8 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
         if (decided || job.step !== "review") return;
         decided = true;
         if (ended === "disputed") {
+          // Escrow v2 (docs/spec/escrow.md): a dispute refunds at once, so Disputed is final.
           push({ ended }, "disputed");
-          at(1200, () => push({}, "refunded"));
         } else {
           if (ended === "accepted") push({ ended }, "accepted");
           else job = { ...job, ended };
