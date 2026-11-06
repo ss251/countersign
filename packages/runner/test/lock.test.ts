@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 import {
+  jobIdOf,
   lockTypedData,
   offerHash as hashOffer,
   RUNNER_PATH,
@@ -99,6 +100,7 @@ beforeEach(async () => {
     ],
     limits: { timeMs: 5000, maxOutputBytes: 100_000 },
     now: () => NOW,
+    funding: { known: [{ chainId: CHAIN_ID, escrow: ESCROW }] },
   });
 
   await handle.ready;
@@ -111,13 +113,15 @@ afterEach(async () => {
 
 describe("the runner's lock handler", () => {
   test("signs Lock(jobId) for a served bonded offer", async () => {
-    const reply = await sendLock();
+    const terms = consentTerms();
+    const jobId = jobIdOf({ offerHash: bondedHash, ...terms }, CHAIN_ID, ESCROW);
+    const reply = await sendLock({ terms, jobId });
     if (reply.t !== "locked") throw new Error(`expected locked, got ${reply.t}`);
 
-    expect(reply.jobId).toBe(JOB_ID);
+    expect(reply.jobId).toBe(jobId);
     const verified = await verifyTypedData({
       address: seller.address,
-      ...lockTypedData(CHAIN_ID, ESCROW, JOB_ID, FUNDER),
+      ...lockTypedData(CHAIN_ID, ESCROW, jobId, FUNDER),
       signature: reply.sig,
     });
     expect(verified).toBe(true);
@@ -125,11 +129,13 @@ describe("the runner's lock handler", () => {
 
   test("a lock naming funder F recovers to the seller over that lock", async () => {
     const funder = "0x6666666666666666666666666666666666666666" as Address;
-    const reply = await sendLock({ funder });
+    const terms = consentTerms();
+    const jobId = jobIdOf({ offerHash: bondedHash, ...terms }, CHAIN_ID, ESCROW);
+    const reply = await sendLock({ funder, terms, jobId });
     if (reply.t !== "locked") throw new Error(`expected locked, got ${reply.t}`);
 
     const recovered = await recoverTypedDataAddress({
-      ...lockTypedData(CHAIN_ID, ESCROW, JOB_ID, funder),
+      ...lockTypedData(CHAIN_ID, ESCROW, jobId, funder),
       signature: reply.sig,
     });
     expect(recovered).toBe(seller.address);
@@ -164,6 +170,18 @@ describe("the runner's lock handler", () => {
   });
 });
 
+function consentTerms(): Extract<HubToRunner, { t: "lock" }>["terms"] {
+  return {
+    buyer: FUNDER,
+    payee: seller.address,
+    amount: bonded.price,
+    deadline: NOW + 120,
+    salt: "1",
+    bond: bonded.bond,
+    reviewWindow: bonded.reviewWindow ?? 0,
+  };
+}
+
 function sendLock(
   overrides: Partial<Extract<HubToRunner, { t: "lock" }>> = {},
 ): Promise<RunnerToHub> {
@@ -176,6 +194,7 @@ function sendLock(
     chainId: CHAIN_ID,
     bond: "100",
     funder: FUNDER,
+    terms: consentTerms(),
     ...overrides,
   };
   const reply = new Promise<RunnerToHub>((resolve) => {
