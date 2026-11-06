@@ -2,8 +2,19 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createHub } from "./app.ts";
 import { runJanitor } from "./janitor.ts";
+import { assertBootable, BootRefused } from "./network.ts";
 import { railsFromEnv } from "./rails.ts";
 import { Store } from "./store.ts";
+
+// Fail closed before anything else: an unknown network, or a mainnet with anything pending, stops here.
+try {
+  assertBootable(process.env);
+} catch (error) {
+  if (!(error instanceof BootRefused)) throw error;
+  console.error("[hub] refused to boot:");
+  for (const problem of error.problems) console.error(`[hub]   - ${problem}`);
+  process.exit(1);
+}
 
 const port = Number(process.env.PORT ?? 8787);
 const dbPath = process.env.HUB_DB ?? "data/hub.sqlite";
