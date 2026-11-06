@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build W1 and W2 of `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-hedera-wallet.md` exactly. Read it first.
+Build W1 and W2 of `$M/hd/DESIGN-hedera-wallet.md` exactly. Read it first.
 
 This is the hub half of user-held Hedera wallets (STEER-2113). A person's wallet (HashPack or Kabila over WalletConnect) signs **and executes** a USDC transfer to the offer's payee, with memo `cs1:<offerHash>`. The hub checks it on the mirror node before the seller runs, and accepts one transaction for one job only.
 
@@ -14,7 +14,7 @@ W2 adds the shared, browser-safe builder that the web connector (hd-16) and the 
 - `packages/rail/src/hedera/rail.ts`: the wallet branch in `verify` and `settle`, and two options. The exact path is unchanged.
 - `packages/rail/src/hedera/index.ts`: one `export *` line.
 - `packages/rail/src/hedera/test/wallet-paid.test.ts` (new).
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-15-wallet-paid.md`
+- Report: `$M/reports/hd-15-wallet-paid.md`
 
 ## The decided design
 

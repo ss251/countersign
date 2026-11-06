@@ -75,7 +75,6 @@ Touch nothing else. Never commit `bun.lock`.
 - **Never run `git stash`.** Use a temporary commit or a second worktree.
 - **No network** in tests.
 - **Commits:** small, present tense, ending `refs #98`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
