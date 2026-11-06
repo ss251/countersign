@@ -208,6 +208,12 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 
 What listing an offer means, what the hub does and does not do, what a countersignature binds, release and refund windows, the toll, and the limits: [docs/terms.md](docs/terms.md).
 
+## How AI was used
+
+- Claude Opus lanes planned, designed and reviewed the work from a written plan and the project lead's decisions; they also wrote the screens and the docs.
+- DeepSeek workers wrote most of the other code from decided packets, a human teammate wrote some features, and every change passed a separate review and a green gate. Grok 4.7 audited the escrow independently.
+- The plan, lane briefs, steers, review notes and audits are in [docs/build/](docs/build/), and the packets in [.packets/](.packets/).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
