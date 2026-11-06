@@ -43,6 +43,8 @@ export default function Landing(_props: PageProps) {
   const featured = listed.find((l) => l.online) ?? listed[0];
   const rows = goodRows.current ?? [];
   const newest = rows.find((s) => s.kind !== "refunded");
+  // Why there are no totals at all: the hub has never answered with them. Both the first screen and the desk honour it.
+  const missing = goodStats.current ? undefined : stats.source === "absent" ? stats.reason : undefined;
 
   return (
     <div className="landing">
@@ -71,18 +73,12 @@ export default function Landing(_props: PageProps) {
               countersign lets an agent pay for a tool only inside limits you sign. On an escrow rail the payment waits until the
               output checks out; every payment leaves a slip anyone can verify, without us.
             </p>
+            <Figures stats={goodStats.current} rails={rails.data} missing={missing} />
             <div className="landing__cta">
               <Link to="/assistant" className="landing__go">
                 Ask for a paid tool
               </Link>
-              <button
-                type="button"
-                className="landing__cue"
-                onClick={() => {
-                  const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                  document.getElementById("desk")?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
-                }}
-              >
+              <button type="button" className="landing__cue" onClick={toDesk}>
                 ↓ live desk
               </button>
             </div>
@@ -92,7 +88,7 @@ export default function Landing(_props: PageProps) {
 
       <LiveDesk
         stats={goodStats.current}
-        missing={goodStats.current ? undefined : stats.source === "absent" ? stats.reason : undefined}
+        missing={missing}
         settlements={rows}
         settlementsLoaded={goodRows.current !== null}
         rails={rails.data}
@@ -110,6 +106,63 @@ export default function Landing(_props: PageProps) {
       <Proof rails={rails.data} />
     </div>
   );
+}
+
+/**
+ * The first screen's number: the hub's own totals in one mono line, the same reads as the desk and
+ * the way down to it. It holds its line while the first read is in flight, ticks once when a figure
+ * changes, and is left out when the hub has never given totals (the desk says why).
+ */
+function Figures({
+  stats: s,
+  rails,
+  missing,
+}: {
+  stats: HubStats | null;
+  rails: RailDeclaration[] | undefined;
+  missing: string | undefined;
+}) {
+  if (missing) return null;
+  if (!s) return <p className="landing__figures" aria-hidden="true" />;
+  const live = rails?.length ?? 0;
+  return (
+    <button type="button" className="landing__figures" onClick={toDesk}>
+      <span className="live-dot" aria-hidden="true" />
+      <span className="landing__fig">
+        <Tick value={String(s.delivered)} /> {s.delivered === 1 ? "job" : "jobs"} settled
+      </span>
+      <span className="landing__fig">
+        <Sep />
+        <Tick value={formatAmount(usd(s.volume))} /> USDC
+      </span>
+      {live ? (
+        <span className="landing__fig">
+          <Sep />
+          <Tick value={String(live)} /> {live === 1 ? "rail" : "rails"} live
+        </span>
+      ) : null}
+      <span className="sr-only">. Go to the live desk.</span>
+    </button>
+  );
+}
+
+/** A middle dot to the eye, a pause to a screen reader. */
+function Sep() {
+  return (
+    <span className="landing__sep">
+      <span aria-hidden="true">·</span>
+      <span className="sr-only">,</span>
+    </span>
+  );
+}
+
+/** Down to the live desk: a plain scroll that hijacks nothing, and keyboard focus follows. */
+function toDesk() {
+  const desk = document.getElementById("desk");
+  if (!desk) return;
+  const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  desk.focus({ preventScroll: true });
+  desk.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
 }
 
 /* The live desk: the hub's own totals, the rails it runs, and the last settlements as they land. */
@@ -130,7 +183,7 @@ function LiveDesk({
   rails: RailDeclaration[] | undefined;
 }) {
   return (
-    <section id="desk" className="landing__section landing__desk" aria-labelledby="desk-title">
+    <section id="desk" className="landing__section landing__desk" aria-labelledby="desk-title" tabIndex={-1}>
       <div className="landing__desk-head">
         <h2 id="desk-title" className="landing__h2">
           Live desk.

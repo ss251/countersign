@@ -10,7 +10,8 @@ import "./home.css";
 
 /**
  * How a purchase clears, in three steps, each beside a real artifact from this hub: the agent's
- * signed envelope (or why there is none), a live offer to countersign, and the newest release.
+ * signed envelope (or a labelled example until the hub serves one), a live offer to countersign,
+ * and the newest release.
  */
 export function ClearSteps({
   envelope,
@@ -35,7 +36,7 @@ export function ClearSteps({
           <EnvelopeArtifact
             view={envelope.data ?? undefined}
             live={envelope.source === "hub"}
-            missing={envelope.source === "absent" ? envelope.reason : undefined}
+            absent={envelope.source === "absent"}
             listing={featured}
           />
         </li>
@@ -66,27 +67,16 @@ export function ClearSteps({
 function EnvelopeArtifact({
   view,
   live,
-  missing,
+  absent,
   listing,
 }: {
   view: EnvelopeView | undefined;
   live: boolean;
-  /** Why the hub holds no envelope to show, said instead of an example. */
-  missing: string | undefined;
+  /** The hub has no agent's envelope to show, so the example stands in, plainly labelled. */
+  absent: boolean;
   listing: Listing | undefined;
 }) {
-  if (missing) {
-    return (
-      <figure className="artifact artifact--empty">
-        <figcaption className="artifact__head">
-          <span className="label">Signed envelope</span>
-        </figcaption>
-        <p className="artifact__note">
-          {missing} When an agent publishes one, its limits and the checklist for the offer in step 02 appear here.
-        </p>
-      </figure>
-    );
-  }
+  if (absent) return <ExampleEnvelope />;
   if (!view) return <div className="artifact artifact--skeleton" aria-hidden="true" />;
   const env = view.envelope;
   const allow = env.allowlist.length;
@@ -125,7 +115,7 @@ function EnvelopeArtifact({
           </dd>
         </div>
         <div>
-          <dt className="label">Per seller</dt>
+          <dt className="label">Cap per seller</dt>
           <dd>
             <Amount money={usd(env.perMerchant)} size="sm" />
           </dd>
@@ -145,6 +135,39 @@ function EnvelopeArtifact({
           <Checklist items={checks} />
         </div>
       ) : null}
+    </figure>
+  );
+}
+
+/*
+ * What an envelope holds, until an agent's own is served here: the four fields, their values in
+ * words. No amount, no agent and no signing time, so it can never be read as a record; the real
+ * envelope takes its place, field for field, as soon as the hub serves one.
+ */
+function ExampleEnvelope() {
+  return (
+    <figure className="artifact">
+      <figcaption className="artifact__head">
+        <span className="label">Example envelope</span>
+      </figcaption>
+      <dl className="fields">
+        <div className="fields__wide">
+          <dt className="label">Budget</dt>
+          <dd className="fields__word">The most it spends in all</dd>
+        </div>
+        <div className="fields__wide">
+          <dt className="label">Cap per seller</dt>
+          <dd className="fields__word">The most any one seller gets</dd>
+        </div>
+        <div className="fields__wide">
+          <dt className="label">Allowlist</dt>
+          <dd className="fields__word">Only the sellers you name</dd>
+        </div>
+        <div className="fields__wide">
+          <dt className="label">Ask above</dt>
+          <dd className="fields__word">Above this price, it asks you first</dd>
+        </div>
+      </dl>
     </figure>
   );
 }

@@ -106,19 +106,73 @@
   text-wrap: balance;
 }
 
+/* Under the statement, one column on its left edge: what countersign is, the hub's own figures, the way in. */
 .landing__under {
   display: grid;
-  grid-template-columns: minmax(0, 46ch) auto;
-  align-items: end;
-  justify-content: space-between;
-  gap: var(--sp-6);
+  justify-items: start;
+  gap: var(--sp-5);
 }
 
 .landing__what {
+  max-width: 46ch;
   color: var(--slate);
   font-size: var(--t-17);
   line-height: 1.5;
   text-wrap: pretty;
+}
+
+/*
+ * The first screen's number, in one mono line: the figures in ink, their words in slate, the live
+ * dot ahead. It holds a line's height before the first read, so nothing above it moves when it lands.
+ */
+.landing__figures {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.6em;
+  min-height: 1.5em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: clamp(0.8125rem, 0.75rem + 0.25vw, 0.9375rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: left;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+.landing__figures .tick {
+  color: var(--ink);
+}
+
+/* A figure and its words never part; a narrow screen wraps between figures, at a dot. */
+.landing__fig {
+  white-space: nowrap;
+}
+
+.landing__sep {
+  margin-right: 0.6em;
+}
+
+/* One line to the eye, 44px to the thumb. */
+button.landing__figures::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.landing__figures:hover {
+    color: var(--ink);
+  }
+}
+
+/* The desk takes focus only when the figures or the cue send the keyboard down to it. */
+.landing__desk:focus {
+  outline: none;
 }
 
 .landing__cta {
@@ -489,7 +543,6 @@
 }
 
 @media (max-width: 860px) {
-  .landing__under,
   .landing__desk-grid {
     grid-template-columns: minmax(0, 1fr);
   }
