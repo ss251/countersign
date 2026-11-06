@@ -5,3 +5,5 @@ export * from "./envelope.ts";
 export * from "./offer.ts";
 export * from "./slip.ts";
 export * from "./types.ts";
+export * from "./schema.ts";
+export * from "./wire.ts";

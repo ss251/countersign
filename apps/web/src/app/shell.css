@@ -1,0 +1,132 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__skip {
+  position: absolute;
+  left: var(--sp-3);
+  top: -200px;
+  z-index: 100;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--r-1);
+  text-decoration: none;
+}
+
+.shell__skip:focus {
+  top: var(--sp-3);
+}
+
+.shell__main {
+  flex: 1;
+  outline: none;
+}
+
+.shell__loading {
+  min-height: 40vh;
+}
+
+/* Desktop chrome */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar__inner {
+  max-width: var(--content);
+  height: var(--bar);
+  margin: 0 auto;
+  padding: 0 var(--sp-6);
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+
+.topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.topbar__nav {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topbar__nav::-webkit-scrollbar {
+  display: none;
+}
+
+.topbar__link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .topbar__link:hover {
+    color: var(--ink);
+  }
+}
+
+.topbar__link[aria-current="page"] {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.topbar__link:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (max-width: 640px) {
+  .topbar__inner {
+    padding: 0 var(--sp-4);
+    gap: var(--sp-3);
+  }
+  .topbar__link {
+    padding: 0 var(--sp-2);
+  }
+}
+
+/* Plain messages: not found, a view that stopped. */
+
+.notice {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--sp-16) var(--sp-6);
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.notice__title {
+  font-size: var(--t-24);
+}
+
+.notice__body {
+  color: var(--slate);
+}
+
+.notice__retry {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--raised);
+  font-weight: 500;
+}
