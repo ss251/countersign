@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { authorizationTypedData, type PaymentRequirements } from "@countersign/core";
 import { ARC_PIN } from "../src/lib/arc-pin.ts";
-import { buildAuthorization, trustedRequirement } from "../src/routes/start/index.tsx";
+import { buildAuthorization, trustedRequirement } from "../src/lib/purchase.ts";
 
 const buyer = "0x8c1f9e2b7d6a5f4e3c2b1a09f8e7d6c5b4a3a20b" as const;
 const payee = "0x196768E381490a9849d44bd8427784e9fD3aCd07" as const;

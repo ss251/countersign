@@ -69,50 +69,6 @@
   gap: var(--sp-2);
 }
 
-.start__signed,
-.start__note {
-  font-size: var(--t-14);
-}
-
-.start__note {
-  color: var(--slate);
-}
-
-.start__signature {
-  overflow-wrap: anywhere;
-}
-
-.start__paid,
-.start__refused {
-  display: grid;
-  gap: var(--sp-2);
-}
-
-.start__message {
-  font-size: var(--t-14);
-}
-
-.start__faucet {
-  font-size: var(--t-14);
-  color: var(--ink);
-  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
-  text-underline-offset: 0.2em;
-}
-
-.start__slip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3);
-  font-size: var(--t-14);
-}
-
-.start__slip a {
-  color: var(--ink);
-  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
-  text-underline-offset: 0.2em;
-}
-
 @media (max-width: 640px) {
   .start {
     max-width: none;

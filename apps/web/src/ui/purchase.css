@@ -1,0 +1,51 @@
+/* The purchase result: the wallet's signature, the page's note, and the hub's answer. */
+
+.purchase__signed,
+.purchase__note {
+  font-size: var(--t-14);
+}
+
+.purchase__note {
+  color: var(--slate);
+}
+
+.purchase__signature {
+  overflow-wrap: anywhere;
+}
+
+.purchase__paid,
+.purchase__refused {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.purchase__text {
+  color: var(--slate);
+  font-size: var(--t-15);
+  max-width: 62ch;
+}
+
+.purchase__message {
+  font-size: var(--t-14);
+}
+
+.purchase__faucet {
+  font-size: var(--t-14);
+  color: var(--ink);
+  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+.purchase__slip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--t-14);
+}
+
+.purchase__slip a {
+  color: var(--ink);
+  text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
+  text-underline-offset: 0.2em;
+}
