@@ -123,7 +123,10 @@ async function main(): Promise<void> {
   // The run's own outputs do not make it dirty; any other tracked change does.
   const dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)e2e/runs") !== "unknown";
   const commit = `${git("rev-parse", "--short", "HEAD")}${dirty ? " with local changes" : ""}`;
-  const branch = git("rev-parse", "--abbrev-ref", "HEAD");
+  // The hourly run checks out a commit, not a branch: name the branch whose tip that commit is.
+  const head = git("rev-parse", "--abbrev-ref", "HEAD");
+  const tips = git("branch", "--points-at", "HEAD", "--format=%(refname:short)").split("\n");
+  const branch = head !== "HEAD" ? head : (process.env.E2E_BRANCH ?? tips.find((b) => b.startsWith("cs/")) ?? "HEAD");
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
 
   // A full run skips on-demand flows, so their spends do not count against it.
