@@ -1,7 +1,7 @@
 # The mpp rail
 
-Stripe's Machine Payments Protocol is the fourth rail. It is unlike the chain
-rails: MPP is not x402 on the wire. A 402 carries a `WWW-Authenticate: Payment`
+The Machine Payments Protocol (MPP), an open spec from Stripe and Tempo, is the
+fourth rail. It is unlike the chain rails: MPP is not x402 on the wire. A 402 carries a `WWW-Authenticate: Payment`
 challenge whose `request` parameter is base64url JSON. The buyer returns the
 credential in `Authorization: Payment ...`, and a successful response carries a
 `Payment-Receipt` header.
@@ -13,6 +13,38 @@ There is no mainnet configuration.
 
 The rail keeps the same interface as every other rail: `declaration`,
 `challenge`, `verify`, `settle`. Hub wiring is a separate packet.
+
+## Live on Tempo testnet
+
+On 06 Nov the `mppx` CLI paid our localhost demo endpoint twice on Tempo
+Moderato. Both payments settled on chain and came back with a receipt.
+
+- **Payer:** `0xEacEb7fD58157a39b6d4aF7A7Ca7A3AEba37486C`, a project account
+  made with `mppx account create` and funded by the Moderato faucet. The CLI was
+  told to use it by name.
+- **Recipient:** `0xBfa03aCe72e48490C020Ab7CEe4beba2858f7231`, a fresh testnet
+  address whose key and the challenge secret live only in a mode-0600 env file
+  on the build machine.
+- **Read before paying:** each 402 said `method tempo`, amount `10000`
+  (0.01 pathUSD), currency `0x20c0000000000000000000000000000000000000`, chain
+  42431 and this recipient.
+
+| Route | What settles it | Transaction | Block | Receipt |
+|---|---|---|---|---|
+| `GET /paid` | mppx's own Tempo handler | [`0x254397b0…5df6`](https://explore.testnet.tempo.xyz/tx/0x254397b0afa7479e089948cddd58830b359b470d87dc96c56b71450f40d15df6) | 42848312 | `success`, 2026-11-06T11:50:49.980Z |
+| `GET /rail/paid` | countersign's `mpp` rail: `challenge`, `verify`, then `settle` through `broadcastCredential` | [`0xd525b18b…5c33`](https://explore.testnet.tempo.xyz/tx/0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33) | 42848372 | `success`, 2026-11-06T11:51:22.160Z |
+
+Each receipt decodes to `{ method: "tempo", status: "success", reference,
+timestamp, fundingCurrency }`, and `reference` is the transaction hash. An MPP
+receipt carries no separate id, so the slip records the hash in
+`settlement.transaction` and the whole receipt in `settlement.receipt`.
+
+Both transactions were checked on the Moderato RPC:
+
+- status 1;
+- one pathUSD `Transfer` of exactly 10000 from the payer to the recipient;
+- a second, smaller pathUSD transfer to the fee manager. The payer pays its own
+  network fee, which is why the declaration says `gasPaidBy: "buyer"`.
 
 ## One rail, two methods
 
@@ -34,7 +66,8 @@ it.
 in `extra.mpp.wwwAuthenticate`, and `extra.mpp.methods` lists every eligible
 method. `requirements.network` is `mpp:stripe` when the card method is offered,
 otherwise `mpp:tempo`. `extra.offerHash` binds the challenge to the offer; the
-MPP challenges repeat it as `externalId`, so a receipt names the offer. When
+MPP challenges repeat it as `externalId`, so the HMAC-bound challenge names the
+offer. The Tempo receipt does not echo it back. When
 both methods are offered, `requirements.amount` is the card amount in cents; the
 Tempo amount lives in the Tempo challenge, which the rail also HMAC-binds.
 
@@ -181,10 +214,11 @@ Settle maps to the slip like this:
 - `settlement.receipt` = the serialized `Payment-Receipt` header.
 - `settlement.network` = `mpp:tempo`, or `mpp:stripe` for the card method.
 
-The receipt deserializes to the MPP shape, for example:
+The receipt deserializes to the MPP shape. This one is from the live
+`/rail/paid` payment above:
 
 ```json
-{ "method": "tempo", "reference": "0x...", "status": "success" }
+{ "fundingCurrency": "0x20c0000000000000000000000000000000000000", "method": "tempo",
+  "status": "success", "timestamp": "2026-11-06T11:51:22.160Z",
+  "reference": "0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33" }
 ```
-
-mppx also adds the offer hash as `externalId` when the challenge carried it.

@@ -44,3 +44,12 @@ See `docs/whitechain.md` on the Whitechain lane for the full list.
 ## Hedera testnet
 
 See `docs/hedera.md` on the Hedera lane for the full list.
+
+## Tempo testnet, Moderato (chain 42431): the mpp rail
+
+The `mppx` CLI paid 0.01 pathUSD from the project payer `0xEacEb7fD58157a39b6d4aF7A7Ca7A3AEba37486C` to the recipient `0xBfa03aCe72e48490C020Ab7CEe4beba2858f7231`, once on each demo route. Details are in `docs/mpp.md`.
+
+| Route | Transaction | Receipt |
+|---|---|---|
+| `GET /paid` (mppx's handler) | [`0x254397b0…5df6`](https://explore.testnet.tempo.xyz/tx/0x254397b0afa7479e089948cddd58830b359b470d87dc96c56b71450f40d15df6), block 42848312 | `Payment-Receipt` status `success`; `reference` is the transaction |
+| `GET /rail/paid` (countersign's `mpp` rail) | [`0xd525b18b…5c33`](https://explore.testnet.tempo.xyz/tx/0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33), block 42848372 | `Payment-Receipt` status `success`; `reference` is the transaction |
