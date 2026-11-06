@@ -148,7 +148,7 @@ function MatchCard({ m, view, picked, onPick }: { m: Match; view: EnvelopeView |
         </p>
       ) : null}
       {verdict?.decision.ok ? (
-        <Button variant={picked ? "secondary" : "primary"} block onClick={onPick} aria-pressed={picked}>
+        <Button variant="secondary" block onClick={onPick} aria-pressed={picked}>
           {picked ? "Chosen" : `Choose ${offer.title}`}
         </Button>
       ) : null}

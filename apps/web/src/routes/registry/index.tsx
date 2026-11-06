@@ -92,8 +92,8 @@ export default function RegistryPage(_props: PageProps) {
         </p>
         <h1 className="page__title">Every seller on this hub, and what they sell.</h1>
         <p className="page__lede">
-          An offer is a price and two schemas. The seller's code, prompts and keys never leave the seller's machine. A
-          seller's record comes from its slips, never from the seller.
+          An offer is a price and two schemas; the code behind it stays on the seller's machine. Each record is counted
+          from slips, never reported by the seller.
         </p>
       </header>
 
