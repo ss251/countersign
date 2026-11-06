@@ -14,6 +14,7 @@ import {
 } from "@countersign/core";
 import {
   KNOWN_RAILS,
+  NOT_SIGNED_IN,
   buy,
   countersignPayer,
   eip3009Payer,
@@ -29,6 +30,8 @@ export interface McpDeps {
   state: State;
   journal: Journal;
   account?: LocalAccount;
+  /** Why the session could not be loaded, shown beside NOT_SIGNED_IN. */
+  problem?: string;
   /** Unix seconds. Defaults to the wall clock. */
   now?: () => number;
   /** The RPC verify_slip reads the chain from. Without it, the on-chain check is skipped. */
@@ -39,7 +42,6 @@ export interface McpDeps {
 }
 
 const HASH_MISMATCH = "Refused. The hub served an offer that does not match the hash asked for.";
-const NO_KEY = "Set CS_BUYER_KEY to the agent's private key.";
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 
 function assertHash(value: string, what: string): void {
@@ -78,6 +80,11 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
   const clock = deps.now ?? (() => Math.floor(Date.now() / 1000));
   const verify = deps.verify ?? verifySlip;
 
+  const gate = (): CallToolResult | undefined => {
+    if (deps.account !== undefined) return undefined;
+    return failure(new Error(deps.problem === undefined ? NOT_SIGNED_IN : `${NOT_SIGNED_IN} (${deps.problem})`));
+  };
+
   const loadSlip = async (hash: string): Promise<Slip> => {
     if (existsSync(deps.state.slipPath(hash))) return deps.state.loadSlip(hash);
     const base = deps.hubUrl.replace(/\/+$/, "");
@@ -98,6 +105,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       },
     },
     async ({ query, limit }) => {
+      const refused = gate();
+      if (refused !== undefined) return refused;
       try {
         const listings = await deps.hub.listOffers();
         const needle = query?.toLowerCase();
@@ -140,6 +149,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       },
     },
     async ({ offerHash }) => {
+      const refused = gate();
+      if (refused !== undefined) return refused;
       try {
         assertHash(offerHash, "offerHash");
         const listing = await deps.hub.getOffer(offerHash);
@@ -160,8 +171,7 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
     "buy",
     {
       title: "Buy an offer",
-      description:
-        "Buy an offer under the agent's envelope and return the seller's output and slip. Requires CS_BUYER_KEY.",
+      description: "Buy an offer under the agent's envelope and return the seller's output and slip.",
       inputSchema: {
         offerHash: z.string(),
         input: z.unknown(),
@@ -169,8 +179,9 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       },
     },
     async ({ offerHash, input, rail }) => {
-      const account = deps.account;
-      if (account === undefined) return failure(new Error(NO_KEY));
+      const refused = gate();
+      if (refused !== undefined) return refused;
+      const account = deps.account as LocalAccount;
       if (rail !== undefined && !RAIL_IDS.includes(rail as RailId)) {
         return failure(new Error(`Unknown rail ${rail}.`));
       }
@@ -216,6 +227,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       },
     },
     async ({ slip, slipHash }) => {
+      const refused = gate();
+      if (refused !== undefined) return refused;
       if ((slip === undefined) === (slipHash === undefined)) {
         return failure(new Error("Pass exactly one of slip or slipHash."));
       }
@@ -237,6 +250,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       inputSchema: {},
     },
     async () => {
+      const refused = gate();
+      if (refused !== undefined) return refused;
       try {
         return text({ envelope: deps.state.loadEnvelope(), spent: deps.journal.spend() });
       } catch (error) {
@@ -255,6 +270,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       },
     },
     async ({ limit }) => {
+      const refused = gate();
+      if (refused !== undefined) return refused;
       try {
         const entries = deps.journal.entries();
         const count = limit ?? 20;

@@ -17,12 +17,13 @@ Options:
   --rpc <url>    The RPC verify_slip reads the chain from (env CS_RPC_URL), e.g. https://rpc.testnet.arc.network
   --help         Print this usage and exit
 
-Environment:
-  CS_BUYER_KEY   The agent's private key; without it, buy refuses.
-  CS_NETWORK     Must be unset or testnet.
+Sign in once: npx -y @countersign-hub/cli login. Your agent's wallet is a Privy server wallet held for you;
+this server signs through the hub with your session, and no key is ever on this machine or in any config.
 
-Install it from the countersign release tarball only. The npm packages named @countersign/*,
-countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
+Advanced, CI only: CS_BUYER_KEY overrides the session. CS_NETWORK must be unset or testnet.
+
+Install: npm i -g @countersign-hub/cli, then countersign mcp (or npx -y @countersign-hub/cli mcp).
+The npm packages named @countersign/*, countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
 
 interface Config {
   hub: string;
@@ -60,17 +61,41 @@ function parse(argv: string[]): { help: boolean; config: Config } {
   return { help, config };
 }
 
-function agentAccount(): LocalAccount | undefined {
-  const key = process.env.CS_BUYER_KEY;
-  if (!key) return undefined;
+export interface MainOptions {
+  loadAccount?: () => Promise<LocalAccount | undefined>;
+}
+
+export interface ResolvedAccount {
+  account?: LocalAccount;
+  problem?: string;
+}
+
+function ciAccount(env: Record<string, string | undefined>): ResolvedAccount {
+  const key = env.CS_BUYER_KEY;
+  if (!key) return {};
   try {
-    return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
+    return { account: privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex) };
   } catch {
-    return fail("CS_BUYER_KEY is not a valid private key.");
+    return { problem: "CS_BUYER_KEY is not a valid key." };
   }
 }
 
-export async function main(argv: string[]): Promise<void> {
+export async function resolveAccount(
+  options: MainOptions,
+  env: Record<string, string | undefined>,
+): Promise<ResolvedAccount> {
+  if (options.loadAccount === undefined) return ciAccount(env);
+  try {
+    const account = await options.loadAccount();
+    return account === undefined ? {} : { account };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const firstLine = message.split("\n")[0] ?? "";
+    return { problem: `Could not load the countersign session: ${firstLine}` };
+  }
+}
+
+export async function main(argv: string[], options: MainOptions = {}): Promise<void> {
   const { help, config } = parse(argv);
   if (help) {
     console.log(USAGE);
@@ -86,11 +111,16 @@ export async function main(argv: string[]): Promise<void> {
   const state = new State(config.state);
   const journal = new Journal(state.journalPath);
   const hub = new HubClient(config.hub);
-  const account = agentAccount();
+  const { account, problem } = await resolveAccount(options, process.env);
 
-  console.error(`countersign-mcp: hub ${hub.url}`);
-  console.error(`countersign-mcp: state ${state.dir}`);
-  if (account !== undefined) console.error(`countersign-mcp: agent ${account.address}`);
+  console.error(`countersign mcp: hub ${hub.url}`);
+  console.error(`countersign mcp: state ${state.dir}`);
+  if (account !== undefined) {
+    console.error(`countersign mcp: agent ${account.address}`);
+  } else {
+    console.error("countersign mcp: not signed in. Run: npx -y @countersign-hub/cli login");
+    if (problem !== undefined) console.error(`countersign mcp: ${problem}`);
+  }
 
   const server = createCountersignMcpServer({
     hub,
@@ -99,6 +129,7 @@ export async function main(argv: string[]): Promise<void> {
     hubUrl: config.hub,
     now: () => Math.floor(Date.now() / 1000),
     ...(account !== undefined ? { account } : {}),
+    ...(problem !== undefined ? { problem } : {}),
     ...(config.rpcUrl !== undefined ? { rpcUrl: config.rpcUrl } : {}),
   });
 
