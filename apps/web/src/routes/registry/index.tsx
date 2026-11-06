@@ -4,6 +4,7 @@ import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { settlementIndex, type Ledger } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
 import type { Listing, SellerRecord, Settlement } from "../../lib/types.ts";
 import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
@@ -105,6 +106,8 @@ export function deliveryRate(released: number, refunded: number): string {
   const n = released + refunded;
   return n === 0 ? "—" : `${Math.round((released / n) * 100)}%`;
 }
+
+export { settlementIndex };
 
 /** Every seller this hub knows and what each sells, with who they are and how they have delivered. */
 export default function RegistryPage(_props: PageProps) {
@@ -229,30 +232,6 @@ export default function RegistryPage(_props: PageProps) {
       )}
     </div>
   );
-}
-
-/* The settlements, indexed the two ways a seller card reads them. */
-
-interface Ledger {
-  /** null when the hub does not list settlements: say nothing rather than "none". */
-  known: boolean;
-  lastBySeller: Map<string, Settlement>;
-  byOffer: Map<string, { paid: number; refunded: number }>;
-}
-
-export function settlementIndex(rows: Settlement[] | null | undefined): Ledger {
-  const lastBySeller = new Map<string, Settlement>();
-  const byOffer = new Map<string, { paid: number; refunded: number }>();
-  for (const s of rows ?? []) {
-    const seller = s.seller.toLowerCase();
-    if (!lastBySeller.has(seller)) lastBySeller.set(seller, s);
-    const key = s.offerHash.toLowerCase();
-    const c = byOffer.get(key) ?? { paid: 0, refunded: 0 };
-    if (s.kind === "refunded") c.refunded += 1;
-    else c.paid += 1;
-    byOffer.set(key, c);
-  }
-  return { known: Array.isArray(rows), lastBySeller, byOffer };
 }
 
 function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
