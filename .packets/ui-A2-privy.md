@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else. You are on `cs/ui-A2`, cut from `cs/ui-A` (ui-A: wagmi with the injected connector, `WalletButton` in the shell).
 
-## The decision (captain, STEER-2115 and its correction)
+## The decision (project lead, STEER-2115 and its correction)
 
 - `@privy-io/react-auth` gives email and passkey login, and an embedded wallet on Arc testnet (`eip155:5042002`, `arcTestnet` in `apps/web/src/lib/wallet.ts`). Whitechain testnet is the second chain. EVM chains only: no Hedera wallet in Privy.
 - The embedded wallet is created only for users without a wallet: `embeddedWallets.ethereum.createOnLogin = "users-without-wallets"`.

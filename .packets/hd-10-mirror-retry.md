@@ -2,7 +2,7 @@
 
 ## Goal
 
-Three small fixes on the hedera code, exactly as decided in `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-mirror-retry.md` (read it first). Tracked by issue #41.
+Three small fixes on the hedera code, exactly as decided in `$M/hd/DESIGN-mirror-retry.md` (read it first). Tracked by issue #41.
 
 1. **Retry.** A Hedera mirror node 502 ended cs-e2e's hourly hedera run, because `readEntries` throws on any non-2xx. Every mirror read now retries a transient failure a few times before giving up.
 2. **The expiry demo.** `scripts/hedera/schedule.ts --expiry-demo` calls `releaseExpired` the moment the expiration passes, but a release now waits `RELEASE_MARGIN_SECONDS` (60 s) after the expiration, so the demo always fails. The demo now waits out the margin.
@@ -18,7 +18,7 @@ Three small fixes on the hedera code, exactly as decided in `/Users/thescoho/Dev
 - New test files:
   - `packages/rail/src/hedera/test/mirror-retry.test.ts`
   - `packages/buyer/src/hedera/test/mirror-retry.test.ts`
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-10-mirror-retry.md`
+- Report: `$M/reports/hd-10-mirror-retry.md`
 
 ## The decided design
 

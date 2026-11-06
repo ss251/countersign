@@ -13,11 +13,11 @@ The money-path review of the hedera agent (`packages/buyer/src/hedera/agent.ts`)
 - `packages/buyer/src/hedera/test/agent.test.ts`: add tests; keep every existing assertion.
 - `scripts/hedera/agent-run.ts`: pass the trusted fee payers (step 2) and add `--json` (step 3).
 - `scripts/hedera/audit.ts`: add `--json` (step 3).
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-04-agent-guards.md`.
+- Report: `$M/reports/hd-04-agent-guards.md`.
 
 ## Context
 
-Read `agent.ts`, `test/agent.test.ts`, `packages/core/src/envelope.ts` (`checkEnvelope`, `recordSpend`), `packages/rail/src/hedera/facilitator.ts` (`httpFacilitator(...).feePayer()`), `packages/rail/src/hedera/constants.ts` (`FACILITATORS`), and the review at `/Users/thescoho/Developer/countersign-mumbai/reports/review-cde4ad8.md` (should-fix 1 and 3).
+Read `agent.ts`, `test/agent.test.ts`, `packages/core/src/envelope.ts` (`checkEnvelope`, `recordSpend`), `packages/rail/src/hedera/facilitator.ts` (`httpFacilitator(...).feePayer()`), `packages/rail/src/hedera/constants.ts` (`FACILITATORS`), and the review at `$M/reports/review-cde4ad8.md` (should-fix 1 and 3).
 
 ## Required changes
 

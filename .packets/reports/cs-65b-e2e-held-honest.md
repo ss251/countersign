@@ -28,7 +28,7 @@ Both held flows share `heldListing`, so both get these changes.
   exists, and the payee equality) are replaced with:
 
   ```ts
-  check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (captain, 23:40 IST)");
+  check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (project lead, 23:40 IST)");
   ```
 
 `hederaExact` remains imported because line 109 uses it.

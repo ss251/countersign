@@ -37,6 +37,6 @@ bun test
 
 ## Environment note
 
-This worktree is under `/Users/sailesh`, where a stale `/Users/sailesh/node_modules/@types/node` (20.14.2) is visible to `tsc` and broke typecheck in files untouched by this packet (`Buffer` vs `ArrayBufferView`). The repo's `bun.lock` pins `@types/node` 22.7.5 through `bun-types`; a local `node_modules/@types/node` symlink to that locked copy (install output, not tracked) makes the exact command green. The same source typechecks without the symlink from a path outside `/Users/sailesh` (verified in a temporary worktree). No source, `package.json` or `bun.lock` change was made for this.
+This worktree is under `~`, where a stale `~/node_modules/@types/node` (20.14.2) is visible to `tsc` and broke typecheck in files untouched by this packet (`Buffer` vs `ArrayBufferView`). The repo's `bun.lock` pins `@types/node` 22.7.5 through `bun-types`; a local `node_modules/@types/node` symlink to that locked copy (install output, not tracked) makes the exact command green. The same source typechecks without the symlink from a path outside `~` (verified in a temporary worktree). No source, `package.json` or `bun.lock` change was made for this.
 
 No browser, network beyond `127.0.0.1`, key operation, push, merge or deploy was used.

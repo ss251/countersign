@@ -4,7 +4,7 @@
 
 You continue on the cs-07 branch, in the same worktree. Run `bun install` at the root first.
 
-Read the reviewer's report at `/Users/thescoho/Developer/countersign-mumbai/reports/review-slip-hash-a4edb7b.md`. Then read the reviewer's tests, now in your worktree: `packages/verify/test/w1-attacks.test.ts` and `packages/rail/test/w1-attacks.test.ts`.
+Read the reviewer's report at `$M/reports/review-slip-hash-a4edb7b.md`. Then read the reviewer's tests, now in your worktree: `packages/verify/test/w1-attacks.test.ts` and `packages/rail/test/w1-attacks.test.ts`.
 
 ## Goal
 

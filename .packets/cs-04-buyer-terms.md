@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else.
 
-This is a corrective packet on the existing buyer branch. Your worktree already holds `packages/buyer` (from cs-03), plus the reviewer's failing tests in `packages/buyer/test/w1-attacks.test.ts`. Read the review at `/Users/thescoho/Developer/countersign-mumbai/reports/review-8a18d5d.md` first.
+This is a corrective packet on the existing buyer branch. Your worktree already holds `packages/buyer` (from cs-03), plus the reviewer's failing tests in `packages/buyer/test/w1-attacks.test.ts`. Read the review at `$M/reports/review-8a18d5d.md` first.
 
 ## Goal
 

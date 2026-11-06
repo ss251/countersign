@@ -10,7 +10,7 @@ Two small changes to the Hedera lane scripts. Tracked by issue #6.
 ## Lease
 
 - `scripts/hedera/smoke.ts`, `scripts/hedera/agent-run.ts` and `scripts/hedera/audit.ts`. No other file changes.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-05-smoke-log-json.md`.
+- Report: `$M/reports/hd-05-smoke-log-json.md`.
 
 ## Context
 

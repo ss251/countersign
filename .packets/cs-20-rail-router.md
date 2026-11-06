@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else.
 
-## Goal (the captain's words)
+## Goal (the project lead's words)
 
 "A thin selection layer in packages/rail that, given an offer and the buyer's capabilities, picks the cheapest rail with acceptable finality and falls back to the next one if the first challenge or settle fails, recording which rail was chosen and why on the slip and in /healthz. Not a chain abstraction, not a bridge, just a deterministic policy with a trace."
 

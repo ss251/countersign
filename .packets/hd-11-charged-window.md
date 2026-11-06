@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build exactly what `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-charged-window.md` decides (read it first). This is cs-w1's should-fix and note from the review of 3601229 (`/Users/thescoho/Developer/countersign-mumbai/reports/review-3601229.md`). Tracked by issue #41.
+Build exactly what `$M/hd/DESIGN-charged-window.md` decides (read it first). This is cs-w1's should-fix and note from the review of 3601229 (`$M/reports/review-3601229.md`). Tracked by issue #41.
 
 - **The should-fix.** After a hub failure, `charged()` gives up after 12 s of "not on the mirror" and releases the reservation, but the signed transfer can still land until its valid window closes (120 s on production). After this change, the agent releases only once the window has closed, and keeps the reservation when the mirror cannot answer.
 - **The note.** Every mirror attempt gets a timeout.
@@ -15,7 +15,7 @@ Build exactly what `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-charg
 - New test files:
   - `packages/buyer/src/hedera/test/charged.test.ts`
   - `packages/rail/src/hedera/test/mirror-timeout.test.ts`
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-11-charged-window.md`
+- Report: `$M/reports/hd-11-charged-window.md`
 
 ## The decided design
 

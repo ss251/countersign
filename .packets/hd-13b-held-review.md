@@ -2,7 +2,7 @@
 
 ## Goal
 
-This is the single corrective for cs-w1's review of a3608ce (`/Users/thescoho/Developer/countersign-mumbai/reports/review-a3608ce.md`), branched from hd-12 (a3608ce), in parallel with hd-13.
+This is the single corrective for cs-w1's review of a3608ce (`$M/reports/review-a3608ce.md`), branched from hd-12 (a3608ce), in parallel with hd-13.
 
 - **Blocker B21.** Release confirmed the execution record of whatever create transaction the payment named, not the schedule it held. hd-13, running in parallel on its own branch and merged after this one, binds `createTxId` to `scheduleId` in `verify`. It is **not** on this branch. This packet adds the release-side check, which on its own makes B21 pass.
 - **The should-fix.**
@@ -20,7 +20,7 @@ cs-w1's failing test, `packages/rail/src/hedera/test/w1-held.test.ts`, is alread
   - `packages/rail/src/hedera/test/held-b21.test.ts` (new);
   - `packages/rail/src/hedera/test/held.test.ts`, only the refund and cancel expectations this packet changes;
   - `apps/hub/test/held.test.ts`, only the message assertion.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-13b-held-review.md`
+- Report: `$M/reports/hd-13b-held-review.md`
 
 Never edit `w1-held.test.ts` or any other `w1-*` test.
 
