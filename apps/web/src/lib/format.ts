@@ -94,6 +94,7 @@ export const RAIL_LABEL: Record<RailId, string> = {
   erc8183: "Arc · ERC-8183",
   whitechain: "Whitechain · USDT",
   hedera: "Hedera · x402",
+  mpp: "Stripe · MPP",
 };
 
 /** "eip155:5042002" to a name people know. */

@@ -98,6 +98,16 @@ export const rails: Record<RailId, RailDeclaration> = {
     finality: "Final at consensus, about three seconds after the facilitator submits it.",
     explorerTx: "https://hashscan.io/testnet/transaction/{tx}",
   },
+  mpp: {
+    id: "mpp",
+    network: "mpp:stripe",
+    scheme: "exact",
+    asset: { network: "mpp:stripe", address: "usd", symbol: "USD", decimals: 2 },
+    kind: "direct",
+    gasPaidBy: "facilitator",
+    finality: "Final when Stripe confirms the payment; the slip carries the MPP receipt id.",
+    explorerTx: "https://dashboard.stripe.com/test/payments/{tx}",
+  },
 };
 
 export const listings = catalogue.listings as unknown as Listing[];
