@@ -4,6 +4,7 @@ import { Link } from "../../app/router.tsx";
 import { hasRoute } from "../../app/routes.ts";
 import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
 import {
+  ANONYMOUS,
   ESCROW_RAILS,
   formatClock,
   formatDuration,
@@ -214,7 +215,7 @@ function ApprovalFlow({
           </svg>
           <div className="pass__end pass__end--to">
             <span className="label">Seller</span>
-            <span className="pass__who">{listing.seller.named === false ? "Unnamed seller" : listing.seller.name}</span>
+            <span className="pass__who">{listing.seller.named === false ? ANONYMOUS : listing.seller.name}</span>
             <span className="pass__sub pass__payee">
               <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
                 <rect x="2.25" y="5.25" width="7.5" height="5.25" rx="1" fill="none" stroke="currentColor" strokeWidth="1.2" />
@@ -332,7 +333,7 @@ function ApprovalFlow({
           <div className="approval__dock-line">
             <p className="approval__dock-what">
               <Amount money={money} size="sm" flight />{" "}
-              <span className="approval__dock-to">to {listing.seller.named === false ? "an unnamed seller" : listing.seller.name}</span>
+              <span className="approval__dock-to">to {listing.seller.name}{listing.seller.named === false ? `, ${ANONYMOUS}` : ""}</span>
             </p>
             {job ? null : (
               <button type="button" className="approval__decline" disabled={sending !== null} onClick={() => void decline()}>
