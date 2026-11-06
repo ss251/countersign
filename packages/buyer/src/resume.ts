@@ -1,8 +1,9 @@
 import { createPublicClient, http, type Hex } from "viem";
-import type { Network } from "@countersign/core";
+import type { Envelope, Network } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
 import type { Journal, JournalEntry, JournalKind } from "./journal.ts";
 import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
+import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { State } from "./state.ts";
 
 export interface ResumeSummary {
@@ -64,6 +65,8 @@ export async function resume(args: {
   now?: number;
   known?: KnownRail[];
   readJobStatus?: JobStatusReader;
+  /** Publish the envelope mirror after the resume settles any open jobs. */
+  mirror?: { account: SigningAccount; envelope: Envelope };
 }): Promise<ResumeSummary[]> {
   const { hub, journal, state } = args;
   const known = args.known ?? KNOWN_RAILS;
@@ -79,6 +82,7 @@ export async function resume(args: {
       amount: open.amount,
       network: open.network,
       rail: open.rail,
+      reservationId: open.reservationId,
       jobId,
     };
     let job;
@@ -106,18 +110,40 @@ export async function resume(args: {
       } catch {
         status = 0;
       }
-      if (status !== 3) {
+      // Refunded (3) and Failed (4) both leave the payment with the buyer.
+      if (status !== 3 && status !== 4) {
         out.push({ jobId, status: "hub says refunded; chain does not" });
         continue;
       }
       journal.append({ ...base, kind: "refunded", closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: "refunded", appended: "refunded" });
     } else if (job.status === "failed") {
+      const rail = railFor(open, known);
+      let status = 0;
+      try {
+        if (rail) status = await read(rail, jobId as Hex);
+      } catch {
+        status = 0;
+      }
+      // A Failed job pays the buyer the amount and the bond, so its budget is back too.
+      if (status !== 4 && status !== 3) {
+        out.push({ jobId, status: "hub says failed; chain does not" });
+        continue;
+      }
       journal.append({ ...base, kind: "failed", closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: job.status, appended: "failed" });
     } else {
       out.push({ jobId, status: job.status });
     }
+  }
+  if (args.mirror) {
+    await publishEnvelope({
+      hub,
+      account: args.mirror.account,
+      envelope: args.mirror.envelope,
+      spent: journal.spend(),
+      now: at,
+    });
   }
   return out;
 }

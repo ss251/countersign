@@ -12,6 +12,7 @@ contract CountersignedEscrowTest is Test {
 
     address internal treasury = makeAddr("treasury");
     address internal stranger = makeAddr("stranger");
+    address internal arbiter = makeAddr("arbiter");
     address internal buyer;
     uint256 internal buyerKey;
     address internal seller;
@@ -27,7 +28,7 @@ contract CountersignedEscrowTest is Test {
         (buyer, buyerKey) = makeAddrAndKey("buyer");
         (seller, sellerKey) = makeAddrAndKey("seller");
         token = new MockEIP3009();
-        escrow = new CountersignedEscrow(address(token), treasury, TOLL_BPS);
+        escrow = new CountersignedEscrow(address(token), treasury, TOLL_BPS, arbiter);
         token.mint(buyer, 100_000_000);
     }
 
@@ -313,11 +314,11 @@ contract CountersignedEscrowTest is Test {
 
     function test_constructor_refuses_bad_parameters() public {
         vm.expectRevert(ICountersignedEscrow.ZeroAddress.selector);
-        new CountersignedEscrow(address(0), treasury, 100);
+        new CountersignedEscrow(address(0), treasury, 100, arbiter);
         vm.expectRevert(ICountersignedEscrow.ZeroAddress.selector);
-        new CountersignedEscrow(address(token), address(0), 100);
+        new CountersignedEscrow(address(token), address(0), 100, arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TollTooHigh.selector, uint16(1_001)));
-        new CountersignedEscrow(address(token), treasury, 1_001);
+        new CountersignedEscrow(address(token), treasury, 1_001, arbiter);
     }
 
     function testFuzz_toll_and_payout_sum_to_the_amount(uint256 amount) public {

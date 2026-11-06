@@ -188,7 +188,7 @@ bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8811 \
 scripts/hedera/beat --hub http://127.0.0.1:8811
 ```
 
-`agent-run.ts` and `audit.ts` both take `--json`, which prints one evidence object for the `#/demo` page on stdout, in the form `{beat, ok, evidence: [{label, value, url?}]}`. The usual lines go to stderr. The smoke test appends its own spend to the HCS log, like the agent does.
+`agent-run.ts` and `audit.ts` both take `--json`, which prints one evidence object on stdout, in the form `{beat, ok, evidence: [{label, value, url?}]}`. The usual lines go to stderr. The end-to-end suite reads the agent's object. The smoke test appends its own spend to the HCS log, like the agent does.
 
 `setup.ts` is idempotent. Every receiving account must associate the USDC token before it can be paid, or settlement fails with `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT`; the script associates both the agent and the seller.
 
