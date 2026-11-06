@@ -64,6 +64,14 @@ Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.loc
    - **(d) The fixture never repeats a tx hash.** Every hash in `fixtures.ts` is distinct.
    - **(e) Dates read like people write them.** The receipt shows `6 Nov 2026, 14:32 IST`. Use `Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" })` and accept whatever short zone name Intl gives. The desk's Time cell `title` uses the same format.
 
+8. **The phone receipt drops the app nav.** cs-ui's router reads an optional `surface` export from a route module. In `apps/web/src/routes/merchant/index.tsx`, add:
+
+   ```ts
+   export const surface = (params: string[]) => (params[0] === "receipt" ? "bare" : "desk");
+   ```
+
+   Do this only if `apps/web/src/app/routes.ts` in your base reads `surface` from route modules (cs-ui `b2d3fba`). If it doesn't, skip this item and say so in the report.
+
 ## Tests
 
 - **Refund reply normaliser:** both reply shapes.
