@@ -6,6 +6,9 @@ challenge whose `request` parameter is base64url JSON. The buyer returns the
 credential in `Authorization: Payment ...`, and a successful response carries a
 `Payment-Receipt` header.
 
+The rail is testnet only: Tempo Moderato (chain 42431, pathUSD), Stripe test
+mode. There is no mainnet configuration.
+
 The rail keeps the same interface as every other rail: `declaration`,
 `challenge`, `verify`, `settle`. Hub wiring is a separate packet.
 
@@ -15,7 +18,7 @@ The rail keeps the same interface as every other rail: `declaration`,
 
 | Method | Network | Asset | Floor | Settlement |
 | --- | --- | --- | --- | --- |
-| Stablecoin (Tempo) | `mpp:tempo` | USDC on Tempo (6 decimals) | 0.01 USDC | Tempo transfer |
+| Stablecoin (Tempo) | `mpp:tempo` | pathUSD on Tempo Moderato (6 decimals) | 0.01 pathUSD | Tempo transfer |
 | Card (Stripe) | `mpp:stripe` | USD cents | 0.50 USD | Stripe PaymentIntent |
 
 The stablecoin floor is 0.01 because that is the smallest useful Tempo charge.
@@ -38,11 +41,16 @@ also HMAC-binds.
 
 A `RailDeclaration` has one network and one asset, but this rail can be paid by
 card or by stablecoin. The declaration describes the stablecoin method
-(`mpp:tempo`, USDC) because it is the method whose asset is a concrete token and
-whose challenge can be built without Stripe credentials. The card method is an
-additional path inside the same rail; its receipts still say `method: "stripe"`.
-The dashboard explorer template points at Stripe test payments because the card
-method is the one with a payment reference.
+(`mpp:tempo`, pathUSD on Moderato) because it is the method whose asset is a
+concrete token and whose challenge can be built without Stripe credentials. Its
+asset is the pathUSD address on chain 42431, symbol `pathUSD`, 6 decimals. The
+card method is an additional path inside the same rail; its receipts still say
+`method: "stripe"`. The dashboard explorer template points at Stripe test
+payments because the card method is the one with a payment reference.
+
+The Tempo method is created with mppx's `testnet: true` and the pathUSD currency,
+so every Tempo challenge names chain 42431. There is no option that produces the
+mainnet chain or a mainnet currency address.
 
 ## Mock mode
 
@@ -74,23 +82,27 @@ that route returns the MPP challenge; with a valid one it returns a JSON body
 and a `Payment-Receipt` header. The Stripe PaymentIntent is answered by the
 mock.
 
-Validate it with mppx's own CLI:
+## Running `mppx validate` safely on this machine
+
+Validate only the card endpoint:
 
 ```
 npx mppx@latest validate http://localhost:8798
 ```
 
 The challenge, discovery, and error-handling checks pass. The card payment step
-is skipped while no Stripe test key is configured. The CLI must not be allowed
-to discover a local Stripe key automatically; run it with an environment that
-does not expose one.
+is skipped while no Stripe test key is configured.
 
-Validating a Tempo challenge is not an offline check. mppx's CLI resolves a
-payer wallet and reads the token balance over a live Tempo RPC before it offers
-to pay, so it is outside this lane. The rail stops Tempo at `verify` with
-`tempo_verification_requires_rpc`; `settle` returns
-`tempo_settlement_requires_rpc`. A Tempo RPC and a real deposit address are the
-two things missing for the stablecoin side.
+Before running it, take the `stripe` CLI off `PATH` and unset
+`MPPX_STRIPE_SECRET_KEY` and `MPPX_STRIPE_SPT_URL`. `validate` auto-discovers a
+Stripe key through the stripe CLI, and this machine must not expose one to it.
+
+Never pass `--yes`. Never run `validate` against a Tempo endpoint: the validator
+resolves a local payer wallet and reads the token balance over a live Tempo RPC,
+and with `--yes` it pays on chain. The Tempo side is exercised only by the
+offline tests: `verify` stops at `tempo_verification_requires_rpc`, and `settle`
+returns `tempo_settlement_requires_rpc`. A Tempo RPC and a real deposit address
+are the two things missing for the stablecoin side.
 
 ## Verify and settle
 
