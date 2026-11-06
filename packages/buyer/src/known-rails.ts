@@ -11,6 +11,11 @@ export interface KnownRail {
   tokenName: string;
   tokenVersion: string;
   rpcUrl: string;
+  /**
+   * The escrow's countersignature version, from this agent's own pin and never from the hub.
+   * Default 1: a rail that does not say v2 derives the v1 jobId and refuses a v2 402.
+   */
+  version?: 1 | 2;
 }
 
 export const KNOWN_RAILS: KnownRail[] = [

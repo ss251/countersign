@@ -6,6 +6,9 @@
  *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...]
  *     [--known-escrow <chainId>=<address> ...] [--rpc <chainId>=<url> ...] ...
  *   bun packages/runner/src/cli.ts bond deposit|withdraw|show ... --escrow <address>
+ *   bun packages/runner/src/cli.ts bond terms --offer <hash> --price <atomic> --bond <atomic>
+ *     --review-window <seconds> --min-duration <seconds> --escrow <address>
+ *   bun packages/runner/src/cli.ts bond terms --show --offer <hash> --escrow <address>
  *
  * `serve` checks every escrow job on chain before it runs: KNOWN_ESCROWS plus any extra pins,
  * over Arc's default RPC, ARC_RPC_URL or WC_RPC_URL, plus any --rpc overrides.

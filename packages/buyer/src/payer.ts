@@ -59,7 +59,7 @@ export function countersignPayer(account: LocalAccount): Payer {
     async pay(req, ctx) {
       const rail = ctx.rail;
       if (!rail) throw new Error("Refused. This rail is not one this agent knows.");
-      const extra = req.extra as unknown as CountersignExtra;
+      const extra = req.extra as unknown as CountersignExtra & { bond?: unknown; reviewWindow?: unknown };
       const terms: CountersignTerms = {
         offerHash: extra.offerHash,
         buyer: account.address,
@@ -67,6 +67,13 @@ export function countersignPayer(account: LocalAccount): Payer {
         amount: req.amount,
         deadline: ctx.now + extra.deadlineSeconds,
         salt: randomSalt(),
+        // Only a rail pinned as v2 signs the v2 struct, which derives the v2 jobId.
+        ...((rail.version ?? 1) === 2
+          ? {
+              bond: typeof extra.bond === "string" ? extra.bond : "0",
+              reviewWindow: typeof extra.reviewWindow === "number" ? extra.reviewWindow : 0,
+            }
+          : {}),
       };
       const input: AuthorizationInput = {
         terms,

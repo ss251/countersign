@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { explorerUrl, type Rail, type RailDeclaration } from "./deps.ts";
-import type { JobRecord, JobStatus, Store } from "./store.ts";
+import type { JobRecord, JobStatus, ReviewOutcome, Store } from "./store.ts";
 
 export interface OrdersDeps {
   store: Store;
@@ -58,6 +58,7 @@ export interface Order {
   reviewWindow: number | null;
   deliveredAt: number | null;
   reviewEndsAt: number | null;
+  reviewOutcome: ReviewOutcome | null;
   acceptedAt: number | null;
   acceptTx: string | null;
   disputedAt: number | null;
@@ -150,7 +151,7 @@ async function orderFor(job: JobRecord, deps: OrdersDeps, rails: Map<string, Rai
     merchant: offer?.seller ?? job.payment.accepted.payTo,
     amount: job.amount,
     fee: await feeFor(job, rail, escrow),
-    refunded: job.status === "refunded" ? job.amount : "0",
+    refunded: job.status === "refunded" || job.status === "disputed" ? job.amount : "0",
     refundable: "0",
     status: view.status,
     closeKind: view.closeKind,
@@ -166,21 +167,25 @@ async function orderFor(job: JobRecord, deps: OrdersDeps, rails: Map<string, Rai
     description: offer?.offer.title ?? null,
     settleTxUrl: txUrl(declaration, job.settleTx),
     closeTxUrl: txUrl(declaration, job.closeTx),
-    ...reviewFields(escrow),
+    ...reviewFields(job, escrow),
     bondSlashed: "0",
   };
   return order;
 }
 
 /**
- * The review fields escrow v2 adds (docs/spec/escrow.md "Escrow v2", D12). Jobs on the v1 escrow have
- * no review: their window is 0, and rails without an escrow have none at all (null). The rest stay
- * null until the chain reports a delivery, an acceptance or a dispute.
+ * The review fields escrow v2 adds (docs/spec/escrow.md "Escrow v2", D12), from the stored job.
+ * Jobs on the v1 escrow have no review: their window is 0, and rails without an escrow have none
+ * at all (null). Delivery times are milliseconds, as the desk serves them.
  */
-export function reviewFields(escrow: boolean): {
+export function reviewFields(
+  job: JobRecord,
+  escrow: boolean,
+): {
   reviewWindow: number | null;
-  deliveredAt: null;
-  reviewEndsAt: null;
+  deliveredAt: number | null;
+  reviewEndsAt: number | null;
+  reviewOutcome: ReviewOutcome | null;
   acceptedAt: null;
   acceptTx: null;
   disputedAt: null;
@@ -188,9 +193,10 @@ export function reviewFields(escrow: boolean): {
   releasedAfterWindow: false;
 } {
   return {
-    reviewWindow: escrow ? 0 : null,
-    deliveredAt: null,
-    reviewEndsAt: null,
+    reviewWindow: escrow ? (job.reviewWindow ?? 0) : null,
+    deliveredAt: job.deliveredAt === null || job.deliveredAt === undefined ? null : job.deliveredAt * 1000,
+    reviewEndsAt: job.endsAt === null || job.endsAt === undefined ? null : job.endsAt * 1000,
+    reviewOutcome: job.reviewOutcome ?? null,
     acceptedAt: null,
     acceptTx: null,
     disputedAt: null,
@@ -222,6 +228,10 @@ function statusView(
       return { status: "paid", closeKind: status === "released" ? "release" : null };
     case "refunded":
       return { status: "refunded", closeKind: "deadline_refund" };
+    case "delivered":
+      return { status: "in_review", closeKind: null };
+    case "disputed":
+      return { status: "refunded", closeKind: "dispute_refund" };
     case "failed":
       return escrow
         ? { status: "refund_pending", closeKind: null }

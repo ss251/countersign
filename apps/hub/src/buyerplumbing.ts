@@ -90,7 +90,7 @@ function listJobs(c: Context, deps: BuyerPlumbingDeps): Response {
       closeTx: job.closeTx,
       slipHash: job.slipHash,
       explorer,
-      ...reviewFields(rails.get(job.rail)?.declaration.kind === "escrow"),
+      ...reviewFields(job, rails.get(job.rail)?.declaration.kind === "escrow"),
     };
   });
   return json({ jobs });
