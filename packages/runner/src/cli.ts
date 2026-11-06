@@ -59,10 +59,12 @@ export interface FundingEnv {
 
 /** The CLI's funding check: KNOWN_ESCROWS plus pins, and the per-chain RPCs. */
 export function fundingFor(options: Options, env: FundingEnv = process.env): FundingConfig {
+  // Both pinned chains get a default, so the check never refuses a pinned escrow for want of an RPC.
+  // Whitechain's is the one the rail and relay use (packages/rail/src/whitechain WHITECHAIN_RPC_URL).
   const rpc: Record<number, string> = {
     [ARC_TESTNET]: env.ARC_RPC_URL || ARC_RPC_URL,
+    [WHITECHAIN_TESTNET]: env.WC_RPC_URL || "https://rpc.ankr.com/whitechain_testnet",
   };
-  if (env.WC_RPC_URL) rpc[WHITECHAIN_TESTNET] = env.WC_RPC_URL;
   for (const entry of options.rpcs ?? []) rpc[entry.chainId] = entry.url;
 
   return {

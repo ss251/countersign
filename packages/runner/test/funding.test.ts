@@ -230,12 +230,13 @@ describe("fundingRefusal", () => {
 describe("fundingFor", () => {
   const base = ["--hub", "http://127.0.0.1:1", "--skill", "SKILL.md", "--price", "1000"];
 
-  test("no flags uses KNOWN_ESCROWS and Arc's default RPC", () => {
+  test("no flags uses KNOWN_ESCROWS and a default RPC for both pinned chains", () => {
     const funding = fundingFor(parseOptions(base), {});
     expect(funding.known).toContainEqual({ chainId: ARC_TESTNET, escrow: ESCROW });
     expect(funding.known.length).toBeGreaterThan(0);
     expect(funding.rpc?.[ARC_TESTNET]).toBe(ARC_RPC_URL);
-    expect(funding.rpc?.[WHITECHAIN_TESTNET]).toBeUndefined();
+    // A pinned Whitechain escrow must never be refused for want of an RPC.
+    expect(funding.rpc?.[WHITECHAIN_TESTNET]).toBe("https://rpc.ankr.com/whitechain_testnet");
   });
 
   test("--known-escrow and --rpc add to the defaults", () => {
