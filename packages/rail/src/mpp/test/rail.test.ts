@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { offerHash, type Offer, type PaymentPayload, type PaymentRequirements } from "@countersign/core";
 import { Challenge, Credential, Receipt, Store } from "mppx";
 import { tempo } from "mppx/server";
+import { Proof } from "mppx/tempo";
+import { getAddress } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { tempoMainnet } from "viem/tempo/chains";
 import {
   CARD_FLOOR,
@@ -17,6 +20,7 @@ import { mockStripeClient } from "../mock.ts";
 import {
   createMppRail,
   inspectMppPayment,
+  MPP_DECLARATION,
   type MppInspectionOptions,
   type MppRailOptions,
   type SettledStore,
@@ -24,6 +28,8 @@ import {
 
 const SELLER = "0x1111111111111111111111111111111111111111" as const;
 const RECIPIENT = "0x00000000000000000000000000000000000000aa" as const;
+const OTHER_RECIPIENT = "0x00000000000000000000000000000000000000bb" as const;
+const PAYER = "0x00000000000000000000000000000000000000dd" as const;
 const RESOURCE = "http://localhost:8798/paid";
 const NETWORK_ID = "profile_test_mock";
 const SECRET = "s".repeat(32);
@@ -54,7 +60,6 @@ function nowSeconds(): number {
 
 function railWith(over: Partial<MppRailOptions> = {}) {
   return createMppRail({
-    recipient: RECIPIENT,
     secretKey: SECRET,
     realm: REALM,
     ...over,
@@ -90,7 +95,7 @@ function sptPayload(requirements: PaymentRequirements, challengeExternalId?: str
   };
 }
 
-function tempoPayload(requirements: PaymentRequirements) {
+function tempoPayload(requirements: PaymentRequirements, source?: string) {
   const challenge = challengesOf(requirements).find((candidate) => candidate.method === "tempo");
   if (!challenge) throw new Error("no tempo challenge");
   return {
@@ -99,6 +104,7 @@ function tempoPayload(requirements: PaymentRequirements) {
       Credential.from({
         challenge,
         payload: { hash: `0x${"11".repeat(32)}`, type: "hash" },
+        ...(source ? { source } : {}),
       }),
     ),
   };
@@ -145,7 +151,6 @@ function inspect(
   return inspectMppPayment(paymentFor(requirements, credential), requirements, {
     secretKey: SECRET,
     realm: REALM,
-    recipient: RECIPIENT,
     ...over,
   });
 }
@@ -183,6 +188,12 @@ describe("declaration", () => {
       finality: "Final when the Tempo transaction is included on Moderato.",
       explorerTx: "https://explore.testnet.tempo.xyz/tx/{tx}",
     });
+  });
+
+  test("declares buyer-paid gas as a plain RailDeclaration", () => {
+    expect(MPP_DECLARATION.gasPaidBy).toBe("buyer");
+    const source = readFileSync(join(import.meta.dir, "..", "rail.ts"), "utf8");
+    expect(source).not.toMatch(/as\s+RailDeclaration/);
   });
 
   test("keeps the constants on mppx's testnet defaults", () => {
@@ -234,6 +245,37 @@ describe("challenge", () => {
     expect(challenge.request.currency).toBe(TEMPO_CURRENCY);
     expect(challenge.request.recipient).toBe(RECIPIENT);
     expect((challenge.request.methodDetails as { chainId?: number }).chainId).toBe(42431);
+  });
+
+  test("pays the offer's own Tempo payee, not the rail recipient", () => {
+    const rail = railWith({ recipient: OTHER_RECIPIENT });
+    const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+
+    expect(req.payTo).toBe(RECIPIENT);
+    const challenge = challengesOf(req).find((candidate) => candidate.method === "tempo")!;
+    expect(challenge.request.recipient).toBe(RECIPIENT);
+  });
+
+  test("falls back to the seller when the offer names no mpp payee", () => {
+    const o = offer("10000", { payTo: {} });
+    const req = railWith().challenge(o, { resource: RESOURCE, now: nowSeconds() });
+
+    expect(req.payTo).toBe(SELLER);
+    const challenge = challengesOf(req).find((candidate) => candidate.method === "tempo")!;
+    expect(challenge.request.recipient).toBe(SELLER);
+  });
+
+  test("refuses an offer whose mpp payee is not a valid address", () => {
+    const rail = railWith();
+    expect(() =>
+      rail.challenge(offer("10000", { payTo: { mpp: "0x1234" } }), { resource: RESOURCE, now: nowSeconds() }),
+    ).toThrow(/recipient/);
+    expect(() =>
+      rail.challenge(
+        offer("10000", { payTo: { mpp: "0x0000000000000000000000000000000000000000" } }),
+        { resource: RESOURCE, now: nowSeconds() },
+      ),
+    ).toThrow(/zero/);
   });
 
   test("never offers the card method without a stripe client", () => {
@@ -303,7 +345,7 @@ describe("challenge", () => {
 
 describe("stateless inspection", () => {
   test("accepts a credential issued before freshly re-issued requirements", () => {
-    const rail = railWith();
+    const rail = railWith({ recipient: OTHER_RECIPIENT });
     const earlier = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() - 2 });
     const { challenge, serialized } = tempoPayload(earlier);
     const fresh = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
@@ -351,6 +393,25 @@ describe("stateless inspection", () => {
     });
 
     expect(inspect(req, credentialFor(tampered))).toEqual({ ok: false, reason: "offer_mismatch" });
+  });
+
+  test("refuses requirements whose payTo names another address", () => {
+    const rail = railWith();
+    const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+    const { serialized } = tempoPayload(req);
+
+    expect(inspect({ ...req, payTo: OTHER_RECIPIENT }, serialized)).toEqual({
+      ok: false,
+      reason: "offer_mismatch",
+    });
+  });
+
+  test("compares the challenge recipient and payTo case-insensitively", () => {
+    const rail = railWith();
+    const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+    const { serialized } = tempoPayload(req);
+
+    expect(inspect({ ...req, payTo: RECIPIENT.toUpperCase().replace("0X", "0x") }, serialized).ok).toBe(true);
   });
 
   test("refuses a mainnet chain id", () => {
@@ -427,6 +488,53 @@ describe("verify", () => {
 
     expect(result).toEqual({ isValid: false, invalidReason: "replay" });
   });
+
+  test("names the Tempo payer from the credential's did:pkh source", async () => {
+    const account = privateKeyToAccount("0x0101010101010101010101010101010101010101010101010101010101010101");
+    const rail = railWith();
+    const baseReq = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+    const base = challengesOf(baseReq).find((candidate) => candidate.method === "tempo")!;
+    const challenge = reissue(base, { ...base.request, amount: "0" });
+    const source = Proof.proofSource({ address: account.address, chainId: TEMPO_CHAIN_ID });
+    const signature = await account.signTypedData(
+      Proof.typedData({
+        account: account.address,
+        chainId: TEMPO_CHAIN_ID,
+        challengeId: challenge.id,
+        realm: challenge.realm,
+      }),
+    );
+    const credential = Credential.serialize(
+      Credential.from({ challenge, source, payload: { type: "proof", signature } }),
+    );
+    const requirements = { ...baseReq, amount: "0" };
+
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("network used in a hermetic test");
+    }) as unknown as typeof fetch;
+    try {
+      const result = await rail.verify(paymentFor(requirements, credential), requirements);
+      expect(result).toEqual({ isValid: true, payer: getAddress(account.address) });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("leaves payer unset for a missing or malformed source", async () => {
+    for (const source of [undefined, "did:pkh:eip155:1:" + PAYER, "not-a-did"]) {
+      const seen = memorySettled();
+      const rail = railWith({ seen });
+      const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+      const { challenge, serialized } = tempoPayload(req, source);
+      await seen.claim(challenge.id);
+
+      expect(await rail.verify(paymentFor(req, serialized), req)).toEqual({
+        isValid: false,
+        invalidReason: "replay",
+      });
+    }
+  });
 });
 
 describe("settle", () => {
@@ -502,16 +610,17 @@ describe("settle", () => {
 });
 
 describe("constructor", () => {
-  test("requires a recipient", () => {
-    const without = { secretKey: SECRET, realm: REALM } as MppRailOptions;
-    expect(() => createMppRail(without)).toThrow(/recipient/);
+  test("builds without a rail-level recipient", () => {
+    const rail = createMppRail({ secretKey: SECRET, realm: REALM });
+    const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+    expect(req.payTo).toBe(RECIPIENT);
   });
 
-  test("refuses a malformed recipient", () => {
+  test("refuses a malformed fallback recipient", () => {
     expect(() => railWith({ recipient: "0x1234" })).toThrow(/recipient/);
   });
 
-  test("refuses the zero address", () => {
+  test("refuses a zero fallback address", () => {
     expect(() => railWith({ recipient: "0x0000000000000000000000000000000000000000" })).toThrow(/zero/);
   });
 });
