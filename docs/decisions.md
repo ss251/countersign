@@ -217,3 +217,27 @@ The headless browser is no longer cut. A person has to be able to sign in, conne
   - The test then runs that path with a test EIP-1193 provider from a throwaway key.
 - **Funding.** The test wallet is funded with 1 USDC on Arc by a dedicated test-funder key before it buys, and the test asserts the balance. The deployer's own key never sits in CI.
 - **Status.** `docs/status.md` marks this `IN DESIGN` until the project exists, and `SHIPPED` only when it runs green.
+
+## D20 — the person revokes an agent from the phone, and the hub refuses that agent before any 402 (06 Nov; refs #21)
+
+The envelope lives on the agent's machine, and the agent signs its mirror, so the phone cannot rewrite it. What the person can do from the phone is revoke the agent on the hub, signed by the approver key the envelope names.
+
+**The revoke.**
+- `POST /envelopes/:agent/revoke` takes `{revokedAt, sig}`.
+- `sig` is the approver's EIP-191 signature over the canonical JSON of `{kind: "countersign-envelope-revoke", v: 1, agent, revokedAt}`. `agent` is lowercase, and `revokedAt` is unix seconds within 300 seconds of the hub's clock.
+- The route is gated like an approval decision: a Privy person who owns the approver (D19), or the operator token. The signature is what revokes.
+
+**What the hub does with it.**
+- It records the revoke and answers 200 `{agent, revoked: true, revokedAt}`. A second revoke keeps the first.
+- `GET /envelopes/:agent` returns `revocation: {revokedAt}`, so the phone reads it back after a reload.
+
+**Enforcement.**
+- **Before any 402.** A call whose `X-Countersign-Agent` header names a revoked agent gets 403 `envelope-revoked`: "Refused. This agent's envelope was revoked by its approver. Nothing was charged."
+- **At payment, before settle.** A payment whose verified payer is a revoked agent gets the same refusal, so an agent that leaves the header off still moves no money.
+- **The buyer.** The buyer CLI sends `X-Countersign-Agent` with its address on every call.
+
+**No reinstating tonight.** A revoked agent stays revoked on this hub. To resume, the person makes a new agent key on the agent's machine, and the agent mirrors a new envelope under it. The phone's other envelope controls (budget, per-seller limit, allowlist) still live on the agent's machine: the phone shows the agent's signed copy and cannot change it.
+
+**Limits.**
+- The header is the agent's own claim; the payment check is what binds it.
+- A Hedera payer is a Hedera account, not an EVM agent, so it is not covered.
