@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { toHex } from "viem";
 import type { Address, Hex, LocalAccount } from "viem";
 import { cancelTypedData } from "@countersign/core";
 import { WHITECHAIN_CHAIN_ID } from "./chain.ts";
@@ -41,7 +41,7 @@ export async function signRefund(input: SignRefundInput): Promise<SignedRefund> 
     value,
     validAfter: 0n,
     validBefore: BigInt(input.now + validForSeconds),
-    nonce: `0x${randomBytes(32).toString("hex")}` as Hex,
+    nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
   };
   const signature = await signAuthorization(input.merchant, authorization);
   return { authorization: authorizationToWire(authorization), signature };
