@@ -35,7 +35,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
-Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its 28 cases are the seven routes in `e2e/flows/web.flow.ts`, each at 390 and 1440 px, light and dark.
+Flow 9 needs a browser, and the captain cut a headless browser for it (STEER-1812): the firstmate's screenshot rounds at 390 and 1440 px, light and dark, cover those checks. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`.
 
 ## What each flow asserts
 
@@ -216,4 +216,4 @@ These parts of the product have no end-to-end flow:
 - the `mcp` runner adapter;
 - the Escrow v2 review window, dispute and bond.
 
-The web routes are written but not run on the build machine. A part moves into the flows table only once its flow passes.
+The web routes are cut from the suite; the firstmate's screenshot rounds check them. A part moves into the flows table only once its flow passes.
