@@ -5,14 +5,30 @@ import { useNow } from "../../lib/now.ts";
 import type { HubStats, Listing, RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
 import { exampleNeeds } from "../assistant/palette.ts";
-import { asideAt, byTime, EXIT, keyOf, labelSpots, markSpots, NARROW, newestOf, railOrder, ROOMY, WIDE, type Spot } from "./field.ts";
+import {
+  asideAt,
+  byTime,
+  EXIT,
+  isRetired,
+  keyOf,
+  labelSpots,
+  markSpots,
+  NARROW,
+  newestOf,
+  railOrder,
+  railsLine,
+  retiredLabel,
+  ROOMY,
+  WIDE,
+  type Spot,
+} from "./field.ts";
 import { span, toBeat, useBeat } from "./stage.ts";
 
 /*
  * The first stage: the claim, then its evidence, in one pinned frame.
  *   0 the claim, as it was: the statement, what countersign is, the live line, the way in.
  *   1 "Every payment here was real.": one mark per settlement on a tape of time; the totals in a corner.
- *   2 "On three rails.": the same marks regroup by rail, each group named with its chain and count.
+ *   2 "On three live rails.": the same marks regroup by rail, each group named with its chain and count.
  *   3 "Each one left a slip anyone can check.": the newest mark lifts out into its receipt.
  *   4 "Ask for one.": the ask box slides in beside the receipt.
  *   5 the exit: all of the stage's evidence leaves together and only the last statement rides the
@@ -26,7 +42,6 @@ import { span, toBeat, useBeat } from "./stage.ts";
  */
 const WEIGHTS = [1, 1, 1, 1, 1, 0.3] as const;
 const SECTIONS = EXIT;
-const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
 
 export interface EvidenceProps {
   /** The last good read of the hub's totals. */
@@ -81,7 +96,6 @@ function EvidenceFrame({
   narrow,
 }: EvidenceProps & { beat: number; only: boolean; go: (beat: number) => void }) {
   const order = railOrder(rails, rows);
-  const n = order.length;
   const none = loaded && rows.length === 0;
   // Pinned, every layer stays mounted and the beat sets its state; unpinned, a section holds only its own beat.
   const shows = (from: number, to = from) => !only || (beat >= from && beat <= to);
@@ -96,7 +110,7 @@ function EvidenceFrame({
       {shows(0) ? <Claim on={on(0)} onFocus={bring(0)} stats={stats} rails={rails} missing={missing} down={() => go(1)} /> : null}
       <div className="story__box">
         {shows(1) ? <h2 className={cx("story__line", on(1) && "is-on")}>{none ? "No payment has moved on this hub yet." : "Every payment here was real."}</h2> : null}
-        {shows(2) ? <h2 className={cx("story__line", on(2) && "is-on")}>{`On ${WORDS[n] ?? n} ${n === 1 ? "rail" : "rails"}.`}</h2> : null}
+        {shows(2) ? <h2 className={cx("story__line", on(2) && "is-on")}>{railsLine(rails, order)}</h2> : null}
         {shows(3) ? <h2 className={cx("story__line", on(3) && "is-on")}>Each one left a slip anyone can check.</h2> : null}
         {shows(4) ? <h2 className={cx("story__line", on(4, EXIT) && "is-on")}>Ask for one.</h2> : null}
         {shows(1, 4) ? (
@@ -257,7 +271,8 @@ function Field({
         const decl = rails?.find((r) => r.id === rail);
         const count = stats?.byRail[rail]?.delivered ?? rows.filter((s) => s.rail === rail).length;
         const p = labels[i];
-        const name = RAIL_LABEL[rail] ?? rail;
+        const label = RAIL_LABEL[rail] ?? rail;
+        const name = isRetired(rail, rails) ? retiredLabel(label) : label;
         // Crowded, a label is the chain over the rail, short enough for a fifth of a phone's width.
         const [chain, kind] = name.includes(" · ") ? name.split(" · ", 2) : [name, ""];
         return (
@@ -329,7 +344,7 @@ function Ledger({
           const count = stats?.byRail[rail]?.delivered ?? rows.filter((s) => s.rail === rail).length;
           return (
             <li key={rail}>
-              {RAIL_LABEL[rail] ?? rail}
+              {isRetired(rail, rails) ? retiredLabel(RAIL_LABEL[rail] ?? rail) : (RAIL_LABEL[rail] ?? rail)}
               {decl ? ` on ${networkName(decl.network)}` : ""}, {count} settled
             </li>
           );
