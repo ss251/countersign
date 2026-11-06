@@ -54,6 +54,17 @@ export interface Order {
   description: string | null;
   settleTxUrl: string | null;
   closeTxUrl: string | null;
+  /** Escrow v2 review (docs/spec/escrow.md "Escrow v2", D12), in ms. The window is in seconds. */
+  reviewWindow: number | null;
+  deliveredAt: number | null;
+  reviewEndsAt: number | null;
+  acceptedAt: number | null;
+  acceptTx: string | null;
+  disputedAt: number | null;
+  disputeTx: string | null;
+  releasedAfterWindow: boolean;
+  /** Atomic: the seller's bond paid to the buyer when the hub's gate failed the delivery (D11). */
+  bondSlashed: string;
   relayUnavailable?: true;
 }
 
@@ -155,8 +166,37 @@ async function orderFor(job: JobRecord, deps: OrdersDeps, rails: Map<string, Rai
     description: offer?.offer.title ?? null,
     settleTxUrl: txUrl(declaration, job.settleTx),
     closeTxUrl: txUrl(declaration, job.closeTx),
+    ...reviewFields(escrow),
+    bondSlashed: "0",
   };
   return order;
+}
+
+/**
+ * The review fields escrow v2 adds (docs/spec/escrow.md "Escrow v2", D12). Jobs on the v1 escrow have
+ * no review: their window is 0, and rails without an escrow have none at all (null). The rest stay
+ * null until the chain reports a delivery, an acceptance or a dispute.
+ */
+export function reviewFields(escrow: boolean): {
+  reviewWindow: number | null;
+  deliveredAt: null;
+  reviewEndsAt: null;
+  acceptedAt: null;
+  acceptTx: null;
+  disputedAt: null;
+  disputeTx: null;
+  releasedAfterWindow: false;
+} {
+  return {
+    reviewWindow: escrow ? 0 : null,
+    deliveredAt: null,
+    reviewEndsAt: null,
+    acceptedAt: null,
+    acceptTx: null,
+    disputedAt: null,
+    disputeTx: null,
+    releasedAfterWindow: false,
+  };
 }
 
 async function feeFor(job: JobRecord, rail: Rail | undefined, escrow: boolean): Promise<string> {

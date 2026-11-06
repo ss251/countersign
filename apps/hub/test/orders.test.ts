@@ -382,6 +382,28 @@ describe("GET /orders", () => {
   });
 });
 
+describe("GET /orders review fields (escrow v2, D12)", () => {
+  test("serves the review fields: window 0 on v1 escrow jobs, null without an escrow, the rest null", async () => {
+    const { store } = tempStore();
+    const url = startOrdersHub(store, [escrowRail, gatewayRail]);
+    const ids = seedSellerJobs(store);
+    const { orders } = await ordersAt(url, `seller=${SELLER}`);
+    const byId = new Map(orders.map((order) => [order.id, order]));
+    expect(byId.get(ids.released)?.reviewWindow).toBe(0);
+    expect(byId.get(ids.settled)?.reviewWindow).toBeNull();
+    for (const order of orders) {
+      expect(order.deliveredAt).toBeNull();
+      expect(order.reviewEndsAt).toBeNull();
+      expect(order.acceptedAt).toBeNull();
+      expect(order.acceptTx).toBeNull();
+      expect(order.disputedAt).toBeNull();
+      expect(order.disputeTx).toBeNull();
+      expect(order.releasedAfterWindow).toBe(false);
+      expect(order.bondSlashed).toBe("0");
+    }
+  });
+});
+
 describe("GET /orders/:id", () => {
   test("returns one order with its refunds", async () => {
     const { store } = tempStore();
