@@ -176,7 +176,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
 - **Direct rails pay before delivery.** On Hedera and Gateway the hub settles before the seller runs, and nothing returns that payment if the delivery fails. Only the escrow rails hold the money until the output checks out.
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not collected.** No deployed contract holds it. The contract change is on a branch ([#93](https://github.com/ss251/countersign/issues/93)) and needs a new deployment.
+- **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
 
 ## Terms
