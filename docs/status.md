@@ -2,7 +2,7 @@
 
 What countersign has built, what is still on a branch, and what is only a design. Every row was checked against the code, not against another page. If any other page in this repository disagrees with this one, the other page is wrong.
 
-Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `df9ee54`. A status describes `main`; where `cs/int` is ahead, the row says so. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
+Checked on 06 Nov 2026 against `cs/int` at `232ce7f`. This file reaches `main` in the same promotion as the code it describes, so each status holds for `main` from that promotion on. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
 
 | Status | Meaning |
 |---|---|
@@ -12,7 +12,7 @@ Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `df9ee54`. A 
 | `NOT BUILT` | Described somewhere, absent from the code. |
 | `CUT` | Decided not to build for this event ([decisions.md](decisions.md), D14). |
 
-A pull request that changes a row's status changes it here too. Rows that say "merged into `cs/int`" become `SHIPPED` when `cs/int` is next promoted to `main`, and the promotion's pull request flips them.
+A pull request that changes a row's status changes it here too.
 
 ## Offer, countersignature and escrow
 
@@ -45,7 +45,7 @@ A pull request that changes a row's status changes it here too. Rows that say "m
 | `eip3009` rail: direct USDC on Arc, no escrow | `IN PROGRESS` | `cs/cs-15`, in review ([#19](https://github.com/ss251/countersign/issues/19)) | `RAIL_IDS` comment in `packages/core/src/types.ts` |
 | MPP rail: pays on Tempo testnet; Stripe's card method sits behind a flag | `IN PROGRESS` | PR [#84](https://github.com/ss251/countersign/pull/84). A real payment from that branch: Tempo testnet [`0xd525…5c33`](https://explore.testnet.tempo.xyz/tx/0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33). Not on `main` and not on the hub | README "Rails", `docs/architecture.svg`, `RAIL_IDS` comment |
 | The payment waits in escrow until the output checks out | `SHIPPED` | On the escrow rails only, Arc and Whitechain: `release` needs the seller's signature over a slip the hub's gate passed. See the escrow rows above | README, console copy |
-| A payment on a direct rail (Hedera, Gateway) returned when the delivery fails | `NOT BUILT` | The hub settles a direct rail before the seller runs. On 06 Nov a live call settled and was never delivered: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251). On `main` the hub's failure message still says "Your money returns at the deadline" on every rail; `cs/int` has the corrected text | [terms.md](terms.md) §4, which says so; console copy |
+| A payment on a direct rail (Hedera, Gateway) returned when the delivery fails | `NOT BUILT` | The hub settles a direct rail before the seller runs. On 06 Nov a live call settled and was never delivered: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251). The hub's failure message on a direct rail now says the payment is not returned automatically (`apps/hub/src/call.ts`). Production said "Your money returns at the deadline" on every rail until this promotion | [terms.md](terms.md) §4, which says so; console copy |
 | Rail router: the cheapest healthy rail, a fallback on failure, and a recorded reason | `IN PROGRESS` | `cs/cs-20`, in review ([#94](https://github.com/ss251/countersign/issues/94)) | D13 |
 
 ## Hub
@@ -59,6 +59,7 @@ A pull request that changes a row's status changes it here too. Rows that say "m
 | The hub and the console are hosted on Railway | `SHIPPED` | [hub](https://hub-production-e85e.up.railway.app/healthz), [console](https://web-production-a58de.up.railway.app) | README, [deploy.md](deploy.md) |
 | Ratings and stats derived from slips: `/ratings`, `/ratings/:seller`, `/stats` | `SHIPPED` | `apps/hub/src/ratings.ts`, `apps/hub/test/ratings.test.ts`; e2e `ratings` ([#20](https://github.com/ss251/countersign/issues/20)) | [ratings.md](ratings.md) |
 | Offer search, the sellers list and recent settlements | `SHIPPED` | `apps/hub/src/frontdoor.ts`, `apps/hub/test/frontdoor.test.ts` | [e2e.md](e2e.md) flow 14b |
+| A seller's orders and jobs: `GET /orders?seller=`, `GET /orders/:id`, `GET /jobs?seller=` | `SHIPPED` | `apps/hub/src/orders.ts`, `apps/hub/test/orders.test.ts` (`37464ed`, [#32](https://github.com/ss251/countersign/issues/32)) | the console's merchant desk and seller dashboard |
 | ERC-8004 seller identity, operator grant and feedback | `SHIPPED` | Library and scripts: `packages/identity`, `scripts/erc8004` (`8499866`, [#2](https://github.com/ss251/countersign/issues/2)), tested against mock registries. Live on Arc testnet: seller `0x6BE98051…ca4a` is agentId 897802 (register `0x845648b6…c267a`, hub relayer as operator `0x1d0586b5…bf27`), seller `0xA55a31E3…B093` is agentId 897803 (`0x23015540…e1cf`), and the buyer gave agent 897802 feedback whose hash is a released slip (`0x3af33b85…d1072`); evidence on #2. Live on Hedera testnet: the MCP seller is agentId 158 (`0xfd8d8683…8235`). The hub shows identities on `/sellers` only where `ERC8004_FROM_BLOCK` is set | [ratings.md](ratings.md) "Limits" |
 | A held call cleared from the phone with the approver's signature; one decision clears exactly one call | `IN PROGRESS` | The hub and the agent side are on `main` ([#21](https://github.com/ss251/countersign/issues/21), `apps/hub/test/buyerplumbing.test.ts`, `packages/buyer/test/w1-approval-replay.test.ts`). It is not usable end to end yet: the console's phone does not sign version 2 decisions, and a hub without `HUMAN_APPROVAL_TOKEN` (production today) answers 503 to every decision. Until both land, the human clears a held call on the agent's machine with `buy --approve` | D10, [spec/envelope.md](spec/envelope.md), `docs/architecture.svg` |
 | ENS seller names and a payee lock | `IN PROGRESS` | PR [#91](https://github.com/ss251/countersign/pull/91) ([#28](https://github.com/ss251/countersign/issues/28)). Offers name the seller by address | [terms.md](terms.md) §7, true as written |
@@ -102,6 +103,23 @@ A pull request that changes a row's status changes it here too. Rows that say "m
 | Capability | Status | Evidence | Claimed in |
 |---|---|---|---|
 | A2A card, skills index, OpenAPI 3.1, the Bazaar list, and `extensions.bazaar` on every 402 | `SHIPPED` | `apps/hub/test/discovery.test.ts`; e2e `discovery` | README, [spec/discovery.md](spec/discovery.md) |
+
+## Console
+
+The console at [web-production-a58de.up.railway.app](https://web-production-a58de.up.railway.app) reads the production hub by default; `?hub=off` shows sample data instead. Strings on these screens that claim more than the rows below are being corrected by the console's owners.
+
+| Capability | Status | Evidence | Claimed in |
+|---|---|---|---|
+| Overview at `#/`: the live offer count, the rails, and recent settlements with explorer links | `SHIPPED` | `apps/web/src/routes/home/`; e2e `production-hub` checks every hub route it reads | README "Live links" |
+| Registry: every seller and its offers from the hub, with delivery counts, and the ERC-8004 identity where the hub's lookup is on | `SHIPPED` | `apps/web/test/registry.test.ts`; `GET /sellers` | |
+| Assistant: searches the live offers, says why each one matches, checks the envelope, and hands back the command the agent runs to countersign. Holding on the page signs nothing | `SHIPPED` | `apps/web/test/assistant.test.ts`; `GET /offers/search` | |
+| Offer page: the terms, both schemas, the rails and the hub's discovery links | `SHIPPED` | `apps/web/src/routes/offer/`; e2e `production-hub` | |
+| Slip view and the in-browser verifier: the hash and signatures are recomputed in the browser, and the chain is read for escrow slips | `SHIPPED` | `apps/web/test/verify.test.ts`, and `apps/web/test/onchain.live.test.ts` with `CS_LIVE=1` | README "The receipt" |
+| Buyer phone: the agent's envelope, its pending approvals and its history | `IN PROGRESS` | History reads `GET /jobs?buyer=` (`apps/web/test/buyer.test.ts`). The envelope and approval reads answer 503 on a hub without `HUMAN_APPROVAL_TOKEN`, which production does not set, and approving needs the console to sign version 2 decisions (the approvals row above) | `docs/architecture.svg` |
+| Merchant desk: a seller's orders from the hub, falling back to the Whitechain relay's records, with net, fees, refunds and the accountant's CSV | `SHIPPED` | `apps/web/test/merchant.test.ts`; #83 (`34cb1d1`) and `55221ef`; e2e `merchant` tests the merchant service behind the desk, not the screen. The public console shows orders but cannot refund them: refunds go through the merchant's own service, and it has none configured | [whitechain.md](whitechain.md) |
+| Merchant desk review states: in review, disputed, failed | `IN PROGRESS` | PR [#114](https://github.com/ss251/countersign/pull/114). Dormant until the review contract (#98) is deployed | |
+| Seller dashboard: the seller's listings and calls from the hub | `SHIPPED` | `apps/web/src/routes/seller/Dashboard.tsx`; `GET /jobs?seller=` | |
+| Publish wizard: builds the offer and the runner command that signs and publishes it. The page itself publishes nothing | `SHIPPED` | `apps/web/test/seller.test.ts`, `apps/web/src/routes/seller/logic.ts` | |
 
 ## Operations
 
