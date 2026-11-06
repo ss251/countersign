@@ -62,6 +62,7 @@ export interface MainnetProfile extends Record<SwitchedRail, object> {
   gateway: MainnetGatewayProfile;
   whitechain: NoMainnet;
   hedera: NoMainnet;
+  "hedera-scheduled": NoMainnet;
 }
 
 /**
@@ -86,6 +87,9 @@ export const MAINNET: MainnetProfile = {
   },
   whitechain: { none: "The Whitechain rail and its relay are built for Whitechain Sepolia only." },
   hedera: { none: "The hedera rail is testnet-only by construction: network, token, mirror node and facilitators." },
+  "hedera-scheduled": {
+    none: "The hedera-scheduled rail is testnet-only by construction: network, token, mirror node and facilitators.",
+  },
 };
 
 export class BootRefused extends Error {

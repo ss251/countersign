@@ -49,12 +49,22 @@ export const RAIL_SWITCHES = [
   { id: "whitechain", vars: ["WC_RELAY_URL"], requested: (env) => Boolean(env.WC_RELAY_URL) },
   { id: "gateway", vars: ["GATEWAY_RAIL"], requested: (env) => env.GATEWAY_RAIL === "1" },
   { id: "hedera", vars: ["HEDERA_RAIL"], requested: (env) => env.HEDERA_RAIL === "1" },
+  {
+    id: "hedera-scheduled",
+    vars: ["HEDERA_SCHEDULED_RAIL"],
+    requested: (env) => env.HEDERA_SCHEDULED_RAIL === "1",
+  },
 ] as const satisfies readonly RailSwitch[];
 
 export type SwitchedRail = (typeof RAIL_SWITCHES)[number]["id"];
 
 /** Variables railsFromEnv reads that configure a switched-on rail but never switch one on. */
-export const RAIL_CONFIG_VARS = ["ARC_RPC_URL", "ARC_USDC", "CS_RELAYER_KEY"] as const;
+export const RAIL_CONFIG_VARS = [
+  "ARC_RPC_URL",
+  "ARC_USDC",
+  "ARC_ESCROW_VERSION",
+  "CS_RELAYER_KEY",
+] as const;
 
 /** Whether the environment asks for this rail. */
 export function railRequested(id: SwitchedRail, env: Record<string, string | undefined>): boolean {
@@ -122,7 +132,7 @@ export async function railsFromEnv(
   if (railRequested("hedera", env)) {
     await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
   }
-  if (env.HEDERA_SCHEDULED_RAIL === "1") {
+  if (railRequested("hedera-scheduled", env)) {
     await startOptional(
       rails,
       "hedera-scheduled",
