@@ -230,7 +230,7 @@ The demo server (`scripts/mpp/server.ts`) runs the countersign `mpp` rail on Tem
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
 
 1. **console**: the index and every module script it loads are fetched as text. The default bundle must contain the production hub's URL. It must also contain none of the fixture-only values: addresses and hashes found in the fixture files and nowhere else in the repository, collected fresh on each run.
-2. **hub**: production declares escrow, Gateway and Hedera. Every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, and the approval decision passes CORS preflight with an `authorization` header. One failure message lists every endpoint that fails.
+2. **hub**: production declares escrow, Gateway and Hedera. The approval routes, `/envelopes` and `/approvals`, are scoped out: the per-call approval path was dropped (captain, 06 Nov 19:50 IST), so production runs without an approver. Every other endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, One failure message lists every endpoint that fails.
 
 ## Results
 

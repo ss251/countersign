@@ -165,9 +165,6 @@ export const productionHub: Flow = {
         { screen: "registry", path: "/sellers" },
         { screen: "registry, assistant", path: `/offers/search?q=${q("arc")}&limit=10` },
         { screen: "offer page", path: `/offers/${seen.offerHash}` },
-        { screen: "buyer, assistant", path: `/envelopes/${seen.agent}` },
-        { screen: "buyer", path: `/approvals?agent=${seen.agent}&status=pending` },
-        { screen: "buyer", path: `/approvals?agent=${seen.agent}&status=decided` },
         { screen: "buyer", path: `/jobs?buyer=${seen.agent}&limit=50` },
         { screen: "seller dashboard", path: `/jobs?seller=${seen.seller}&limit=50` },
         { screen: "merchant desk", path: `/orders?seller=${seen.seller}&limit=50` },
@@ -182,19 +179,8 @@ export const productionHub: Flow = {
       }
       if (!seen.slipHash) failures.push("no settlement carries a slip hash to read (slip, verify)");
       ctx.note(`checked ${endpoints.length} endpoints for agent ${seen.agent} and seller ${seen.seller}`);
+      ctx.note("scoped out: /envelopes and /approvals. The per-call approval path is dropped (captain, 06 Nov 19:50 IST), so production runs without an approver and those routes answer 503 no-approver by design");
       check(failures.length === 0, `${failures.length} of ${endpoints.length} fail: ${failures.join("; ")}`);
-    });
-
-    await ctx.step("the approval decision passes CORS preflight", async () => {
-      const res = await ctx.http("approval decision preflight", `${hub}/approvals/preflight-check/decision`, {
-        method: "OPTIONS",
-        headers: { origin, "access-control-request-method": "POST", "access-control-request-headers": "authorization,content-type" },
-      });
-      check(res.status >= 200 && res.status < 300, `preflight status ${res.status}`);
-      const allow = res.headers.get("access-control-allow-origin");
-      check(allow === "*" || allow === origin, `preflight allow-origin ${allow}`);
-      const headers = (res.headers.get("access-control-allow-headers") ?? "").toLowerCase();
-      check(headers === "*" || headers.includes("authorization"), `preflight allows the authorization header (got "${headers}")`);
     });
   },
 };
