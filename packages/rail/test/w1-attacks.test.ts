@@ -83,3 +83,36 @@ describe("W1 B3: the buyer can shorten the seller's delivery window", () => {
     expect(v.isValid).toBe(false);
   });
 });
+
+describe("W1 B8: release must never commit a zero slipHash", () => {
+  test("escrow.release with bytes32(0) is refused before anything is sent", async () => {
+    let sent = 0;
+    const walletClient = {
+      writeContract: async () => {
+        sent++;
+        return ("0x" + "11".repeat(32)) as `0x${string}`;
+      },
+    } as never;
+    const r = escrowRail({
+      id: "escrow",
+      chainId: 31337,
+      rpcUrl: "http://127.0.0.1:1",
+      escrow: ESCROW,
+      token: TOKEN,
+      tokenName: "USDC",
+      tokenVersion: "2",
+      symbol: "USDC",
+      decimals: 6,
+      explorerTx: "x/{tx}",
+      finality: "f",
+      gasPaidBy: "hub",
+      now: () => NOW,
+      publicClient: stub,
+      walletClient,
+    });
+    const zero = ("0x" + "00".repeat(32)) as `0x${string}`;
+    const out = await r.escrow!.release(("0x" + "22".repeat(32)) as `0x${string}`, zero, "0x1234");
+    expect(out.success).toBe(false);
+    expect(sent).toBe(0);
+  });
+});

@@ -8,6 +8,21 @@ export function slipHash(body: SlipBody): Hex {
 }
 
 /**
+ * The hash the release commits on chain (D9): keccak256(canonicalJson(slip.body)).
+ *
+ * The body holds everything known at delivery and nothing known only after the release,
+ * so the settlement transaction, payment payload, seller signature and receipt are never
+ * part of it. The release path must never commit this as ZERO_HASH, and the hash it
+ * commits is exactly the `hash` of the slip the buyer receives.
+ */
+export function slipCommitHash(body: SlipBody): Hex {
+  return slipHash(body);
+}
+
+/** The all-zero bytes32 the escrow stores for a job that has not released a slip. */
+export const ZERO_HASH: Hex = ("0x" + "00".repeat(32)) as Hex;
+
+/**
  * Domain of the seller's Release signature. On escrow rails it is the escrow's own domain,
  * so the same signature the contract checks is the one a verifier checks.
  */

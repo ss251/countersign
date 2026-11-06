@@ -35,6 +35,7 @@ import {
   type PaymentRequirements,
   type SettleResult,
   type VerifyResult,
+  ZERO_HASH,
 } from "@countersign/core";
 import type { ChallengeContext, EscrowOps, Rail, RailDeclaration } from "../rail.ts";
 import { escrowAbi } from "./abi.ts";
@@ -258,10 +259,19 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   }
 
   const escrow: EscrowOps = {
-    release: (jobId, slipHash, sellerSig) =>
-      submit("release", () =>
+    release: (jobId, slipHash, sellerSig) => {
+      if (slipHash.toLowerCase() === ZERO_HASH) {
+        return Promise.resolve({
+          success: false,
+          errorReason: "Refused. A release must commit a slip hash.",
+          transaction: "",
+          network,
+        });
+      }
+      return submit("release", () =>
         wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "release", args: [jobId, slipHash, sellerSig] }),
-      ),
+      );
+    },
     refund: (jobId) =>
       submit("refund", () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "refund", args: [jobId] })),
     cancel: (jobId, sellerSig) =>

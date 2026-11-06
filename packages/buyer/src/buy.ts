@@ -4,6 +4,7 @@ import {
   checkEnvelope,
   checkSchema,
   needsHuman,
+  RAIL_IDS,
   slipHash,
   slipSigner,
   type CallResult,
@@ -11,13 +12,14 @@ import {
   type Envelope,
   type PaymentPayload,
   type PaymentRequirements,
+  type RailId,
 } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
 import type { Journal } from "./journal.ts";
 import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
 import type { Payer } from "./payer.ts";
 import type { State } from "./state.ts";
-import { checkTerms } from "./terms.ts";
+import { checkGatewayTerms, checkTerms } from "./terms.ts";
 
 export class BuyError extends Error {
   constructor(message: string) {
@@ -38,7 +40,11 @@ export interface BuyArgs {
   approve?: boolean;
   lineage?: Hex[];
   known?: KnownRail[];
+  /** Restrict the choice to one rail id, e.g. "gateway". */
+  rail?: RailId;
 }
+
+type Chosen = { kind: "countersign"; rail: KnownRail } | { kind: "gateway" };
 
 export async function buy(a: BuyArgs): Promise<CallResult> {
   const { hub, offerHash, input, journal, envelope } = a;
@@ -58,26 +64,74 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
   const first = await hub.call(offerHash, input, undefined, a.lineage);
   if (first.kind === "error") throw new BuyError(first.message);
   if (first.kind === "paid") throw new BuyError("Refused. The hub served the call without payment terms.");
+
+  const known = a.known ?? KNOWN_RAILS;
   let entry: PaymentRequirements | undefined;
   let payer: Payer | undefined;
+  let chosen: Chosen | undefined;
+  let refusal: string | undefined;
+  let refusedAmount: string | undefined;
+
   for (const req of first.required.accepts) {
-    const p = a.payers.find((x) => x.canPay(req));
-    if (p) {
+    if (a.rail !== undefined && railIdFor(req) !== a.rail) continue;
+    const candidate = a.payers.find((x) => x.canPay(req));
+    if (!candidate) continue;
+
+    if (req.scheme === "countersign") {
+      const terms = checkTerms(offer, offerHash, req, known);
+      if (!terms.ok) {
+        refusal ??= terms.message;
+        refusedAmount ??= req.amount;
+        continue;
+      }
       entry = req;
-      payer = p;
+      payer = candidate;
+      chosen = { kind: "countersign", rail: terms.rail };
       break;
     }
-  }
-  if (!entry || !payer) throw new BuyError("Refused. No rail here that this agent can pay.");
 
-  const terms = checkTerms(offer, offerHash, entry, a.known ?? KNOWN_RAILS);
-  if (!terms.ok) {
-    journal.append({ at: a.now, kind: "refused", offerHash, seller: offer.seller, amount: entry.amount, reason: "terms" });
-    throw new BuyError(terms.message);
+    if (req.scheme === "exact") {
+      const terms = checkGatewayTerms(offer, req);
+      if (!terms.ok) {
+        refusal ??= terms.message;
+        refusedAmount ??= req.amount;
+        continue;
+      }
+      entry = req;
+      payer = candidate;
+      chosen = { kind: "gateway" };
+      break;
+    }
+
+    refusal ??= "Refused. This rail is not one this agent knows.";
+    refusedAmount ??= req.amount;
   }
-  const rail = terms.rail;
-  const extra = entry.extra as unknown as CountersignExtra;
-  const base = { at: a.now, offerHash, seller: offer.seller, amount: entry.amount, network: rail.network, rail: extra.rail };
+
+  if (!entry || !payer || !chosen) {
+    if (refusal !== undefined) {
+      journal.append({
+        at: a.now,
+        kind: "refused",
+        offerHash,
+        seller: offer.seller,
+        amount: refusedAmount ?? offer.price,
+        reason: "terms",
+      });
+      throw new BuyError(refusal);
+    }
+    throw new BuyError("Refused. No rail here that this agent can pay.");
+  }
+
+  const rail = chosen.kind === "countersign" ? chosen.rail : undefined;
+  const railId = chosen.kind === "gateway" ? ("gateway" as const) : railIdFor(entry);
+  const base = {
+    at: a.now,
+    offerHash,
+    seller: offer.seller,
+    amount: entry.amount,
+    network: entry.network,
+    ...(railId !== undefined ? { rail: railId } : {}),
+  };
 
   if (needsHuman(envelope, entry.amount) && !a.approve) {
     journal.append({ ...base, kind: "refused", reason: "held" });
@@ -95,7 +149,11 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
 
   let signed: { payment: PaymentPayload; jobId: Hex };
   try {
-    signed = await payer.pay(entry, { now: a.now, rail });
+    signed = await payer.pay(entry, {
+      now: a.now,
+      ...(rail !== undefined ? { rail } : {}),
+      resource: first.required.resource,
+    });
   } catch (e) {
     journal.append({ ...base, kind: "failed", reservationId, reason: "signing" });
     throw e;
@@ -143,4 +201,18 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     closeTx: slip.settlement.transaction,
   });
   return result;
+}
+
+/** The rail id a 402 entry names: extra.rail for countersign, "gateway" for exact batched. */
+function railIdFor(req: PaymentRequirements): RailId | undefined {
+  if (req.scheme === "countersign") {
+    const extra = req.extra as Partial<CountersignExtra> | undefined;
+    if (typeof extra?.rail !== "string") return undefined;
+    return RAIL_IDS.includes(extra.rail as RailId) ? (extra.rail as RailId) : undefined;
+  }
+  const name = req.extra?.name;
+  if (req.scheme === "exact" && typeof name === "string" && name.toLowerCase() === "gatewaywalletbatched") {
+    return "gateway";
+  }
+  return undefined;
 }
