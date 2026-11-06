@@ -1,0 +1,13 @@
+> Source: Grok, through its CLI, 07 Nov 2026, about 00:55 IST. A re-check of escrow v2 (PR #164) at `e513fe7`, after the fix for the B finding of the [06 Nov audit](2026-11-06-grok-escrow-v2.md).
+
+I'll re-review the escrow at e513fe7 against the prior audit and the diff, starting with the contract and the gap-B notes.**B is FIXED.** After the deadline, a Funded job reaches Delivered or Released only through `release` (193–215), and only if `msg.sender == arbiter` (201), the time is `<= settleBy` (196–197, 445–446), and the payee’s `Release(jobId, slipHash)` signature checks (202–203). The seller, the buyer, and any other relayer revert with `LateReleaseNeedsArbiter` in `(deadline, settleBy]`.
+
+* `review.window == 0` pays in that call and lands on Released (207–209). A bonded job never takes that branch: `setTerms` rejects `bond != 0` unless `reviewWindow >= 60` and `minDuration >= 60` (44–47, 145–146), and `fund` stores that window (107–111).
+* A bonded late release stops at Delivered (211–214). It pays only if the buyer later `accept`s (218–224) or anyone calls `releaseAfterWindow` after `endsAt` (228–235); `_pay` then returns the bond (409–423). Until `endsAt` the buyer can `dispute` and forfeit the bond (251–254, 259).
+* `failDelivery` (arbiter, through `settleBy`) and `refund` (anyone, after `settleBy`) pay the buyer and forfeit (294–307, 265–273). `cancel` and a Funded `dispute` revert once `timestamp > deadline` (250, 287). At `timestamp == deadline` a non-arbiter may still `release` (201 uses `>`), which is on time (15–16).
+
+**C1, C2, H1, M1, and A stay closed, and H1’s honest late settlement still lands.** C1: a bond moves only on a field-for-field match to `termsOf[payee]` (104–111) plus `Lock(jobId, msg.sender)` (31, 116–117); `setTerms` writes `msg.sender` only and still rejects `bond > price` (143–149). C2: post-`settleBy` `refund` forfeits (271–273); a late `cancel` still reverts (286–287). H1: `settleBy = deadline + 600` (43, 445–446); the arbiter’s `release` and `failDelivery` succeed at `timestamp == settleBy` and revert after (197, 201, 299). That windowed release is Delivered, and with no dispute `_pay` pays the seller and returns the bond (211–214, 228–235, 415–423). M1: `jobId` still hashes bond and `reviewWindow` and is the EIP-3009 nonce (323–337, 402–403). A: `jobId` still commits the buyer (24, 335), so one buyer’s lock cannot fund another (116–117).
+
+**No new Critical, High, or Medium in the changed lines.** The funder-bound lock and the 60-second bonded floors only narrow who can fund and how short a bonded job can be.
+
+VERDICT: DEPLOY
