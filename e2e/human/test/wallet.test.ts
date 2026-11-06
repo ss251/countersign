@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { privateKeyToAccount } from "viem/accounts";
 import { recoverMessageAddress, verifyTypedData, type Hex } from "viem";
-import { handleWalletRequest, type RpcCall } from "../lib/wallet.ts";
+import { handleWalletRequest, newWalletSession, type RpcCall } from "../lib/wallet.ts";
 
 const KEY = `0x${"11".repeat(32)}` as Hex;
 const account = privateKeyToAccount(KEY);
@@ -13,9 +13,25 @@ const noRpc: RpcCall = async () => {
 };
 
 describe("the injected wallet", () => {
-  test("returns the account for both account methods", async () => {
-    expect(await handleWalletRequest(account, noRpc, { method: "eth_requestAccounts" })).toEqual([account.address]);
-    expect(await handleWalletRequest(account, noRpc, { method: "eth_accounts" })).toEqual([account.address]);
+  test("a fresh session is not authorized", async () => {
+    expect(await handleWalletRequest(account, noRpc, { method: "eth_accounts" })).toEqual([]);
+  });
+
+  test("the same session is authorized after eth_requestAccounts", async () => {
+    const session = newWalletSession();
+    expect(
+      await handleWalletRequest(account, noRpc, { method: "eth_requestAccounts" }, undefined, session),
+    ).toEqual([account.address]);
+    expect(await handleWalletRequest(account, noRpc, { method: "eth_accounts" }, undefined, session)).toEqual([
+      account.address,
+    ]);
+  });
+
+  test("two sessions are independent", async () => {
+    const first = newWalletSession();
+    const second = newWalletSession();
+    await handleWalletRequest(account, noRpc, { method: "eth_requestAccounts" }, undefined, first);
+    expect(await handleWalletRequest(account, noRpc, { method: "eth_accounts" }, undefined, second)).toEqual([]);
   });
 
   test("reports Arc testnet", async () => {

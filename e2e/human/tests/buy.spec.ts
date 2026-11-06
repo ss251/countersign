@@ -307,6 +307,17 @@ const runHuman = async (
       await testId(page, "wallet-menu").click();
       if (injected) {
         await testId(page, "wallet-connect-injected").click();
+        if (await dialogVisible(page, 15_000)) {
+          const testWallet = page
+            .getByRole("dialog")
+            .getByRole("button", { name: /countersign test wallet/i });
+          const offered = await testWallet
+            .waitFor({ state: "visible", timeout: 15_000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!offered) throw new Error("Privy's wallet list did not offer the Countersign test wallet");
+          await testWallet.click();
+        }
         await waitAttr(page, "wallet-address", /^0x[0-9a-fA-F]{40}$/, 60_000);
         return;
       }
