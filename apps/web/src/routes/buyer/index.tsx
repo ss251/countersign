@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link, navigate } from "../../app/router.tsx";
@@ -43,6 +43,15 @@ function Phone({ query }: PageProps) {
   const envelope = useResource(() => api.envelope(), []);
   const approvals = useResource(() => api.approvals(), []);
   const purchases = useResource(() => api.purchases(), []);
+  const reloadEnvelope = envelope.reload;
+  const reloadApprovals = approvals.reload;
+  const reloadPurchases = purchases.reload;
+  /** A fresh token or a newly created envelope changes every read on this phone. */
+  const openAll = useCallback(() => {
+    reloadEnvelope();
+    reloadApprovals();
+    reloadPurchases();
+  }, [reloadEnvelope, reloadApprovals, reloadPurchases]);
   /** Approvals the human has countersigned: no longer waiting, even while they settle. */
   const [signed, setSigned] = useState<string[]>([]);
   const agent = chosenAgent();
@@ -206,11 +215,12 @@ function Phone({ query }: PageProps) {
               latest.current.closed.add(a.id);
               approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id));
             }}
+            onOpen={openAll}
           />
         ) : null}
         {tab === "ask" ? <AskTab envelope={envelope} /> : null}
-        {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
-        {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+        {tab === "envelope" ? <EnvelopeTab envelope={envelope} onOpen={openAll} /> : null}
+        {tab === "history" ? <HistoryTab purchases={purchases} onOpen={openAll} /> : null}
       </div>
 
       <nav className="tabbar" aria-label="Buyer">

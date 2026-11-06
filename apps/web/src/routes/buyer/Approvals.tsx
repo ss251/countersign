@@ -1,5 +1,7 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useContext, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { checkEnvelope, type EnvelopeDecision } from "@countersign/core";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { WalletModeContext } from "../../app/Providers.tsx";
 import { Link } from "../../app/router.tsx";
 import { hasRoute } from "../../app/routes.ts";
 import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
@@ -15,8 +17,17 @@ import {
   usd,
 } from "../../lib/format.ts";
 import { approverAddress, makeApprover, SigningError } from "../../lib/approver.ts";
-import { approvalToken, HubError, rememberApprovalToken } from "../../lib/hub.ts";
+import {
+  approvalToken,
+  FOREIGN_HUB,
+  HubError,
+  hubPost,
+  isOwnHub,
+  rememberAgent,
+  rememberApprovalToken,
+} from "../../lib/hub.ts";
 import { envelopeChecklist, type Check } from "../../lib/checklist.ts";
+import { createSessionEnvelope } from "./session.ts";
 import type { Approval, EnvelopeView } from "../../lib/types.ts";
 import { Absent } from "../../ui/Absent.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
@@ -30,15 +41,17 @@ interface Props {
   onSigned: (a: Approval) => void;
   onSettled: (a: Approval, job: JobView) => void;
   onClose: (a: Approval) => void;
+  /** The token or the agent changed: read the envelope, approvals and purchases again. */
+  onOpen: () => void;
 }
 
-export function Approvals({ approvals, envelope, query, onSigned, onSettled, onClose }: Props) {
+export function Approvals({ approvals, envelope, query, onSigned, onSettled, onClose, onOpen }: Props) {
   const current = approvals.data?.[0];
 
   if (approvals.source === "absent") {
     // Locked: only the hub's approval token opens this, so say so to the person and put the field in
     // reach. A retry could only fail the same way, so there is none (DESIGN-LOG 12).
-    if (approvals.needsToken) return <PhoneLocked what="approvals" rejected={approvalToken() !== null} onOpen={approvals.reload} />;
+    if (approvals.needsToken) return <PhoneLocked what="approvals" rejected={approvalToken() !== null} onOpen={onOpen} />;
     return <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload} />;
   }
   if (approvals.loading && approvals.data === undefined) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
@@ -459,8 +472,8 @@ function ApproverLine({ address, named }: { address: string; named: string | und
 }
 
 /**
- * Locked: only the hub's approval token opens the phone's reads, so say so to the person and put the field
- * in reach. A retry could only fail the same way, so there is none, and Start here is the way out.
+ * Locked: only the hub's approval token opens the phone's reads. Signed in, the phone asks the hub to
+ * make the person an envelope; otherwise, or if they would rather paste one, the field stays in reach.
  */
 export function PhoneLocked({
   what,
@@ -478,23 +491,7 @@ export function PhoneLocked({
       <h2 id={id} className="locked__title">
         {`Your agent's ${what} are private.`}
       </h2>
-      <p className="locked__body">
-        This hub opens them with the approval token it was started with. Paste it once: it stays on this phone and goes only
-        to this hub.
-      </p>
-      {rejected ? (
-        <p className="field__error" role="alert" data-testid="buyer-token-rejected">
-          This hub did not accept the token on this phone. Paste the right one.
-        </p>
-      ) : null}
-      <div data-testid="buyer-own-hub">
-        <TokenForm
-          onSave={(t) => {
-            rememberApprovalToken(t);
-            onOpen();
-          }}
-        />
-      </div>
+      <TokenGate rejected={rejected} onOpen={onOpen} />
       {hasRoute("start") ? (
         <p className="locked__alt">
           No hub of your own? <Link to="/start">Buy a tool with your own wallet</Link> on Start here.
@@ -504,8 +501,126 @@ export function PhoneLocked({
   );
 }
 
+const SIGN_IN_AGAIN = "Sign in again, then create the envelope.";
+const MISSING_WALLET = "Your wallet is still being set up. Try again in a moment.";
+
+/** The primary way in, with the token field kept as the plain secondary option. */
+export function TokenGate({ rejected, onOpen }: { rejected: boolean; onOpen: () => void }) {
+  const available = useContext(WalletModeContext).privy;
+  const own = isOwnHub();
+  return (
+    <>
+      {available && own ? (
+        <PrivyCreate onOpen={onOpen} />
+      ) : available ? (
+        <p className="locked__alt">{FOREIGN_HUB}</p>
+      ) : (
+        <p className="locked__alt">Email sign-in is off on this console, so paste a token instead.</p>
+      )}
+      <div className="locked__paste" data-testid="buyer-own-hub">
+        {available && own ? <p className="label">Or paste a token</p> : null}
+        {rejected ? (
+          <p className="field__error" role="alert" data-testid="buyer-token-rejected">
+            This hub did not accept the token on this phone. Paste the right one.
+          </p>
+        ) : null}
+        <TokenForm
+          variant={available && own ? "secondary" : "primary"}
+          onSave={(t) => {
+            rememberApprovalToken(t);
+            onOpen();
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
+/** Signed in, the phone asks the hub for the person's envelope and keeps the token it issues. */
+function PrivyCreate({ onOpen }: { onOpen: () => void }) {
+  const { ready, authenticated, login, getAccessToken } = usePrivy();
+  const { wallets } = useWallets();
+  const embedded = wallets.find((w) => w.walletClientType === "privy");
+  const [pending, setPending] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const create = useCallback(async () => {
+    if (!embedded) {
+      setProblem(MISSING_WALLET);
+      return;
+    }
+    setCreating(true);
+    setProblem(null);
+    try {
+      const privyToken = await getAccessToken();
+      if (!privyToken) {
+        setProblem(SIGN_IN_AGAIN);
+        return;
+      }
+      const outcome = await createSessionEnvelope({
+        post: (path, body, headers) => hubPost(path, body, headers),
+        privyToken,
+        agent: embedded.address,
+        rememberToken: rememberApprovalToken,
+        rememberAgent,
+      });
+      if (outcome.kind === "created") onOpen();
+      else if (outcome.kind === "signed-out") setProblem(SIGN_IN_AGAIN);
+      else setProblem(outcome.message);
+    } catch {
+      setProblem("The hub could not create the envelope.");
+    } finally {
+      setCreating(false);
+    }
+  }, [embedded, getAccessToken, onOpen]);
+
+  useEffect(() => {
+    if (!pending || !authenticated || !embedded) return;
+    setPending(false);
+    void create();
+  }, [pending, authenticated, embedded, create]);
+
+  return (
+    <>
+      <p className="locked__body">An envelope is the set of spending limits you give your agent: how much it may spend in all, how much per seller, and above what amount it must ask you first.</p>
+      <p className="locked__body">Create one here and this phone gets the token that opens your agent's approvals.</p>
+      {problem ? (
+        <p className="field__error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      {pending && authenticated && !embedded ? (
+        <p className="locked__alt">Your wallet is still being set up. It opens here in a moment.</p>
+      ) : null}
+      <Button
+        variant="primary"
+        block
+        disabled={creating || !ready}
+        onClick={() => {
+          if (!ready) return;
+          if (!authenticated) {
+            setPending(true);
+            login();
+            return;
+          }
+          void create();
+        }}
+      >
+        {creating ? "Creating your envelope…" : "Create an envelope"}
+      </Button>
+    </>
+  );
+}
+
 /** The human's approval token for this hub. Pasted once; it stays on this phone. */
-export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
+export function TokenForm({
+  onSave,
+  variant = "primary",
+}: {
+  onSave: (token: string) => void;
+  variant?: "primary" | "secondary";
+}) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const id = useId();
@@ -544,7 +659,7 @@ export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
       <p id={`${id}-hint`} className={error ? "field__error" : "field__hint"}>
         {error ?? "Whoever started this hub has it."}
       </p>
-      <Button variant="primary" type="submit" block>
+      <Button variant={variant} type="submit" block>
         Use this token
       </Button>
     </form>
