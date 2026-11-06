@@ -323,7 +323,7 @@ function scoreOffer(
   if (adapterMatched) why.push(`served by ${article(offer.adapter)}`);
   if (summaryTokens.length > 0) why.push(`summary has ${quotedList(summaryTokens)}`);
   if (upstreamTokens.length > 0) why.push(`upstream has ${quotedList(upstreamTokens)}`);
-  if (online) {
+  if (online && score > 0) {
     score += 1;
     why.push("seller is online");
   }

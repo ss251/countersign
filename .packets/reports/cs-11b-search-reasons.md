@@ -69,3 +69,43 @@ The 3 skips are the pre-existing `apps/web/test/onchain.live.test.ts` live-oncha
 ## Not done
 
 Nothing in the packet was left undone. No pushes, merges or deploys, and no browser was launched.
+
+## Follow-up: an online seller alone is not a hit
+
+- `apps/hub/src/frontdoor.ts`
+  - `scoreOffer` adds the online bonus only when at least one token matched a field (`score > 0`); an online offer with no match therefore stays at 0 and `searchOffers` drops it.
+  - When the bonus applies it still adds 1 and appends `seller is online` after every match reason.
+- `apps/hub/test/frontdoor.test.ts`
+  - Added a direct `searchOffers` suite with a fake `FrontdoorDeps` of `{ store, rails: [], isOnline: () => true }`, seeding the store without HTTP:
+    - an online offer matching no token is not returned;
+    - an online title match keeps the title score plus the bonus and lists `seller is online` last.
+
+## Follow-up acceptance output
+
+```
+$ bun install
+bun install v1.3.14 (0d9b296a)
+Checked 162 installs across 182 packages (no changes) [8.00ms]
+
+$ bun run typecheck
+$ tsc -p tsconfig.json
+(no output; exit 0)
+
+$ bun test apps/hub
+ 66 pass
+ 0 fail
+ 380 expect() calls
+Ran 66 tests across 6 files. [1.89s]
+
+$ bun test
+ 509 pass
+ 3 skip
+ 0 fail
+ 1763 expect() calls
+Ran 512 tests across 62 files. [14.18s]
+
+$ forge test
+Ran 3 test suites in 160.49ms (116.18ms CPU time): 29 tests passed, 0 failed, 0 skipped (29 total tests)
+```
+
+The 3 skips remain the pre-existing `apps/web/test/onchain.live.test.ts` live-onchain gate. No browser was launched and no test used the network.

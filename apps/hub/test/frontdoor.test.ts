@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Address, Hex } from "viem";
 import { createHub, type HubDeps } from "../src/app.ts";
 import {
+  offerHash,
   slipHash,
   ZERO_HASH,
   type Offer,
@@ -9,10 +10,11 @@ import {
   type Slip,
   type SlipBody,
 } from "../src/deps.ts";
-import type {
-  SearchResponse,
-  SellersResponse,
-  SettlementsResponse,
+import {
+  searchOffers,
+  type SearchResponse,
+  type SellersResponse,
+  type SettlementsResponse,
 } from "../src/frontdoor.ts";
 import { erc8004IdentityLookup, type IdentityClient, type IdentityLookup } from "../src/identity.ts";
 import { runJanitor } from "../src/janitor.ts";
@@ -233,6 +235,31 @@ describe("offer search", () => {
     const blank = await fetch(`${hub.url}/offers/search?q=`);
     expect(blank.status).toBe(200);
     expect(await blank.json()).toEqual({ query: "", results: [] });
+  });
+});
+
+describe("online search bonus", () => {
+  test("an online offer that matches no token is not a hit", () => {
+    const store = new Store(":memory:");
+    const unrelated = makeOffer({ title: "Weather lookup", summary: "Nothing here." });
+    store.putOffer(offerHash(unrelated), unrelated.seller, unrelated, NOW);
+
+    const body = searchOffers({ store, rails: [], isOnline: () => true }, { q: "arc" });
+    expect(body.results).toEqual([]);
+  });
+
+  test("an online offer scores its matches plus one and lists the bonus last", () => {
+    const store = new Store(":memory:");
+    const matching = makeOffer({ title: "Arc price oracle", summary: "Reads a price." });
+    store.putOffer(offerHash(matching), matching.seller, matching, NOW);
+
+    const body = searchOffers({ store, rails: [], isOnline: () => true }, { q: "arc" });
+    const hit = body.results[0];
+    if (!hit) throw new Error("missing search hit");
+
+    expect(hit.online).toBe(true);
+    expect(hit.score).toBe(4);
+    expect(hit.why).toEqual(['title has "arc"', "seller is online"]);
   });
 });
 
