@@ -34,10 +34,12 @@ import {
 import { tarballPrefix } from "./published.ts";
 import { withNodeShebang } from "./shebang.ts";
 import {
+  completePeerDependencies,
   extraDependenciesFor,
   findGuardException,
   guardExceptionsFor,
   omittedExportLines,
+  peerCompletionsFor,
   PUBLISH_SURFACE,
   staleGuardExceptionLines,
   type GuardException,
@@ -348,7 +350,14 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
     `${short}: dependencies ${selection.imported.length} of ${Object.keys(declared).length} ` +
       `declared: ${selection.imported.join(", ")}`,
   );
-  const stagedDependencies = { ...selection.dependencies, ...extra.dependencies };
+  const peers = completePeerDependencies({
+    short,
+    completions: peerCompletionsFor(short),
+    dependencies: { ...selection.dependencies, ...extra.dependencies },
+    union: dependencies,
+  });
+  for (const line of peers.lines) console.log(line);
+  const stagedDependencies = peers.dependencies;
 
   const staged = stagedManifest({
     short,

@@ -41,7 +41,39 @@ export type ExtraDependencyTable = Readonly<
 export const EXTRA_DEPENDENCIES: ExtraDependencyTable = {
   relay: {},
   mcp: {},
-  cli: { "@countersign-hub/mcp": "mcp" },
+  cli: {},
+};
+
+export type PeerCompletion = {
+  /** The package the dependency's code imports but does not always install. */
+  package: string;
+  /** The declared dependency whose code imports `package`. */
+  needsBy: string;
+  /** Non-empty sentence explaining why the peer must be declared. */
+  reason: string;
+};
+
+export type PeerCompletionTable = Readonly<
+  Record<string, readonly PeerCompletion[] | undefined>
+>;
+
+/**
+ * Optional peers that a declared dependency imports at runtime but npm does not
+ * install. The table is explicit and reasoned: it is never computed from
+ * `peerDependenciesMeta`, because that would add unrelated optional peers.
+ */
+export const PEER_COMPLETIONS: PeerCompletionTable = {
+  mcp: [
+    {
+      package: "@x402/evm",
+      needsBy: "@circle-fin/x402-batching",
+      reason:
+        "its server entry imports @x402/evm but lists it only as an optional peer, " +
+        "which npm does not install",
+    },
+  ],
+  cli: [],
+  relay: [],
 };
 
 export type GuardException = {
@@ -147,6 +179,80 @@ export function extraEntriesFor(short: string): readonly ExtraEntry[] {
 
 export function extraDependenciesFor(short: string): Readonly<Record<string, string>> {
   return EXTRA_DEPENDENCIES[short] ?? {};
+}
+
+/** Checks every completion in the table; an empty package, needsBy or reason throws. */
+export function checkPeerCompletionTable(table: PeerCompletionTable = PEER_COMPLETIONS): void {
+  for (const [short, completions] of Object.entries(table)) {
+    for (const completion of completions ?? []) {
+      if (completion.package.trim().length === 0) {
+        throw new Error(`${short}: peer completion has an empty package`);
+      }
+      if (completion.needsBy.trim().length === 0) {
+        throw new Error(`${short}: peer completion ${completion.package} has an empty needsBy`);
+      }
+      if (completion.reason.trim().length === 0) {
+        throw new Error(`${short}: peer completion ${completion.package} has an empty reason`);
+      }
+    }
+  }
+}
+
+export function peerCompletionsFor(
+  short: string,
+  table: PeerCompletionTable = PEER_COMPLETIONS,
+): readonly PeerCompletion[] {
+  checkPeerCompletionTable(table);
+  return table[short] ?? [];
+}
+
+export type PeerCompletionPlan = {
+  /** The staged dependencies including every completion, sorted by name. */
+  dependencies: Record<string, string>;
+  /** One line per completion, ready to print. */
+  lines: string[];
+};
+
+/**
+ * Add each peer completion after the import scan, so pruning cannot remove it.
+ * The range comes from the repository dependency union. A completion whose
+ * `needsBy` is not a staged dependency is stale and fails, as does a completion
+ * whose package has no range in the union.
+ */
+export function completePeerDependencies(input: {
+  short: string;
+  completions: readonly PeerCompletion[];
+  dependencies: Readonly<Record<string, string>>;
+  union: Readonly<Record<string, string>>;
+}): PeerCompletionPlan {
+  const dependencies: Record<string, string> = { ...input.dependencies };
+  const lines: string[] = [];
+  for (const completion of input.completions) {
+    if (input.dependencies[completion.needsBy] === undefined) {
+      throw new Error(
+        `stale peer completion for ${input.short}: ${completion.package} ` +
+          `(needed by ${completion.needsBy}, which is not a dependency)`,
+      );
+    }
+    const range = input.union[completion.package];
+    if (range === undefined) {
+      throw new Error(
+        `${input.short}: peer completion ${completion.package} is not a dependency of any ` +
+          "repository manifest",
+      );
+    }
+    dependencies[completion.package] = range;
+    lines.push(
+      `${input.short}: peer completion ${completion.package} for ${completion.needsBy} ` +
+        `(${completion.reason})`,
+    );
+  }
+  return {
+    dependencies: Object.fromEntries(
+      Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    lines,
+  };
 }
 
 export function publishAllowlist(

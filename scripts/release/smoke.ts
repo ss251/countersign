@@ -4,7 +4,8 @@ import { basename, join, resolve } from "node:path";
 import { parseSmokeArgs } from "./args.ts";
 import { floorMajor } from "./engines.ts";
 import { isRecord } from "./json.ts";
-import { PUBLISH_SCOPE, publishedName } from "./published.ts";
+import { publishedName } from "./published.ts";
+import { requiredSiblings, tarballShort, type Tarball } from "./siblings.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
 
@@ -77,21 +78,48 @@ function specifier(name: string, subpath: string): string {
   return `${name}/${subpath.slice(2)}`;
 }
 
-function installedPackage(root: string): { name: string; manifest: Record<string, unknown> } | null {
-  const scopeDir = join(root, "node_modules", PUBLISH_SCOPE);
-  if (!existsSync(scopeDir)) return null;
-  const packages = readdirSync(scopeDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-  for (const short of packages) {
-    const file = join(scopeDir, short, "package.json");
-    if (!existsSync(file)) continue;
-    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!isRecord(parsed) || typeof parsed.name !== "string") continue;
-    return { name: parsed.name, manifest: parsed };
+function installedPackage(
+  root: string,
+  name: string,
+): { name: string; manifest: Record<string, unknown> } | null {
+  const file = join(root, "node_modules", ...name.split("/"), "package.json");
+  if (!existsSync(file)) return null;
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!isRecord(parsed) || typeof parsed.name !== "string") return null;
+  return { name: parsed.name, manifest: parsed };
+}
+
+type SmokeTarball = Tarball & {
+  dependencies: Record<string, string>;
+};
+
+function readTarballManifest(file: string): SmokeTarball {
+  const result = run(["tar", "-xOzf", file, "package/package.json"], ROOT);
+  if (result.code !== 0) {
+    throw new Error(`cannot read ${basename(file)}: ${output(result)}`);
   }
-  return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${basename(file)} package.json is not JSON`);
+  }
+  if (!isRecord(parsed) || typeof parsed.name !== "string") {
+    throw new Error(`${basename(file)} package.json has no name`);
+  }
+
+  const dependencies: Record<string, string> = {};
+  const raw = parsed.dependencies;
+  if (raw !== undefined) {
+    if (!isRecord(raw)) throw new Error(`${basename(file)} dependencies is not an object`);
+    for (const [name, spec] of Object.entries(raw)) {
+      if (typeof spec !== "string") {
+        throw new Error(`${basename(file)} dependencies.${name} is not a string`);
+      }
+      dependencies[name] = spec;
+    }
+  }
+  return { file, name: parsed.name, dependencies };
 }
 
 function installedNodeVersion(): string | null {
@@ -112,23 +140,50 @@ function floorRuntime(major: number, cwd: string): Runtime {
   return { version: fetched, command: ["npx", "-y", `node@${major}`] };
 }
 
-function smokeTarball(tarball: string, current: string, useFloor: boolean): void {
-  const fallback = basename(tarball, ".tgz");
+function smokeTarball(
+  entry: SmokeTarball,
+  directoryLabel: string,
+  available: readonly Tarball[],
+  current: string,
+  useFloor: boolean,
+): void {
+  const fallback = basename(entry.file, ".tgz");
+  const short = tarballShort(entry.name);
+  const plan = requiredSiblings({ dependencies: entry.dependencies, available });
+  if (plan.missing.length > 0) {
+    for (const dependency of plan.missing) {
+      check(
+        `install: ${entry.name} depends on ${dependency}, which has no tarball in ` +
+          `${directoryLabel} and is not published`,
+        false,
+      );
+    }
+    return;
+  }
+
   const work = mkdtempSync(join(tmpdir(), "countersign-smoke-"));
   try {
     const init = run(["npm", "init", "-y"], work);
     check(`${fallback} init`, init.code === 0, output(init));
 
-    const install = run(["npm", "i", "--no-audit", "--no-fund", tarball], work);
+    const installSet = [entry, ...plan.siblings];
+    console.log(`install: ${installSet.map((item) => tarballShort(item.name)).join(" + ")}`);
+    const install = run(
+      ["npm", "i", "--no-audit", "--no-fund", ...installSet.map((item) => item.file)],
+      work,
+    );
     check(`${fallback} install`, install.code === 0, output(install));
     if (install.code !== 0) return;
 
-    const installed = installedPackage(work);
+    const installed = installedPackage(work, entry.name);
     if (installed === null) {
-      check(`${fallback} package.json`, false, "no installed package under node_modules/@countersign-hub");
+      check(
+        `${fallback} package.json`,
+        false,
+        `no installed package ${entry.name} under node_modules`,
+      );
       return;
     }
-    const short = installed.name.split("/").pop() ?? fallback;
     const expectedName = publishedName(short);
     check(
       `${short} published name`,
@@ -236,13 +291,15 @@ function main(): void {
   const tarballs = readdirSync(directory)
     .filter((name) => /^countersign-hub-.*\.tgz$/.test(name))
     .sort()
-    .map((name) => join(directory, name));
+    .map((name) => readTarballManifest(join(directory, name)));
   if (tarballs.length === 0) {
     console.error(`no countersign-hub-*.tgz in ${directory}`);
     process.exit(1);
   }
 
-  for (const tarball of tarballs) smokeTarball(tarball, current, args.node20 !== false);
+  for (const tarball of tarballs) {
+    smokeTarball(tarball, args.dir, tarballs, current, args.node20 !== false);
+  }
   if (failed) process.exit(1);
 }
 
