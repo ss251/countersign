@@ -86,8 +86,17 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
     return out as unknown as VerifyResult;
   }
 
-  async function settle(paymentPayload: PaymentPayload, paymentRequirements: PaymentRequirements): Promise<SettleResult> {
-    const out = await post("/settle", { x402Version: 2, paymentPayload, paymentRequirements });
+  async function settle(
+    paymentPayload: PaymentPayload,
+    paymentRequirements: PaymentRequirements,
+    opts?: { lockSig?: Hex },
+  ): Promise<SettleResult> {
+    const out = await post("/settle", {
+      x402Version: 2,
+      paymentPayload,
+      paymentRequirements,
+      ...(opts?.lockSig ? { lockSig: opts.lockSig } : {}),
+    });
     if (!out || typeof out.success !== "boolean") return unreachable();
     return out as unknown as SettleResult;
   }
@@ -121,7 +130,8 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
   if (version === 2) {
     const token = opts.relayToken?.trim();
     escrow.accept = (jobId, buyerSig) => close("/escrow/accept", { jobId, buyerSig });
-    escrow.dispute = (jobId, buyerSig) => close("/escrow/dispute", { jobId, buyerSig });
+    escrow.dispute = (jobId, status, buyerSig) =>
+      close("/escrow/dispute", { jobId, status, buyerSig });
     escrow.releaseAfterWindow = (jobId) => close("/escrow/release-after-window", { jobId });
     if (token) {
       escrow.failDelivery = (jobId) =>
