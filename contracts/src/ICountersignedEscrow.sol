@@ -102,12 +102,16 @@ interface ICountersignedEscrow {
     error ReviewOpen(bytes32 jobId, uint64 endsAt);
     error ReviewClosed(bytes32 jobId, uint64 endsAt);
     error NotOpen(bytes32 jobId);
+    error LockMissing(bytes32 jobId);
+    error StatusMismatch(bytes32 jobId, uint8 status);
 
-    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. A bonded job is funded
-    ///         only by the arbiter; anyone may submit an unbonded one.
+    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. Anyone may submit it,
+    ///         and a bonded job also needs the payee's Lock(jobId) signature.
     ///         A non-zero `cs.bond` or `cs.reviewWindow` must match the payee's registered terms,
     ///         and the bond moves from the payee's free bond into the job.
-    function fund(bytes32 offerHash, Countersignature calldata cs) external returns (bytes32 jobId);
+    function fund(bytes32 offerHash, Countersignature calldata cs, bytes calldata lockSig)
+        external
+        returns (bytes32 jobId);
 
     /// @notice The caller, as payee, states the only price, bond and window a bonded or windowed
     ///         job on `offerHash` may carry, and the shortest time to its deadline at funding.
@@ -144,8 +148,9 @@ interface ICountersignedEscrow {
 
     /// @notice The buyer disputes a funded job until the deadline, or a delivered one until the
     ///         review window ends, and is refunded at once. The buyer calls it, or anyone submits it
-    ///         with the buyer's Dispute(jobId) signature.
-    function dispute(bytes32 jobId, bytes calldata buyerSig) external;
+    ///         with the buyer's Dispute(jobId, status) signature, where status is the job's status
+    ///         when the buyer signed.
+    function dispute(bytes32 jobId, uint8 signedStatus, bytes calldata buyerSig) external;
 
     /// @notice Return a funded job's payment to the buyer once it can no longer be settled.
     function refund(bytes32 jobId) external;

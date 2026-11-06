@@ -26,7 +26,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     bytes32 public constant RELEASE_TYPEHASH = keccak256("Release(bytes32 jobId,bytes32 slipHash)");
     bytes32 public constant CANCEL_TYPEHASH = keccak256("Cancel(bytes32 jobId)");
     bytes32 public constant ACCEPT_TYPEHASH = keccak256("Accept(bytes32 jobId,bytes32 slipHash)");
-    bytes32 public constant DISPUTE_TYPEHASH = keccak256("Dispute(bytes32 jobId)");
+    bytes32 public constant DISPUTE_TYPEHASH = keccak256("Dispute(bytes32 jobId,uint8 status)");
+    bytes32 public constant LOCK_TYPEHASH = keccak256("Lock(bytes32 jobId)");
     /// @dev EIP-3009's typehash, used to check the buyer's signature before the token does.
     bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
@@ -79,7 +80,11 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     // ------------------------------------------------------------------ funding and the payee's terms
 
     /// @inheritdoc ICountersignedEscrow
-    function fund(bytes32 offerHash, Countersignature calldata cs) external nonReentrant returns (bytes32 jobId) {
+    function fund(bytes32 offerHash, Countersignature calldata cs, bytes calldata lockSig)
+        external
+        nonReentrant
+        returns (bytes32 jobId)
+    {
         if (cs.amount == 0) revert ZeroAmount();
         if (cs.buyer == address(0) || cs.payee == address(0)) revert ZeroAddress();
         if (cs.payee == address(this)) revert BadPayee(cs.payee);
@@ -91,9 +96,9 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (_jobs[jobId].status != Status.None) revert JobExists(jobId);
         _checkCountersignature(cs, jobId);
 
-        if (cs.bond != 0 || cs.reviewWindow != 0) {
+        BondTerms storage t = termsOf[cs.payee][offerHash];
+        if (cs.bond != 0 || cs.reviewWindow != 0 || t.price != 0) {
             // C1: a bond or window moves only on a job matching, field for field, the payee's own terms.
-            BondTerms storage t = termsOf[cs.payee][offerHash];
             if (
                 cs.bond != t.bond || cs.reviewWindow != t.reviewWindow || cs.amount != t.price
                     || uint256(cs.deadline) < block.timestamp + t.minDuration
@@ -101,8 +106,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
             if (cs.reviewWindow != 0) _reviews[jobId].window = cs.reviewWindow;
         }
         if (cs.bond != 0) {
-            // Forced default (option d): only the arbiter funds a bonded job, after the payee's runner accepted it.
-            if (msg.sender != arbiter) revert NotArbiter();
+            bytes32 lockDigest = _hashTypedDataV4(keccak256(abi.encode(LOCK_TYPEHASH, jobId)));
+            if (!SignatureChecker.isValidSignatureNow(cs.payee, lockDigest, lockSig)) revert LockMissing(jobId);
             uint256 available = bondOf[cs.payee];
             if (available < cs.bond) revert BondMissing(cs.payee, cs.bond, available);
             bondOf[cs.payee] = available - cs.bond;
@@ -218,12 +223,13 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     }
 
     /// @inheritdoc ICountersignedEscrow
-    function dispute(bytes32 jobId, bytes calldata buyerSig) external nonReentrant {
+    function dispute(bytes32 jobId, uint8 signedStatus, bytes calldata buyerSig) external nonReentrant {
         Job storage job = _jobs[jobId];
         Status status = job.status;
         if (status == Status.None) revert NotFunded(jobId);
         if (status != Status.Funded && status != Status.Delivered) revert NotOpen(jobId);
-        _checkBuyer(job, jobId, keccak256(abi.encode(DISPUTE_TYPEHASH, jobId)), buyerSig);
+        if (uint8(status) != signedStatus) revert StatusMismatch(jobId, signedStatus);
+        _checkBuyer(job, jobId, keccak256(abi.encode(DISPUTE_TYPEHASH, jobId, signedStatus)), buyerSig);
 
         bool forfeit;
         if (status == Status.Funded) {
@@ -259,7 +265,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         Job storage job = _jobs[jobId];
         Status status = job.status;
         if (status == Status.None) revert NotFunded(jobId);
-        if (status != Status.Funded && status != Status.Delivered) revert NotOpen(jobId);
+        if (status != Status.Funded) revert NotOpen(jobId);
         if (msg.sender != job.payee) {
             bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(CANCEL_TYPEHASH, jobId)));
             if (!SignatureChecker.isValidSignatureNow(job.payee, digest, sellerSig)) revert NotPayee(jobId);

@@ -94,7 +94,7 @@ contract W1BondTest is Test {
 
         // The buyer's signature must still fund the job it was made for.
         assertEq(escrow.bondOf(buyer), 0, "the buyer's payment became a bond");
-        bytes32 funded = escrow.fund(OFFER, cs);
+        bytes32 funded = escrow.fund(OFFER, cs, "");
         assertEq(funded, jobId);
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Funded));
     }
@@ -111,7 +111,7 @@ contract W1BondTest is Test {
 
         // The contract never sees the offer, only its hash, so the stranger names the seller's own.
         vm.prank(stranger);
-        try escrow.fund(OFFER, junk) {} catch {}
+        try escrow.fund(OFFER, junk, "") {} catch {}
 
         assertEq(escrow.bondOf(seller), BOND, "a stranger locked the seller's bond");
     }

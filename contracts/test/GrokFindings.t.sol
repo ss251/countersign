@@ -125,8 +125,12 @@ contract GrokFindingsTest is GrokEscrowSigning {
         return _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, SLIP)));
     }
 
-    function _disputeSig(bytes32 jobId) internal view returns (bytes memory) {
-        return _sig(buyerKey, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId)));
+    function _disputeSig(bytes32 jobId, uint8 signedStatus) internal view returns (bytes memory) {
+        return _sig(buyerKey, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId, signedStatus)));
+    }
+
+    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
+        return _sig(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
     }
 
     function _status(bytes32 jobId) internal view returns (uint8) {
@@ -138,13 +142,20 @@ contract GrokFindingsTest is GrokEscrowSigning {
     function test_H1_a_bond_moves_only_with_the_payee_lock() public {
         _deposit(BOND);
         _publish(BOND, 0);
-        (ICountersignedEscrow.Countersignature memory cs,) = _cs(1, BOND, 0);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, 0);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
 
         assertEq(escrow.bondOf(seller), BOND, "the free bond is untouched");
+
+        // With the payee's Lock, a stranger funds and the bond locks.
+        vm.prank(stranger);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+
+        assertEq(escrow.bondOf(seller), 0, "the bond left the free balance");
+        assertEq(escrow.bondOfJob(jobId), BOND, "the bond is locked to the job");
     }
 
     // ------------------------------------------------------------------ H2
@@ -154,12 +165,12 @@ contract GrokFindingsTest is GrokEscrowSigning {
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
 
         escrow.release(jobId, SLIP, _releaseSig(jobId));
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotOpen.selector, jobId));
         vm.prank(seller);
         escrow.cancel(jobId, "");
     }
@@ -171,15 +182,19 @@ contract GrokFindingsTest is GrokEscrowSigning {
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
 
-        bytes memory fundedSig = _disputeSig(jobId);
+        bytes memory fundedSig = _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Funded));
         escrow.release(jobId, SLIP, _releaseSig(jobId));
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
 
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ICountersignedEscrow.StatusMismatch.selector, jobId, uint8(ICountersignedEscrow.Status.Funded)
+            )
+        );
         vm.prank(stranger);
-        escrow.dispute(jobId, fundedSig);
+        escrow.dispute(jobId, uint8(ICountersignedEscrow.Status.Funded), fundedSig);
     }
 
     // ------------------------------------------------------------------ L
@@ -187,10 +202,10 @@ contract GrokFindingsTest is GrokEscrowSigning {
     function test_L_a_registered_bonded_offer_cannot_be_funded_with_bond_zero() public {
         _deposit(BOND);
         _publish(BOND, 0);
-        (ICountersignedEscrow.Countersignature memory cs,) = _cs(1, 0, 0);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, 0, 0);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
         vm.prank(stranger);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 }

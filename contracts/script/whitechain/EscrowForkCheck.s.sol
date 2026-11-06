@@ -68,7 +68,7 @@ contract EscrowForkCheck is Script {
         bytes32 offer1 = keccak256("offer-1");
         ICountersignedEscrow.Countersignature memory cs1 = _countersign(offer1, PRICE, uint64(block.timestamp + 600), 1);
         vm.prank(relayer);
-        bytes32 job1 = escrow.fund(offer1, cs1);
+        bytes32 job1 = escrow.fund(offer1, cs1, "");
         require(IUsdt(USDT).authorizationState(buyer, job1), "nonce not burned");
         bytes32 slip = keccak256("slip-1");
         vm.prank(relayer);
@@ -82,7 +82,7 @@ contract EscrowForkCheck is Script {
 
         // 2. a replayed countersignature is refused.
         vm.prank(relayer);
-        try escrow.fund(offer1, cs1) {
+        try escrow.fund(offer1, cs1, "") {
             revert("replay was accepted");
         } catch (bytes memory err) {
             require(bytes4(err) == ICountersignedEscrow.JobExists.selector, "replay: wrong error");
@@ -95,7 +95,7 @@ contract EscrowForkCheck is Script {
         cs2.amount = PRICE + 1;
         uint256 before2 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        try escrow.fund(offer2, cs2) {
+        try escrow.fund(offer2, cs2, "") {
             revert("moved price was accepted");
         } catch (bytes memory err) {
             require(bytes4(err) == ICountersignedEscrow.CountersignatureMismatch.selector, "moved price: wrong error");
@@ -108,7 +108,7 @@ contract EscrowForkCheck is Script {
         ICountersignedEscrow.Countersignature memory cs3 = _countersign(offer3, PRICE, uint64(block.timestamp + 600), 3);
         uint256 before3 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        bytes32 job3 = escrow.fund(offer3, cs3);
+        bytes32 job3 = escrow.fund(offer3, cs3, "");
         vm.prank(relayer);
         escrow.cancel(job3, _sign(sellerKey, _escrowDigest(keccak256(abi.encode(escrow.CANCEL_TYPEHASH(), job3)))));
         require(IUsdt(USDT).balanceOf(buyer) == before3, "cancel did not return the full amount");
@@ -119,7 +119,7 @@ contract EscrowForkCheck is Script {
         ICountersignedEscrow.Countersignature memory cs4 = _countersign(offer4, PRICE, uint64(block.timestamp + 60), 4);
         uint256 before4 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        bytes32 job4 = escrow.fund(offer4, cs4);
+        bytes32 job4 = escrow.fund(offer4, cs4, "");
         vm.warp(block.timestamp + 61 + escrow.DISPUTE_WINDOW());
         vm.prank(makeAddr("stranger"));
         escrow.refund(job4);

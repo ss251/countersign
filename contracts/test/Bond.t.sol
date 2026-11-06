@@ -106,6 +106,10 @@ contract BondTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, slipHash)));
     }
 
+    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
+        return _sign712(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    }
+
     /// The first second after settleBy = deadline + DISPUTE_WINDOW (H1).
     function _afterSettle(ICountersignedEscrow.Countersignature memory cs) internal view returns (uint256) {
         return uint256(cs.deadline) + escrow.DISPUTE_WINDOW() + 1;
@@ -135,8 +139,9 @@ contract BondTest is Test {
         _deposit(bond);
         _terms(bond);
         cs = _cs(bond);
+        bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, bond, 0);
         vm.prank(arbiter); // the arbiter funds a bonded job
-        jobId = escrow.fund(OFFER, cs);
+        jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, expected));
     }
 
     // ------------------------------------------------------------------ the four paths
@@ -235,9 +240,10 @@ contract BondTest is Test {
         uint256 buyerWallet = token.balanceOf(buyer);
         uint256 escrowWallet = token.balanceOf(address(escrow));
 
+        bytes memory lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BondMissing.selector, seller, BOND + 1, BOND));
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
 
         assertEq(token.balanceOf(buyer), buyerWallet);
         assertEq(token.balanceOf(address(escrow)), escrowWallet);
@@ -283,8 +289,9 @@ contract BondTest is Test {
         _deposit(BOND + free);
         _terms(BOND);
         ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
+        bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
         vm.prank(arbiter);
-        bytes32 jobId = escrow.fund(OFFER, cs);
+        bytes32 jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, expected));
         assertEq(escrow.bondOf(seller), free);
         assertEq(escrow.bondOfJob(jobId), BOND);
 

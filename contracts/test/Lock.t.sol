@@ -6,9 +6,9 @@ import {CountersignedEscrow} from "../src/CountersignedEscrow.sol";
 import {ICountersignedEscrow} from "../src/ICountersignedEscrow.sol";
 import {MockEIP3009} from "./mocks/MockEIP3009.sol";
 
-/// @dev Forced default (option d): a bonded job is funded only through the arbiter, after the
-///      payee's runner accepted the call. An unbonded job stays open to any caller.
-contract ForcedDefaultTest is Test {
+/// @dev The payee's Lock(jobId) replaces the forced default (option d): funding is open to anyone,
+///      but a bonded job moves the payee's bond only with a signature the payee itself made.
+contract LockTest is Test {
     MockEIP3009 internal token;
     CountersignedEscrow internal escrow;
 
@@ -89,10 +89,22 @@ contract ForcedDefaultTest is Test {
         return _countersign(OFFER, seller, PRICE, uint64(block.timestamp + 300), 1, bond);
     }
 
+    function _jobId(uint256 bond) internal view returns (bytes32) {
+        return escrow.jobIdFor(OFFER, buyer, seller, PRICE, uint64(block.timestamp + 300), 1, bond, 0);
+    }
+
     /// The seller registers the offer's bond, as it does once at publish.
     function _terms(uint256 bond) internal {
         vm.prank(seller);
         escrow.setTerms(OFFER, PRICE, bond, 0, 0);
+    }
+
+    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", escrow.domainSeparator(), keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)))
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(payeeKey, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     function _depositNonce(uint256 amount, bytes32 salt) internal view returns (bytes32) {
@@ -112,59 +124,95 @@ contract ForcedDefaultTest is Test {
         escrow.depositBond(seller, amount, validAfter, validBefore, salt, v, r, s);
     }
 
-    // ------------------------------------------------------------------ forced default
-
-    function test_a_stranger_cannot_fund_a_bonded_job() public {
-        _deposit(BOND);
-        _terms(BOND);
-        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
-
-        vm.prank(stranger);
-        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
-        escrow.fund(OFFER, cs);
-
-        assertEq(escrow.bondOf(seller), BOND, "the bond stays free");
-        assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.None), "the job stays unopened");
-    }
-
-    function test_the_buyer_cannot_fund_a_bonded_job() public {
-        _deposit(BOND);
-        _terms(BOND);
-        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
-
-        vm.prank(buyer);
-        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
-        escrow.fund(OFFER, cs);
-
-        assertEq(escrow.bondOf(seller), BOND, "the bond stays free");
-        assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.None), "the job stays unopened");
-    }
-
-    function test_the_arbiter_funds_a_bonded_job_and_locks_the_bond() public {
-        _deposit(BOND);
-        _terms(BOND);
-        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
-
-        vm.prank(arbiter);
-        bytes32 fundedJobId = escrow.fund(OFFER, cs);
-
-        assertEq(fundedJobId, jobId, "the funded job is the countersigned one");
+    function _assertBondLocked(bytes32 jobId) internal view {
         assertEq(escrow.bondOf(seller), 0, "the bond falls by exactly the bond");
         assertEq(escrow.bondOfJob(jobId), BOND, "the bond is locked to the job");
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Funded), "the job is funded");
     }
 
-    function test_an_unbonded_job_stays_open_to_anyone() public {
+    /// The seller deposits and registers, the buyer countersigns, and `funder` submits the payee's lock.
+    function _fundWithLock(address funder) internal returns (bytes32 jobId) {
+        _deposit(BOND);
+        _terms(BOND);
+        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
+        jobId = _jobId(BOND);
+
+        vm.prank(funder);
+        bytes32 fundedJobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+
+        assertEq(fundedJobId, jobId, "the funded job is the countersigned one");
+        _assertBondLocked(jobId);
+    }
+
+    /// The seller deposits and registers, the buyer countersigns, and `funder` submits no lock.
+    function _fundWithoutLock(address funder) internal {
+        _deposit(BOND);
+        _terms(BOND);
+        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
+        bytes32 jobId = _jobId(BOND);
+
+        vm.prank(funder);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+        escrow.fund(OFFER, cs, "");
+
+        assertEq(escrow.bondOf(seller), BOND, "the bond stays free");
+        assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.None), "the job stays unopened");
+    }
+
+    // ------------------------------------------------------------------ the lock is the payee's
+
+    function test_a_bonded_fund_without_a_lock_reverts() public {
+        _fundWithoutLock(stranger);
+    }
+
+    function test_a_lock_signed_by_anyone_but_the_payee_reverts() public {
+        _deposit(BOND);
+        _terms(BOND);
+        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
+        bytes32 jobId = _jobId(BOND);
+
+        bytes memory wrongLock = _lockSig(buyerKey, jobId);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+        escrow.fund(OFFER, cs, wrongLock);
+
+        assertEq(escrow.bondOf(seller), BOND, "the bond stays free");
+    }
+
+    // ------------------------------------------------------------------ anyone may submit it
+
+    function test_a_stranger_funds_with_the_payees_lock() public {
+        _fundWithLock(stranger);
+    }
+
+    function test_the_buyer_funds_with_the_payees_lock() public {
+        _fundWithLock(buyer);
+    }
+
+    function test_the_arbiter_funds_with_the_payees_lock() public {
+        _fundWithLock(arbiter);
+    }
+
+    // ------------------------------------------------------------------ unbonded jobs need no lock
+
+    function test_an_unbonded_fund_ignores_the_lock_signature() public {
         ICountersignedEscrow.Countersignature memory cs = _cs(0);
         bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, 0, 0);
 
         vm.prank(stranger);
-        bytes32 fundedJobId = escrow.fund(OFFER, cs);
+        bytes32 fundedJobId = escrow.fund(OFFER, cs, hex"deadbeef");
 
         assertEq(fundedJobId, jobId, "the funded job is the countersigned one");
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Funded), "the job is funded");
+    }
+
+    // ------------------------------------------------------------------ the forced default is closed
+
+    function test_the_arbiter_cannot_fund_a_bonded_job_the_payee_never_locked() public {
+        _fundWithoutLock(arbiter);
+    }
+
+    function test_the_buyer_cannot_fund_a_bonded_job_the_payee_never_locked() public {
+        _fundWithoutLock(buyer);
     }
 }

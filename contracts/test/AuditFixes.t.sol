@@ -66,6 +66,10 @@ abstract contract EscrowSigning is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return abi.encodePacked(r, s, v);
     }
+
+    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
+        return _sig(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    }
 }
 
 /// @dev The captain's audit of the escrow (06 Nov, 19:45 IST) and the 19:40 decisions (D16):
@@ -134,7 +138,7 @@ contract AuditFixesTest is EscrowSigning {
         ICountersignedEscrow.Countersignature memory cs;
         (cs, jobId) = _cs(salt, bond, window);
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, bond == 0 ? bytes("") : _lockSig(sellerKey, jobId));
     }
 
     function _releaseSig(bytes32 jobId) internal view returns (bytes memory) {
@@ -145,8 +149,8 @@ contract AuditFixesTest is EscrowSigning {
         return _sig(sellerKey, keccak256(abi.encode(escrow.CANCEL_TYPEHASH(), jobId)));
     }
 
-    function _disputeSig(bytes32 jobId) internal view returns (bytes memory) {
-        return _sig(buyerKey, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId)));
+    function _disputeSig(bytes32 jobId, uint8 signedStatus) internal view returns (bytes memory) {
+        return _sig(buyerKey, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId, signedStatus)));
     }
 
     function _settleBy(bytes32 jobId) internal view returns (uint256) {
@@ -171,9 +175,10 @@ contract AuditFixesTest is EscrowSigning {
             attackerKey, OTHER_OFFER, seller, 1, uint64(block.timestamp + 3650 days), 1, BOND, 0
         );
 
+        bytes memory lockSig = _lockSig(sellerKey, jobId);
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OTHER_OFFER, cs);
+        escrow.fund(OTHER_OFFER, cs, lockSig);
 
         assertEq(escrow.bondOf(seller), BOND, "the free bond is untouched");
         assertEq(escrow.bondOfJob(jobId), 0);
@@ -188,25 +193,30 @@ contract AuditFixesTest is EscrowSigning {
         bytes32 jobId;
 
         (cs, jobId) = _countersignBy(buyerKey, OFFER, seller, PRICE, deadline, 1, BOND + 1, WINDOW);
+        bytes memory lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
 
         (cs, jobId) = _countersignBy(buyerKey, OFFER, seller, PRICE, deadline, 2, BOND, WINDOW + 1);
+        lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
 
         (cs, jobId) = _countersignBy(buyerKey, OFFER, seller, PRICE + 1, deadline, 3, BOND, WINDOW);
+        lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
 
         uint64 tooSoon = uint64(block.timestamp + MIN_DURATION - 1);
         (cs, jobId) = _countersignBy(buyerKey, OFFER, seller, PRICE, tooSoon, 4, BOND, WINDOW);
+        lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
 
         (cs, jobId) = _countersignBy(buyerKey, OTHER_OFFER, seller, PRICE, deadline, 5, BOND, WINDOW);
+        lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OTHER_OFFER, cs);
+        escrow.fund(OTHER_OFFER, cs, lockSig);
 
         assertEq(escrow.bondOf(seller), 2 * BOND, "no mismatch moved any bond");
 
@@ -214,7 +224,7 @@ contract AuditFixesTest is EscrowSigning {
         (cs, jobId) =
             _countersignBy(buyerKey, OFFER, seller, PRICE, uint64(block.timestamp + MIN_DURATION), 6, BOND, WINDOW);
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
         assertEq(escrow.bondOfJob(jobId), BOND);
     }
 
@@ -238,8 +248,9 @@ contract AuditFixesTest is EscrowSigning {
         // And the stranger's terms bind nothing of the seller's.
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
             _countersignBy(attackerKey, OFFER, seller, 1, uint64(block.timestamp + 1 days), 1, 1, 0);
+        bytes memory lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
         assertEq(escrow.bondOf(seller), BOND);
     }
 
@@ -267,7 +278,7 @@ contract AuditFixesTest is EscrowSigning {
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.BondLocked(jobId, seller, BOND);
         vm.prank(arbiter);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
 
         assertEq(escrow.bondOf(seller), 300_000, "only the registered bond left the free balance");
         assertEq(escrow.bondOfJob(jobId), BOND);
@@ -290,16 +301,17 @@ contract AuditFixesTest is EscrowSigning {
         bytes32 strippedId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, 0, WINDOW);
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, strippedId));
-        escrow.fund(OFFER, stripped);
+        escrow.fund(OFFER, stripped, "");
 
         // Or strip the window.
         ICountersignedEscrow.Countersignature memory unwindowed = cs;
         unwindowed.bond = BOND;
         unwindowed.reviewWindow = 0;
         bytes32 unwindowedId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
+        bytes memory unwindowedLock = _lockSig(sellerKey, unwindowedId);
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, unwindowedId));
-        escrow.fund(OFFER, unwindowed);
+        escrow.fund(OFFER, unwindowed, unwindowedLock);
 
         assertEq(escrow.bondOf(seller), BOND);
         assertEq(token.balanceOf(buyer), 100_000_000);
@@ -309,27 +321,27 @@ contract AuditFixesTest is EscrowSigning {
         _deposit(BOND);
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 expected) = _cs(1, BOND, WINDOW);
+        bytes memory lockSig = _lockSig(sellerKey, expected);
 
         vm.prank(attacker);
-        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
-        escrow.fund(OFFER, cs);
-        assertEq(uint8(escrow.jobOf(expected).status), uint8(ICountersignedEscrow.Status.None), "the front-run opened nothing");
+        bytes32 jobId = escrow.fund(OFFER, cs, lockSig);
 
-        vm.prank(arbiter);
-        bytes32 jobId = escrow.fund(OFFER, cs);
-
-        assertEq(jobId, expected, "the arbiter opened exactly the signed job");
+        assertEq(jobId, expected, "the stranger opened exactly the signed job");
         ICountersignedEscrow.Job memory job = escrow.jobOf(jobId);
         assertEq(job.buyer, buyer);
+        assertEq(job.deadline, cs.deadline);
+        assertEq(uint8(job.status), uint8(ICountersignedEscrow.Status.Funded));
         assertEq(job.payee, seller);
         assertEq(job.amount, PRICE);
+        assertEq(job.offerHash, OFFER);
+        assertEq(job.slipHash, bytes32(0));
         assertEq(escrow.bondOfJob(jobId), BOND);
         (uint64 window,,) = escrow.reviewOf(jobId);
         assertEq(window, WINDOW);
 
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.JobExists.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, lockSig);
     }
 
     // ------------------------------------------------------------------ C2 and the economics
@@ -391,7 +403,7 @@ contract AuditFixesTest is EscrowSigning {
         (,, uint64 endsAt) = escrow.reviewOf(jobId);
         uint256 buyerBefore = token.balanceOf(buyer);
         uint256 sellerBefore = token.balanceOf(seller);
-        bytes memory sig = _disputeSig(jobId);
+        bytes memory sig = _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Delivered));
         vm.warp(endsAt - 1);
 
         vm.expectEmit(address(escrow));
@@ -401,7 +413,7 @@ contract AuditFixesTest is EscrowSigning {
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.BondForfeited(jobId, buyer, BOND);
         vm.prank(stranger);
-        escrow.dispute(jobId, sig);
+        escrow.dispute(jobId, uint8(ICountersignedEscrow.Status.Delivered), sig);
 
         assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND, "junk costs the seller the bond");
         assertEq(token.balanceOf(seller), sellerBefore, "the seller is not paid");
@@ -421,7 +433,7 @@ contract AuditFixesTest is EscrowSigning {
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.BondReturned(jobId, seller, BOND);
         vm.prank(buyer);
-        escrow.dispute(jobId, "");
+        escrow.dispute(jobId, uint8(ICountersignedEscrow.Status.Funded), "");
 
         assertEq(token.balanceOf(buyer) - buyerBefore, PRICE, "the buyer gets the amount only");
         assertEq(escrow.bondOf(seller), BOND, "the bond goes back: the seller had no chance to deliver");
@@ -455,7 +467,7 @@ contract AuditFixesTest is EscrowSigning {
         for (uint256 i; i < 4; ++i) {
             (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(i + 1, BOND, 0);
             vm.prank(arbiter);
-            escrow.fund(OFFER, cs);
+            escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
             jobs[i] = jobId;
         }
         uint256 settleBy = _settleBy(jobs[0]);
@@ -511,7 +523,14 @@ contract AuditFixesTest is EscrowSigning {
         if (which == 0) {
             (call, boundary, until) = (abi.encodeCall(escrow.cancel, (jobId, _cancelSig(jobId))), deadline, true);
         } else if (which == 1) {
-            (call, boundary, until) = (abi.encodeCall(escrow.dispute, (jobId, _disputeSig(jobId))), deadline, true);
+            (call, boundary, until) = (
+                abi.encodeCall(
+                    escrow.dispute,
+                    (jobId, uint8(ICountersignedEscrow.Status.Funded), _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Funded)))
+                ),
+                deadline,
+                true
+            );
         } else if (which == 2) {
             (call, boundary, until) = (abi.encodeCall(escrow.release, (jobId, SLIP, _releaseSig(jobId))), settleBy, true);
         } else if (which == 3) {
@@ -522,7 +541,18 @@ contract AuditFixesTest is EscrowSigning {
             escrow.release(jobId, SLIP, _releaseSig(jobId));
             (,, uint64 endsAt) = escrow.reviewOf(jobId);
             if (which == 5) {
-                (call, boundary, until) = (abi.encodeCall(escrow.dispute, (jobId, _disputeSig(jobId))), endsAt, true);
+                (call, boundary, until) = (
+                    abi.encodeCall(
+                        escrow.dispute,
+                        (
+                            jobId,
+                            uint8(ICountersignedEscrow.Status.Delivered),
+                            _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Delivered))
+                        )
+                    ),
+                    endsAt,
+                    true
+                );
             } else {
                 (call, boundary, until) = (abi.encodeCall(escrow.releaseAfterWindow, (jobId)), endsAt, false);
             }
@@ -567,7 +597,7 @@ contract AuditFixesTest is EscrowSigning {
         (ICountersignedEscrow.Countersignature memory cs,) =
             _countersignBy(buyerKey, OFFER, address(escrow), PRICE, _deadline(), 1, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BadPayee.selector, address(escrow)));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
 
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BadPayee.selector, address(escrow)));
         escrow.depositBond(address(escrow), BOND, 0, block.timestamp + 600, keccak256("x"), 0, bytes32(0), bytes32(0));
@@ -625,7 +655,7 @@ contract ConservationHandler is EscrowSigning {
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
             _countersignBy(buyerKey, offer, seller, PRICE, uint64(block.timestamp + 300), salt, bond, window);
         if (bond != 0) vm.prank(arbiter);
-        try escrow.fund(offer, cs) {
+        try escrow.fund(offer, cs, bond == 0 ? bytes("") : _lockSig(sellerKey, jobId)) {
             jobs.push(jobId);
         } catch {}
     }
@@ -650,8 +680,9 @@ contract ConservationHandler is EscrowSigning {
 
     function dispute(uint256 i) external {
         if (jobs.length == 0) return;
+        bytes32 jobId = _job(i);
         vm.prank(buyer);
-        try escrow.dispute(_job(i), "") {} catch {}
+        try escrow.dispute(jobId, uint8(escrow.jobOf(jobId).status), "") {} catch {}
     }
 
     function cancel(uint256 i) external {

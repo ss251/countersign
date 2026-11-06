@@ -92,7 +92,7 @@ contract CountersignedEscrowTest is Test {
     function _funded() internal returns (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) {
         cs = _cs();
         vm.prank(stranger); // the hub or a relayer submits; the buyer pays no gas
-        jobId = escrow.fund(OFFER, cs);
+        jobId = escrow.fund(OFFER, cs, "");
     }
 
     // ------------------------------------------------------------------ the path that works
@@ -102,7 +102,7 @@ contract CountersignedEscrowTest is Test {
         bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, 0, 0);
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Funded(expected, OFFER, buyer, seller, PRICE, cs.deadline);
-        bytes32 jobId = escrow.fund(OFFER, cs);
+        bytes32 jobId = escrow.fund(OFFER, cs, "");
 
         assertEq(jobId, expected);
         assertEq(token.balanceOf(address(escrow)), PRICE);
@@ -137,12 +137,12 @@ contract CountersignedEscrowTest is Test {
     function test_replay_of_a_nonce_fails() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _funded();
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.JobExists.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
 
         // Even once the job is closed, the token has burned the nonce.
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.JobExists.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
         assertTrue(token.authorizationState(buyer, jobId));
     }
 
@@ -151,7 +151,7 @@ contract CountersignedEscrowTest is Test {
         cs.amount = PRICE + 1; // the price moved after the buyer signed
         bytes32 moved = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, moved));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
         assertEq(token.balanceOf(buyer), 100_000_000);
     }
 
@@ -206,7 +206,7 @@ contract CountersignedEscrowTest is Test {
         token.setHook(address(attacker), true);
         ICountersignedEscrow.Countersignature memory cs =
             _countersign(OFFER, address(attacker), PRICE, uint64(block.timestamp + 300), 7);
-        bytes32 jobId = escrow.fund(OFFER, cs);
+        bytes32 jobId = escrow.fund(OFFER, cs, "");
         attacker.arm(jobId, SLIP);
 
         escrow.release(jobId, SLIP, "");
@@ -241,7 +241,7 @@ contract CountersignedEscrowTest is Test {
         cs.payee = stranger;
         bytes32 swapped = escrow.jobIdFor(OFFER, buyer, stranger, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, swapped));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 
     function test_another_offer_hash_fails() public {
@@ -249,7 +249,7 @@ contract CountersignedEscrowTest is Test {
         bytes32 other = keccak256("offer: the same thing at a new price");
         bytes32 jobId = escrow.jobIdFor(other, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, jobId));
-        escrow.fund(other, cs);
+        escrow.fund(other, cs, "");
     }
 
     function test_extending_the_deadline_fails() public {
@@ -257,7 +257,7 @@ contract CountersignedEscrowTest is Test {
         cs.deadline += 1 days;
         bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, jobId));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 
     function test_expired_authorisation_fails() public {
@@ -265,21 +265,21 @@ contract CountersignedEscrowTest is Test {
             _countersign(OFFER, seller, PRICE, uint64(block.timestamp + 1 days), 1);
         vm.warp(cs.validBefore);
         vm.expectRevert(bytes("authorization is expired"));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 
     function test_deadline_in_the_past_fails() public {
         ICountersignedEscrow.Countersignature memory cs =
             _countersign(OFFER, seller, PRICE, uint64(block.timestamp), 1);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.DeadlineInPast.selector, cs.deadline));
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 
     function test_zero_amount_fails() public {
         ICountersignedEscrow.Countersignature memory cs =
             _countersign(OFFER, seller, 0, uint64(block.timestamp + 300), 1);
         vm.expectRevert(ICountersignedEscrow.ZeroAmount.selector);
-        escrow.fund(OFFER, cs);
+        escrow.fund(OFFER, cs, "");
     }
 
     function test_payee_cancels_early_and_the_buyer_is_whole() public {
@@ -334,7 +334,7 @@ contract CountersignedEscrowTest is Test {
         amount = bound(amount, 1, 100_000_000);
         ICountersignedEscrow.Countersignature memory cs =
             _countersign(OFFER, seller, amount, uint64(block.timestamp + 300), amount);
-        bytes32 jobId = escrow.fund(OFFER, cs);
+        bytes32 jobId = escrow.fund(OFFER, cs, "");
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
         assertEq(token.balanceOf(seller) + escrow.tollAccrued(), amount);
         assertEq(escrow.tollAccrued(), amount * TOLL_BPS / 10_000);
