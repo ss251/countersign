@@ -6,13 +6,13 @@ server with the MCP SDK client and buy and verify again.
 
 ## Changes
 
-- `e2e/flows/npm-published.flow.ts` (new, lines 1-406)
+- `e2e/flows/npm-published.flow.ts` (new, lines 1-410)
   - version, spend and tool-name constants: 22-32;
-  - the pure parsing helpers `useArcDiscoverLine`, `parseMcpBuy` and `mcpVerdict`: 96-155;
-  - clean-directory child env and `npx`/`npm view` runners: 157-216;
-  - MCP result reading and the on-chain release check: 218-234;
-  - flow registration (`owner: cs-truth`, `network: arc`, on-demand reason, 0.02 USDC spend): 236-247;
-  - the six hard steps: 249-404.
+  - the pure parsing helpers `useArcDiscoverLine`, `parseMcpBuy` and `mcpVerdict`: 100-158;
+  - clean-directory child env and `npx`/`npm view` runners: 161-220;
+  - MCP result reading and the on-chain release check: 222-238;
+  - flow registration (`owner: cs-truth`, `network: arc`, on-demand reason, 0.02 USDC spend): 240-251;
+  - the six hard steps: 253-408.
 - `e2e/flows/index.ts` (lines 13 and 50): imports the flow and registers matrix number `22`.
 - `e2e/lib/flow.ts` (line 13): adds `cs-truth` to the `Owner` union.
 - `e2e/test/npm-published.test.ts` (new, lines 1-87): offline fixtures with made-up hashes for the
@@ -43,7 +43,7 @@ server with the MCP SDK client and buy and verify again.
 $ bun install --linker hoisted
 bun install v1.3.14 (0d9b296a)
 
-Checked 1031 installs across 774 packages (no changes) [588.00ms]
+Checked 1031 installs across 774 packages (no changes) [2.18s]
 ```
 
 ```
@@ -60,7 +60,7 @@ bun test v1.3.14 (0d9b296a)
  50 pass
  0 fail
  132 expect() calls
-Ran 50 tests across 3 files. [9.16s]
+Ran 50 tests across 3 files. [8.66s]
 ```
 
 ```
@@ -75,7 +75,7 @@ leak: /var/folders/.../artifacts/20260101-000000-abcd/privy/planted.json
  66 pass
  0 fail
  187 expect() calls
-Ran 66 tests across 10 files. [2.05s]
+Ran 66 tests across 10 files. [1.99s]
 ```
 
 The `leak:` lines are the report test's expected probe output; its assertions pass.
