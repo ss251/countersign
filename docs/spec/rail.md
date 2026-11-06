@@ -24,3 +24,13 @@ The three methods are the x402 v2 facilitator trio: `challenge` builds one entry
 | `gateway` | `eip155:5042002` | `exact` (GatewayWalletBatched) | batched | Circle Gateway |
 
 Headers follow x402 v2: `PAYMENT-REQUIRED` on the 402, `PAYMENT-SIGNATURE` on the paid retry and `PAYMENT-RESPONSE` on the answer, each holding base64 JSON.
+
+## Router
+
+`chooseRail(offer, caps, declarations, health, now)` in `packages/rail/src/router.ts` is the pure selection policy. It returns every rail in `offer.rails` with a trace entry, the eligible candidates in order, the chosen rail and one plain sentence saying why.
+
+A rail is eligible when the hub declares it, the buyer's `rails` cap (if any) names it, and its `finalitySeconds` is within the buyer's `maxFinalitySeconds` (if any). A missing finality is rejected by a cap; an undeclared cost counts as `{tollBps: 0, fixed: "0"}`. Cost is `floor(price * tollBps / 10000) + fixed`, as an atomic string. A rail is degraded when it has at least two failures and the last one was at most ten minutes ago.
+
+Candidates sort healthy before degraded, then by cost, then by `finalitySeconds` (undeclared last), then by rail id. The chosen rail is the first candidate. The trace gives each eligible rail its rank (`chosen`, `fallback 1`, ...) or the reason it was refused.
+
+The hub reads buyer caps only from `X-Countersign-Rails` (comma-separated ids) and `X-Countersign-Max-Finality` (a positive integer); malformed values are ignored. It keeps failures in memory, records `challenge-failed`, `settle-failed` and `settled` attempts for ten minutes, and puts `{chosen, reason, trace}` on the 402's `extensions.route`. A failed settle demotes that rail for the next 402. On success the slip's `settlement.route` is `{chosen, reason, attempts}`; like `settlement.receipt`, it sits outside `SlipBody`, so `slipCommitHash` is unchanged. `/healthz` reports the policy, the health record and the last twenty decisions.
