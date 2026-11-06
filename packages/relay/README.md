@@ -12,7 +12,6 @@ npm i @countersign-hub/relay
 
 - **Runtime:** Node 20 or later, or Bun. The package ships compiled JavaScript.
 - **The merchant side** is Hono middleware, so a merchant also runs `npm i hono`.
-- **The customer side** builds its account with viem, so a customer also runs `npm i viem`.
 
 There is no root export. Import one of the three subpaths below.
 
@@ -42,11 +41,13 @@ app.get(
 
 ## Pay for a route (the customer)
 
-```ts
-import { privateKeyToAccount } from "viem/accounts";
-import { createPayFetch } from "@countersign-hub/relay/pay-fetch";
+In a browser, pay from the person's connected wallet. Nobody pastes a key:
 
-const account = privateKeyToAccount(process.env.BUYER_KEY as `0x${string}`);
+```ts
+import { createPayFetch, walletAccount } from "@countersign-hub/relay/browser";
+
+// address and signTypedData come from the connected wallet (an injected wallet, or Privy).
+const account = walletAccount(address, signTypedData);
 const pay = createPayFetch({
   account,
   maxPerCall: "0.10",
@@ -57,11 +58,12 @@ const res = await pay("https://example.com/sticker-pack");
 console.log(await res.json(), res.payment?.transaction);
 ```
 
-- **How it pays:** `pay` answers a 402 by signing one EIP-3009 authorization for the exact price, then sends the request again with it.
+- **How it pays:** `pay` answers a 402 with one EIP-3009 authorization for the exact price, which the wallet signs. It then sends the request again with it.
 - **What it refuses:** it never signs for more than `maxPerCall`, or for a `payTo` outside the list.
 - **The receipt:** `res.payment.transaction` is the settlement transaction on chain 1874.
+- **`walletAccount` signs typed data only.**
 
-**`BUYER_KEY` is a raw EVM private key.** It signs on your machine and is never sent to the merchant or the relay. Use a fresh testnet key made only for this, holding only the USDT it needs, never a main wallet.
+**Advanced, CI only:** `createPayFetch` takes any viem account, so a CI job can build one with `privateKeyToAccount` from a secret. That key signs locally and is never sent anywhere. It must be a fresh testnet key made only for the job, holding only what the job spends, never a main wallet's.
 
 ## Refund an order (the merchant)
 
