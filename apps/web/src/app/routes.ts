@@ -64,6 +64,7 @@ const ALL_VIEWS = [
   { name: "assistant", label: "Assistant", ready: true, group: "buy" },
   { name: "seller", label: "Seller", ready: true, group: "sell" },
   { name: "merchant", label: "Merchant", ready: true, group: "sell" },
+  { name: "developers", label: "Developers", ready: true, group: "sell" },
   { name: "registry", label: "Registry", ready: true, group: "check" },
   { name: "verify", label: "Verify", ready: true, group: "check" },
 ] as const satisfies readonly { name: string; label: string; ready: boolean; group: NavGroup }[];
