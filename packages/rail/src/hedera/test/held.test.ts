@@ -112,6 +112,9 @@ async function countersignBytes(
 interface MirrorState {
   schedules: Record<string, Record<string, unknown> | null>;
   accounts: Record<string, Record<string, unknown> | null>;
+  /** The SCHEDULECREATE record for the held schedule. */
+  create: Record<string, unknown> | null;
+  /** The executed child record of the create. */
   transaction: Record<string, unknown> | null;
 }
 
@@ -132,7 +135,9 @@ function mirrorBox(state: MirrorState) {
       return record ? Response.json(record) : new Response("not found", { status: 404 });
     }
     if (path.startsWith("/api/v1/transactions/")) {
-      return Response.json({ transactions: state.transaction ? [state.transaction] : [] });
+      const scheduled = new URL(url).searchParams.get("scheduled") === "true";
+      const record = scheduled ? state.transaction : state.create;
+      return Response.json({ transactions: record ? [record] : [] });
     }
     return new Response("not found", { status: 404 });
   }) as unknown as typeof globalThis.fetch;
@@ -169,6 +174,17 @@ function scheduleRecord(over: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
+function createRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    transaction_id: CREATE_TX,
+    result: "SUCCESS",
+    name: "SCHEDULECREATE",
+    entity_id: SCHEDULE_ID,
+    consensus_timestamp: `${NOW}.000000000`,
+    ...over,
+  };
+}
+
 function executionRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     transaction_id: CREATE_TX,
@@ -187,6 +203,7 @@ function happyState(over: Partial<MirrorState> = {}): MirrorState {
   return {
     schedules: { [SCHEDULE_ID]: scheduleRecord() },
     accounts: { [PAYER]: payerAccount(), [PAYEE]: payeeAccount() },
+    create: createRecord(),
     transaction: executionRecord(),
     ...over,
   };

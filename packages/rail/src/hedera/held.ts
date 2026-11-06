@@ -30,6 +30,7 @@ import {
   waitForScheduledExecution,
   type MirrorSchedule,
 } from "./schedule.ts";
+import { toMirrorTxId } from "./txid.ts";
 
 const ACCOUNT_ID = /^0\.0\.\d+$/;
 const TRANSACTION_ID = /^0\.0\.\d+@\d+\.\d+$/;
@@ -153,6 +154,27 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
     }
   }
 
+  /** The payload's createTxId must be this schedule's own successful SCHEDULECREATE. */
+  async function findCreate(scheduleId: string, createTxId: string): Promise<boolean> {
+    const path = `/api/v1/transactions/${toMirrorTxId(createTxId)}`;
+    const deadline = Date.now() + waitScheduleMs;
+    for (;;) {
+      let matched = false;
+      const r = await mirrorFetch((mirror.base ?? MIRROR_TESTNET) + path, mirror);
+      if (r.ok) {
+        const body: unknown = await r.json().catch(() => null);
+        const transactions = isRecord(body) && Array.isArray(body.transactions) ? body.transactions : [];
+        matched = transactions.some(
+          (t) =>
+            isRecord(t) && t.name === "SCHEDULECREATE" && t.entity_id === scheduleId && t.result === "SUCCESS",
+        );
+      }
+      if (matched) return true;
+      if (Date.now() >= deadline) return false;
+      await sleep(pollMs);
+    }
+  }
+
   async function readAccount(id: string): Promise<Record<string, unknown> | null> {
     const r = await mirrorFetch((mirror.base ?? MIRROR_TESTNET) + `/api/v1/accounts/${id}`, mirror);
     if (!r.ok) return null;
@@ -268,6 +290,7 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       }
 
       if (await seen.has(scheduleId)) return invalid("replay");
+      if (!(await findCreate(scheduleId, createTxId))) return invalid("create_mismatch");
 
       const schedule = await findSchedule(scheduleId);
       if (!schedule) return invalid("schedule_not_found");

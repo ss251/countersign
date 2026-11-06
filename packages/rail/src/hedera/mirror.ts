@@ -133,12 +133,17 @@ export function normalizeTransaction(raw: RawTransaction): MirrorTransaction {
   };
 }
 
-/** The first record of a transaction id, or null if unseen. `scheduled` reads the executed child record. */
+/**
+ * The first SUCCESS record of a transaction id, or null if unseen. A duplicate submission can list
+ * DUPLICATE_TRANSACTION ahead of the real record, so the SUCCESS one wins; with none, the first is
+ * returned. `scheduled` reads the executed child record.
+ */
 export async function getTransaction(txId: string, opts: GetTransactionOptions = {}): Promise<MirrorTransaction | null> {
   const suffix = opts.scheduled ? "?scheduled=true" : "";
   const d = await get<{ transactions: RawTransaction[] }>(`/api/v1/transactions/${toMirrorTxId(txId)}${suffix}`, opts);
-  const first = d?.transactions[0];
-  return first ? normalizeTransaction(first) : null;
+  const records = d?.transactions ?? [];
+  const chosen = records.find((t) => t.result === "SUCCESS") ?? records[0];
+  return chosen ? normalizeTransaction(chosen) : null;
 }
 
 export async function waitForTransaction(
