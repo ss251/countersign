@@ -575,6 +575,19 @@ contract AuditFixesTest is EscrowSigning {
         vm.stopPrank();
     }
 
+    /// A bond's review window is a real window: at least 60 s, so the buyer has time to dispute before
+    /// releaseAfterWindow pays the payee and returns its bond (cs-audit's M2 on 53eed70, its F7 on 81df37e).
+    function test_M2_a_bonded_review_window_is_at_least_60_s() public {
+        vm.startPrank(seller);
+        vm.expectRevert(ICountersignedEscrow.BondNeedsWindow.selector);
+        escrow.setTerms(OFFER, PRICE, BOND, 1, MIN_DURATION);
+        vm.expectRevert(ICountersignedEscrow.BondNeedsWindow.selector);
+        escrow.setTerms(OFFER, PRICE, BOND, 59, MIN_DURATION);
+        escrow.setTerms(OFFER, PRICE, BOND, 60, MIN_DURATION);
+        escrow.setTerms(OFFER, PRICE, 0, 1, 0); // without a bond, a short window binds nothing of the payee's
+        vm.stopPrank();
+    }
+
     function test_H1_refund_waits_for_settleBy() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
