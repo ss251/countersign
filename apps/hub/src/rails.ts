@@ -1,6 +1,6 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { eip3009Rail, escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
-import { createHederaRail } from "@countersign/rail/hedera";
+import { createHederaHeldRail, createHederaRail } from "@countersign/rail/hedera";
 import type { Address, Hex } from "viem";
 
 const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
@@ -17,6 +17,9 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
  *                                               facilitator; the hub holds no Hedera key)
+ *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule
+ *                                               executes only when the hub submits the seller's countersignature
+ *                                               after a checked delivery; the hub holds no key)
  * Rails from other lanes are added here as they integrate.
  *
  * Gateway and Hedera ask their facilitator what it supports while they start. If a facilitator is
@@ -25,6 +28,7 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
 export interface RailMakers {
   gateway?: () => Promise<Rail>;
   hedera?: () => Promise<Rail>;
+  hederaScheduled?: () => Promise<Rail>;
 }
 
 export async function railsFromEnv(
@@ -86,6 +90,14 @@ export async function railsFromEnv(
   }
   if (env.HEDERA_RAIL === "1") {
     await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
+  }
+  if (env.HEDERA_SCHEDULED_RAIL === "1") {
+    await startOptional(
+      rails,
+      "hedera-scheduled",
+      makers.hederaScheduled ?? (() => createHederaHeldRail()),
+      log,
+    );
   }
   return rails;
 }
