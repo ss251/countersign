@@ -4,9 +4,6 @@ import { join } from "node:path";
 import { offerHash, type Offer, type PaymentPayload, type PaymentRequirements } from "@countersign/core";
 import { Challenge, Credential, Receipt, Store } from "mppx";
 import { tempo } from "mppx/server";
-import { Proof } from "mppx/tempo";
-import { getAddress } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { tempoMainnet } from "viem/tempo/chains";
 import {
   CARD_FLOOR,
@@ -95,7 +92,11 @@ function sptPayload(requirements: PaymentRequirements, challengeExternalId?: str
   };
 }
 
-function tempoPayload(requirements: PaymentRequirements, source?: string) {
+function tempoPayload(
+  requirements: PaymentRequirements,
+  source?: string,
+  hash = `0x${"11".repeat(32)}`,
+) {
   const challenge = challengesOf(requirements).find((candidate) => candidate.method === "tempo");
   if (!challenge) throw new Error("no tempo challenge");
   return {
@@ -103,7 +104,7 @@ function tempoPayload(requirements: PaymentRequirements, source?: string) {
     serialized: Credential.serialize(
       Credential.from({
         challenge,
-        payload: { hash: `0x${"11".repeat(32)}`, type: "hash" },
+        payload: { hash, type: "hash" },
         ...(source ? { source } : {}),
       }),
     ),
@@ -482,52 +483,34 @@ describe("verify", () => {
     const rail = railWith({ seen });
     const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
     const { challenge, serialized } = tempoPayload(req);
-    await seen.claim(challenge.id);
+    await seen.claim(`challenge:${challenge.id}`);
 
     const result = await rail.verify(paymentFor(req, serialized), req);
 
     expect(result).toEqual({ isValid: false, invalidReason: "replay" });
   });
 
-  test("names the Tempo payer from the credential's did:pkh source", async () => {
-    const account = privateKeyToAccount("0x0101010101010101010101010101010101010101010101010101010101010101");
-    const rail = railWith();
-    const baseReq = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
-    const base = challengesOf(baseReq).find((candidate) => candidate.method === "tempo")!;
-    const challenge = reissue(base, { ...base.request, amount: "0" });
-    const source = Proof.proofSource({ address: account.address, chainId: TEMPO_CHAIN_ID });
-    const signature = await account.signTypedData(
-      Proof.typedData({
-        account: account.address,
-        chainId: TEMPO_CHAIN_ID,
-        challengeId: challenge.id,
-        realm: challenge.realm,
-      }),
-    );
-    const credential = Credential.serialize(
-      Credential.from({ challenge, source, payload: { type: "proof", signature } }),
-    );
-    const requirements = { ...baseReq, amount: "0" };
+  test("does not report a payer named only by the credential's did:pkh source", async () => {
+    const fake: NonNullable<MppRailOptions["tempoMppx"]> = {
+      validateCredential: async () => {},
+      broadcastCredential: async () => {
+        throw new Error("not used");
+      },
+    };
+    const rail = railWith({ tempoMppx: fake });
+    const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
+    const { serialized } = tempoPayload(req, `did:pkh:eip155:${TEMPO_CHAIN_ID}:${PAYER}`);
 
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
-      throw new Error("network used in a hermetic test");
-    }) as unknown as typeof fetch;
-    try {
-      const result = await rail.verify(paymentFor(requirements, credential), requirements);
-      expect(result).toEqual({ isValid: true, payer: getAddress(account.address) });
-    } finally {
-      globalThis.fetch = realFetch;
-    }
+    expect(await rail.verify(paymentFor(req, serialized), req)).toEqual({ isValid: true });
   });
 
-  test("leaves payer unset for a missing or malformed source", async () => {
+  test("refuses a replay regardless of the credential's source", async () => {
     for (const source of [undefined, "did:pkh:eip155:1:" + PAYER, "not-a-did"]) {
       const seen = memorySettled();
       const rail = railWith({ seen });
       const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
       const { challenge, serialized } = tempoPayload(req, source);
-      await seen.claim(challenge.id);
+      await seen.claim(`challenge:${challenge.id}`);
 
       expect(await rail.verify(paymentFor(req, serialized), req)).toEqual({
         isValid: false,
@@ -596,7 +579,7 @@ describe("settle", () => {
     const rail = railWith({ seen });
     const req = rail.challenge(offer("10000"), { resource: RESOURCE, now: nowSeconds() });
     const { challenge, serialized } = tempoPayload(req);
-    await seen.claim(challenge.id);
+    await seen.claim(`challenge:${challenge.id}`);
 
     const result = await rail.settle(paymentFor(req, serialized), req);
 
@@ -633,7 +616,7 @@ describe("one tempo method per rail", () => {
         return receipt;
       },
     };
-    const rail = railWith({ tempoMppx: fake });
+    const rail = railWith({ tempoMppx: fake, payerOf: async () => undefined });
 
     const offers = [
       offer("10000", { payTo: { mpp: payeeA } }),
@@ -641,9 +624,10 @@ describe("one tempo method per rail", () => {
     ];
     const recipients: string[] = [];
 
-    for (const o of offers) {
+    for (const [index, o] of offers.entries()) {
       const req = rail.challenge(o, { resource: RESOURCE, now: nowSeconds() });
-      const { challenge, serialized } = tempoPayload(req);
+      const hash = `0x${(index + 1).toString(16).padStart(2, "0").repeat(32)}`;
+      const { challenge, serialized } = tempoPayload(req, undefined, hash);
       if (typeof challenge.request.recipient !== "string") throw new Error("no recipient");
       recipients.push(challenge.request.recipient);
 

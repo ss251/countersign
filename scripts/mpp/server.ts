@@ -182,11 +182,12 @@ const server = Bun.serve({
     }
     if (request.method === "GET" && url.pathname === "/rail/paid") {
       const resource = `${url.origin}/rail/paid`;
-      const requirements = rail.challenge(offer, { resource, now: Math.floor(Date.now() / 1000) });
       const authorization = request.headers.get("authorization");
       if (!authorization || !/^Payment\s+/i.test(authorization)) {
+        const requirements = rail.challenge(offer, { resource, now: Math.floor(Date.now() / 1000) });
         return challengeResponse(requirements, "payment required");
       }
+      const requirements = rail.challenge(offer, { resource, now: Math.floor(Date.now() / 1000) });
       const payment = {
         x402Version: 2 as const,
         accepted: requirements,
@@ -194,13 +195,25 @@ const server = Bun.serve({
       };
       const verified = await rail.verify(payment, requirements);
       if (!verified.isValid) {
-        const fresh = rail.challenge(offer, { resource, now: Math.floor(Date.now() / 1000) });
-        return challengeResponse(fresh, verified.invalidReason ?? "payment_failed");
+        const reason = verified.invalidReason ?? "payment_failed";
+        return Response.json(
+          { error: "refused", reason },
+          { status: reason === "replay" ? 409 : 400 },
+        );
       }
       const settled = await rail.settle(payment, requirements);
       if (!settled.success) {
-        const fresh = rail.challenge(offer, { resource, now: Math.floor(Date.now() / 1000) });
-        return challengeResponse(fresh, settled.errorReason ?? "payment_failed");
+        const reason = settled.errorReason ?? "payment_failed";
+        if (reason === "replay") {
+          return Response.json({ error: "refused", reason }, { status: 409 });
+        }
+        if (reason === "payment_failed") {
+          return Response.json(
+            { error: "payment outcome unknown; retry with the same credential", reason },
+            { status: 502 },
+          );
+        }
+        return Response.json({ error: "refused", reason }, { status: 400 });
       }
       return Response.json(
         { ok: true, transaction: settled.transaction },

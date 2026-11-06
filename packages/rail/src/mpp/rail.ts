@@ -2,6 +2,7 @@
 // methods: pathUSD on Tempo Moderato (always offered) and a card through Stripe
 // (only when a client is configured). The MPP challenge travels in
 // `extra.mpp.wwwAuthenticate`; credentials come back as `payload.credential`.
+import { randomBytes } from "node:crypto";
 import {
   offerHash,
   type Offer,
@@ -13,7 +14,19 @@ import {
 import { Challenge, Credential, Receipt, Store } from "mppx";
 import { Mppx, stripe, tempo } from "mppx/server";
 import { Methods as StripeMethods } from "mppx/stripe";
-import { getAddress, type Address } from "viem";
+import {
+  createPublicClient,
+  erc20Abi,
+  getAddress,
+  http,
+  isHex,
+  keccak256,
+  parseEventLogs,
+  type Address,
+  type Hex,
+  type Log,
+} from "viem";
+import { tempoModerato } from "viem/chains";
 import type { ChallengeContext, Rail, RailDeclaration } from "../rail.ts";
 import {
   CARD_DECIMALS,
@@ -65,6 +78,11 @@ export interface SettledStore {
   has(id: string): boolean | Promise<boolean>;
   /** Records the id atomically; false when it was already there. */
   claim(id: string): boolean | Promise<boolean>;
+  /**
+   * Forgets an id after a settlement that did not happen. Optional so a store
+   * written before claims could be released still satisfies the interface.
+   */
+  release?(id: string): void | Promise<void>;
 }
 
 export interface MppRailOptions {
@@ -85,6 +103,11 @@ export interface MppRailOptions {
     validateCredential(credential: string): Promise<unknown>;
     broadcastCredential(credential: string): Promise<Receipt.Receipt>;
   };
+  /**
+   * Reads the actual payer of a Tempo transfer from the chain. Defaults to the
+   * sender of the matching pathUSD Transfer log on Moderato.
+   */
+  payerOf?: (txHash: Hex, expect: { recipient: string; amount: bigint }) => Promise<string | undefined>;
   /** How long a challenge may be paid. Defaults to 300 seconds. */
   maxTimeoutSeconds?: number;
   /** Challenge ids already settled. Defaults to an in-memory store. */
@@ -118,6 +141,10 @@ export function assertTempoRecipient(value: unknown): asserts value is Address {
   if (normalised === ZERO_ADDRESS) throw new Error("mpp rail recipient is the zero address");
 }
 
+function challengeKey(id: string): string {
+  return `challenge:${id}`;
+}
+
 function memoryStore(): SettledStore {
   const ids = new Set<string>();
   return {
@@ -126,6 +153,9 @@ function memoryStore(): SettledStore {
       if (ids.has(id)) return false;
       ids.add(id);
       return true;
+    },
+    release: (id) => {
+      ids.delete(id);
     },
   };
 }
@@ -168,20 +198,34 @@ export type MppInspection =
       method: "stripe" | "tempo";
       challenge: MppChallenge;
       credential: string;
-      /** The Tempo payer named by a did:pkh source, checksummed. */
-      payer?: string;
+      /** What the payment moved: the tx hash or the signed transaction. */
+      transferKey: string;
     }
   | { ok: false; reason: MppRefusal };
 
-const TEMPO_SOURCE = /^did:pkh:eip155:(\d+):(0x[0-9a-fA-F]{40})$/;
+/** The sender of the matching ERC-20 Transfer log, checksummed. */
+export function payerFromReceipt(
+  receipt: { logs: readonly Log[] },
+  expect: { currency: string; recipient: string; amount: bigint },
+): string | undefined {
+  const transfers = parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs: [...receipt.logs] });
+  for (const transfer of transfers) {
+    if (!sameAddress(transfer.address, expect.currency)) continue;
+    if (!sameAddress(transfer.args.to, expect.recipient)) continue;
+    if (transfer.args.value !== expect.amount) continue;
+    return getAddress(transfer.args.from);
+  }
+  return undefined;
+}
 
-/** The payer a Tempo credential declares in its did:pkh source, when it carries a valid one. */
-function tempoPayer(source: unknown): string | undefined {
-  if (typeof source !== "string") return undefined;
-  const match = TEMPO_SOURCE.exec(source);
-  if (!match || Number(match[1]) !== TEMPO_CHAIN_ID) return undefined;
+async function payerFromChain(
+  txHash: Hex,
+  expect: { recipient: string; amount: bigint },
+): Promise<string | undefined> {
   try {
-    return getAddress(match[2]!);
+    const client = createPublicClient({ chain: tempoModerato, transport: http() });
+    const receipt = await client.getTransactionReceipt({ hash: txHash });
+    return payerFromReceipt(receipt, { currency: TEMPO_CURRENCY, ...expect });
   } catch {
     return undefined;
   }
@@ -278,28 +322,31 @@ export function inspectMppPayment(
 
   const payload = credential.payload;
   if (!payload || typeof payload !== "object") return { ok: false, reason: "malformed" };
+  let transferKey: string;
   if (challenge.method === "stripe") {
     const proof = payload as { spt?: unknown; externalId?: unknown };
     if (typeof proof.spt !== "string" || proof.spt.length === 0) return { ok: false, reason: "malformed" };
     if (proof.externalId !== undefined && proof.externalId !== hash) {
       return { ok: false, reason: "offer_mismatch" };
     }
+    transferKey = `stripe-spt:${proof.spt}`;
   } else {
     const proof = payload as { type?: unknown; hash?: unknown; signature?: unknown };
-    const shaped =
-      (proof.type === "hash" && typeof proof.hash === "string") ||
-      ((proof.type === "transaction" || proof.type === "proof") && typeof proof.signature === "string");
-    if (!shaped) return { ok: false, reason: "malformed" };
+    if (proof.type === "hash" && typeof proof.hash === "string") {
+      transferKey = `tempo-hash:${proof.hash.toLowerCase()}`;
+    } else if (
+      proof.type === "transaction" &&
+      typeof proof.signature === "string" &&
+      isHex(proof.signature)
+    ) {
+      transferKey = `tempo-tx:${keccak256(proof.signature)}`;
+    } else {
+      // A proof credential cannot pay a priced offer (the floor is 0.01).
+      return { ok: false, reason: "malformed" };
+    }
   }
 
-  const payer = challenge.method === "tempo" ? tempoPayer(credential.source) : undefined;
-  return {
-    ok: true,
-    method: challenge.method,
-    challenge,
-    credential: raw,
-    ...(payer ? { payer } : {}),
-  };
+  return { ok: true, method: challenge.method, challenge, credential: raw, transferKey };
 }
 
 export type MppRail = Rail;
@@ -311,6 +358,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
   const maxTimeoutSeconds = options.maxTimeoutSeconds ?? 300;
   const stripeOptions = options.stripe;
   const seen = options.seen ?? memoryStore();
+  const payerOf = options.payerOf ?? payerFromChain;
 
   // One Tempo method serves every payee: mppx's standalone validate and broadcast
   // verify against the HMAC-bound challenge's own recipient, and the rail's
@@ -350,12 +398,14 @@ export function createMppRail(options: MppRailOptions): MppRail {
     hash: string,
     method: "tempo" | "stripe",
   ): MppChallenge {
+    const nonce = randomBytes(16).toString("hex");
     if (method === "tempo") {
       return Challenge.fromMethod(tempoCharge, {
         realm,
         secretKey,
         expires,
         description: offer.title,
+        meta: { nonce },
         request: {
           amount: toDecimal(price, TEMPO_DECIMALS),
           currency: TEMPO_CURRENCY,
@@ -371,6 +421,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
       secretKey,
       expires,
       description: offer.title,
+      meta: { nonce },
       request: {
         amount: toDecimal(price / ATOMIC_PER_CENT, CARD_DECIMALS),
         currency: "usd",
@@ -421,19 +472,20 @@ export function createMppRail(options: MppRailOptions): MppRail {
     async verify(payment: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResult> {
       const inspected = inspect(payment, requirements);
       if (!inspected.ok) return { isValid: false, invalidReason: inspected.reason };
-      const payer = inspected.payer;
-      const withPayer = payer ? { payer } : {};
-      if (await seen.has(inspected.challenge.id)) {
-        return { isValid: false, invalidReason: "replay", ...withPayer };
+      if (await seen.has(challengeKey(inspected.challenge.id))) {
+        return { isValid: false, invalidReason: "replay" };
+      }
+      if (await seen.has(inspected.transferKey)) {
+        return { isValid: false, invalidReason: "replay" };
       }
       if (inspected.method === "tempo") {
         try {
           await tempoMppx.validateCredential(inspected.credential);
         } catch {
-          return { isValid: false, invalidReason: "payment_failed", ...withPayer };
+          return { isValid: false, invalidReason: "payment_failed" };
         }
       }
-      return { isValid: true, ...withPayer };
+      return { isValid: true };
     },
 
     async settle(payment: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResult> {
@@ -446,38 +498,48 @@ export function createMppRail(options: MppRailOptions): MppRail {
           network: requirements.network,
         };
       }
-      if (inspected.method === "tempo") {
-        if (!(await seen.claim(inspected.challenge.id))) {
-          return { success: false, errorReason: "replay", transaction: "", network: MPP_TEMPO };
-        }
-        try {
-          const receipt = await tempoMppx.broadcastCredential(inspected.credential);
-          return {
-            success: true,
-            transaction: receipt.reference,
-            network: MPP_TEMPO,
-            receipt: Receipt.serialize(receipt),
-            ...(inspected.payer ? { payer: inspected.payer } : {}),
-          };
-        } catch {
-          return { success: false, errorReason: "payment_failed", transaction: "", network: MPP_TEMPO };
-        }
+      const network = inspected.method === "tempo" ? MPP_TEMPO : MPP_STRIPE;
+      if (!(await seen.claim(challengeKey(inspected.challenge.id)))) {
+        return { success: false, errorReason: "replay", transaction: "", network };
       }
-      // A claim is never released: a failed payment is re-signed, not retried.
-      if (!(await seen.claim(inspected.challenge.id))) {
-        return { success: false, errorReason: "replay", transaction: "", network: MPP_STRIPE };
+      if (!(await seen.claim(inspected.transferKey))) {
+        await seen.release?.(challengeKey(inspected.challenge.id));
+        return { success: false, errorReason: "replay", transaction: "", network };
       }
+      let receipt: Receipt.Receipt;
       try {
-        const receipt = await stripeMppx!.broadcastCredential(inspected.credential);
+        receipt =
+          inspected.method === "tempo"
+            ? await tempoMppx.broadcastCredential(inspected.credential)
+            : await stripeMppx!.broadcastCredential(inspected.credential);
+      } catch {
+        await seen.release?.(challengeKey(inspected.challenge.id));
+        await seen.release?.(inspected.transferKey);
+        return { success: false, errorReason: "payment_failed", transaction: "", network };
+      }
+      if (inspected.method === "tempo") {
+        const amount = tempoAmount(requirements);
+        const payer =
+          amount === null || !isHex(receipt.reference)
+            ? undefined
+            : await payerOf(receipt.reference, {
+                recipient: String(inspected.challenge.request.recipient),
+                amount,
+              });
         return {
           success: true,
           transaction: receipt.reference,
-          network: MPP_STRIPE,
+          network,
           receipt: Receipt.serialize(receipt),
+          ...(payer ? { payer } : {}),
         };
-      } catch {
-        return { success: false, errorReason: "payment_failed", transaction: "", network: MPP_STRIPE };
       }
+      return {
+        success: true,
+        transaction: receipt.reference,
+        network,
+        receipt: Receipt.serialize(receipt),
+      };
     },
   };
 }
