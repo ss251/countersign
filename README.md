@@ -64,7 +64,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
 
   The merchant refunds from the order's row. It reads the terms, then signs once in its own wallet, and the relayer pays the gas.
 
-  **Refunded from the public screen, on production.** An escrow order paid through the hub was refunded in full with one wallet signature, and the relayer paid the gas:
+  **Refunded from the public screen, on production.** An AI agent bought the `whitechain-dev` offer through the production hub, with the buyer CLI on the `whitechain` rail and escrow v2. The merchant then refunded it in full from the public screen with one wallet signature, and the relayer paid the gas:
   - fund [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5);
   - release [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31);
   - refund [`0xe414…3b62`](https://explorer.testnet.whitechain.io/tx/0xe414f5314d2792b463e4fa4ab7feddb753b6a8bdecebf4abcc3406414ac13b62).
