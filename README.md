@@ -137,7 +137,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
@@ -150,7 +150,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `apps/hub` | The hub: offers, 402 challenges, jobs, slips, discovery, runner connections. |
 | `apps/web` | The console. |
 | `packages/core` | Types, canonical JSON, offer, countersignature, envelope, slip. The reference for `docs/spec`. |
-| `packages/rail` | The `Rail` interface and the escrow, Whitechain, Gateway, Hedera and MPP rails. |
+| `packages/rail` | The `Rail` interface, the escrow, Whitechain, eip3009, Gateway, Hedera and MPP rails, and the rail router. |
 | `packages/buyer` | The buyer agent and its CLI. |
 | `packages/runner` | The seller's runner and its CLI. |
 | `packages/verify` | The standalone slip verifier. |
