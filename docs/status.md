@@ -12,7 +12,7 @@ Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `ee9bff8`. Th
 | `NOT BUILT` | Described somewhere, absent from the code. |
 | `CUT` | Decided not to build for this event ([decisions.md](decisions.md), D14). |
 
-A pull request that changes a row's status changes it here too.
+A pull request that changes a row's status changes it here too. Rows that say "merged into `cs/int`" become `SHIPPED` when `cs/int` is next promoted to `main`, and the promotion's pull request flips them.
 
 ## Offer, countersignature and escrow
 
@@ -44,6 +44,8 @@ A pull request that changes a row's status changes it here too.
 | Hedera scheduled checkout | `IN PROGRESS` | PR [#105](https://github.com/ss251/countersign/pull/105) ([#41](https://github.com/ss251/countersign/issues/41)) | [e2e.md](e2e.md) flow 6 reads its log entries |
 | `eip3009` rail: direct USDC on Arc, no escrow | `IN PROGRESS` | `cs/cs-15`, in review ([#19](https://github.com/ss251/countersign/issues/19)) | `RAIL_IDS` comment in `packages/core/src/types.ts` |
 | MPP rail: pays on Tempo testnet; Stripe's card method sits behind a flag | `IN PROGRESS` | PR [#84](https://github.com/ss251/countersign/pull/84). A real payment from that branch: Tempo testnet [`0xd525…5c33`](https://explore.testnet.tempo.xyz/tx/0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33). Not on `main` and not on the hub | README "Rails", `docs/architecture.svg`, `RAIL_IDS` comment |
+| The payment waits in escrow until the output checks out | `SHIPPED` | On the escrow rails only, Arc and Whitechain: `release` needs the seller's signature over a slip the hub's gate passed. See the escrow rows above | README, console copy |
+| A payment on a direct rail (Hedera, Gateway) returned when the delivery fails | `NOT BUILT` | The hub settles a direct rail before the seller runs. On 06 Nov a live call settled and was never delivered: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251). On `main` the hub's failure message still says "Your money returns at the deadline" on every rail; `cs/int` has the corrected text | [terms.md](terms.md) §4, which says so; console copy |
 | Rail router: the cheapest healthy rail, a fallback on failure, and a recorded reason | `IN PROGRESS` | `cs/cs-20`, in review ([#94](https://github.com/ss251/countersign/issues/94)) | D13 |
 
 ## Hub
@@ -51,13 +53,14 @@ A pull request that changes a row's status changes it here too.
 | Capability | Status | Evidence | Claimed in |
 |---|---|---|---|
 | Input gate: a call whose input fails the offer's schema is refused with 422 before payment | `SHIPPED` | `apps/hub/test/call.test.ts`; e2e `refusals` | [terms.md](terms.md) §2, [spec/offer.md](spec/offer.md) |
+| The input gate also refuses, with 422 before any 402, an input that canonical JSON cannot hash, such as a fractional number | `IN PROGRESS` | Merged into `cs/int` (`27f9015`), not on `main` | |
 | Delivery gate: the output is checked against the schema, and the slip against the job, before release | `SHIPPED` | `apps/hub/src/delivery.ts`, `apps/hub/test/call.test.ts` | README, [terms.md](terms.md) §2, [spec/offer.md](spec/offer.md) |
 | The janitor refunds expired escrow jobs every 30 seconds | `SHIPPED` | `apps/hub/src/index.ts`, `apps/hub/test/call.test.ts`; e2e `ratings` | [terms.md](terms.md) §4 |
 | The hub and the console are hosted on Railway | `SHIPPED` | [hub](https://hub-production-e85e.up.railway.app/healthz), [console](https://web-production-a58de.up.railway.app) | README, [deploy.md](deploy.md) |
 | Ratings and stats derived from slips: `/ratings`, `/ratings/:seller`, `/stats` | `SHIPPED` | `apps/hub/src/ratings.ts`, `apps/hub/test/ratings.test.ts`; e2e `ratings` ([#20](https://github.com/ss251/countersign/issues/20)) | [ratings.md](ratings.md) |
 | Offer search, the sellers list and recent settlements | `SHIPPED` | `apps/hub/src/frontdoor.ts`, `apps/hub/test/frontdoor.test.ts` | [e2e.md](e2e.md) flow 14b |
-| ERC-8004 seller identity, operator grant and feedback | `IN PROGRESS` | `cs/cs-08` ([#2](https://github.com/ss251/countersign/issues/2)). `main` has a lookup for `Registered` events (`apps/hub/src/identity.ts`), but the hub never switches it on, so `/sellers` reports `erc8004: null` for every seller | [ratings.md](ratings.md) "Limits" |
-| A held call cleared from the phone with the approver's signature | `IN PROGRESS` | `cs/cs-13` ([#21](https://github.com/ss251/countersign/issues/21)), in review. On `main` the agent holds the call, and the human clears it on the agent's machine with `buy --approve` | D10, [spec/envelope.md](spec/envelope.md), `docs/architecture.svg` |
+| ERC-8004 seller identity, operator grant and feedback | `IN PROGRESS` | The library and scripts are merged into `cs/int` (`8499866`, [#2](https://github.com/ss251/countersign/issues/2)) and tested against mock registries. No seller is registered on chain and no feedback is written yet. The hub's lookup (`apps/hub/src/identity.ts`) is never switched on, so `/sellers` reports `erc8004: null` for every seller | [ratings.md](ratings.md) "Limits" |
+| A held call cleared from the phone with the approver's signature; one decision clears exactly one call | `IN PROGRESS` | Built and merged into `cs/int` (`8698a9b`, [#21](https://github.com/ss251/countersign/issues/21)), with `apps/hub/test/buyerplumbing.test.ts` and `packages/buyer/test/w1-approval-replay.test.ts`. Not on `main` or production yet, and a hub without `HUMAN_APPROVAL_TOKEN` answers 503 to every decision. On `main` the human clears a held call on the agent's machine with `buy --approve` | D10, [spec/envelope.md](spec/envelope.md), `docs/architecture.svg` |
 | ENS seller names and a payee lock | `IN PROGRESS` | PR [#91](https://github.com/ss251/countersign/pull/91) ([#28](https://github.com/ss251/countersign/issues/28)). Offers name the seller by address | [terms.md](terms.md) §7, true as written |
 | A mainnet configuration that refuses to boot while anything is pending | `IN PROGRESS` | PR [#97](https://github.com/ss251/countersign/pull/97) ([#29](https://github.com/ss251/countersign/issues/29)). There is no mainnet configuration | README "Safety limits", [terms.md](terms.md) §6, true as written |
 | OpenAI-compatible endpoint for the buyer agent | `IN PROGRESS` | A first cut on `cs/cs-14`, not merged ([#53](https://github.com/ss251/countersign/issues/53)) | |

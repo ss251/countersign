@@ -78,7 +78,7 @@ export function openapiDocument(deps: DiscoveryDeps): JsonObject {
       title: "countersign hub",
       version: "0.1.0",
       description:
-        "Escrowed, countersigned x402 calls to software that sells itself.",
+        "Countersigned x402 calls to software that sells itself, escrowed on the escrow rails.",
     },
     servers: [{ url: deps.publicUrl }],
     paths,

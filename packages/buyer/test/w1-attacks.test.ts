@@ -164,3 +164,57 @@ describe("W1 B6: the fetched offer is not bound to the hash that was requested",
     expect(signed).toBe(false);
   });
 });
+
+describe("W1 B12: a hub that says 'countersign' is not a human", () => {
+  test("approvals through the hub: a hub that approves on its own does not clear the ask-above hold", async () => {
+    // The hub is the party the buyer does not trust (B4, B6). Its reply on /approvals/:id is the
+    // only evidence of the human's decision, and nothing in it is signed by anyone the envelope names.
+    const approver = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (req.method === "POST" && url.pathname === "/approvals") return Response.json({ id: "a1" }, { status: 201 });
+        if (url.pathname === "/approvals/a1") return Response.json({ status: "countersign" }); // no human involved
+        return new Response("{}", { status: 404 });
+      },
+    });
+    try {
+      const extra: CountersignExtra = {
+        rail: "escrow", escrow: ESCROW, chainId: 5042002, offerHash, deadlineSeconds: 120, tokenName: "USDC", tokenVersion: "2",
+      };
+      const accepts = [
+        { scheme: "countersign", network: "eip155:5042002", amount: PRICE, asset: TOKEN, payTo: seller.address, maxTimeoutSeconds: 120, extra },
+      ];
+      let signed = false;
+      const hub = {
+        url: `http://127.0.0.1:${approver.port}`,
+        getOffer: async () => ({ offerHash, offer, online: true, status: "listed" }),
+        call: async (_h: unknown, _i: unknown, payment?: unknown) => {
+          if (payment) {
+            signed = true;
+            return { kind: "error", status: 500, code: "x", message: "stop" };
+          }
+          return { kind: "required", required: { x402Version: 2, resource: { url: "x" }, accepts } };
+        },
+      } as unknown as HubClient;
+      const dir = mkdtempSync(join(tmpdir(), "w1-"));
+      await buy({
+        hub,
+        offerHash,
+        input: {},
+        payers: [countersignPayer(buyerAcct)],
+        // ask-above is below the price: this call needs a human.
+        envelope: { cap: "10000000", perMerchant: "10000000", allowlist: [seller.address], askAbove: "1" } as Envelope,
+        journal: new Journal(join(dir, "journal.jsonl")),
+        state: new State(dir),
+        now: 1_762_400_000,
+        approvals: "hub",
+        account: buyerAcct,
+        known: [rail],
+      }).catch(() => undefined);
+      expect(signed).toBe(false);
+    } finally {
+      approver.stop(true);
+    }
+  });
+});

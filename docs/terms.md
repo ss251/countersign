@@ -16,7 +16,7 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
   - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator ([hedera.md](hedera.md)).
   - On the Gateway rail the buyer's deposit sits in Circle Gateway. Gateway debits the buyer at once and credits the seller in a later batch.
 - **Keys.** The hub holds no buyer key and no seller key. The seller's key stays with its runner, and the buyer's with its agent. On the Arc escrow rail the hub holds one relayer key (`CS_RELAYER_KEY`). It submits the buyer's `fund` and the seller's `release` and pays their gas. It cannot change what they signed: the escrow checks the buyer's countersignature on `fund` and the seller's signature on `release`. On the Whitechain rail the hub holds no key: it passes `fund`, `release`, `refund` and `cancel` to the relay (`WC_RELAY_URL`), which submits them and pays the gas. On the Hedera rail the hub holds no Hedera key.
-- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery and is never released ([spec/offer.md](spec/offer.md)).
+- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery. On an escrow rail it is never released; on a direct rail the payment has already settled (§4) ([spec/offer.md](spec/offer.md)).
 
 ## 3. What the buyer's countersignature binds
 

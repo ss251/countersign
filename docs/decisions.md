@@ -48,7 +48,7 @@ The release path never sends `bytes32(0)`. The hash released is exactly `slip.ha
 
 ## D10 — a held call clears only with the approver's signature, never the hub's word (06 Nov; refs #21)
 
-Status: decided, and built on a branch in review (#21). Not on `main`: today a held call is cleared only on the agent's machine, with `buy --approve`.
+Status: built (#21). Whether it has reached `main` and production: [status.md](status.md).
 
 The envelope's `askAbove` is the one control that stops an agent spending without a person. cs-w1 found (B12) that the first version of remote approvals let the hub's answer clear it: `GET /approvals/:id` said `countersign`, and the agent signed. The hub is the party every earlier fix treats as hostile, so its word cannot stand in for the human.
 
@@ -116,7 +116,7 @@ The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, 
 
 ## D10, amended — one human decision clears exactly one held call (06 Nov; refs #21)
 
-Status: decided; the fix is on the same branch as D10 (#21). Not on `main`.
+Status: built with D10 (#21).
 
 cs-w1 found that D10's signed decision bound only values a second call to the same offer repeats (B14). The decision covered agent, offer, amount, rail and terms hash, plus an approval id. The hub chooses that id, so it could answer a new request with an old id and serve the stored decision again: one human yes, two payments above ask-above.
 
