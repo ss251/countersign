@@ -42,7 +42,7 @@
 
 .offer__seller {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .offer__verified {
@@ -50,7 +50,7 @@
   align-items: center;
   gap: 4px;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .offer__price-row {
@@ -172,7 +172,7 @@
   align-items: center;
   min-height: 44px;
   font-size: var(--t-14);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   cursor: pointer;
 }
 
@@ -193,7 +193,7 @@
 
 .params__name {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .params__type {
@@ -209,7 +209,7 @@
 
 .params__req.is-required {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .params__desc {
@@ -250,7 +250,7 @@
 
 .terms__rail-title {
   font-size: var(--t-11);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   letter-spacing: 0.08em;
   line-height: 1.3;
   text-transform: uppercase;

@@ -18,6 +18,21 @@ const proxy = {
   "/merchant-api": { target: merchantApi, changeOrigin: true, rewrite: strip("/merchant-api") },
 };
 
+/**
+ * Vite answers 403 to any Host it does not know (DNS-rebinding guard), and a tunnel arrives with its
+ * own host. Let the usual tunnel domains through, plus any host named in TUNNEL_HOST (comma-separated).
+ */
+const allowedHosts = [
+  ".trycloudflare.com",
+  ".ngrok-free.app",
+  ".ngrok-free.dev",
+  ".ngrok.app",
+  ".ngrok.io",
+  ".loca.lt",
+  ".devtunnels.ms",
+  ...(process.env.TUNNEL_HOST?.split(",").map((h) => h.trim()).filter(Boolean) ?? []),
+];
+
 export default defineConfig({
   // Relative asset paths plus hash routing: the build runs from any host or folder.
   base: "./",
@@ -26,10 +41,11 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5191,
     strictPort: true,
+    allowedHosts,
     proxy,
   },
   // The built app gets the same proxies.
-  preview: { host: "127.0.0.1", port: 4173, proxy },
+  preview: { host: "127.0.0.1", port: 4173, allowedHosts, proxy },
   // One bundle on purpose (see app/routes.ts), so its size is expected.
   build: { target: "es2022", sourcemap: true, chunkSizeWarningLimit: 900 },
 });

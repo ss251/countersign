@@ -114,7 +114,7 @@
 .hold__label {
   font-family: var(--display);
   font-size: var(--t-16);
-  font-weight: 700;
+  font-weight: var(--w-strong);
   letter-spacing: 0.005em;
 }
 

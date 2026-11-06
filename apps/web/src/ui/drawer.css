@@ -59,7 +59,7 @@
 .drawer__title {
   font-family: var(--display);
   font-size: var(--t-20);
-  font-weight: 700;
+  font-weight: var(--w-strong);
 }
 
 .drawer__close {

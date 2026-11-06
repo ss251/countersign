@@ -9,7 +9,7 @@
 
 .verdict__word {
   font-size: var(--t-32);
-  font-weight: 600;
+  font-weight: var(--w-display);
   letter-spacing: 0.04em;
   line-height: 1;
 }
@@ -86,7 +86,7 @@
 
 .vcheck__title {
   font-size: var(--t-14);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .vcheck__detail {

@@ -7,7 +7,7 @@
 .verify__label {
   color: var(--slate);
   font-size: var(--t-13);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .verify__input {
@@ -81,7 +81,7 @@
 }
 
 .verify__idle-title {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .verify__steps {
