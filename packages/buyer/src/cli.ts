@@ -174,7 +174,6 @@ async function main(): Promise<void> {
     const server = startOpenAIServer({
       hub,
       account,
-      envelope: state.loadEnvelope(),
       journal,
       state,
       port: parsePort(one("port")),

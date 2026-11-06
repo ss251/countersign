@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { Hex } from "viem";
 import {
   checkSchema,
   type CallResult,
@@ -6,9 +7,9 @@ import {
   type JsonSchema,
   type Offer,
 } from "@countersign/core";
-import { BuyError, buy } from "../buy.ts";
+import { buy } from "../buy.ts";
 import type { HubClient, Listing } from "../hub-client.ts";
-import type { Journal } from "../journal.ts";
+import type { Journal, JournalEntry } from "../journal.ts";
 import { KNOWN_RAILS, type KnownRail } from "../known-rails.ts";
 import type { SigningAccount } from "../mirror.ts";
 import type { Payer } from "../payer.ts";
@@ -17,7 +18,7 @@ import type { State } from "../state.ts";
 export interface OpenAIServerArgs {
   hub: HubClient;
   account: SigningAccount;
-  envelope: Envelope;
+  envelope?: Envelope;
   journal: Journal;
   state: State;
   port: number;
@@ -50,16 +51,48 @@ interface UnmappedInput {
   ok: false;
 }
 
+interface AnswerBody {
+  status: number;
+  body: string;
+  contentType: string;
+  headers: Record<string, string>;
+  paymentSigned: boolean;
+}
+
+interface Answer extends AnswerBody {
+  at: number;
+}
+
 const AUTH_MESSAGE = "Missing or wrong bearer token.";
+const ANSWER_TTL_SECONDS = 60;
+const COMPLETION_IDLE_SECONDS = 255;
+
+const ENVELOPE_REASONS = new Set([
+  "revoked",
+  "expired",
+  "not-allowlisted",
+  "over-cap",
+  "over-merchant-limit",
+  "held",
+  "no-approver",
+  "approval-unavailable",
+  "human-unverified",
+  "human-declined",
+  "human-expired",
+  "human-timeout",
+]);
 
 export function startOpenAIServer(args: OpenAIServerArgs): OpenAIServerHandle {
   const { hub, account, envelope, journal, state, port, host = "127.0.0.1", token, now, payers } = args;
   const rails = args.known ?? [...KNOWN_RAILS, ...state.loadRails()];
   const clock = (): number => (typeof now === "function" ? now() : now);
+  const answers = new Map<string, Answer>();
+  const inflight = new Map<string, Promise<Answer>>();
 
   const server = Bun.serve({
     hostname: host,
     port,
+    idleTimeout: COMPLETION_IDLE_SECONDS,
     async fetch(req) {
       if (!authorized(req.headers.get("authorization"), token)) {
         return failure(401, AUTH_MESSAGE, "invalid_request_error", "unauthorized");
@@ -71,6 +104,7 @@ export function startOpenAIServer(args: OpenAIServerArgs): OpenAIServerHandle {
           return await listModels(hub);
         }
         if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
+          server.timeout(req, 0);
           return await chatCompletion(req, {
             hub,
             account,
@@ -80,6 +114,8 @@ export function startOpenAIServer(args: OpenAIServerArgs): OpenAIServerHandle {
             payers,
             rails,
             now: clock,
+            answers,
+            inflight,
           });
         }
         return failure(404, "Not found.", "invalid_request_error", "not_found");
@@ -98,12 +134,14 @@ export function startOpenAIServer(args: OpenAIServerArgs): OpenAIServerHandle {
 interface ChatDeps {
   hub: HubClient;
   account: SigningAccount;
-  envelope: Envelope;
+  envelope?: Envelope;
   journal: Journal;
   state: State;
   payers: Payer[];
   rails: KnownRail[];
   now: () => number;
+  answers: Map<string, Answer>;
+  inflight: Map<string, Promise<Answer>>;
 }
 
 async function listModels(hub: HubClient): Promise<Response> {
@@ -125,9 +163,15 @@ async function listModels(hub: HubClient): Promise<Response> {
 }
 
 async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
+  let raw: string;
+  try {
+    raw = await req.text();
+  } catch {
+    return failure(400, "The body is not valid JSON.", "invalid_request_error", "bad_request");
+  }
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     return failure(400, "The body is not valid JSON.", "invalid_request_error", "bad_request");
   }
@@ -146,7 +190,38 @@ async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
     return failure(400, "The request has no user message.", "invalid_request_error", "bad_input");
   }
 
-  const model = body.model;
+  const key = createHash("sha256").update(raw).digest("hex");
+  const retry = isRetry(req.headers.get("x-stainless-retry-count"));
+  const cached = deps.answers.get(key);
+  if (cached !== undefined && replayable(cached, deps.now(), retry)) return respond(cached);
+  const running = deps.inflight.get(key);
+  if (running !== undefined) return respond(await running);
+
+  const work = executeCompletion(body.model, text, body, deps).then((done) => ({
+    at: deps.now(),
+    ...done,
+  }));
+  deps.inflight.set(key, work);
+  let answer: Answer;
+  try {
+    answer = await work;
+  } finally {
+    deps.inflight.delete(key);
+  }
+  if (answer.paymentSigned || answer.status === 200) deps.answers.set(key, answer);
+  return respond(answer);
+}
+
+async function executeCompletion(
+  model: string,
+  text: string,
+  body: JsonRecord,
+  deps: ChatDeps,
+): Promise<AnswerBody> {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(model)) {
+    return failureBody(404, "No such offer.", "invalid_request_error", "model_not_found");
+  }
+  const offerHash = model as Hex;
   let listing: Listing | undefined;
   try {
     const listings = await deps.hub.listOffers();
@@ -161,17 +236,20 @@ async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
     try {
       listing = await deps.hub.getOffer(model);
     } catch (e) {
-      return notFoundFromHub(e) ? noSuchOffer() : hubUnreachable();
+      return notFoundFromHub(e) ? failureBody(404, "No such offer.", "invalid_request_error", "model_not_found") : hubUnreachableBody();
+    }
+    if (listing.offerHash.toLowerCase() !== model.toLowerCase()) {
+      return failureBody(404, "No such offer.", "invalid_request_error", "model_not_found");
     }
   }
   if (listing === undefined || listing.status !== "listed" || !listing.online) {
-    return noSuchOffer();
+    return failureBody(404, "No such offer.", "invalid_request_error", "model_not_found");
   }
 
   const offer = listing.offer;
   const mapped = mapInput(offer, text);
   if (!mapped.ok) {
-    return failure(
+    return failureBody(
       400,
       `This offer needs JSON input with: ${requiredFields(offer.input)}`,
       "invalid_request_error",
@@ -179,15 +257,23 @@ async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
     );
   }
 
+  let envelope: Envelope;
+  try {
+    envelope = currentEnvelope(deps);
+  } catch (e) {
+    return failureBody(403, firstLine(e), "envelope_refused");
+  }
+
   const at = deps.now();
+  const before = deps.journal.entries().length;
   let result: CallResult;
   try {
     result = await buy({
       hub: deps.hub,
-      offerHash: listing.offerHash,
+      offerHash,
       input: mapped.value,
       payers: deps.payers,
-      envelope: deps.envelope,
+      envelope,
       journal: deps.journal,
       state: deps.state,
       now: at,
@@ -196,7 +282,7 @@ async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
       known: deps.rails,
     });
   } catch (e) {
-    return buyFailure(e);
+    return buyFailure(e, deps, before);
   }
 
   const slip = result.slip;
@@ -224,46 +310,102 @@ async function chatCompletion(req: Request, deps: ChatDeps): Promise<Response> {
         },
       ],
     };
-    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
-      headers: {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-      },
-    });
+    return {
+      status: 200,
+      body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+      contentType: "text/event-stream",
+      headers: { "cache-control": "no-cache" },
+      paymentSigned: false,
+    };
   }
 
-  return ok({
-    id,
-    object: "chat.completion",
-    created: at,
-    model,
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content },
-        finish_reason: "stop",
+  return {
+    status: 200,
+    body: JSON.stringify({
+      id,
+      object: "chat.completion",
+      created: at,
+      model,
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      countersign,
+    }),
+    contentType: "application/json",
+    headers: {},
+    paymentSigned: false,
+  };
+}
+
+function currentEnvelope(deps: ChatDeps): Envelope {
+  try {
+    return deps.state.loadEnvelope();
+  } catch (e) {
+    if (deps.envelope !== undefined) return deps.envelope;
+    throw e;
+  }
+}
+
+function buyFailure(e: unknown, deps: ChatDeps, before: number): AnswerBody {
+  const added = deps.journal.entries().slice(before);
+  const signed = added.find(
+    (entry): entry is JournalEntry & { jobId: string } =>
+      (entry.kind === "signed" || entry.kind === "failed") && typeof entry.jobId === "string",
+  );
+  if (signed !== undefined) return paymentSignedBody(signed.jobId);
+  if (added.some(envelopeRefused)) {
+    return failureBody(403, firstLine(e), "envelope_refused");
+  }
+  return failureBody(402, firstLine(e), "payment_refused");
+}
+
+function envelopeRefused(entry: JournalEntry): boolean {
+  return entry.kind === "refused" && entry.reason !== undefined && ENVELOPE_REASONS.has(entry.reason);
+}
+
+function paymentSignedBody(jobId: string): AnswerBody {
+  return {
+    status: 409,
+    body: JSON.stringify({
+      error: {
+        type: "payment_signed",
+        jobId,
+        message: `The payment for job ${jobId} is signed, but its answer did not arrive. Do not send this completion again: run "cli.ts resume" to settle or refund the job.`,
       },
-    ],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    countersign,
+    }),
+    contentType: "application/json",
+    headers: { "x-should-retry": "false" },
+    paymentSigned: true,
+  };
+}
+
+function replayable(answer: Answer, now: number, retry: boolean): boolean {
+  if (now - answer.at > ANSWER_TTL_SECONDS) return false;
+  return answer.paymentSigned || retry;
+}
+
+function respond(answer: Answer | AnswerBody): Response {
+  return new Response(answer.body, {
+    status: answer.status,
+    headers: { "content-type": answer.contentType, ...answer.headers },
   });
 }
 
-function buyFailure(e: unknown): Response {
-  if (e instanceof BuyError) {
-    if (isEnvelopeRefusal(e.message)) {
-      return failure(403, e.message, "envelope_refused");
-    }
-    return failure(402, e.message, "payment_refused");
-  }
-  return failure(500, firstLine(e), "server_error", "internal_error");
-}
-
-function isEnvelopeRefusal(message: string): boolean {
-  if (message.startsWith("Held")) return true;
-  if (!message.startsWith("Refused.")) return false;
-  const lower = message.toLowerCase();
-  return ["budget", "limit", "allowlist", "revoked", "expired"].some((word) => lower.includes(word));
+function failureBody(status: number, message: string, type: string, code?: string): AnswerBody {
+  const error: { message: string; type: string; code?: string } = { message, type };
+  if (code !== undefined) error.code = code;
+  return {
+    status,
+    body: JSON.stringify({ error }),
+    contentType: "application/json",
+    headers: {},
+    paymentSigned: false,
+  };
 }
 
 function mapInput(offer: Offer, text: string): MappedInput | UnmappedInput {
@@ -334,6 +476,12 @@ function readMessages(value: unknown): ChatMessage[] | undefined {
   return messages;
 }
 
+function isRetry(header: string | null): boolean {
+  if (header === null) return false;
+  const count = Number(header);
+  return Number.isInteger(count) && count > 0;
+}
+
 function authorized(header: string | null, token: string): boolean {
   if (header === null || !header.startsWith("Bearer ")) return false;
   const presented = header.slice("Bearer ".length);
@@ -358,8 +506,12 @@ function notFoundFromHub(e: unknown): boolean {
   return e instanceof Error && e.message.includes("404");
 }
 
+function hubUnreachableBody(): AnswerBody {
+  return failureBody(502, "The hub could not be reached.", "server_error", "hub_unreachable");
+}
+
 function hubUnreachable(): Response {
-  return failure(502, "The hub could not be reached.", "server_error", "hub_unreachable");
+  return respond(hubUnreachableBody());
 }
 
 function noSuchOffer(): Response {
@@ -367,9 +519,7 @@ function noSuchOffer(): Response {
 }
 
 function failure(status: number, message: string, type: string, code?: string): Response {
-  const error: { message: string; type: string; code?: string } = { message, type };
-  if (code !== undefined) error.code = code;
-  return ok({ error }, status);
+  return respond(failureBody(status, message, type, code));
 }
 
 function ok(body: unknown, status = 200): Response {

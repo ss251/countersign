@@ -167,6 +167,9 @@ function outputFor(offerHash: Hex, input: unknown): unknown {
   return { sum: `${String(body.left)}${String(body.right)}` };
 }
 
+let losePaidAnswer = false;
+let paidCalls = 0;
+
 const hubServer = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -194,6 +197,8 @@ const hubServer = Bun.serve({
         );
       }
       const payment = fromBase64Json<PaymentPayload>(header);
+      paidCalls++;
+      if (losePaidAnswer) return new Response('{"output": {"answer": "', { status: 200 });
       const check = await checkCountersign(payment.payload as unknown as CountersignPayload, {
         chainId: 5042002,
         escrow: ESCROW,
@@ -249,16 +254,17 @@ interface Running {
   client: OpenAI;
   handle: OpenAIServerHandle;
   journal: Journal;
+  state: State;
 }
 
-function start(over: Partial<Envelope> = {}): Running {
+function startOn(client: HubClient, over: Partial<Envelope> = {}): Running {
   const dir = mkdtempSync(join(tmpdir(), "cs-openai-"));
   const state = new State(dir);
+  state.saveEnvelope(envelope(over));
   const journal = new Journal(state.journalPath);
   const handle = startOpenAIServer({
-    hub,
+    hub: client,
     account: buyer,
-    envelope: envelope(over),
     journal,
     state,
     port: 0,
@@ -268,7 +274,11 @@ function start(over: Partial<Envelope> = {}): Running {
     known: [TEST_RAIL],
   });
   handles.push(handle);
-  return { client: new OpenAI({ baseURL: `${handle.url}/v1`, apiKey: SESSION_TOKEN }), handle, journal };
+  return { client: new OpenAI({ baseURL: `${handle.url}/v1`, apiKey: SESSION_TOKEN }), handle, journal, state };
+}
+
+function start(over: Partial<Envelope> = {}): Running {
+  return startOn(hub, over);
 }
 
 interface Countersign {
@@ -375,5 +385,76 @@ describe("openai server", () => {
     }
     expect(chunks).toBe(1);
     expect(JSON.parse(content)).toEqual({ answer: "what is arc?" });
+  });
+
+  test("a revoke after startup stops the next completion", async () => {
+    const run = start();
+    run.state.saveEnvelope(envelope({ revoked: true }));
+    const error = await rejection(
+      run.client.chat.completions.create({
+        model: questionHash,
+        messages: [{ role: "user", content: "what is arc?" }],
+      }),
+    );
+    expect(error.status).toBe(403);
+    expect(error.type).toBe("envelope_refused");
+    expect(run.journal.entries().some((entry) => entry.kind === "signed")).toBe(false);
+  });
+
+  test("a fallback lookup refuses an offer other than the model asked for", async () => {
+    const served = { ...pairOffer, title: "Chosen by the hub" };
+    const servedHash = canonicalHash(served);
+    const fallback = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (req.method === "GET" && url.pathname === "/offers") {
+          return Response.json({ message: "down" }, { status: 500 });
+        }
+        if (req.method === "GET" && url.pathname.startsWith("/offers/")) {
+          return Response.json({ offerHash: servedHash, offer: served, online: true, status: "listed" });
+        }
+        return Response.json({}, { status: 404 });
+      },
+    });
+    try {
+      const run = startOn(new HubClient(`http://127.0.0.1:${fallback.port}`));
+      const error = await rejection(
+        run.client.chat.completions.create({
+          model: questionHash,
+          messages: [{ role: "user", content: "what is arc?" }],
+        }),
+      );
+      expect(error.status).toBe(404);
+      expect(run.journal.entries()).toEqual([]);
+    } finally {
+      await fallback.stop(true);
+    }
+  });
+
+  test("a signed payment whose answer is lost is a 409 and is paid once", async () => {
+    const run = start();
+    paidCalls = 0;
+    losePaidAnswer = true;
+    try {
+      const client = new OpenAI({ baseURL: run.client.baseURL, apiKey: SESSION_TOKEN });
+      const error = await rejection(
+        client.chat.completions.create({
+          model: questionHash,
+          messages: [{ role: "user", content: "lose this answer" }],
+        }),
+      );
+      expect(error.status).toBe(409);
+      expect(error.type).toBe("payment_signed");
+      const jobId = (error.error as { jobId?: unknown } | undefined)?.jobId;
+      expect(typeof jobId).toBe("string");
+      expect(jobId).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(error.message).toContain("resume");
+      expect(run.journal.entries().filter((entry) => entry.kind === "signed").length).toBe(1);
+      expect(paidCalls).toBe(1);
+    } finally {
+      losePaidAnswer = false;
+    }
   });
 });
