@@ -20,6 +20,7 @@ import { units, wallets } from "../lib/budget.ts";
 import { ARC, HEDERA } from "../lib/chains.ts";
 import { check, equal, NotRun, sameHex, type Flow, type FlowCtx, type RunEnv, type Spend } from "../lib/flow.ts";
 import { mirrorGet, mirrorTxId, topicMessage } from "../lib/hedera.ts";
+import { sleep } from "../lib/http.ts";
 import { MAX_PRICE, MCP_SELLER } from "./hedera-mcp.flow.ts";
 
 const HELD = "hedera-scheduled";
@@ -138,6 +139,30 @@ function hold(run: AgentRun): { scheduleId: string; createTx: string; logSequenc
   check(ACCOUNT.test(scheduleId), `schedule id ${scheduleId}`);
   check(/^#\d+$/.test(log), `hold log sequence ${log}`);
   return { scheduleId, createTx, logSequence: Number(log.slice(1)) };
+}
+
+/** The agent's expired entry, read from the topic when the evidence does not name it. */
+async function findExpired(topicId: string, logSequence: number, scheduleId: string): Promise<number> {
+  const until = Date.now() + 180_000;
+  for (;;) {
+    const res = await mirrorGet(`/api/v1/topics/${topicId}/messages?sequencenumber=gt:${logSequence}&order=asc&limit=50`);
+    if (res.status === 200) {
+      const messages = (res.body as { messages?: Array<{ sequence_number: number; message: string }> }).messages ?? [];
+      for (const m of messages) {
+        const text = Buffer.from(m.message, "base64").toString("utf8");
+        let json: unknown;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          continue;
+        }
+        const entry = json as { kind?: string; schedule?: string };
+        if (entry?.kind === "expired" && entry.schedule === scheduleId) return m.sequence_number;
+      }
+    }
+    if (Date.now() > until) throw new Error(`no expired entry for ${scheduleId} on the topic after #${logSequence}`);
+    await sleep(3000);
+  }
 }
 
 export const hederaHeldPaid: Flow = {
@@ -260,11 +285,14 @@ export const hederaHeldUndelivered: Flow = {
       equal(String(evidence(run.evidence, "release").value), "released", "the agent released the hold");
       const [before, after] = String(evidence(run.evidence, "balance").value).replace(/ USDC$/, "").split(" -> ");
       equal(after, before, "the agent's USDC balance across the hold");
-      const expired = String(evidence(run.evidence, "expired log").value);
-      check(/^#\d+$/.test(expired), `expired log sequence ${expired}`);
+      const expired = run.evidence.find((e) => e.label === "expired log");
+      const expiredLog = expired ? String(expired.value) : "";
+      // The agent reads the topic before the mirror indexes its own entry, so when the evidence
+      // does not name it, the expired entry is found on the topic itself.
+      const expiredSequence = /^#\d+$/.test(expiredLog) ? Number(expiredLog.slice(1)) : await findExpired(topicId, h.logSequence, h.scheduleId);
       ctx.tx("hedera", "the agent's hold that never paid (schedule create)", h.createTx);
       ctx.note(`schedule ${h.scheduleId}: ${answer}`);
-      return { ...h, expiredSequence: Number(expired.slice(1)) };
+      return { ...h, expiredSequence };
     });
 
     await ctx.step("the mirror shows the schedule never executed and has expired", async () => {

@@ -17,9 +17,10 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
  *                                               facilitator; the hub holds no Hedera key)
- *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule
- *                                               executes only when the hub submits the seller's countersignature
- *                                               after a checked delivery; the hub holds no key)
+ *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule moves no USDC
+ *                                               until the seller's key signs it; this hub submits the seller's
+ *                                               countersignature only after a checked delivery, but the seller's
+ *                                               key can also release it alone; the hub holds no key)
  * Rails from other lanes are added here as they integrate.
  *
  * Gateway and Hedera ask their facilitator what it supports while they start. If a facilitator is
@@ -31,13 +32,54 @@ export interface RailMakers {
   hederaScheduled?: () => Promise<Rail>;
 }
 
+/** One environment switch that turns a rail on. */
+export interface RailSwitch {
+  id: string;
+  /** The variables that switch this rail on. */
+  vars: readonly string[];
+  requested(env: Record<string, string | undefined>): boolean;
+}
+
+/**
+ * Every rail switch railsFromEnv reads. It is the one list the mainnet guard (network.ts)
+ * reads too, so a rail added here is a rail the guard has to know before mainnet can boot.
+ */
+export const RAIL_SWITCHES = [
+  { id: "escrow", vars: ["ARC_ESCROW"], requested: (env) => Boolean(env.ARC_ESCROW) },
+  { id: "eip3009", vars: ["EIP3009_RAIL"], requested: (env) => env.EIP3009_RAIL === "1" },
+  { id: "whitechain", vars: ["WC_RELAY_URL"], requested: (env) => Boolean(env.WC_RELAY_URL) },
+  { id: "gateway", vars: ["GATEWAY_RAIL"], requested: (env) => env.GATEWAY_RAIL === "1" },
+  { id: "hedera", vars: ["HEDERA_RAIL"], requested: (env) => env.HEDERA_RAIL === "1" },
+  {
+    id: "hedera-scheduled",
+    vars: ["HEDERA_SCHEDULED_RAIL"],
+    requested: (env) => env.HEDERA_SCHEDULED_RAIL === "1",
+  },
+] as const satisfies readonly RailSwitch[];
+
+export type SwitchedRail = (typeof RAIL_SWITCHES)[number]["id"];
+
+/** Variables railsFromEnv reads that configure a switched-on rail but never switch one on. */
+export const RAIL_CONFIG_VARS = [
+  "ARC_RPC_URL",
+  "ARC_USDC",
+  "ARC_ESCROW_VERSION",
+  "CS_RELAYER_KEY",
+] as const;
+
+/** Whether the environment asks for this rail. */
+export function railRequested(id: SwitchedRail, env: Record<string, string | undefined>): boolean {
+  const entry = RAIL_SWITCHES.find((s) => s.id === id);
+  return entry !== undefined && entry.requested(env);
+}
+
 export async function railsFromEnv(
   env: Record<string, string | undefined>,
   makers: RailMakers = {},
   log: (line: string) => void = (line) => console.error(line),
 ): Promise<Rail[]> {
   const rails: Rail[] = [];
-  if (env.ARC_ESCROW && env.ARC_RPC_URL) {
+  if (railRequested("escrow", env) && env.ARC_RPC_URL) {
     rails.push(
       escrowRail({
         id: "escrow",
@@ -57,7 +99,7 @@ export async function railsFromEnv(
       }),
     );
   }
-  if (env.EIP3009_RAIL === "1") {
+  if (railRequested("eip3009", env)) {
     if (!env.ARC_RPC_URL || !env.CS_RELAYER_KEY) {
       log("[hub] rail eip3009 is off: ARC_RPC_URL and CS_RELAYER_KEY are required");
     } else {
@@ -82,16 +124,16 @@ export async function railsFromEnv(
       }
     }
   }
-  if (env.WC_RELAY_URL) {
+  if (railRequested("whitechain", env) && env.WC_RELAY_URL) {
     rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));
   }
-  if (env.GATEWAY_RAIL === "1") {
+  if (railRequested("gateway", env)) {
     await startOptional(rails, "gateway", makers.gateway ?? (() => gatewayRail({})), log);
   }
-  if (env.HEDERA_RAIL === "1") {
+  if (railRequested("hedera", env)) {
     await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
   }
-  if (env.HEDERA_SCHEDULED_RAIL === "1") {
+  if (railRequested("hedera-scheduled", env)) {
     await startOptional(
       rails,
       "hedera-scheduled",

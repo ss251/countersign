@@ -43,7 +43,7 @@ export interface Asset {
 /** A JSON Schema document (draft 2020-12 subset). Kept opaque here; validation lives in the runner and buyer. */
 export type JsonSchema = { [key: string]: unknown };
 
-/** The runner serves "skill" and "mcp" (one MCP tool per offer, spawned per job, #42); "openapi" is not built. */
+/** The runner serves "skill", "mcp" and "openapi" (one MCP tool or one OpenAPI operation per offer, spawned per job, #42). */
 export type AdapterKind = "skill" | "mcp" | "openapi";
 
 /**
@@ -130,6 +130,9 @@ export interface SettleResult {
   payer?: string;
   /** EVM tx hash, a Hedera transaction id such as "0.0.1234@1730880000.123456789", or a Stripe payment reference. */
   transaction: string;
+  /** What the hub puts into the rail's explorer template instead of `transaction`, when the transaction that
+   *  moved the money is not `transaction` itself (a held Hedera payment: the scheduled execution's consensus time). */
+  explorerRef?: string;
   network: Network;
   /** A receipt id the rail returns besides the transaction, e.g. the MPP Payment-Receipt id. */
   receipt?: string;

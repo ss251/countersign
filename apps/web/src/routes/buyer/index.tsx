@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
-import { Link } from "../../app/router.tsx";
-import { VIEWS } from "../../app/routes.ts";
+import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource, type JobView } from "../../lib/api.ts";
-import { formatAmount, nowUnix, remainingAtomic, usd } from "../../lib/format.ts";
+import { formatAmount, nowUnix, remainingAtomic, shortHex, usd } from "../../lib/format.ts";
+import { chosenAgent, chosenHub, forgetChoices } from "../../lib/hub.ts";
 import type { Approval, Purchase } from "../../lib/types.ts";
-import { Mark } from "../../ui/Mark.tsx";
 import { cx, FixtureNote } from "../../ui/primitives.tsx";
 import { Approvals } from "./Approvals.tsx";
 import { AskTab } from "./AskTab.tsx";
@@ -14,6 +13,9 @@ import { EnvelopeTab } from "./EnvelopeTab.tsx";
 import { HistoryTab } from "./HistoryTab.tsx";
 import { mergeApprovals } from "./queue.ts";
 import "./buyer.css";
+
+/** The phone sits inside the console's shell: the top bar is the way to every other view. */
+export const surface = "desk";
 
 type Tab = "approvals" | "ask" | "envelope" | "history";
 
@@ -43,7 +45,8 @@ function Phone({ query }: PageProps) {
   const purchases = useResource(() => api.purchases(), []);
   /** Approvals the human has countersigned: no longer waiting, even while they settle. */
   const [signed, setSigned] = useState<string[]>([]);
-  const [viewsOpen, setViewsOpen] = useState(false);
+  const agent = chosenAgent();
+  const hub = chosenHub();
 
   const fixtures = [envelope, approvals, purchases].some((r) => r.source === "fixtures");
   const waiting = (approvals.data ?? []).filter((a) => !signed.includes(a.id)).length;
@@ -125,37 +128,16 @@ function Phone({ query }: PageProps) {
   return (
     <div className="phone-stage">
     <aside className="phone-note" aria-label="About this view">
-      <p className="phone-note__eyebrow">Buyer · phone</p>
-      <p className="phone-note__title">The human side of an agent’s purchase.</p>
+      <p className="phone-note__eyebrow">The buyer's phone</p>
+      <p className="phone-note__title">The human behind an agent.</p>
       <p className="phone-note__body">
-        Your agent buys inside the envelope you set. Above your limit it waits, and you hold to countersign the exact offer
-        and amount.
+        Your agent buys inside the envelope you set. Above your limit it waits, and you approve the exact offer and amount
+        here.
       </p>
-      <nav className="phone-note__nav" aria-label="Other views">
-        <Link to="/">Overview</Link>
-        {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
-          <Link key={v.name} to={`/${v.name}`}>
-            {v.label}
-          </Link>
-        ))}
-      </nav>
     </aside>
     <div className="phone">
       <header className="phone__bar">
-        <button
-          type="button"
-          className="phone__brand"
-          aria-expanded={viewsOpen}
-          aria-controls="phone-views"
-          aria-label="countersign, switch view"
-          onClick={() => setViewsOpen((o) => !o)}
-        >
-          <Mark size={22} />
-          <span className="phone__name">countersign</span>
-          <svg className={viewsOpen ? "phone__chevron is-open" : "phone__chevron"} viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-            <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        <p className="phone__title">Buyer's phone</p>
         <div className="phone__bar-end">
           <FixtureNote show={fixtures} />
           {view && left ? (
@@ -175,18 +157,32 @@ function Phone({ query }: PageProps) {
           ) : null}
         </div>
       </header>
-      {viewsOpen ? (
-        <nav id="phone-views" className="phone__views" aria-label="Views">
-          <p className="phone__views-label">You are on the buyer’s phone. Other views:</p>
-          <Link to="/" className="phone__views-link">
-            Overview
-          </Link>
-          {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
-            <Link key={v.name} to={`/${v.name}`} className="phone__views-link">
-              {v.label}
-            </Link>
-          ))}
-        </nav>
+      <p className="phone__who">You approve what your agent asks to buy.</p>
+      {agent || hub ? (
+        <p className="phone__chosen" data-testid="buyer-chosen">
+          {agent ? (
+            <>
+              Showing agent <span className="mono">{shortHex(agent)}</span>
+            </>
+          ) : null}
+          {hub ? (
+            <>
+              {agent ? " on hub " : "On hub "}
+              {hubLabel(hub)}
+            </>
+          ) : null}
+          , chosen by a link.{" "}
+          <button
+            type="button"
+            data-testid="buyer-use-my-own"
+            onClick={() => {
+              forgetChoices();
+              navigate("/buyer");
+            }}
+          >
+            Use my own
+          </button>
+        </p>
       ) : null}
 
       <div className="phone__body">
@@ -224,6 +220,16 @@ function Phone({ query }: PageProps) {
     </div>
     </div>
   );
+}
+
+/** The hub as the chosen line names it: a host, this server for /hub, or the stored word as it is. */
+function hubLabel(hub: string): string {
+  if (hub === "/hub") return "this server";
+  try {
+    return new URL(hub).host;
+  } catch {
+    return hub;
+  }
 }
 
 function TabIcon({ id }: { id: Tab }) {
