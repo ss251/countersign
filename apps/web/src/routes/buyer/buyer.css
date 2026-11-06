@@ -1024,6 +1024,25 @@
   gap: var(--sp-2);
 }
 
+/* This phone's approver key: made once, named in the envelope, shown under the hold. */
+.approver {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.approver__what,
+.approver__named,
+.approver__line {
+  color: var(--slate);
+  font-size: var(--t-13);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.approver__line.is-stranger {
+  color: var(--ink);
+}
+
 /* The agent's signed envelope: read here, changed on the agent's machine. */
 
 .env__mirror {
