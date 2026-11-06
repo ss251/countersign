@@ -535,12 +535,16 @@
   text-align: end;
 }
 
-/* At a desk, Refund waits for its row: pointer hover or keyboard focus brings it up. */
+/*
+ * At a desk, Refund rests as quiet text, so the column reads as part of the ledger and the action
+ * is never hidden. Pointer hover on its row or keyboard focus turns it into the blue button.
+ */
 @media (hover: hover) and (pointer: fine) {
   .mx-row .mx-action {
-    opacity: 0;
+    color: var(--slate);
+    border-color: transparent;
     transition:
-      opacity var(--d-1) ease,
+      color var(--d-1) ease,
       border-color var(--d-1) ease,
       background-color var(--d-1) ease,
       transform var(--d-press) var(--ease-out);
@@ -548,7 +552,8 @@
   .mx-row:hover .mx-action,
   .mx-row:focus-within .mx-action,
   .mx-action:focus-visible {
-    opacity: 1;
+    color: var(--usdc);
+    border-color: color-mix(in oklab, var(--usdc) 45%, var(--paper));
   }
 }
 
