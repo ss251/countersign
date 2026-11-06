@@ -1,11 +1,12 @@
 /**
- * The child entry: read one {spec, input} request on stdin, run the skill or
- * MCP adapter and write {output} on stdout. Errors become {error} with a
- * non-zero exit.
+ * The child entry: read one {spec, input} request on stdin, run the skill,
+ * MCP or OpenAPI adapter and write {output} on stdout. Errors become {error}
+ * with a non-zero exit.
  */
 
 import type { ChildSpec, SkillSpec } from "./child.ts";
 import { runMcp, type McpSpec, type McpServerRef } from "./mcp.ts";
+import { runOpenApi, type OpenApiSpec } from "./openapi.ts";
 import { readSkill, runSkill, type SkillInput } from "./skill.ts";
 
 interface ChildRequest {
@@ -15,10 +16,13 @@ interface ChildRequest {
 
 async function main(): Promise<void> {
   const request = parseRequest(await Bun.stdin.text());
+  const spec = request.spec;
   const output =
-    request.spec.adapter === "skill"
-      ? runSkill(await readSkill(request.spec.skillPath), asSkillInput(request.input))
-      : await runMcp(request.spec, request.input);
+    spec.adapter === "skill"
+      ? runSkill(await readSkill(spec.skillPath), asSkillInput(request.input))
+      : spec.adapter === "mcp"
+        ? await runMcp(spec, request.input)
+        : await runOpenApi(spec, request.input);
   console.log(JSON.stringify({ output }));
 }
 
@@ -30,6 +34,7 @@ function parseRequest(raw: string): ChildRequest {
   const adapter = value.spec.adapter;
   if (adapter === "skill") return { spec: parseSkill(value.spec), input: value.input };
   if (adapter === "mcp") return { spec: parseMcp(value.spec), input: value.input };
+  if (adapter === "openapi") return { spec: parseOpenApi(value.spec), input: value.input };
   throw new Error("Refused. Unknown adapter.");
 }
 
@@ -55,6 +60,29 @@ function parseMcp(spec: Record<string, unknown>): McpSpec {
   const server = parseServer(spec.server);
   if (server !== undefined) parsed.server = server;
   return parsed;
+}
+
+function parseOpenApi(spec: Record<string, unknown>): OpenApiSpec {
+  const specPath = spec.specPath;
+  const operationId = spec.operationId;
+  const baseUrl = spec.baseUrl;
+  if (
+    typeof specPath !== "string" ||
+    typeof operationId !== "string" ||
+    typeof baseUrl !== "string"
+  ) {
+    throw new Error("The child request is malformed.");
+  }
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new Error("The child request is malformed.");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("The child request is malformed.");
+  }
+  return { adapter: "openapi", specPath, operationId, baseUrl };
 }
 
 function parseServer(value: unknown): McpServerRef | undefined {
