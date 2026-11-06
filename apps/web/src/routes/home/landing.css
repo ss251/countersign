@@ -157,11 +157,11 @@
   margin-right: 0.6em;
 }
 
-/* One line to the eye, 44px to the thumb. */
+/* One line to the eye, 44px to the thumb, and still clear of the call to action under it. */
 button.landing__figures::after {
   content: "";
   position: absolute;
-  inset: -12px -8px;
+  inset: -13px -8px;
 }
 
 @media (hover: hover) and (pointer: fine) {
