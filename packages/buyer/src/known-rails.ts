@@ -47,6 +47,26 @@ export const KNOWN_RAILS: KnownRail[] = [
   },
 ];
 
+/** A Circle Gateway this buyer is willing to sign for: the wallet domain and token are pinned. */
+export interface KnownGateway {
+  network: "eip155:5042002";
+  verifyingContract: Address;
+  asset: Address;
+  name: "GatewayWalletBatched";
+  version: "1";
+}
+
+export const KNOWN_GATEWAYS: KnownGateway[] = [
+  {
+    // Arc testnet GatewayWalletBatched kind, probed 2026-11-06.
+    network: "eip155:5042002",
+    verifyingContract: "0x0077777d7eba4688bdef3e311b846f25870a19b9",
+    asset: "0x3600000000000000000000000000000000000000",
+    name: "GatewayWalletBatched",
+    version: "1",
+  },
+];
+
 export function sameAddress(a: string, b: string): boolean {
   try {
     return getAddress(a) === getAddress(b);
@@ -79,4 +99,34 @@ export function knownRailFor(req: PaymentRequirements, known: KnownRail[]): Know
       rail.tokenName === extra.tokenName &&
       rail.tokenVersion === extra.tokenVersion,
   );
+}
+
+/** The pinned Gateway whose network, token, wallet domain and version all match the requirement. */
+export function knownGatewayFor(
+  req: PaymentRequirements,
+  known: KnownGateway[] = KNOWN_GATEWAYS,
+): KnownGateway | undefined {
+  if (req.scheme !== "exact" || !req.extra) return undefined;
+  const name = req.extra.name;
+  const version = req.extra.version;
+  const verifyingContract = req.extra.verifyingContract;
+  if (
+    typeof name !== "string" ||
+    typeof version !== "string" ||
+    typeof verifyingContract !== "string"
+  ) {
+    return undefined;
+  }
+  return known.find(
+    (gateway) =>
+      gateway.network === req.network &&
+      sameText(gateway.asset, req.asset) &&
+      sameText(gateway.verifyingContract, verifyingContract) &&
+      sameText(gateway.version, version) &&
+      sameText(gateway.name, name),
+  );
+}
+
+function sameText(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }

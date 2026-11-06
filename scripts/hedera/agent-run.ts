@@ -1,10 +1,16 @@
 // One run of the paying agent against a hub. Prints ids and links only, never a key.
-//   bun scripts/hedera/agent-run.ts [hub-url] [--cap <atomic>] [--per-merchant <atomic>] [--times <n>]
-import { formatUnits, type Envelope } from "../../packages/core/src/index.ts";
+//   bun scripts/hedera/agent-run.ts [hub-url] [--cap <atomic>] [--per-merchant <atomic>] [--times <n>] [--json]
+import {
+  formatUnits,
+  fromBase64Json,
+  PAYMENT_REQUIRED_HEADER,
+  type Envelope,
+  type PaymentRequired,
+} from "../../packages/core/src/index.ts";
 import { createHederaAgent, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
 import { readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
-import { FACILITATORS, httpFacilitator } from "../../packages/rail/src/hedera/index.ts";
-import { hashscanTopic, hashscanTx } from "../../packages/rail/src/hedera/txid.ts";
+import { FACILITATORS, HEDERA_TESTNET, httpFacilitator } from "../../packages/rail/src/hedera/index.ts";
+import { hashscanAccount, hashscanTopic, hashscanTx, parseTxId } from "../../packages/rail/src/hedera/txid.ts";
 import { key, need, readEnv, testnetClient } from "./env.ts";
 
 const USDC_DECIMALS = 6;
@@ -20,6 +26,7 @@ let hub = "http://127.0.0.1:8787";
 let cap = "1000000";
 let perMerchant = "500000";
 let times = 1;
+let json = false;
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
   if (arg === "--cap") cap = args[++i] ?? die("--cap needs an atomic amount");
@@ -28,9 +35,22 @@ for (let i = 0; i < args.length; i++) {
     const value = args[++i] ?? die("--times needs a count");
     times = Number(value);
     if (!Number.isSafeInteger(times) || times < 1) die("--times needs a positive integer");
-  } else if (arg.startsWith("-")) die(`unknown flag ${arg}`);
+  } else if (arg === "--json") json = true;
+  else if (arg.startsWith("-")) die(`unknown flag ${arg}`);
   else hub = arg;
 }
+
+function say(...line: unknown[]): void {
+  if (json) console.error(...line);
+  else console.log(...line);
+}
+
+interface Evidence {
+  label: string;
+  value: string | number;
+  url?: string;
+}
+const evidence: Evidence[] = [];
 
 const env = readEnv();
 const agentId = need(env, "HD_AGENT_ID");
@@ -51,16 +71,41 @@ const topicLink = hashscanTopic(topicId);
 const prior = await readEntries(topicId);
 const spent = spentFromLog(prior);
 const trustedFeePayers = new Set<string>([operatorId]);
+const facilitatorNames = new Map<string, string>();
 await Promise.all(
   FACILITATORS.map(async ({ name, url }) => {
     try {
       const feePayer = await httpFacilitator(name, url).feePayer();
-      if (feePayer) trustedFeePayers.add(feePayer);
+      if (feePayer) {
+        trustedFeePayers.add(feePayer);
+        facilitatorNames.set(feePayer, name);
+      }
     } catch {
       // A facilitator that cannot answer is not trusted for this run.
     }
   }),
 );
+facilitatorNames.set(operatorId, "local");
+
+// Watch the agent's own challenges: the fee payer in one names the facilitator behind it.
+let challengeFeePayer: string | null = null;
+const watchChallenges = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const response = await fetch(input, init);
+  if (response.status === 402) {
+    const header = response.headers.get(PAYMENT_REQUIRED_HEADER);
+    try {
+      const required = header
+        ? fromBase64Json<PaymentRequired>(header)
+        : ((await response.clone().json()) as PaymentRequired);
+      const req = required.accepts?.find((a) => a.network === HEDERA_TESTNET && a.scheme === "exact");
+      if (typeof req?.extra?.feePayer === "string") challengeFeePayer = req.extra.feePayer;
+    } catch {
+      // A 402 without a readable challenge is not evidence.
+    }
+  }
+  return response;
+}) as typeof fetch;
+
 const agent = createHederaAgent({
   hub,
   payer: { accountId: agentId, key: agentKey },
@@ -69,43 +114,77 @@ const agent = createHederaAgent({
   logClient,
   spent,
   trustedFeePayers: [...trustedFeePayers],
+  fetch: watchChallenges,
 });
 
-console.log(`hub      ${hub}`);
-console.log(`agent    ${agentId}`);
-console.log(`topic    ${topicId}  ${topicLink}`);
-console.log(`envelope cap ${usdc(cap)} USDC, per merchant ${usdc(perMerchant)} USDC, spent ${usdc(spent.total)} USDC`);
+function facilitatorName(feePayer: string): string {
+  return facilitatorNames.get(feePayer) ?? feePayer;
+}
 
+evidence.push({ label: "agent", value: agentId, url: hashscanAccount(agentId) });
+
+function feePayerFromTx(id: string): string | null {
+  try {
+    return parseTxId(id).payer;
+  } catch {
+    return null;
+  }
+}
+
+say(`hub      ${hub}`);
+say(`agent    ${agentId}`);
+say(`topic    ${topicId}  ${topicLink}`);
+say(`envelope cap ${usdc(cap)} USDC, per merchant ${usdc(perMerchant)} USDC, spent ${usdc(spent.total)} USDC`);
+
+let ok = true;
+let facilitatorReported = false;
 try {
   const listings = await agent.discover();
   if (listings.length === 0) {
-    console.log("no listed, online hedera offers");
+    say("no listed, online hedera offers");
+    ok = false;
     process.exitCode = 1;
   } else {
     const listing = listings[0]!;
-    console.log(`listing  ${listing.offerHash}`);
-    console.log(`offer    ${listing.offer.title}  price ${usdc(listing.offer.price)} USDC  payTo ${listing.offer.payTo?.hedera}`);
+    say(`listing  ${listing.offerHash}`);
+    say(`offer    ${listing.offer.title}  price ${usdc(listing.offer.price)} USDC  payTo ${listing.offer.payTo?.hedera}`);
+    evidence.push({ label: "offer", value: listing.offerHash });
     for (let n = 1; n <= times && process.exitCode !== 1; n++) {
+      challengeFeePayer = null;
       const outcome = await agent.buy(listing, {});
+      const feePayer = challengeFeePayer ?? (outcome.kind === "paid" ? feePayerFromTx(outcome.transactionId) : null);
+      if (!facilitatorReported && feePayer) {
+        evidence.push({ label: "facilitator", value: facilitatorName(feePayer) });
+        facilitatorReported = true;
+      }
       if (outcome.kind === "paid") {
-        console.log(`call ${n}   allow: the envelope covers ${usdc(listing.offer.price)} USDC`);
-        console.log(`signed   ${outcome.transactionId}`);
-        console.log(`settled  ${JSON.stringify(outcome.settlement)}`);
-        console.log(`tx       ${hashscanTx(outcome.transactionId)}`);
-        console.log(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
-        console.log(`spent    ${usdc(agent.spent.total)} USDC`);
+        say(`call ${n}   allow: the envelope covers ${usdc(listing.offer.price)} USDC`);
+        say(`signed   ${outcome.transactionId}`);
+        say(`settled  ${JSON.stringify(outcome.settlement)}`);
+        say(`tx       ${hashscanTx(outcome.transactionId)}`);
+        say(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
+        say(`spent    ${usdc(agent.spent.total)} USDC`);
+        evidence.push({ label: "payment", value: outcome.transactionId, url: hashscanTx(outcome.transactionId) });
+        evidence.push({ label: "spend log", value: `#${outcome.logSequence}`, url: topicLink });
       } else if (outcome.kind === "refused") {
-        console.log(`call ${n}   refuse: ${outcome.reason}`);
-        console.log(`message  ${outcome.message}`);
-        if (outcome.logSequence !== undefined) console.log(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
-      } else {
-        console.log(`call ${n}   failed: HTTP ${outcome.status}, charged ${outcome.charged}`);
-        console.log(`message  ${outcome.message}`);
-        if (outcome.transactionId) {
-          console.log(`signed   ${outcome.transactionId}`);
-          console.log(`tx       ${hashscanTx(outcome.transactionId)}`);
+        say(`call ${n}   refuse: ${outcome.reason}`);
+        say(`message  ${outcome.message}`);
+        if (outcome.logSequence !== undefined) say(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
+        evidence.push({ label: "refusal", value: outcome.message });
+        if (outcome.logSequence !== undefined) {
+          evidence.push({ label: "refusal log", value: `#${outcome.logSequence}`, url: topicLink });
+        } else {
+          ok = false;
         }
-        if (outcome.logSequence !== undefined) console.log(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
+      } else {
+        ok = false;
+        say(`call ${n}   failed: HTTP ${outcome.status}, charged ${outcome.charged}`);
+        say(`message  ${outcome.message}`);
+        if (outcome.transactionId) {
+          say(`signed   ${outcome.transactionId}`);
+          say(`tx       ${hashscanTx(outcome.transactionId)}`);
+        }
+        if (outcome.logSequence !== undefined) say(`hcs      sequence ${outcome.logSequence}  ${topicLink}`);
         process.exitCode = 1;
       }
     }
@@ -113,3 +192,5 @@ try {
 } finally {
   logClient.close();
 }
+
+if (json) console.log(JSON.stringify({ beat: "hedera", ok, evidence }));

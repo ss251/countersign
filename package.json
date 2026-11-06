@@ -2,13 +2,18 @@
   "name": "countersign",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "e2e"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test:contracts": "forge test",
     "gate": "bun run typecheck && bun test && forge test",
     "web:build": "bun run --cwd apps/web build",
-    "hub": "bun run --cwd apps/hub start"
+    "hub": "bun run --cwd apps/hub start",
+    "e2e": "bun run --cwd e2e start"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "5.6.1",
