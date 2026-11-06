@@ -1,6 +1,6 @@
 # hd-06-mpp-rail: Stripe MPP as the fourth rail, proven against a mock
 
-## Amendments (captain, 16:20 IST): these override the text below wherever they differ
+## Amendments (project lead, 16:20 IST): these override the text below wherever they differ
 
 1. **Dependencies.** Add `"mppx": "0.17.1"` and `"stripe": "23.1.0"` to `packages/rail/package.json` `dependencies`, plus the `./mpp` export. Tests use the mock Stripe client only.
    - Add `stripeClientFromKey(key)` in `packages/rail/src/mpp/client.ts`. It refuses, by throwing, any key that does not start with `sk_test_` or `rk_test_`, and it is never called by a test or by the mock server.
@@ -38,7 +38,7 @@ MPP is not x402 on the wire. The challenge is a 402 with `WWW-Authenticate: Paym
 
 - Create `packages/rail/src/mpp/**`, `scripts/mpp/**` and `docs/mpp.md`.
 - `packages/rail/package.json`: add `"mppx": "0.17.1"` to `dependencies` and `"./mpp": "./src/mpp/index.ts"` to `exports`. Change nothing else in it.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06-mpp-rail.md`.
+- Report: `$M/reports/hd-06-mpp-rail.md`.
 
 ## Context
 

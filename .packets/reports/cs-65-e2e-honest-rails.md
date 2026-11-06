@@ -16,16 +16,16 @@ The report itself is the second commit on the branch.
 
 ### Retired flows
 
-Each flow keeps its body and assertions. Its `notRun` now returns the captain's reason, so deleting
+Each flow keeps its body and assertions. Its `notRun` now returns the project lead's reason, so deleting
 that one line restores the flow.
 
 - **`e2e/flows/arc-gateway.flow.ts:24`:** `notRun: () => "retired: the Gateway rail was removed
-  from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be
+  from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be
   reversed"`.
 - **`e2e/flows/public-gateway.flow.ts:25`:** the same Gateway reason replaces
   `no public hub configured`.
 - **`e2e/flows/hedera.flow.ts:28`:** `notRun: () => "retired: plain x402 Hedera was removed from
-  production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be
+  production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be
   reversed"`.
 - **`e2e/flows/public-hedera.flow.ts:23`:** the same plain x402 Hedera reason replaces
   `no public hub configured`.
@@ -138,18 +138,18 @@ $ bun run.ts --list
 2   arc-wrong-amount         orch-cs  arc        Arc stranger 0.01 USDC gas
 3   arc-deadline-refund      orch-cs  arc        Arc buyer 0.01 USDC, Arc hub gas wallet 0.01 USDC gas, Arc stranger 0.01 USDC gas
 4a  slip-onchain-arc         orch-cs  arc        needs arc-spine
-10  arc-gateway              orch-cs  arc        NOT RUN (retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed)  Arc buyer's Gateway balance 0.01 USDC
+10  arc-gateway              orch-cs  arc        NOT RUN (retired: the Gateway rail was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed)  Arc buyer's Gateway balance 0.01 USDC
 11  refusals                 orch-cs  none
 13  ratings                  orch-cs  arc        Arc buyer 0.02 USDC, Arc e2e seller 0.01 USDC, Arc hub gas wallet 0.03 USDC gas
 5   whitechain               cs-wc    whitechain Whitechain buyer 0.01 USDT, Whitechain relayer 0.004 WBT, Whitechain merchant 0.01 USDT
 4b  slip-onchain-whitechain  cs-wc    whitechain needs whitechain
-6   hedera                   cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed)  Hedera agent 0.01 USDC, Hedera agent 0.01 HBAR
+6   hedera                   cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed)  Hedera agent 0.01 USDC, Hedera agent 0.01 HBAR
 7   merchant                 cs-wc    whitechain Whitechain buyer 0.02 USDT, Whitechain relayer 0.004 WBT, Whitechain merchant 0.005 USDT
 8   discovery                orch-cs  none
 12  public-spine             orch-cs  arc        Arc buyer 0.05 USDC
-15  public-hedera            cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed)  Hedera agent 0.05 USDC, Hedera agent 0.01 HBAR
-16  public-gateway           orch-cs  arc        NOT RUN (retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed)  Arc buyer's Gateway balance 0.05 USDC
-17  hedera-mcp               cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21)  Hedera agent 0.05 USDC, Hedera agent 0.01 HBAR
+15  public-hedera            cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed)  Hedera agent 0.05 USDC, Hedera agent 0.01 HBAR
+16  public-gateway           orch-cs  arc        NOT RUN (retired: the Gateway rail was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed)  Arc buyer's Gateway balance 0.05 USDC
+17  hedera-mcp               cs-hd    hedera     NOT RUN (retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21)  Hedera agent 0.05 USDC, Hedera agent 0.01 HBAR
 18  erc8004-identity         cs-hd    hedera
 18b erc8004-arc              orch-cs  arc
 19  mpp                      cs-hd    tempo      MPP payer 0.03 pathUSD

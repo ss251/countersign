@@ -1,6 +1,6 @@
 # cs-60-e2e-human: the human acceptance run, Playwright against the deployed console
 
-Lane: cs-e2e. Base: `cs/e2e`. Branch: `cs/cs-60`. Steers: STEER-2108, STEER-2115 (captain).
+Lane: cs-e2e. Base: `cs/e2e`. Branch: `cs/cs-60`. Steers: STEER-2108, STEER-2115 (project lead).
 
 ## Goal
 

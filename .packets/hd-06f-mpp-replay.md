@@ -2,7 +2,7 @@
 
 ## Goal
 
-This is the single corrective for PR #84, the mpp rail, after review of d2c824c (`/Users/thescoho/Developer/countersign-mumbai/reports/review-d2c824c.md`). It fixes blocker B17 and should-fixes 1 and 2, exactly as decided below. Tracked by issue #5.
+This is the single corrective for PR #84, the mpp rail, after review of d2c824c (`$M/reports/review-d2c824c.md`). It fixes blocker B17 and should-fixes 1 and 2, exactly as decided below. Tracked by issue #5.
 
 - **B17.** `challenge()` adds no nonce, so two 402s for one offer in one second are the same HMAC'd challenge, and replay is keyed on that id. Two buyers collide (the second has paid and is refused), and anyone holding that second's 402 can redeem another buyer's push-mode transfer.
 - **Should-fix 1.** `settle` claims before mppx confirms and never releases, and the demo server answers a failed settle with a fresh 402, which makes mppx's client pay again.
@@ -14,7 +14,7 @@ The failing test is `packages/rail/src/mpp/test/w1-mpp.test.ts`, already on this
 
 - `packages/rail/src/mpp/rail.ts`, `packages/rail/src/mpp/types.ts`, `packages/rail/src/mpp/index.ts` (exports only), `packages/rail/src/mpp/test/rail.test.ts`, and a new test file `packages/rail/src/mpp/test/replay.test.ts`
 - `scripts/mpp/server.ts`: the `/rail/paid` responses only
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06f-mpp-replay.md`
+- Report: `$M/reports/hd-06f-mpp-replay.md`
 
 Never edit `w1-mpp.test.ts` or any other `w1-*` test.
 

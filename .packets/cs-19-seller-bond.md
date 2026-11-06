@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else.
 
-## Goal (the captain's words)
+## Goal (the project lead's words)
 
 "The offer already declares bond and nothing collects it. Make it real in the smallest honest way, a bond deposited with the escrow on funding and paid to the buyer when the seller fails to deliver by the deadline, with the buyer still able to take the normal refund path when the seller does deliver nothing at all. Write the test that proves a failing seller is worse off than a silent one."
 

@@ -7,7 +7,7 @@ The hedera rail (`packages/rail/src/hedera/`) accepts one exact shape of buyer p
 ## Lease
 
 - Create `packages/rail/src/hedera/test/fuzz.test.ts`. No other file in the repository may change.
-- Write your report to `/Users/thescoho/Developer/countersign-mumbai/reports/hd-01-fuzz.md`.
+- Write your report to `$M/reports/hd-01-fuzz.md`.
 
 ## Context
 

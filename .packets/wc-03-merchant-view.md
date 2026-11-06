@@ -165,7 +165,6 @@ Explorer links follow `https://explorer.testnet.whitechain.io/tx/<hash>` and `ht
   - links have discernible text;
   - the table has a `<caption class="sr-only">`.
 - No emoji. Small present-tense commits, no `Co-authored-by`. Never commit `bun.lock`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

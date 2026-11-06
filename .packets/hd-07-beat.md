@@ -18,7 +18,7 @@ It must be re-runnable, idempotent and honest: every line printed is a fact read
 ## Lease
 
 - Create `scripts/hedera/beat.ts`, plus `scripts/hedera/beat`, an executable `#!/bin/sh` wrapper that runs `bun "$(dirname "$0")/beat.ts" "$@"`.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-07-beat.md`.
+- Report: `$M/reports/hd-07-beat.md`.
 
 ## Context
 
