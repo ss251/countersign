@@ -31,8 +31,12 @@ describe("the stdio CLI", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Usage: countersign mcp");
     expect(stdout).toContain("--hub <url>");
-    expect(stdout).toContain("CS_BUYER_KEY");
+    expect(stdout).toContain("Sign in once: npx -y @countersign-hub/cli login.");
+    expect(stdout).toContain("CS_NETWORK must be unset or testnet.");
     expect(stdout).toContain("never npx or npm install them");
+    expect(stdout).not.toContain("CS_BUYER_KEY");
+    expect(stdout).not.toContain("CS_SELLER_KEY");
+    expect(stdout).not.toContain("private key");
     expect(stderr).toBe("");
   });
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { HubClient } from "@countersign/buyer";
+import { HubClient, NOT_SIGNED_IN } from "@countersign/buyer";
 import type { Slip } from "@countersign/core";
 import type { Hex } from "viem";
 import { createCountersignMcpServer, type McpDeps } from "../src/index.ts";
@@ -134,11 +134,11 @@ describe("the MCP tools", () => {
     });
   });
 
-  test("buy without an account is a tool error naming CS_BUYER_KEY", async () => {
+  test("buy without an account says the user is not signed in", async () => {
     await withClient(depsFor({ account: null }), async (client) => {
       const result = await call(client, "buy", { offerHash: OFFER_HASH, input: { q: "hi" } });
       expect(result.isError).toBe(true);
-      expect(textOf(result)).toBe("Set CS_BUYER_KEY to the agent's private key.");
+      expect(textOf(result)).toBe(NOT_SIGNED_IN);
     });
   });
 
@@ -290,5 +290,57 @@ describe("the MCP tools", () => {
       const entries = bodyOf(journal) as Array<{ kind: string }>;
       expect(entries.map((entry) => entry.kind)).toEqual(["refused"]);
     });
+  });
+});
+
+describe("the sign-in gate", () => {
+  const tools: Array<[string, Record<string, unknown>]> = [
+    ["search_offers", {}],
+    ["get_offer", { offerHash: OFFER_HASH }],
+    ["buy", { offerHash: OFFER_HASH, input: { q: "hi" } }],
+    ["verify_slip", { slipHash: OFFER_HASH }],
+    ["envelope_show", {}],
+    ["journal", {}],
+  ];
+
+  function countingFetch(): { fetch: typeof fetch; requests: () => number } {
+    let requests = 0;
+    const fetchImpl = Object.assign(
+      async () => {
+        requests += 1;
+        return Response.json({});
+      },
+      { preconnect: () => undefined },
+    );
+    return { fetch: fetchImpl, requests: () => requests };
+  }
+
+  test("every tool refuses with NOT_SIGNED_IN before asking the hub", async () => {
+    const counter = countingFetch();
+    const deps = depsFor({ account: null });
+    deps.hub = new HubClient("http://hub.invalid", counter.fetch);
+    for (const [name, args] of tools) {
+      await withClient(deps, async (client) => {
+        const result = await call(client, name, args);
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe(NOT_SIGNED_IN);
+      });
+    }
+    expect(counter.requests()).toBe(0);
+  });
+
+  test("every tool carries the problem beside NOT_SIGNED_IN", async () => {
+    const counter = countingFetch();
+    const deps = depsFor({ account: null });
+    deps.problem = "x";
+    deps.hub = new HubClient("http://hub.invalid", counter.fetch);
+    for (const [name, args] of tools) {
+      await withClient(deps, async (client) => {
+        const result = await call(client, name, args);
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe(`${NOT_SIGNED_IN} (x)`);
+      });
+    }
+    expect(counter.requests()).toBe(0);
   });
 });

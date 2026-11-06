@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
+import type { LocalAccount } from "viem/accounts";
 import type { Hex } from "viem";
 import { formatUnits, parseUnits, RAIL_IDS, rpcUrlsFrom, sepoliaEnsResolver, type Envelope, type RailId } from "@countersign/core";
 import { BuyError, buy } from "./buy.ts";
@@ -13,6 +14,7 @@ import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
 import { startOpenAIServer } from "./openai/server.ts";
 import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
+import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv } from "./remote-signer.ts";
 import { resume } from "./resume.ts";
 import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
@@ -44,10 +46,19 @@ function parse(argv: string[]): Parsed {
   return { pos, flags };
 }
 
-function agentAccount() {
+let cachedAccount: Promise<LocalAccount> | undefined;
+
+export async function agentAccount(): Promise<LocalAccount> {
+  cachedAccount ??= resolveAccount();
+  return await cachedAccount;
+}
+
+async function resolveAccount(): Promise<LocalAccount> {
   const key = process.env.CS_BUYER_KEY;
-  if (!key) throw new Error("Set CS_BUYER_KEY to the agent's private key.");
-  return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
+  if (key) return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
+  const session = await sessionFromEnv(process.env);
+  if (session !== undefined) return remoteAccount(session);
+  throw new Error(NOT_SIGNED_IN);
 }
 
 const usd = (atomic: string) => formatUnits(BigInt(atomic), 6);
@@ -100,7 +111,7 @@ async function main(): Promise<void> {
     if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
     const rail = parseRail(one("rail"));
     const approvals = parseApprovals(one("approvals"));
-    const account = agentAccount();
+    const account = await agentAccount();
     const result = await buy({
       hub,
       offerHash: hash,
@@ -129,9 +140,9 @@ async function main(): Promise<void> {
     try {
       env = state.loadEnvelope();
     } catch {
-      env = { v: 1, agent: agentAccount().address, cap: "0", perMerchant: "0", allowlist: [], revoked: false };
+      env = { v: 1, agent: (await agentAccount()).address, cap: "0", perMerchant: "0", allowlist: [], revoked: false };
     }
-    env.agent = agentAccount().address;
+    env.agent = (await agentAccount()).address;
     const cap = one("cap");
     if (cap !== undefined) env.cap = parseUnits(cap, 6).toString(10);
     const pm = one("per-merchant");
@@ -146,7 +157,7 @@ async function main(): Promise<void> {
     console.log(`Envelope saved. Budget ${usd(env.cap)} USDC, ${usd(env.perMerchant)} per seller${env.revoked ? ", revoked" : ""}.`);
   } else if ((cmd === "accept" || cmd === "dispute") && pos[1] !== undefined) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(pos[1])) throw new Error(`Usage: ${cmd} <jobId>`);
-    const account = agentAccount();
+    const account = await agentAccount();
     const args = { hub, journal, state, known, signer: account, jobId: pos[1] as Hex, now: Math.floor(Date.now() / 1000) };
     if (cmd === "accept") {
       const done = await acceptJob(args);
@@ -165,7 +176,7 @@ async function main(): Promise<void> {
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
   } else if (cmd === "publish-envelope") {
-    const account = agentAccount();
+    const account = await agentAccount();
     const ok = await publishEnvelope({
       hub,
       account,
@@ -175,7 +186,7 @@ async function main(): Promise<void> {
     });
     console.log(ok ? "Envelope published." : "Envelope publish failed.");
   } else if (cmd === "openai") {
-    const account = agentAccount();
+    const account = await agentAccount();
     const token = randomBytes(32).toString("hex");
     mkdirSync(state.dir, { recursive: true });
     const tokenPath = join(state.dir, "openai.token");
@@ -196,7 +207,7 @@ async function main(): Promise<void> {
     console.log(tokenPath);
   } else if (cmd === "resume") {
     const mirror = flags.has("hub")
-      ? { account: agentAccount(), envelope: state.loadEnvelope() }
+      ? { account: await agentAccount(), envelope: state.loadEnvelope() }
       : undefined;
     const rows = await resume({
       hub,
@@ -209,7 +220,7 @@ async function main(): Promise<void> {
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
     console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> [--direct] | envelope show|set | publish-envelope | journal | resume | openai [--port <n>]");
-    console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
+    console.log("Flags: --hub <url> --state <dir>. Sign in once with: countersign login.");
   }
 }
 
