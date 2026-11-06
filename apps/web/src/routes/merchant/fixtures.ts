@@ -165,7 +165,7 @@ export const fixtureStatus: RelayStatus = {
 
 /*
  * Each fixture refund as the relay's /orders/:id reports it. The real refund carries its real block
- * and no time, as today's relay records it; the made-up one carries a reason and a time.
+ * and no time, as today's relay records it; the made-up one carries a time.
  */
 const fixtureRefunds: Record<string, RefundRecord[]> = {
   "0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc": [
@@ -182,7 +182,6 @@ const fixtureRefunds: Record<string, RefundRecord[]> = {
       txHash: "0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c",
       blockNumber: "12362904",
       status: "confirmed",
-      reason: "requested_by_customer",
       at: NOW - 46 * MINUTE,
     },
   ],

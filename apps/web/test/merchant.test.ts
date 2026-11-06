@@ -428,8 +428,11 @@ describe("timeline", () => {
     expect(events[0]).toMatchObject({ at: null, block: "12361744", tone: "neutral" });
   });
 
-  test("a refund carries its reason; a refusal this visit is red and newest", () => {
-    const record = findFixtureOrder("0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b")!;
+  test("a refund the relay reports with a reason shows it; a refusal this visit is red and newest", () => {
+    const sample = findFixtureOrder("0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b")!;
+    // The relay stores no reasons yet (wc-08), so the sample carries none either.
+    expect(sample.refunds![0]!.reason).toBeUndefined();
+    const record = { ...sample, refunds: sample.refunds!.map((refund) => ({ ...refund, reason: "requested_by_customer" })) };
     const events = timeline(record, "merchant", [{ at: Date.now(), reason: "merchant_balance_low" }]);
     expect(events[0]).toMatchObject({ tone: "refused", title: "Refund refused. Merchant balance low" });
     expect(events[1]).toMatchObject({ title: "Refunded 0.25 USDT", detail: "Requested by customer" });

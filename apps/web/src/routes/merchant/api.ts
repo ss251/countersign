@@ -1,5 +1,5 @@
 import { hubBase } from "../../lib/hub.ts";
-import type { Order, ReceiptOrder, RefundReason, RefundReply, RelayStatus } from "./model.ts";
+import type { Order, ReceiptOrder, RefundReply, RelayStatus } from "./model.ts";
 import { fromHubOrder, fromHubRecord, normalizeRefundReply } from "./model.ts";
 
 interface MerchantEnv {
@@ -212,13 +212,11 @@ export async function fetchRelayStatus(): Promise<RelayStatus> {
 export interface RefundRequest {
   /** Atomic USDT. Leave it out to send back everything that is left. */
   amount?: bigint;
-  reason?: RefundReason;
 }
 
 export async function refundOrder(id: string, request: RefundRequest = {}): Promise<RefundResult> {
-  const body: { amount?: string; reason?: RefundReason } = {};
+  const body: { amount?: string } = {};
   if (request.amount !== undefined) body.amount = request.amount.toString();
-  if (request.reason) body.reason = request.reason;
   const response = await merchantFetch(`/orders/${encodeURIComponent(id)}/refund`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
