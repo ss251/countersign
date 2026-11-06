@@ -38,7 +38,7 @@ First deployment, made with `forge script` and verified on the explorer. The sam
 | price moved, reverted | [`0x827ceca7…7b17`](https://explorer.testnet.arc.io/tx/0x827ceca74a4250afc742dac86439cdb84cc85fef6547d4b9a1147ad606c57b17) |
 | deadline refund | [`0xc96b85a8…f60a`](https://explorer.testnet.arc.io/tx/0xc96b85a87895a05063314e77115eb653e0d097069f30a0c6e8699b3da107f60a) |
 
-Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production's `escrow` rail settles through it since 06 Nov 21:49Z, for unbonded jobs; `0x19c2…1b76` above is v1. A console Privy purchase funded [`0x9811…1c0d`](https://explorer.testnet.arc.io/tx/0x9811df13bf5397c2578ee96bdc93d10c888b8bd7fcd74e6bab5b1000905d1c0d) and released [`0x46e6…0fc0`](https://explorer.testnet.arc.io/tx/0x46e6932aaeff0b302c895ff1915aaff0a38b78160b09f9d99de62ba8c6c50fc0), and a buyer-CLI purchase released [`0x25cd…e2af`](https://explorer.testnet.arc.io/tx/0x25cd275cb940cb6142b3cfb67ddf25f68fedcc2624e6f17efb3288e5e2dde2af).
+Escrow v2, deployed from `52b7c7c` on 06 Nov (UTC) and verified on Blockscout. Production's `escrow` rail settles through it since 06 Nov 21:49Z, for unbonded jobs; `0x19c2…1b76` above is v1. A console Privy purchase funded [`0x9811…1c0d`](https://explorer.testnet.arc.io/tx/0x9811df13bf5397c2578ee96bdc93d10c888b8bd7fcd74e6bab5b1000905d1c0d) and released [`0x46e6…0fc0`](https://explorer.testnet.arc.io/tx/0x46e6932aaeff0b302c895ff1915aaff0a38b78160b09f9d99de62ba8c6c50fc0), and a buyer-CLI purchase released [`0x25cd…e2af`](https://explorer.testnet.arc.io/tx/0x25cd275cb940cb6142b3cfb67ddf25f68fedcc2624e6f17efb3288e5e2dde2af).
 
 | | |
 |---|---|
@@ -53,7 +53,7 @@ Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Product
 
 See [whitechain.md](whitechain.md) for the full list.
 
-Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production's `whitechain` rail settles through it since 06 Nov 21:35Z, for unbonded jobs. The first purchase funded [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5) and released [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31). Its slip `0xb17f830162e819ad2f6ef16ca2ea652059c1e6288495bc71597065ef42ea8d70` is `VALID` with the chain read, and v2's `Released` event carries its hash.
+Escrow v2, deployed from `52b7c7c` on 06 Nov (UTC) and verified on Blockscout. Production's `whitechain` rail settles through it since 06 Nov 21:35Z, for unbonded jobs. The first purchase funded [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5) and released [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31). Its slip `0xb17f830162e819ad2f6ef16ca2ea652059c1e6288495bc71597065ef42ea8d70` is `VALID` with the chain read, and v2's `Released` event carries its hash.
 
 | | |
 |---|---|

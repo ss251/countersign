@@ -35,7 +35,7 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
 
 **Why this needs onchain stablecoin settlement on Whitechain.** The buyer is software, so the payment has to enforce itself:
 - A USDT payment on Whitechain will not settle for a payee or an amount the buyer did not sign.
-- On the hub's `whitechain` rail, it waits in escrow until the seller's delivery passes the hub's gate, and anyone can refund it once its deadline passes.
+- On the hub's `whitechain` rail, it waits in escrow until the seller's delivery passes the hub's gate, and anyone can refund it once 600 seconds have passed after its deadline.
 - Every payment and every refund leaves a public record that the customer can check without trusting us.
 
 A card network cannot bind a payment to an offer hash, or release it on a signed delivery receipt. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT.
