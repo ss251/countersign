@@ -167,6 +167,32 @@ export class Store {
       );
   }
 
+  /**
+   * Insert a job only when its id is new. The primary key on job_id is the
+   * nonce claim: false means a paid call already used this authorisation.
+   */
+  claimJob(job: JobRecord): boolean {
+    const result = this.db
+      .query(
+        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        job.jobId,
+        job.offerHash,
+        job.rail,
+        job.buyer,
+        job.amount,
+        job.deadline,
+        job.status,
+        JSON.stringify(job.payment),
+        job.settleTx,
+        job.closeTx,
+        job.slipHash,
+        job.createdAt,
+      );
+    return result.changes > 0;
+  }
+
   getJob(jobId: string): JobRecord | null {
     const row = this.db.query<JobRow, [string]>("SELECT * FROM jobs WHERE job_id = ?").get(jobId);
     if (!row) return null;

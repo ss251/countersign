@@ -21,6 +21,34 @@ describe("readSkill", () => {
     expect(skill.sha256).toBe(expected);
     expect(skill.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  test("reads the whitechain-dev folded description as real text", async () => {
+    const path = join(import.meta.dir, "../../../examples/catalogue/whitechain/whitechain-dev/SKILL.md");
+    const skill = await readSkill(path);
+    expect(skill.name).toBe("whitechain-dev");
+    expect(skill.description).not.toBe(">");
+    expect(skill.description).toContain("Whitechain developer playbook.");
+    expect(skill.description).toContain("Do not use this skill for transferring tokens");
+    expect(skill.description).not.toContain("\n  ");
+  });
+
+  test("reads every Circle skill's front matter", async () => {
+    const names = [
+      "bridge-tokens",
+      "use-arc",
+      "use-gateway",
+      "use-smart-contract-platform",
+      "use-usdc",
+    ];
+    for (const name of names) {
+      const path = join(import.meta.dir, "../../../examples/catalogue/circle", name, "SKILL.md");
+      const skill = await readSkill(path);
+      expect(skill.name).toBe(name);
+      expect(skill.description.length).toBeGreaterThan(20);
+      expect(skill.description.startsWith('"')).toBe(false);
+      expect(skill.body.startsWith("## Overview")).toBe(true);
+    }
+  });
 });
 
 describe("runSkill", () => {

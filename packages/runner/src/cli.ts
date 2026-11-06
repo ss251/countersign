@@ -16,12 +16,14 @@ import { readSkill, skillOffer, type Skill } from "./skill.ts";
 
 const DEFAULT_DEADLINE = 120;
 
-interface Options {
+export interface Options {
   hub: string;
   skills: string[];
   price: string;
   deadline: number;
   rails: RailId[];
+  payTo?: Partial<Record<RailId, string>>;
+  state?: string;
   upstream?: { url: string; licence: string };
 }
 
@@ -44,8 +46,20 @@ async function publishCommand(options: Options): Promise<void> {
   if (path === undefined) throw new Error("--skill is required.");
   const skill = await readSkill(path);
   const offer = makeOffer(account.address, skill, options);
-  const hash = await publishOffer(options.hub, account, offer);
+  const hash = await publishWithState(options, account, offer, skill);
   console.log(hash);
+}
+
+function publishWithState(
+  options: Options,
+  account: RunnerAccount,
+  offer: Offer,
+  skill: Skill,
+): Promise<Hex> {
+  return publishOffer(options.hub, account, offer, {
+    ...(options.state !== undefined ? { stateDir: options.state } : {}),
+    skillSha256: skill.sha256,
+  });
 }
 
 async function serveCommand(options: Options): Promise<void> {
@@ -55,7 +69,7 @@ async function serveCommand(options: Options): Promise<void> {
   for (const path of options.skills) {
     const skill = await readSkill(path);
     const offer = makeOffer(account.address, skill, options);
-    const hash = await publishOffer(options.hub, account, offer);
+    const hash = await publishWithState(options, account, offer, skill);
     console.log(`published ${hash} ${offer.title}`);
     served.push({ offer, spec: { adapter: "skill", skillPath: path } });
   }
@@ -96,6 +110,7 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
     price: options.price,
     deadline: options.deadline,
     rails: options.rails,
+    payTo: options.payTo,
     upstream: options.upstream,
     now: Math.floor(Date.now() / 1000),
   });
@@ -121,14 +136,16 @@ async function loadAccounts(): Promise<AccountsModule> {
   return (await import(pathToFileURL(path).href)) as AccountsModule;
 }
 
-function parseOptions(args: string[]): Options {
+export function parseOptions(args: string[]): Options {
   const skills: string[] = [];
   let hub: string | undefined;
   let price: string | undefined;
   let deadline = DEFAULT_DEADLINE;
   let rails: RailId[] = ["escrow"];
+  let state: string | undefined;
   let upstreamUrl: string | undefined;
   let licence: string | undefined;
+  const payTo: Partial<Record<RailId, string>> = {};
 
   for (let i = 0; i < args.length; i += 1) {
     const flag = args[i] ?? "";
@@ -159,6 +176,22 @@ function parseOptions(args: string[]): Options {
       case "--rails":
         rails = parseRails(value());
         break;
+      case "--pay-to": {
+        const pair = value();
+        const equals = pair.indexOf("=");
+        if (equals <= 0 || equals === pair.length - 1) {
+          throw new Error("--pay-to needs <rail>=<id>.");
+        }
+        const rail = pair.slice(0, equals).trim();
+        const id = pair.slice(equals + 1).trim();
+        if (!RAIL_IDS.includes(rail as RailId)) throw new Error(`Unknown rail ${rail}.`);
+        if (id === "") throw new Error("--pay-to needs a payee id.");
+        payTo[rail as RailId] = id;
+        break;
+      }
+      case "--state":
+        state = value();
+        break;
       case "--upstream-url":
         upstreamUrl = value();
         break;
@@ -183,6 +216,8 @@ function parseOptions(args: string[]): Options {
   }
 
   const options: Options = { hub, skills, price, deadline, rails };
+  if (Object.keys(payTo).length > 0) options.payTo = payTo;
+  if (state !== undefined) options.state = state;
   if (upstreamUrl !== undefined && licence !== undefined) {
     options.upstream = { url: upstreamUrl, licence };
   }
@@ -202,7 +237,9 @@ function parseRails(raw: string): RailId[] {
   return [...new Set(rails)];
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

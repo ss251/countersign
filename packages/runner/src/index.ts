@@ -7,7 +7,7 @@ export {
   type RunnerLimits,
   type ServedOffer,
 } from "./daemon.ts";
-export { publishOffer } from "./publish.ts";
+export { publishOffer, type PublishOptions } from "./publish.ts";
 export {
   readSkill,
   runSkill,
