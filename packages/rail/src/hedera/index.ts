@@ -8,3 +8,4 @@ export * from "./mirror.ts";
 export * from "./rail.ts";
 export * from "./schedule.ts";
 export * from "./txid.ts";
+export * from "./wallet-paid.ts";

@@ -44,7 +44,8 @@ describe("buyer shell: a link's choices are visible and can be dropped", () => {
 
 describe("buyer route: the console's desk shell", () => {
   test("exports surface === desk", async () => {
-    mock.module(new URL("../src/app/routes.ts", import.meta.url).pathname, () => ({ hasRoute: () => false }));
+    // The same shape as nav.test.ts's mock: one process shares one module registry, so every mock of routes.ts carries both.
+    mock.module(new URL("../src/app/routes.ts", import.meta.url).pathname, () => ({ hasRoute: () => false, VIEWS: [] }));
     const buyer = await import("../src/routes/buyer/index.tsx");
     expect(buyer.surface).toBe("desk");
   });
