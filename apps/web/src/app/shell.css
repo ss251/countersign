@@ -29,14 +29,32 @@
   min-height: 40vh;
 }
 
-/* Desktop chrome */
+/* The bar */
 
 .topbar {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--paper);
+  background: color-mix(in oklab, var(--paper) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: var(--hair) solid var(--line);
+  transition:
+    background-color var(--d-2) ease,
+    border-color var(--d-2) ease;
+}
+
+/* Over the landing's hero the bar lies on the hero rather than above it, and is clear. */
+.shell[data-surface="story"] .topbar {
+  position: fixed;
+  inset-inline: 0;
+}
+
+.topbar[data-overlay] {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom-color: transparent;
 }
 
 .topbar__inner {
@@ -45,69 +63,192 @@
   margin: 0 auto;
   padding: 0 var(--sp-6);
   display: flex;
-  align-items: stretch;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--sp-6);
 }
 
 .topbar__brand {
   display: inline-flex;
   align-items: center;
+  min-height: 44px;
   text-decoration: none;
+  border-radius: var(--r-1);
 }
 
 .topbar__nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: var(--sp-1);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.topbar__nav::-webkit-scrollbar {
-  display: none;
+.topbar__end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .topbar__link {
   display: inline-flex;
   align-items: center;
+  gap: var(--sp-1);
+  min-height: 36px;
   padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
   color: var(--slate);
-  font-size: var(--t-14);
-  font-weight: 500;
+  font-family: var(--display);
+  font-size: var(--t-17);
+  font-weight: var(--w-strong);
+  letter-spacing: 0.01em;
   text-decoration: none;
   white-space: nowrap;
-  transition: color var(--d-1) var(--ease-out);
+  transition:
+    color var(--d-1) ease,
+    background-color var(--d-1) ease,
+    transform var(--d-press) var(--ease-out);
+}
+
+.topbar__link:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .topbar__link:hover {
     color: var(--ink);
+    background: color-mix(in oklab, var(--ink) 7%, transparent);
   }
 }
 
-.topbar__link[aria-current="page"] {
+.topbar__link[aria-current="page"],
+.navgroup__trigger[data-current],
+.navgroup__trigger[aria-expanded="true"] {
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--ink);
 }
 
-.topbar__link:focus-visible {
+.navgroup__trigger[aria-expanded="true"] {
+  background: color-mix(in oklab, var(--ink) 9%, transparent);
+}
+
+/* The group you are in carries a steel dot. */
+.navgroup__trigger[data-current]::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--usdc-fill);
+}
+
+/* A group: its trigger, and a short list that grows from under it. */
+.navgroup {
+  position: relative;
+}
+
+.navgroup__chev {
+  opacity: 0.7;
+  transition: transform var(--d-2) var(--ease-out);
+}
+
+.navgroup__trigger[aria-expanded="true"] .navgroup__chev {
+  transform: rotate(180deg);
+}
+
+.navgroup__list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 11rem;
+  padding: var(--sp-1);
+  border-radius: var(--r-2);
+  background: var(--raised);
+  box-shadow: var(--elev-2);
+  /* It grows from its trigger, top left, never from its own centre. */
+  transform-origin: top left;
+  transition:
+    opacity var(--d-1) var(--ease-out),
+    transform var(--d-1) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+.navgroup__list[hidden] {
+  display: none;
+}
+
+.navgroup__link {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border-radius: calc(var(--r-2) - 4px);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--t-15);
+  font-weight: var(--w-strong);
+  text-decoration: none;
+}
+
+.navgroup__link[aria-current="page"] {
+  color: var(--usdc);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .navgroup__link:hover {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+}
+
+.navgroup__link:focus-visible {
   outline-offset: -2px;
 }
 
-/* On a phone the views fold into one button and a list under the bar. */
+/* An icon button: the theme toggle. */
+.topbar__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--slate);
+  transition:
+    color var(--d-1) ease,
+    background-color var(--d-1) ease,
+    transform var(--d-press) var(--ease-out);
+}
+
+.topbar__icon:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .topbar__icon:hover {
+    color: var(--ink);
+    background: color-mix(in oklab, var(--ink) 7%, transparent);
+  }
+}
+
+/* On a phone the groups fold into one button and a sheet under the bar. */
 .topbar__menu {
   display: none;
-  align-self: center;
-  min-height: 44px;
+  align-items: center;
+  min-height: 40px;
   padding: 0 var(--sp-4);
   border: 0;
-  border-radius: var(--r-2);
-  background: none;
-  box-shadow: var(--elev-1);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
   color: var(--ink);
-  font-size: var(--t-14);
-  font-weight: 600;
+  font-family: var(--display);
+  font-size: var(--t-15);
+  font-weight: var(--w-strong);
   transition: transform var(--d-press) var(--ease-out);
 }
 
@@ -117,9 +258,34 @@
 
 .topbar__sheet {
   display: grid;
-  padding: var(--sp-1) var(--sp-4) var(--sp-3);
-  border-top: 1px solid var(--line);
+  gap: var(--sp-4);
+  max-height: calc(100dvh - var(--bar));
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
+  border-top: var(--hair) solid var(--line);
   background: var(--paper);
+  transition:
+    opacity var(--d-2) var(--ease-out),
+    transform var(--d-2) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.topbar__sheet-group {
+  display: grid;
+}
+
+.topbar__sheet-head {
+  padding: var(--sp-1) 0;
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: var(--t-12);
+  font-weight: var(--w-strong);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .topbar__sheet-link {
@@ -128,31 +294,45 @@
   min-height: 48px;
   border-bottom: var(--hair) solid var(--line);
   color: var(--ink);
-  font-weight: 500;
+  font-family: var(--display);
+  font-size: var(--t-17);
+  font-weight: var(--w-strong);
   text-decoration: none;
 }
 
-.topbar__sheet-link:last-child {
+.topbar__sheet-group .topbar__sheet-link:last-child {
   border-bottom: 0;
 }
 
 .topbar__sheet-link[aria-current="page"] {
-  color: var(--ink);
-  box-shadow: inset 2px 0 0 var(--ink);
-  padding-left: var(--sp-3);
+  color: var(--usdc);
 }
 
-@media (max-width: 720px) {
+.topbar__sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+}
+
+.topbar__sheet-foot .topbar__sheet-link {
+  border-bottom: 0;
+}
+
+@media (max-width: 860px) {
   .topbar__inner {
     padding: 0 var(--sp-4);
     gap: var(--sp-3);
   }
-  .topbar__nav {
+  .topbar__nav,
+  .topbar__gh,
+  .topbar__wallet {
     display: none;
   }
   .topbar__menu {
     display: inline-flex;
-    align-items: center;
   }
 }
 
@@ -169,14 +349,31 @@
 .wallet__menu {
   position: absolute;
   right: 0;
-  top: 100%;
+  top: calc(100% + 6px);
   z-index: 30;
   display: grid;
   min-width: 16rem;
   padding: var(--sp-2);
-  background: var(--paper);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
+  background: var(--raised);
+  border-radius: var(--r-2);
+  box-shadow: var(--elev-2);
+  transform-origin: top right;
+  transition:
+    opacity var(--d-1) var(--ease-out),
+    transform var(--d-1) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+.topbar__sheet .wallet__menu {
+  right: auto;
+  left: 0;
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform-origin: bottom left;
 }
 
 .wallet__item {
@@ -195,6 +392,12 @@
   white-space: nowrap;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .wallet__item:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+}
+
 .wallet__why {
   color: var(--slate);
   font-size: var(--t-12);
@@ -203,15 +406,29 @@
 .wallet__go {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 var(--sp-3);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--r-1);
-  background: none;
-  color: var(--ink);
-  font-weight: 500;
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--usdc-fill);
+  color: var(--on-usdc);
+  font-family: var(--display);
+  font-size: var(--t-15);
+  font-weight: var(--w-strong);
   white-space: nowrap;
-  transition: color var(--d-1) var(--ease-out);
+  transition:
+    background-color var(--d-1) ease,
+    transform var(--d-press) var(--ease-out);
+}
+
+.wallet__go:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wallet__go:hover {
+    background: color-mix(in oklab, var(--usdc-fill) 86%, var(--ink));
+  }
 }
 
 .wallet__quiet {
@@ -242,7 +459,7 @@
 }
 
 .notice__title {
-  font-size: var(--t-24);
+  font-size: var(--t-32);
 }
 
 .notice__body {
@@ -253,14 +470,26 @@
   min-height: 44px;
   padding: 0 var(--sp-4);
   border: 0;
-  border-radius: var(--r-2);
+  border-radius: var(--r-pill);
   background: none;
   box-shadow: var(--elev-1);
-  font-weight: 600;
+  font-weight: var(--w-strong);
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.notice__retry:active {
+  transform: scale(0.97);
 }
 
 /* An option that waits for Privy to start: visibly not ready, and not pressable. */
 .wallet__item:disabled {
   color: var(--slate);
   cursor: progress;
+}
+
+/* Every page shares one column with the landing, so the wordmark sits over each page's title edge. */
+.topbar__inner {
+  --gutter: clamp(16px, 5vw, 64px);
+  max-width: calc(1240px + 2 * var(--gutter));
+  padding: 0 var(--gutter);
 }

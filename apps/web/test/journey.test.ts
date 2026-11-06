@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import type { Slip } from "@countersign/core";
 import type { RailDeclaration, Settlement } from "../src/lib/types.ts";
 import { heldBy } from "../src/routes/home/field.ts";
-import { LifecycleStage, type LifecycleProps } from "../src/routes/home/Lifecycle.tsx";
+import { JourneyStage, type JourneyProps } from "../src/routes/home/Journey.tsx";
 
 // A released escrow payment as the hub serves it; no slip is read without the hub.
 const RELEASE: Settlement = {
@@ -25,16 +25,19 @@ const RELEASE: Settlement = {
 const RAILS = [{ id: "escrow", escrow: `0x${"77".repeat(20)}` } as RailDeclaration];
 
 const STATEMENTS = [
-  "An offer is published.",
-  "A buyer countersigns it.",
+  "Every purchase has five parties.",
+  "The agent signs its limits once.",
+  "Above them, you countersign the exact offer and amount.",
   "The money is held until the work lands.",
-  "The seller signs, and the slip verifies.",
+  "The seller delivers, signs, and the slip verifies.",
 ];
 
-const html = (props: LifecycleProps): string => renderToString(createElement(LifecycleStage, props));
+type Props = Omit<JourneyProps, "envelope"> & { envelope?: JourneyProps["envelope"] };
+const html = (props: Props): string => renderToString(createElement(JourneyStage, { envelope: undefined, ...props }));
+const DATA = /journey__data/g;
 
-describe("the life of one payment", () => {
-  test("pinned, one release carries all four statements in order and four steps", () => {
+describe("the journey follows one payment", () => {
+  test("pinned, one release carries all five statements in order, and its record on the cards", () => {
     const out = html({ release: RELEASE, rails: RAILS, hubDown: false, pinned: true, narrow: false });
     let at = -1;
     for (const words of STATEMENTS) {
@@ -42,25 +45,29 @@ describe("the life of one payment", () => {
       expect(i).toBeGreaterThan(at);
       at = i;
     }
-    expect(out.match(/life__step/g)).toHaveLength(4);
+    // The example envelope, then the countersignature, the hold and the release: four cards of data.
+    expect(out.match(DATA)).toHaveLength(4);
+    expect(out).toContain("A signed market brief");
   });
 
-  test("a hub that did not answer says so and draws no steps, even with a stale release", () => {
+  test("a hub that did not answer says so on every payment card, even with a stale release", () => {
     const out = html({ release: RELEASE, rails: RAILS, hubDown: true, pinned: true, narrow: false });
-    expect(out).toContain("The hub did not answer");
-    expect(out).not.toContain("life__step");
+    expect(out.match(/The hub did not answer/g)).toHaveLength(3);
+    expect(out.match(DATA)).toHaveLength(1);
+    expect(out).not.toContain("A signed market brief");
   });
 
-  test("no escrow release yet says so plainly, with no steps and no fixtures", () => {
+  test("no escrow release yet says so plainly, with no payment data and no fixtures", () => {
     const out = html({ release: undefined, rails: RAILS, hubDown: false, pinned: true, narrow: false });
-    expect(out).toContain("No escrow payment has cleared on this hub yet");
-    expect(out).not.toContain("life__step");
+    expect(out.match(/No escrow payment has cleared on this hub yet/g)).toHaveLength(3);
+    expect(out.match(DATA)).toHaveLength(1);
   });
 
-  test("less motion gives four static sections and no exit section", () => {
+  test("less motion gives five static sections, each with its own diagram and no exit", () => {
     const out = html({ release: RELEASE, rails: RAILS, hubDown: false, pinned: false, narrow: false });
     const beats = [...out.matchAll(/data-beat="(\d+)"/g)].map((m) => m[1]);
-    expect(beats).toEqual(["0", "1", "2", "3"]);
+    expect(beats).toEqual(["0", "1", "2", "3", "4"]);
+    expect(out.match(/class="diagram"/g)).toHaveLength(5);
     for (const words of STATEMENTS) expect(out).toContain(words);
   });
 });

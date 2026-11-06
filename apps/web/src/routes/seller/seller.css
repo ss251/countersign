@@ -118,7 +118,7 @@
   padding-top: 0;
   color: var(--slate);
   font-size: var(--t-12);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   white-space: nowrap;
 }
 
@@ -146,7 +146,7 @@
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--t-15);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .ledger-table__title a {
@@ -174,7 +174,7 @@
 }
 
 .ledger-table__runner {
-  font-weight: 600;
+  font-weight: var(--w-strong);
   white-space: nowrap;
 }
 
@@ -288,7 +288,7 @@
 .preview__label {
   color: var(--slate);
   font-size: var(--t-12);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .preview__row {
@@ -310,7 +310,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .preview__summary {
@@ -359,7 +359,7 @@
 .listed__title {
   color: var(--ink);
   font-size: var(--t-20);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .listed__waiting {
@@ -479,7 +479,7 @@ button.steps__button {
 
 .wizard__parsed-title {
   font-size: var(--t-17);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .wizard__parsed-summary {
@@ -564,7 +564,7 @@ button.steps__button {
 }
 
 .rails-pick__name {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .rails-pick__note {
@@ -602,7 +602,7 @@ button.steps__button {
 .split-check__title {
   color: var(--slate);
   font-size: var(--t-13);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .split-check__half--yours .split-check__title {
@@ -611,7 +611,7 @@ button.steps__button {
 
 .split-check__name {
   font-size: var(--t-20);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .split-check__summary {

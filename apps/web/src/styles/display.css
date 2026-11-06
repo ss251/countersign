@@ -21,9 +21,3 @@
   font-display: swap;
 }
 
-.display,
-h1,
-.h1 {
-  font-family: "Countersign Display", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: -0.015em;
-}

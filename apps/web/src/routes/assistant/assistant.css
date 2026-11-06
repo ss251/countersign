@@ -420,7 +420,7 @@ kbd {
 
 .pcard__title {
   font-size: var(--t-17);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   overflow-wrap: anywhere;
 }
 
@@ -481,7 +481,7 @@ kbd {
 }
 
 .pcard__next-title {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .pcard__next-body {
@@ -502,7 +502,7 @@ kbd {
 
 .ask__placeholder-title {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 /* Equal cards: the need on top, what it finds pinned to the bottom. */

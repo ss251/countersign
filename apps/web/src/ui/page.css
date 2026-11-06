@@ -23,7 +23,7 @@
 .page__eyebrow {
   color: var(--slate);
   font-size: var(--t-11);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -74,7 +74,7 @@
 .section__title {
   color: var(--slate);
   font-size: var(--t-11);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }

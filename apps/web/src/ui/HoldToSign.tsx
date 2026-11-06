@@ -3,10 +3,13 @@ import { cx } from "./primitives.tsx";
 import "./hold.css";
 
 /*
- * The countersignature, as a gesture. A signature line on the page: the left
- * stroke is already there in ink (the offer, signed by the seller). Holding
- * draws the right stroke in blue ink across the seam. Let go early and it retracts.
- * The geometry is the mark’s, stretched along the line.
+ * The countersignature, as a gesture: a pill you hold. Steel sweeps across it under the thumb,
+ * linear so it shows exactly how much of the hold is done, and the mark beside the label draws
+ * its second stroke, the countersignature, in step. Let go early and both snap back. When it
+ * completes the pill turns green.
+ *
+ * Two copies of the content, one over the other: the top copy is the filled state, clipped to
+ * the progress. The colour changes exactly at the sweep's edge, which no colour transition can do.
  */
 
 const VIEW_W = 300;
@@ -47,6 +50,8 @@ export function HoldToSign({
   signed = false,
 }: HoldToSignProps) {
   const sealRef = useRef<SVGPathElement>(null);
+  const sealTopRef = useRef<SVGPathElement>(null);
+  const fillRef = useRef<HTMLSpanElement>(null);
   const length = useRef(0);
   const progress = useRef(0);
   const frame = useRef(0);
@@ -64,15 +69,19 @@ export function HoldToSign({
 
   const paint = (p: number) => {
     progress.current = p;
-    const path = sealRef.current;
-    if (path) path.style.strokeDashoffset = String(length.current * (1 - p));
+    for (const path of [sealRef.current, sealTopRef.current]) {
+      if (path) path.style.strokeDashoffset = String(length.current * (1 - p));
+    }
+    if (fillRef.current) fillRef.current.style.clipPath = `inset(0 ${((1 - p) * 100).toFixed(2)}% 0 0 round 999px)`;
   };
 
   useLayoutEffect(() => {
     const path = sealRef.current;
     if (!path) return;
-    length.current = path.getTotalLength();
-    path.style.strokeDasharray = `${length.current} ${length.current + 8}`;
+    length.current = typeof path.getTotalLength === "function" ? path.getTotalLength() : 160;
+    for (const p of [sealRef.current, sealTopRef.current]) {
+      if (p) p.style.strokeDasharray = `${length.current} ${length.current + 8}`;
+    }
     paint(phaseRef.current === "done" ? 1 : 0);
   }, []);
 
@@ -153,25 +162,30 @@ export function HoldToSign({
       onBlur={release}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <svg className="hold__svg" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} aria-hidden="true" focusable="false">
-        <line className="hold__rule" x1="4" x2={VIEW_W - 4} y1="58" y2="58" />
-        <path className="hold__ink" d={INK_D} />
-        <path ref={sealRef} className="hold__seal" d={SEAL_D} />
-        <rect className="hold__seam" x={SEAM_X - 1.6} y="0" width="3.2" height={VIEW_H - 8} />
-      </svg>
-      <span className="hold__parties" aria-hidden="true">
-        <span>× {left}</span>
-        <span>{right}</span>
-      </span>
-      <span className="hold__label">
-        {phase === "done" ? doneLabel : phase === "holding" ? holdingLabel : label}
+      <HoldFace label={phase === "done" ? doneLabel : phase === "holding" ? holdingLabel : label} sealRef={sealRef} />
+      <span ref={fillRef} className="hold__fill" aria-hidden="true">
+        <HoldFace label={phase === "done" ? doneLabel : holdingLabel} sealRef={sealTopRef} />
       </span>
       <span id={hintId} className="sr-only">
-        Press and hold for about a second. Letting go early cancels.
+        {`Press and hold for about a second to countersign from ${left} to ${right}. Letting go early cancels.`}
       </span>
       <span className="sr-only" aria-live="polite">
         {phase === "holding" ? "Keep holding." : phase === "done" ? `${doneLabel}.` : ""}
       </span>
     </button>
+  );
+}
+
+/** One face of the pill: the mark, its second stroke drawn by the hold, and the label. */
+function HoldFace({ label, sealRef }: { label: string; sealRef: React.RefObject<SVGPathElement | null> }) {
+  return (
+    <span className="hold__face" aria-hidden="true">
+      <svg className="hold__svg" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} focusable="false">
+        <path className="hold__ink" d={INK_D} />
+        <path ref={sealRef} className="hold__seal" d={SEAL_D} />
+        <rect className="hold__seam" x={SEAM_X - 3} y="0" width="6" height={VIEW_H} />
+      </svg>
+      <span className="hold__label">{label}</span>
+    </span>
   );
 }
