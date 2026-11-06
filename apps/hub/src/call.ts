@@ -279,7 +279,7 @@ export async function paidCall(
       deadline,
       status: "verified",
       payment,
-      settleTx: pending.transaction,
+      settleTx: null,
       closeTx: null,
       slipHash: null,
       createdAt: now,
@@ -297,14 +297,6 @@ export async function paidCall(
       buyer,
       entry: match.entry,
       deadline,
-      ...(railId === "hedera-scheduled"
-        ? {
-            schedule: {
-              id: String(payment.payload.scheduleId),
-              createTx: String(payment.payload.createTxId),
-            },
-          }
-        : {}),
       lineage,
     });
 
@@ -379,7 +371,12 @@ export async function paidCall(
       settlement,
     };
     deps.store.putSlip(slip.hash, jobId, slip, now);
-    deps.store.updateJob(jobId, { status: "settled", closeTx, slipHash: slip.hash });
+    deps.store.updateJob(jobId, {
+      status: "settled",
+      settleTx: settle.transaction,
+      closeTx,
+      slipHash: slip.hash,
+    });
 
     return {
       status: 200,
