@@ -4,6 +4,7 @@
  */
 
 import type { Offer } from "@countersign/core";
+import { recoverMessageAddress, recoverTypedDataAddress } from "viem";
 import type { Address, Hex, RunnerAccount, RunnerTypedData } from "./account.ts";
 
 export const NOT_SIGNED_IN = "Not signed in. Run: npx -y @countersign-hub/cli login";
@@ -30,6 +31,26 @@ export type RemoteRunnerAccount = RunnerAccount & { kind: "remote" };
 
 function hubFailure(reason: number | string): Error {
   return new Error(`The hub could not sign right now (${reason}).`);
+}
+
+const WRONG_WALLET = "The hub signed with a different wallet.";
+
+/**
+ * The session token is sent only to an https hub, or to this machine for local runs: a CS_HUB that
+ * names any other http:// host would receive the Bearer token in clear (cs-audit on #287, point 3).
+ */
+function safeHub(hubUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(hubUrl);
+  } catch {
+    throw new Error("The hub address is not a URL.");
+  }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+    throw new Error("The session is sent only to an https hub.");
+  }
+  return hubUrl.replace(/\/+$/, "");
 }
 
 /** JSON-safe: every bigint at any depth becomes a decimal string. */
@@ -61,10 +82,12 @@ async function readJson(response: Response): Promise<unknown> {
 
 /** An account whose signatures are made by the hub's session wallet. */
 export function remoteRunnerAccount(options: RemoteSignerOptions): RemoteRunnerAccount {
-  const hub = options.hubUrl.replace(/\/+$/, "");
+  const hub = safeHub(options.hubUrl);
   const fetchImpl = options.fetch ?? fetch;
 
-  const sign = async (payload: unknown): Promise<Hex> => {
+  // The hub's address field is only a claim: the signature itself must recover to the session
+  // wallet, so a hub or Privy mix-up is a clear error here, not a bad slip later (cs-audit, #287).
+  const sign = async (payload: unknown, recover: (signature: Hex) => Promise<Address>): Promise<Hex> => {
     let response: Response;
     try {
       response = await fetchImpl(`${hub}/cli/sign`, {
@@ -90,8 +113,15 @@ export function remoteRunnerAccount(options: RemoteSignerOptions): RemoteRunnerA
         typeof address !== "string" ||
         address.toLowerCase() !== options.address.toLowerCase()
       ) {
-        throw new Error("The hub signed with a different wallet.");
+        throw new Error(WRONG_WALLET);
       }
+      let signer: Address;
+      try {
+        signer = await recover(signature as Hex);
+      } catch {
+        throw new Error(WRONG_WALLET);
+      }
+      if (signer.toLowerCase() !== options.address.toLowerCase()) throw new Error(WRONG_WALLET);
       return signature as Hex;
     }
     if (response.status === 401) throw new Error(messageOf(body) ?? NOT_SIGNED_IN);
@@ -107,8 +137,14 @@ export function remoteRunnerAccount(options: RemoteSignerOptions): RemoteRunnerA
   return {
     kind: "remote",
     address: options.address,
-    signMessage: (args) => sign({ kind: "message", message: args.message }),
-    signTypedData: (typedData: RunnerTypedData) => sign({ kind: "typed-data", typedData }),
+    signMessage: (args) =>
+      sign({ kind: "message", message: args.message }, (signature) =>
+        recoverMessageAddress({ message: args.message, signature }),
+      ),
+    signTypedData: (typedData: RunnerTypedData) =>
+      sign({ kind: "typed-data", typedData }, (signature) =>
+        recoverTypedDataAddress({ ...(typedData as Parameters<typeof recoverTypedDataAddress>[0]), signature }),
+      ),
   };
 }
 
@@ -116,7 +152,7 @@ export function remoteRunnerAccount(options: RemoteSignerOptions): RemoteRunnerA
 export async function remoteAccountFromSession(
   options: RemoteSessionOptions,
 ): Promise<RemoteRunnerAccount> {
-  const hub = options.hubUrl.replace(/\/+$/, "");
+  const hub = safeHub(options.hubUrl);
   const fetchImpl = options.fetch ?? fetch;
 
   let response: Response;

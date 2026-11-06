@@ -35,7 +35,7 @@ const OTHER = "0x5555555555555555555555555555555555555555" as Address;
 const ASSET = "0x3600000000000000000000000000000000000000" as Address;
 const NOW = 1_700_000_000;
 
-type Mode = "ok" | "mismatch" | "401" | "403" | "502" | "500";
+type Mode = "ok" | "mismatch" | "forged" | "401" | "403" | "502" | "500";
 
 type SignBody =
   | { kind: "message"; message: string }
@@ -100,7 +100,8 @@ function startHub(mode: Mode = "ok"): Hub {
         if (mode === "502") return Response.json({ code: "privy-failed" }, { status: 502 });
         if (mode === "500") return Response.json({ code: "boom" }, { status: 500 });
 
-        const signature = await signBody(account, body);
+        // "forged": the right address, but a signature made by another key.
+        const signature = await signBody(mode === "forged" ? privateKeyToAccount(generatePrivateKey()) : account, body);
         return Response.json({
           signature,
           address: mode === "mismatch" ? OTHER : account.address,
@@ -403,6 +404,38 @@ describe("remote signer", () => {
   });
 });
 
+describe("what the remote signer trusts", () => {
+  test("a 200 naming the session wallet but signed by another key is refused, message and typed data", async () => {
+    const hub = startHub("forged");
+    try {
+      const account = await remoteAccountFromSession({ hubUrl: hub.url, session: SESSION });
+      await expect(account.signMessage({ message: "countersign runner 0x01" })).rejects.toThrow(
+        "The hub signed with a different wallet.",
+      );
+      await expect(account.signTypedData(slipTypedData(slipFixture(account.address)))).rejects.toThrow(
+        "The hub signed with a different wallet.",
+      );
+    } finally {
+      hub.stop();
+    }
+  });
+
+  test("the session token is never sent to a plain http hub other than this machine", async () => {
+    let called = 0;
+    const spy = (async () => {
+      called += 1;
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+    await expect(
+      remoteAccountFromSession({ hubUrl: "http://evil.example", session: SESSION, fetch: spy }),
+    ).rejects.toThrow("The session is sent only to an https hub.");
+    expect(() =>
+      remoteRunnerAccount({ hubUrl: "http://evil.example/", session: SESSION, address: OTHER, fetch: spy }),
+    ).toThrow("The session is sent only to an https hub.");
+    expect(called).toBe(0);
+  });
+});
+
 describe("the seller CLI's account precedence", () => {
   test("CS_SELLER_KEY wins even when CS_SESSION is set", async () => {
     const hub = startHub();
@@ -412,8 +445,8 @@ describe("the seller CLI's account precedence", () => {
     try {
       await withEnv(
         { CS_SELLER_KEY: key, CS_SESSION: SESSION, CS_HUB: hub.url },
-        () =>
-          main([
+        async () => {
+          await main([
             "publish",
             "--hub",
             hub.url,
@@ -423,7 +456,10 @@ describe("the seller CLI's account precedence", () => {
             "1000",
             "--state",
             stateDir(),
-          ]),
+          ]);
+          // Dropped even on the override's path: nothing this process starts later can see it.
+          expect(process.env.CS_SESSION).toBeUndefined();
+        },
       );
 
       const published = hub.requests.filter((request) => request.path === "/offers");

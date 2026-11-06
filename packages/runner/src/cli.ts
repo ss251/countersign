@@ -286,6 +286,11 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
 }
 
 async function sellerAccount(hub: string): Promise<RunnerAccount> {
+  // Read once and dropped from this process's environment on EVERY path, the override's included,
+  // so nothing started later can see it (cs-audit on #287, point 2). Each command asks once.
+  const session = process.env.CS_SESSION;
+  delete process.env.CS_SESSION;
+
   const key = process.env.CS_SELLER_KEY;
   if (key) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
@@ -294,10 +299,6 @@ async function sellerAccount(hub: string): Promise<RunnerAccount> {
     return privateKeyToAccount(key as Hex);
   }
 
-  // Read once, then dropped from this process's environment, so nothing started later can see it.
-  // Each command asks for the seller account once, so the token is not needed again.
-  const session = process.env.CS_SESSION;
-  delete process.env.CS_SESSION;
   if (session) {
     return remoteAccountFromSession({ hubUrl: process.env.CS_HUB ?? hub, session });
   }
