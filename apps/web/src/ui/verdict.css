@@ -92,6 +92,7 @@
 .vcheck__detail {
   color: var(--slate);
   font-size: var(--t-13);
+  overflow-wrap: anywhere;
 }
 
 .vcheck__value {

@@ -1,6 +1,6 @@
 import { slipHash, type Slip } from "@countersign/core";
 import { verifySlip as runVerifier, type Finding } from "@countersign/verify";
-import { networkName } from "./format.ts";
+import { networkName, shortHex } from "./format.ts";
 
 /**
  * The page runs the same verifier as the CLI (@countersign/verify). Offline it checks
@@ -165,11 +165,11 @@ function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): Verif
       }
       return {
         id: "onchain",
-        title: f.ok ? `Released on ${networkName(slip.body.network)}` : "Not released on chain",
+        title: f.ok ? `Released on ${networkName(slip.body.network)}` : `Not released on ${networkName(slip.body.network)}`,
         state: f.ok ? "pass" : "fail",
         detail: f.ok
           ? `Read from ${networkName(slip.body.network)}'s public RPC: the escrow emitted Released for this job and this slip hash.`
-          : sentence(f.detail),
+          : chainFailure(f.detail, networkName(slip.body.network)),
         value: slip.settlement?.transaction,
       };
     default:
@@ -182,9 +182,20 @@ function buyerOf(slip: Slip): string | undefined {
   return p?.terms?.buyer;
 }
 
-/** The CLI's findings are terse and lowercase; on the page they read as sentences. */
+/** What went wrong reading the chain, in words, not a library's message. */
+function chainFailure(detail: string, network: string): string {
+  if (/could not be found|not found|unknown transaction/i.test(detail)) {
+    return `Not found on ${network}. The transaction this slip names is not on that chain.`;
+  }
+  if (/does not release this slip/i.test(detail)) {
+    return `Found on ${network}, but it does not release this job and this slip hash.`;
+  }
+  return `${network}'s public RPC did not answer. Try again, or open the transaction on the explorer.`;
+}
+
+/** The CLI's findings are terse, lowercase and carry full hashes; on the page they read as short sentences. */
 function sentence(s: string): string {
-  const t = s.trim();
+  const t = s.trim().replace(/0x[0-9a-fA-F]{40,}/g, (h) => shortHex(h));
   if (!t) return t;
   const first = t.charAt(0).toUpperCase() + t.slice(1);
   return /[.!?]$/.test(first) ? first : `${first}.`;
