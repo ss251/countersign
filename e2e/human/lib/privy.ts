@@ -24,13 +24,22 @@ function pageWait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Privy's dialog wrapper can be zero-size, so the role only scopes its contents. */
 function dialog(page: Page): Locator {
-  return page.getByRole("dialog").filter({ visible: true }).first();
+  return page.getByRole("dialog");
 }
 
-/** Whether Privy's dialog is visible within `timeoutMs`; a timeout is not an error. */
+/** The modal's own content, which is visible even when the dialog wrapper is not. */
+function modalContent(page: Page): Locator {
+  return page
+    .locator("#privy-modal-content")
+    .or(page.getByRole("heading", { name: /log in or sign up/i }))
+    .first();
+}
+
+/** Whether Privy's modal content is visible within `timeoutMs`; a timeout is not an error. */
 export async function dialogVisible(page: Page, timeoutMs: number): Promise<boolean> {
-  return dialog(page)
+  return modalContent(page)
     .waitFor({ state: "visible", timeout: timeoutMs })
     .then(() => true)
     .catch(() => false);
@@ -43,6 +52,8 @@ export interface PrivyAttempt {
   clickSignIn(): Promise<void>;
   clickMenu(): Promise<void>;
   dialogVisible(): Promise<boolean>;
+  /** False when something covers the menu, such as the backdrop of a modal that opened late. */
+  menuUsable?(): Promise<boolean>;
   note(text: string): void;
 }
 
@@ -53,6 +64,7 @@ export interface PrivyAttempt {
 export async function openPrivy(attempt: PrivyAttempt): Promise<void> {
   await attempt.clickSignIn();
   if (await attempt.dialogVisible()) return;
+  if (attempt.menuUsable && !(await attempt.menuUsable())) return;
   await attempt.clickMenu();
   await attempt.clickSignIn();
   attempt.note(PRIVY_SECOND_CLICK_NOTE);
@@ -88,20 +100,22 @@ export async function signIn(
   beforeTyping?: () => Promise<void>,
 ): Promise<void> {
   const box = dialog(page);
-  await expect(box).toBeVisible({ timeout: 30_000 });
+  if (!(await dialogVisible(page, 30_000))) throw new Error("Privy's modal did not open");
   await beforeTyping?.();
 
   const emailInput = await firstVisible(
-    [box.getByRole("textbox", { name: /email/i }), box.locator('input[type="email"]')],
+    [
+      box.getByPlaceholder(/email/i),
+      box.locator('input[type="email"]'),
+      box.getByRole("textbox"),
+    ],
     30_000,
   );
   await emailInput.fill(email);
-
-  const submit = await firstVisible([box.getByRole("button", { name: /submit|continue|log ?in|sign ?in/i })], 30_000);
-  await submit.click();
+  await emailInput.press("Enter");
 
   const code = await firstVisible(
-    [page.locator('input[autocomplete="one-time-code"]'), page.locator('input[inputmode="numeric"]')],
+    [box.locator('input[autocomplete="one-time-code"]'), box.locator('input[inputmode="numeric"]')],
     60_000,
   );
   await code.focus();

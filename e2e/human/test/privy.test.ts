@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { openPrivy, recordPrivyRequestFailure, recordPrivyResponse } from "../lib/privy.ts";
+import type { Locator, Page } from "@playwright/test";
+import {
+  openPrivy,
+  recordPrivyRequestFailure,
+  recordPrivyResponse,
+  signIn,
+} from "../lib/privy.ts";
 
 describe("the Privy outage filter", () => {
   test("ERR_ABORTED is ignored and a 503 counts", () => {
@@ -65,5 +71,168 @@ describe("the Privy sign-in click", () => {
     expect(notes).toEqual([
       "Privy needed a second click: the first came before it was ready (UX gap, cs-ui)",
     ]);
+  });
+
+  test("a visible backdrop skips the menu retry, because the modal is already open", async () => {
+    const calls: string[] = [];
+    const notes: string[] = [];
+    let menuChecked = false;
+
+    await openPrivy({
+      clickSignIn: async () => {
+        calls.push("sign-in");
+      },
+      clickMenu: async () => {
+        calls.push("menu");
+      },
+      dialogVisible: async () => false,
+      menuUsable: async () => {
+        menuChecked = true;
+        return false;
+      },
+      note: (text) => notes.push(text),
+    });
+
+    expect(menuChecked).toBe(true);
+    expect(calls).toEqual(["sign-in"]);
+    expect(notes).toEqual([]);
+  });
+});
+
+interface SignInLog {
+  placeholder: RegExp | undefined;
+  buttonQueries: string[];
+  fills: string[];
+  textboxFills: string[];
+  presses: string[];
+  codeFocused: boolean;
+  keys: string[];
+  clicks: string[];
+}
+
+function fakeLocator(overrides: Record<string, unknown> = {}): Locator {
+  const fake: Record<string, unknown> = {
+    _apiName: "Locator",
+    count: async () => 1,
+    nth: () => fake,
+    isVisible: async () => true,
+    first: () => fake,
+    or: () => fake,
+    waitFor: async () => undefined,
+    click: async () => undefined,
+    ...overrides,
+  };
+  return fake as unknown as Locator;
+}
+
+function emptyLocator(): Locator {
+  return fakeLocator({ count: async () => 0, isVisible: async () => false });
+}
+
+/** A fake page that models Privy's modal: an email placeholder, a decoy textbox and a code field. */
+function fakeSignInPage(): { page: Page; log: SignInLog } {
+  const log: SignInLog = {
+    placeholder: undefined,
+    buttonQueries: [],
+    fills: [],
+    textboxFills: [],
+    presses: [],
+    codeFocused: false,
+    keys: [],
+    clicks: [],
+  };
+
+  const email = fakeLocator({
+    fill: async (value: string) => {
+      log.fills.push(value);
+    },
+    press: async (key: string) => {
+      log.presses.push(key);
+    },
+  });
+
+  const textbox = fakeLocator({
+    fill: async (value: string) => {
+      log.textboxFills.push(value);
+    },
+  });
+
+  const walletButton = fakeLocator({
+    click: async () => {
+      log.clicks.push("continue with a wallet");
+    },
+  });
+
+  const code = fakeLocator({
+    focus: async () => {
+      log.codeFocused = true;
+    },
+  });
+
+  const dialog = fakeLocator({
+    getByPlaceholder: (pattern: RegExp) => {
+      log.placeholder = pattern;
+      return email;
+    },
+    locator: (selector: string) => {
+      if (selector === 'input[autocomplete="one-time-code"]') return code;
+      return emptyLocator();
+    },
+    getByRole: (role: string, options?: { name?: RegExp }) => {
+      if (role === "textbox") return textbox;
+      if (role === "button") {
+        log.buttonQueries.push(options?.name?.source ?? "");
+        return walletButton;
+      }
+      return emptyLocator();
+    },
+  });
+
+  const wallet = fakeLocator({
+    _expect: async () => ({
+      matches: true,
+      received: { value: `0x${"11".repeat(20)}` },
+      log: "",
+    }),
+  });
+
+  const page = fakeLocator({
+    getByRole: (role: string) => {
+      if (role === "dialog") return dialog;
+      return emptyLocator();
+    },
+    locator: (selector: string) => {
+      if (selector === "#privy-modal-content") return fakeLocator();
+      if (selector.includes("wallet-address")) return wallet;
+      return emptyLocator();
+    },
+    keyboard: {
+      type: async (text: string) => {
+        log.keys.push(text);
+      },
+    },
+  });
+
+  return { page: page as unknown as Page, log };
+}
+
+describe("the Privy sign-in form", () => {
+  test("fills the field matched by placeholder, presses Enter, and never clicks a wallet button", async () => {
+    const { page, log } = fakeSignInPage();
+    let passedModal = false;
+
+    await signIn(page, "buyer@example.test", "123456", async () => {
+      passedModal = true;
+    });
+
+    expect(passedModal).toBe(true);
+    expect(log.placeholder?.test("your@email.com")).toBe(true);
+    expect(log.fills).toEqual(["buyer@example.test"]);
+    expect(log.textboxFills).toEqual([]);
+    expect(log.presses).toEqual(["Enter"]);
+    expect(log.codeFocused).toBe(true);
+    expect(log.keys).toEqual(["123456"]);
+    expect(log.buttonQueries).toEqual([]);
+    expect(log.clicks).toEqual([]);
   });
 });

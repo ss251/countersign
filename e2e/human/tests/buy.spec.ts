@@ -314,6 +314,12 @@ const runHuman = async (
         clickSignIn: () => option.click(),
         clickMenu: () => testId(page, "wallet-menu").click(),
         dialogVisible: () => dialogVisible(page, 10_000),
+        menuUsable: () =>
+          page
+            .locator("#privy-dialog-backdrop")
+            .waitFor({ state: "hidden", timeout: 2_000 })
+            .then(() => true)
+            .catch(() => false),
         note: (text) => rec.note(text),
       });
       try {
