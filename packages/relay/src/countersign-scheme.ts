@@ -1,5 +1,5 @@
 import { getAddress, isAddress } from "viem";
-import type { Address, Chain, PublicClient, Transport } from "viem";
+import type { Address, Chain, Hex, PublicClient, Transport } from "viem";
 import { escrowRail, escrowV2Abi } from "@countersign/rail";
 import { parseAtomic } from "@countersign/core";
 import type { CountersignExtra, CountersignPayload, SettleResult, VerifyResult } from "@countersign/core";
@@ -31,6 +31,8 @@ type Body = {
     resource?: unknown;
   } & Record<string, unknown>;
   paymentRequirements: Record<string, unknown> & { extra?: Record<string, unknown> };
+  /** Escrow v2: the payee's Lock(jobId) signature, beside the payment. */
+  lockSig?: unknown;
 };
 
 type Checked =
@@ -68,12 +70,30 @@ function sameAddress(a: unknown, b: unknown): boolean {
   return typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
 }
 
+function isHexString(value: unknown): value is Hex {
+  return typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+}
+
 export function fundCall(
   extra: CountersignExtra,
   payload: CountersignPayload,
   version: 1 | 2 = 1,
+  lockSig?: Hex,
 ): EscrowFundCall {
-  return { kind: "escrowFund", escrow: getAddress(extra.escrow), offerHash: extra.offerHash, payload, version };
+  return {
+    kind: "escrowFund",
+    escrow: getAddress(extra.escrow),
+    offerHash: extra.offerHash,
+    payload,
+    version,
+    ...(lockSig ? { lockSig } : {}),
+  };
+}
+
+/** The bond the terms countersigned, in atomic units; zero when absent or malformed. */
+function bondOfTerms(payload: CountersignPayload): bigint {
+  const bond = payload.terms.bond;
+  return typeof bond === "string" && /^\d+$/.test(bond) ? BigInt(bond) : 0n;
 }
 
 async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Address[]): Promise<Checked> {
@@ -126,8 +146,14 @@ async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Ad
     return { ok: false, result: { isValid: false, invalidReason: verdict.invalidReason ?? "invalid_payload" } };
   }
   const payload = payment.payload as unknown as CountersignPayload;
-  const simulation = await ctx.relayer.simulate(fundCall(extra as unknown as CountersignExtra, payload, version));
-  if (!simulation.ok) return invalid("invalid_transaction_state");
+  // The hub calls verify before the runner signs the Lock, so a bonded v2 job has none here.
+  // Settle simulates with the real lockSig before submitting.
+  if (!(version === 2 && bondOfTerms(payload) > 0n)) {
+    const simulation = await ctx.relayer.simulate(
+      fundCall(extra as unknown as CountersignExtra, payload, version, version === 2 ? "0x" : undefined),
+    );
+    if (!simulation.ok) return invalid("invalid_transaction_state");
+  }
   return {
     ok: true,
     body,
@@ -161,6 +187,10 @@ export async function settleCountersign(
     ...extra,
   });
 
+  const rawLockSig = (input as Body | null | undefined)?.lockSig;
+  if (rawLockSig !== undefined && !isHexString(rawLockSig)) return fail("invalid_payload");
+  const lockSig = rawLockSig as Hex | undefined;
+
   // A job already on the ledger answers without touching the chain again.
   const rawNonce = (input as Body | null)?.paymentPayload?.payload?.authorization as { nonce?: unknown } | undefined;
   if (typeof rawNonce?.nonce === "string") {
@@ -192,9 +222,12 @@ export async function settleCountersign(
   if (!checked.ok) return fail(checked.result.invalidReason ?? "invalid_payload");
 
   const { payload, extra, payer, version } = checked;
+  if (version === 2 && bondOfTerms(payload) > 0n && (!lockSig || lockSig === "0x")) {
+    return fail("lock_missing", { payer });
+  }
   const jobId = payload.authorization.nonce;
   const escrow = getAddress(extra.escrow);
-  const outcome = await ctx.relayer.submit(fundCall(extra, payload, version), payer);
+  const outcome = await ctx.relayer.submit(fundCall(extra, payload, version, lockSig), payer);
   const terms = payload.terms;
   const resource = resourceUrl(checked.body.paymentPayload.resource);
   const description = resourceDescription(checked.body.paymentPayload.resource);

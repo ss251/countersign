@@ -59,7 +59,6 @@ export async function jobStatus(jobId: string, ctx: EscrowContext): Promise<JobV
 type CloseOptions = {
   slipHash?: Hex;
   closeReason?: RefundReason | null;
-  fromDelivered?: boolean;
   closeVia?: CloseVia | null;
 };
 
@@ -75,10 +74,7 @@ async function close(
   const onChain = await jobStatus(jobId, ctx);
   if (!known && onChain?.chain !== "funded") return { ok: false, reason: "job_not_found" };
   if (known) {
-    const open =
-      known.status === "funded" ||
-      known.status === "pending" ||
-      (options.fromDelivered === true && known.status === "delivered");
+    const open = known.status === "funded" || known.status === "pending";
     if (!open) return { ok: false, reason: "job_not_open" };
     if (known.status === "pending") {
       if (onChain?.chain !== "funded") return { ok: false, reason: "job_not_open" };
@@ -215,7 +211,7 @@ export function cancelJob(
     "cancelled",
     (escrow) => ({ kind: "escrowCancel", escrow, jobId: input.jobId as Hex, sellerSig: input.sellerSig }),
     ctx,
-    { closeReason: input.reason ?? null, fromDelivered: true },
+    { closeReason: input.reason ?? null },
   );
 }
 
@@ -242,13 +238,19 @@ export function acceptJob(
 }
 
 export function disputeJob(
-  input: { jobId: string; buyerSig: Hex },
+  input: { jobId: string; status: number; buyerSig: Hex },
   ctx: EscrowContext,
 ): Promise<EscrowOpResult> {
   return closeV2(
     input.jobId,
     "disputed",
-    (escrow) => ({ kind: "escrowDispute", escrow, jobId: input.jobId as Hex, buyerSig: input.buyerSig }),
+    (escrow) => ({
+      kind: "escrowDispute",
+      escrow,
+      jobId: input.jobId as Hex,
+      status: input.status,
+      buyerSig: input.buyerSig,
+    }),
     ctx,
   );
 }

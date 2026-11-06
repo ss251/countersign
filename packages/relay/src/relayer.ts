@@ -42,6 +42,8 @@ export type EscrowFundCall = {
   payload: CountersignPayload;
   /** 2 funds with the v2 Countersignature; 1 is the v1 shape. */
   version: 1 | 2;
+  /** Escrow v2: the payee's Lock(jobId) signature. Absent on an unbonded job. */
+  lockSig?: Hex;
 };
 
 export type EscrowReleaseCall = {
@@ -76,6 +78,8 @@ export type EscrowDisputeCall = {
   kind: "escrowDispute";
   escrow: Address;
   jobId: Hex;
+  /** The job's status when the buyer signed: 1 for Funded, 5 for Delivered. */
+  status: number;
   buyerSig: Hex;
 };
 
@@ -328,7 +332,7 @@ function toContractCall(call: RelayCall): ContractCall {
           address: call.escrow,
           abi: escrowV2Abi,
           functionName: "fund",
-          args: fundArgsV2(call.offerHash, call.payload),
+          args: [...fundArgsV2(call.offerHash, call.payload), call.lockSig ?? "0x"],
         };
       }
       return {
@@ -370,7 +374,7 @@ function toContractCall(call: RelayCall): ContractCall {
         address: call.escrow,
         abi: escrowV2Abi,
         functionName: "dispute",
-        args: [call.jobId, call.buyerSig],
+        args: [call.jobId, call.status, call.buyerSig],
       };
     case "escrowReleaseAfterWindow":
       return {

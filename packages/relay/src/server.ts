@@ -257,8 +257,11 @@ export function createRelayApp(options: RelayAppOptions): Hono {
   app.post("/escrow/dispute", async (c) => {
     const body = await readJson(c);
     const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
-    if (!v || !isHex32(v.jobId) || !isHexString(v.buyerSig)) return bad(c);
-    return replyOp(c, await disputeJob({ jobId: v.jobId, buyerSig: v.buyerSig }, csCtx));
+    if (!v || !isHex32(v.jobId) || !isHexString(v.buyerSig) || !isUint8(v.status)) return bad(c);
+    return replyOp(
+      c,
+      await disputeJob({ jobId: v.jobId, status: v.status, buyerSig: v.buyerSig }, csCtx),
+    );
   });
 
   app.post("/escrow/release-after-window", async (c) => {
@@ -367,6 +370,10 @@ function authorizedHub(header: string | undefined, token: string): boolean {
 
 function isHex32(value: unknown): value is `0x${string}` {
   return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isUint8(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255;
 }
 
 async function readJson(
