@@ -6,7 +6,7 @@ What a client that is not countersign's own buyer needs in order to read a hub, 
 
 | You have | You can | You cannot |
 |---|---|---|
-| Any x402 v2 client | Read the 402. Pay an `exact` option: Gateway (`GATEWAY_RAIL=1`) or Hedera. | Pay a `countersign` option without implementing the countersignature |
+| Any x402 v2 client | Read the 402. Pay an `exact` option on a hub that runs one: Gateway (`GATEWAY_RAIL=1`) or Hedera (`HEDERA_RAIL=1`). The production hub runs neither | Pay a `countersign` option without implementing the countersignature |
 | An x402 Bazaar reader, such as the Circle CLI | List and inspect a hub's offers, as for Circle's own catalogue | Place a testnet hub in Circle's public catalogue: services enter it through the facilitator that settles them |
 | An A2A or OpenAPI client | Read the agent card, skills index or OpenAPI document | |
 | A slip and, optionally, an RPC URL | Verify the slip with no hub running | |
@@ -20,7 +20,7 @@ content-type: application/json
 {"input": <matches the offer's input schema>, "lineage": ["0x…"]}
 ```
 
-`lineage` is optional. It lists the job ids of the purchases this call is nested inside, outermost first, and the hub uses it to refuse cycles.
+`lineage` is optional. It lists the purchases this call is nested inside, outermost first, by offer hash (or by job id). Before payment, the hub refuses the call with 422 `purchase-cycle` when this offer's hash is already in that list or appending it would repeat any hash there, and with 409 `lineage-cycle` when an ancestor job it recorded bought this offer or one from its seller, or an entry names its seller ([terms.md](terms.md) §2).
 
 | Step | Request | Answer |
 |---|---|---|

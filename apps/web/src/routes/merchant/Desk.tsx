@@ -546,7 +546,9 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   const handleExport = () => {
     setExportError(null);
     try {
-      const url = URL.createObjectURL(new Blob([ordersCsv(book)], { type: "text/csv;charset=utf-8" }));
+      // A sample desk's made-up hashes leave their URL cells empty: no export links a transaction no chain holds.
+      const csv = ordersCsv(book, sample ? { isStandIn: sample.isStandIn } : {});
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = `countersign-orders-${dateStamp(Date.now())}.csv`;

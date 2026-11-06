@@ -101,7 +101,7 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       throw new BuyError("Refused. The input does not match the offer's schema.");
     }
 
-    const first = await hub.call(offerHash, input, undefined, a.lineage);
+    const first = await hub.call(offerHash, input, undefined, a.lineage, agent?.address);
     if (first.kind === "error") throw new BuyError(first.message);
     if (first.kind === "paid") throw new BuyError("Refused. The hub served the call without payment terms.");
 
@@ -294,7 +294,7 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       ...(signedTerms?.reviewWindow !== undefined ? { reviewWindow: signedTerms.reviewWindow } : {}),
     });
 
-    const paid = await hub.call(offerHash, input, payment, a.lineage);
+    const paid = await hub.call(offerHash, input, payment, a.lineage, agent?.address);
     if (paid.kind !== "paid") {
       const message = paid.kind === "error" ? paid.message : "Refused. The hub asked for payment again.";
       await record({ ...base, kind: "failed", jobId, reason: message });

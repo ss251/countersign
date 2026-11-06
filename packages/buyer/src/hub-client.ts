@@ -97,9 +97,16 @@ export class HubClient {
     }
   }
 
-  async call(hash: string, input: unknown, payment?: PaymentPayload, lineage?: Hex[]): Promise<CallOutcome> {
+  async call(
+    hash: string,
+    input: unknown,
+    payment?: PaymentPayload,
+    lineage?: Hex[],
+    agent?: string,
+  ): Promise<CallOutcome> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (payment) headers[PAYMENT_SIGNATURE_HEADER] = toBase64Json(payment);
+    if (agent) headers["X-Countersign-Agent"] = agent;
     const res = await this.fetchImpl(`${this.base}/offers/${hash}/call`, {
       method: "POST",
       headers,
