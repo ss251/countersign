@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
@@ -56,6 +56,19 @@ const identity =
       })
     : undefined;
 
+// The full commit this image was built from: deploy-hub.sh writes COMMIT into the stage.
+const commitFromFile = ((): string | undefined => {
+  try {
+    return readFileSync(resolve(process.cwd(), "COMMIT"), "utf8").trim();
+  } catch {
+    return undefined;
+  }
+})();
+const commitCandidate = process.env.HUB_COMMIT?.trim() || commitFromFile;
+const commit =
+  commitCandidate !== undefined && /^[0-9a-f]{40}$/.test(commitCandidate) ? commitCandidate : undefined;
+console.log(`[hub] commit ${commit ? commit.slice(0, 7) : "unknown"}`);
+
 const { app, websocket } = createHub({
   store,
   rails,
@@ -65,6 +78,7 @@ const { app, websocket } = createHub({
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),
+  ...(commit ? { commit } : {}),
 });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
