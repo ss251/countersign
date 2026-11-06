@@ -206,6 +206,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
       chainId: cfg.chainId,
       offerHash: offerHash(offer),
       deadlineSeconds: offer.deadline,
+      deadlineSkewSeconds: skew,
+      maxExtraSeconds: maxExtra,
       tokenName: cfg.tokenName,
       tokenVersion: cfg.tokenVersion,
       bond: offer.bond ?? "0",

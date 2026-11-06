@@ -185,6 +185,13 @@ export interface CountersignExtra {
   offerHash: Hex;
   /** Seconds from funding to the delivery deadline. */
   deadlineSeconds: number;
+  /** Seconds the signed deadline may fall short of now + deadlineSeconds when the hub checks it. Absent on older hubs. */
+  deadlineSkewSeconds?: number;
+  /**
+   * Seconds the signed deadline may exceed now + deadlineSeconds. A buyer whose signature waits on a person signs
+   * deadline = now + deadlineSeconds + headroom, with headroom no more than this. Absent on older hubs.
+   */
+  maxExtraSeconds?: number;
   /** The token's EIP-712 domain, needed to sign the authorisation. */
   tokenName: string;
   tokenVersion: string;
