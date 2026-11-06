@@ -2,7 +2,8 @@
  * The skill adapter: serve a real SKILL.md as guidance text.
  *
  * Front matter is parsed by hand (simple `key: value` lines between the first
- * two `---` lines), so no YAML dependency is needed.
+ * two `---` lines), with block scalars `key: >` and `key: |`, so no YAML
+ * dependency is needed.
  */
 
 import type { JsonSchema, Offer, RailId } from "@countersign/core";
@@ -32,6 +33,7 @@ export interface SkillOfferArgs {
   price: string;
   deadline: number;
   rails: RailId[];
+  payTo?: Partial<Record<RailId, string>>;
   upstream?: { url: string; licence: string };
   now: number;
 }
@@ -104,27 +106,86 @@ export function skillOffer(args: SkillOfferArgs): Offer {
     rails: args.rails,
     issuedAt: args.now,
   };
+  if (args.payTo !== undefined && Object.keys(args.payTo).length > 0) offer.payTo = args.payTo;
   if (args.upstream !== undefined) offer.upstream = args.upstream;
   return offer;
 }
 
 function parseFrontMatter(raw: string): Map<string, string> {
   const fields = new Map<string, string>();
-  for (const line of raw.split(/\r?\n/)) {
+  const lines = raw.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
     if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    // Indented lines belong to the key above, unless that key opened a block scalar.
+    if (/^[ \t]/.test(line)) continue;
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const key = line.slice(0, colon).trim();
-    let value = line.slice(colon + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+    const rawValue = line.slice(colon + 1).trim();
+    const block = /^([>|])([+-]?)$/.exec(rawValue);
+    if (block) {
+      const collected: string[] = [];
+      let j = i + 1;
+      for (; j < lines.length; j += 1) {
+        const next = lines[j] ?? "";
+        if (next.trim() === "") {
+          collected.push("");
+          continue;
+        }
+        if (!/^[ \t]/.test(next)) break;
+        collected.push(next);
+      }
+      i = j - 1;
+      fields.set(key, blockScalar(collected, block[1] === ">"));
+      continue;
     }
-    fields.set(key, value);
+    fields.set(key, unquote(rawValue));
   }
   return fields;
+}
+
+/** Strip one level of matching quotes from a plain scalar. */
+function unquote(value: string): string {
+  if (value.length < 2) return value;
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+/**
+ * Read an indented block scalar. Literal keeps its line breaks; folded turns
+ * single line breaks into spaces and blank lines into newlines.
+ */
+function blockScalar(lines: string[], folded: boolean): string {
+  let indent = Number.POSITIVE_INFINITY;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    const leading = /^[ \t]*/.exec(line)?.[0].length ?? 0;
+    indent = Math.min(indent, leading);
+  }
+  const strip = Number.isFinite(indent) ? indent : 0;
+  const content = lines.map((line) => (line.trim() === "" ? "" : line.slice(strip)));
+  while (content.length > 0 && content[0] === "") content.shift();
+  while (content.length > 0 && content[content.length - 1] === "") content.pop();
+  if (!folded) return content.join("\n");
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  for (const line of content) {
+    if (line === "") {
+      if (current.length > 0) {
+        paragraphs.push(current.join(" "));
+        current = [];
+      }
+      continue;
+    }
+    current.push(line.trim());
+  }
+  if (current.length > 0) paragraphs.push(current.join(" "));
+  return paragraphs.join("\n");
 }
 
 function findSection(body: string, wanted: string): string | undefined {

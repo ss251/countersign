@@ -4,7 +4,7 @@ import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { RAIL_LABEL, usd } from "../../lib/format.ts";
-import type { Listing } from "../../lib/types.ts";
+import type { Listing, SellerRecord } from "../../lib/types.ts";
 import { Amount, Button, Empty, FixtureNote, Hash, RailTag, Tag, cx } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
 import "./registry.css";
@@ -23,9 +23,32 @@ export interface SellerGroup {
   name: string;
   agentId?: string;
   offers: Listing[];
+  /** Released on an escrow rail or settled on a direct one: the seller was paid. */
   released: number;
   refunded: number;
+  /** Calls that failed before any money moved. */
+  failed: number;
   online: number;
+}
+
+/** Take the hub's own counts and identity where it reports them; they come from slips and jobs. */
+export function withRecords(groups: SellerGroup[], records: SellerRecord[] | null | undefined): SellerGroup[] {
+  if (!records) return groups;
+  const byAddress = new Map(records.map((r) => [r.address.toLowerCase(), r]));
+  return groups
+    .map((g) => {
+      const r = byAddress.get(g.address);
+      if (!r) return g;
+      return {
+        ...g,
+        name: r.name ?? g.name,
+        agentId: r.erc8004?.agentId ?? g.agentId,
+        released: r.released + r.settled,
+        refunded: r.refunded,
+        failed: r.failed,
+      };
+    })
+    .sort((a, b) => b.released - a.released || a.name.localeCompare(b.name));
 }
 
 /** Group listings by seller, live offers first, sellers with more delivered calls first. */
@@ -35,7 +58,7 @@ export function groupBySeller(listings: Listing[]): SellerGroup[] {
     const address = l.offer.seller.toLowerCase();
     const g =
       groups.get(address) ??
-      ({ address, name: l.seller.name, agentId: l.seller.agentId, offers: [], released: 0, refunded: 0, online: 0 } satisfies SellerGroup);
+      ({ address, name: l.seller.name, agentId: l.seller.agentId, offers: [], released: 0, refunded: 0, failed: 0, online: 0 } satisfies SellerGroup);
     g.offers.push(l);
     g.released += l.stats?.released ?? 0;
     g.refunded += l.stats?.refunded ?? 0;
@@ -66,6 +89,7 @@ export function deliveryRate(released: number, refunded: number): string {
 /** Every seller this hub knows and what each sells, with who they are and how they have delivered. */
 export default function RegistryPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
+  const sellers = useResource(() => api.sellers(), []);
   const [text, setText] = useState("");
   const [adapter, setAdapter] = useState<AdapterFilter>("all");
   const [rail, setRail] = useState<RailId | "all">("all");
@@ -75,7 +99,7 @@ export default function RegistryPage(_props: PageProps) {
   const all = listings.data ?? [];
   const rails = useMemo(() => [...new Set(all.flatMap((l) => l.offer.rails))], [all]);
   const visible = all.filter((l) => matches(l, text, adapter, rail));
-  const groups = groupBySeller(visible);
+  const groups = withRecords(groupBySeller(visible), sellers.data);
   const filtered = Boolean(text.trim()) || adapter !== "all" || rail !== "all";
   const online = visible.filter((l) => l.online).length;
   const clear = () => {
@@ -200,7 +224,11 @@ function SellerBlock({ g }: { g: SellerGroup }) {
           </div>
           <div>
             <dt>Record</dt>
-            <dd className="num">{g.released + g.refunded === 0 ? "No calls yet" : `${g.released} released · ${g.refunded} refunded`}</dd>
+            <dd className="num">
+              {g.released + g.refunded + g.failed === 0
+                ? "No calls yet"
+                : `${g.released} paid · ${g.refunded} refunded${g.failed ? ` · ${g.failed} failed` : ""}`}
+            </dd>
           </div>
           <div>
             <dt>Delivered</dt>

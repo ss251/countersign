@@ -1,0 +1,15 @@
+{
+  "name": "@countersign/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run.ts"
+  },
+  "dependencies": {
+    "@countersign/buyer": "workspace:*",
+    "@countersign/core": "workspace:*",
+    "@countersign/rail": "workspace:*",
+    "viem": "^2.57.16"
+  }
+}
