@@ -1,0 +1,107 @@
+{
+  "offer": {
+    "v": 1,
+    "seller": "0x8440a49dB1fb5Cd11F7aEfFfA5163913A26bcA6E",
+    "title": "use-arc",
+    "summary": "Build on Arc: chain facts, USDC as gas, deploy and verify.",
+    "adapter": "skill",
+    "upstream": {
+      "url": "https://github.com/circlefin/skills",
+      "licence": "Apache-2.0"
+    },
+    "input": {
+      "type": "object",
+      "required": [
+        "task"
+      ],
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": [
+        "guidance"
+      ],
+      "properties": {
+        "guidance": {
+          "type": "string"
+        }
+      }
+    },
+    "price": "50000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+      "escrow"
+    ],
+    "issuedAt": 1793950000
+  },
+  "slip": {
+    "body": {
+      "v": 1,
+      "rail": "escrow",
+      "network": "eip155:5042002",
+      "offerHash": "0x1acbf4dcf1d2d5af20eec19dcea6ba419ded60ebc9d53f10f59d0001a92ee1a2",
+      "jobId": "0x4d358d2c1e361e35f12bdbb7771c3ad77338ccf82db012c7d166c7c754b59d68",
+      "buyer": "0x2AaFc2C2AdE501a1474702D78A408FDce06743e7",
+      "seller": "0x8440a49dB1fb5Cd11F7aEfFfA5163913A26bcA6E",
+      "payTo": "0x8440a49dB1fb5Cd11F7aEfFfA5163913A26bcA6E",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "amount": "50000",
+      "inputHash": "0xc3b395b0adc38097b7b78bd0349bcb2b688489f1f794ec9db594b261742e0916",
+      "outputHash": "0x6880772174125f72468085037ddbc1f3e8f05a2f558387002b83efa2c2e8b9df",
+      "deliveredAt": 1793950160,
+      "children": [],
+      "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+      "chainId": 5042002
+    },
+    "hash": "0xbe0d6ce94fd48de008e194b9e1fb42bb2577ffbde8108e13eac145e401233a6b",
+    "sellerSig": "0xa8461697c4c3d14ae0261950ad8201e5cb7282dffd11e0172c7e27a209ec0d942ac6468ef911e0e72ada29b005c52e53eefbb09d0aeaad33b01996a900585cc81c",
+    "payment": {
+      "x402Version": 2,
+      "accepted": {
+        "scheme": "countersign",
+        "network": "eip155:5042002",
+        "amount": "50000",
+        "asset": "0x3600000000000000000000000000000000000000",
+        "payTo": "0x8440a49dB1fb5Cd11F7aEfFfA5163913A26bcA6E",
+        "maxTimeoutSeconds": 60,
+        "extra": {
+          "rail": "escrow",
+          "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+          "chainId": 5042002,
+          "offerHash": "0x1acbf4dcf1d2d5af20eec19dcea6ba419ded60ebc9d53f10f59d0001a92ee1a2",
+          "deadlineSeconds": 60,
+          "tokenName": "USDC",
+          "tokenVersion": "2"
+        }
+      },
+      "payload": {
+        "terms": {
+          "offerHash": "0x1acbf4dcf1d2d5af20eec19dcea6ba419ded60ebc9d53f10f59d0001a92ee1a2",
+          "buyer": "0x2AaFc2C2AdE501a1474702D78A408FDce06743e7",
+          "payee": "0x8440a49dB1fb5Cd11F7aEfFfA5163913A26bcA6E",
+          "amount": "50000",
+          "deadline": 1793950400,
+          "salt": "7"
+        },
+        "authorization": {
+          "from": "0x2AaFc2C2AdE501a1474702D78A408FDce06743e7",
+          "to": "0x7A3b6C1d9E8f0a2B4c6d8E0f1A3B5C7D9E1F2a4B",
+          "value": "50000",
+          "validAfter": "1793950100",
+          "validBefore": "1793950700",
+          "nonce": "0x4d358d2c1e361e35f12bdbb7771c3ad77338ccf82db012c7d166c7c754b59d68"
+        },
+        "signature": "0xce17f5d74252045d43186272984e10d9f736bb586e0d0f8ddf2f46555d690c315662af2b9edee478bbe088fb7a2cbb72f371c92d72eb356947e58e53625160b41b"
+      }
+    },
+    "settlement": {
+      "transaction": "0xabababababababababababababababababababababababababababababababab",
+      "network": "eip155:5042002"
+    }
+  }
+}

@@ -1,6 +1,7 @@
 /* The phone. One column, 390 px, chrome at the top, thumb actions at the bottom. */
 
 .phone {
+  --tabbar-h: 56px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -95,8 +96,9 @@
   position: relative;
   display: grid;
   justify-items: center;
+  align-content: center;
   gap: 2px;
-  padding: 8px 0 7px;
+  height: var(--tabbar-h);
   color: var(--slate);
   font-size: var(--t-11);
   font-weight: 500;
@@ -202,9 +204,31 @@
   font-weight: 500;
 }
 
-.approval__actions {
+/* The hold and Decline stay above the tab bar while the terms scroll beneath them. */
+.approval__dock {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  z-index: 5;
   display: grid;
-  gap: var(--sp-1);
+  gap: 2px;
+  margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-8));
+  padding: var(--sp-3) var(--sp-4) var(--sp-1);
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.approval__dock .hold {
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.approval__decline {
+  min-height: 40px;
+}
+
+.checks__refusal {
+  color: var(--seal);
+  font-size: var(--t-14);
+  font-weight: 500;
 }
 
 .checks {
@@ -336,6 +360,10 @@
 
 .outcome--refused .outcome__title {
   color: var(--seal);
+}
+
+.outcome--neutral .outcome__title {
+  color: var(--ink);
 }
 
 .outcome__body {

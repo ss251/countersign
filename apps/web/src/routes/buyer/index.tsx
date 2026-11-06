@@ -1,7 +1,10 @@
+import { useState } from "react";
+import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
-import { api, useResource } from "../../lib/api.ts";
-import { formatAmount, remainingAtomic, usd } from "../../lib/format.ts";
+import { api, useResource, type JobView } from "../../lib/api.ts";
+import { formatAmount, nowUnix, remainingAtomic, usd } from "../../lib/format.ts";
+import type { Approval, Purchase } from "../../lib/types.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { cx, FixtureNote } from "../../ui/primitives.tsx";
 import { Approvals } from "./Approvals.tsx";
@@ -19,11 +22,50 @@ const TABS: Array<{ id: Tab; label: string }> = [
 
 /** The buyer is a phone: 390 px, one column, thumb-reach actions at the bottom. */
 export default function BuyerPage({ query }: PageProps) {
-  const tab = (TABS.find((t) => t.id === query.get("tab"))?.id ?? "approvals") as Tab;
+  const tab = TABS.find((t) => t.id === query.get("tab"))?.id ?? "approvals";
   const envelope = useResource(() => api.envelope(), []);
   const approvals = useResource(() => api.approvals(), []);
-  const fixtures = envelope.source === "fixtures" || approvals.source === "fixtures";
-  const pending = approvals.data?.length ?? 0;
+  const purchases = useResource(() => api.purchases(), []);
+  /** Approvals the human has countersigned: no longer waiting, even while they settle. */
+  const [signed, setSigned] = useState<string[]>([]);
+
+  const fixtures = [envelope, approvals, purchases].some((r) => r.source === "fixtures");
+  const waiting = (approvals.data ?? []).filter((a) => !signed.includes(a.id)).length;
+
+  const view = envelope.data;
+  const left = view ? usd(remainingAtomic(view.envelope.cap, view.spent.total)) : undefined;
+  const revoked = view?.envelope.revoked ?? false;
+
+  /** A countersigned call has finished: list it, and count it against the envelope if it released. */
+  const settle = (a: Approval, job: JobView) => {
+    const status = job.step === "released" ? "released" : job.step === "refunded" ? "refunded" : "refused";
+    const purchase: Purchase = {
+      jobId: (job.fundTx ?? `0x${a.id}`) as Purchase["jobId"],
+      offerHash: a.listing.hash,
+      title: a.listing.offer.title,
+      adapter: a.listing.offer.adapter,
+      seller: { name: a.listing.seller.name, address: a.listing.offer.seller },
+      amount: a.amount,
+      rail: a.rail,
+      status,
+      at: nowUnix(),
+      slipHash: job.slipHash as Purchase["slipHash"],
+      approvedBy: "you",
+      reason:
+        status === "refused"
+          ? "Refused. The price moved after you signed."
+          : status === "refunded"
+            ? "Refunded. The deadline passed."
+            : undefined,
+    };
+    if (purchases.data) purchases.set([purchase, ...purchases.data]);
+    if (status === "released" && view) {
+      envelope.set({
+        ...view,
+        spent: recordSpend(view.spent, { seller: a.listing.offer.seller, offerHash: a.listing.hash, amount: a.amount }),
+      });
+    }
+  };
 
   const tabHref = (id: Tab) => {
     const q = new URLSearchParams(query);
@@ -32,10 +74,6 @@ export default function BuyerPage({ query }: PageProps) {
     const s = q.toString();
     return `/buyer${s ? `?${s}` : ""}`;
   };
-
-  const view = envelope.data;
-  const left = view ? usd(remainingAtomic(view.envelope.cap, view.spent.total)) : undefined;
-  const revoked = view?.envelope.revoked ?? false;
 
   return (
     <div className="phone">
@@ -50,11 +88,7 @@ export default function BuyerPage({ query }: PageProps) {
             <Link
               to={tabHref("envelope")}
               className={cx("phone__budget num", revoked && "phone__budget--revoked")}
-              aria-label={
-                revoked
-                  ? "Envelope revoked"
-                  : `${formatAmount(left)} ${left.asset.symbol} left today. Open the envelope.`
-              }
+              aria-label={revoked ? "Envelope revoked" : `${formatAmount(left)} ${left.asset.symbol} left. Open the envelope.`}
             >
               {revoked ? (
                 "Revoked"
@@ -69,9 +103,18 @@ export default function BuyerPage({ query }: PageProps) {
       </header>
 
       <div className="phone__body">
-        {tab === "approvals" ? <Approvals approvals={approvals} envelope={envelope} query={query} /> : null}
+        {tab === "approvals" ? (
+          <Approvals
+            approvals={approvals}
+            envelope={envelope}
+            query={query}
+            onSigned={(a) => setSigned((s) => [...s, a.id])}
+            onSettled={settle}
+            onClose={(a) => approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id))}
+          />
+        ) : null}
         {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
-        {tab === "history" ? <HistoryTab /> : null}
+        {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
       </div>
 
       <nav className="tabbar" aria-label="Buyer">
@@ -79,9 +122,9 @@ export default function BuyerPage({ query }: PageProps) {
           <Link key={t.id} to={tabHref(t.id)} className="tabbar__tab" aria-current={tab === t.id ? "page" : undefined}>
             <TabIcon id={t.id} />
             <span className="tabbar__label">{t.label}</span>
-            {t.id === "approvals" && pending > 0 ? (
-              <span className="tabbar__badge num" aria-label={`${pending} waiting`}>
-                {pending}
+            {t.id === "approvals" && waiting > 0 ? (
+              <span className="tabbar__badge num" aria-label={`${waiting} waiting`}>
+                {waiting}
               </span>
             ) : null}
           </Link>

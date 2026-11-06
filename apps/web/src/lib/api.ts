@@ -72,7 +72,7 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
     at(1700, () => push({ fundTx: fx.fakeHex(`fund:${approval.id}`), deadline }, "held"));
     if (scenario === "release") {
       at(3300, () => push({}, "delivered"));
-      at(4300, () => push({ slipHash: fx.slips[0]?.slip.hash }, "released"));
+      at(4300, () => push({ slipHash: fx.demoSlipHash }, "released"));
     } else {
       at(4300, () => push({}, "refunded"));
     }

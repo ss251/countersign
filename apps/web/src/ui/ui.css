@@ -99,9 +99,12 @@ a.hash__value {
   white-space: nowrap;
 }
 
-.status--released,
-.status--refunded {
+/* Green means the seller was paid. A refund settles nothing, so it stays neutral. */
+.status--released {
   color: var(--settle);
+}
+.status--refunded {
+  color: var(--slate);
 }
 .status--refused,
 .status--countersigned {

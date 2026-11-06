@@ -1,12 +1,11 @@
 import { Link } from "../../app/router.tsx";
-import { api, useResource } from "../../lib/api.ts";
+import type { Resource } from "../../lib/api.ts";
 import { formatAmount, formatDay, formatTime, RAIL_LABEL, symbolFor, usd } from "../../lib/format.ts";
 import type { Purchase } from "../../lib/types.ts";
 import { Amount, cx, Empty, Status } from "../../ui/primitives.tsx";
 
 /** Every call the agent made, newest first. Refused and refunded calls cost nothing. */
-export function HistoryTab() {
-  const purchases = useResource(() => api.purchases(), []);
+export function HistoryTab({ purchases }: { purchases: Resource<Purchase[]> }) {
   if (!purchases.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
   if (purchases.data.length === 0) {
     return <Empty title="No purchases yet.">When your agent buys, each call shows here with its slip.</Empty>;
@@ -14,16 +13,10 @@ export function HistoryTab() {
 
   const groups = groupByDay(purchases.data);
   const today = groups[0]?.day === "Today" ? groups[0] : undefined;
-  const todayUsdc = today?.items.filter((p) => p.status === "released" && symbolFor(p.rail) === "USDC") ?? [];
 
   return (
     <div className="history">
-      {today ? (
-        <p className="history__summary">
-          Today <Amount money={usd(todayUsdc.reduce((s, p) => s + BigInt(p.amount), 0n))} size="sm" /> settled across{" "}
-          <span className="num">{today.items.length}</span> calls.
-        </p>
-      ) : null}
+      {today ? <Summary items={today.items} /> : null}
       {groups.map((g) => (
         <section key={g.day} className="history__day" aria-label={g.day}>
           <h2 className="history__day-title">{g.day}</h2>
@@ -74,6 +67,33 @@ function Row({ p }: { p: Purchase }) {
     </Link>
   ) : (
     <div className="hrow">{body}</div>
+  );
+}
+
+/** Today's releases, with the money they moved per asset, and the calls that cost nothing. */
+function Summary({ items }: { items: Purchase[] }) {
+  const released = items.filter((p) => p.status === "released");
+  const totals = new Map<string, bigint>();
+  for (const p of released) {
+    const symbol = symbolFor(p.rail);
+    totals.set(symbol, (totals.get(symbol) ?? 0n) + BigInt(p.amount));
+  }
+  const refunded = items.filter((p) => p.status === "refunded").length;
+  const refused = items.filter((p) => p.status === "refused").length;
+  const free = [refunded ? `${refunded} refunded` : null, refused ? `${refused} refused` : null].filter(Boolean);
+  const amounts = [...totals.entries()];
+  return (
+    <p className="history__summary">
+      Today <span className="num">{released.length}</span> released
+      {amounts.length ? " for " : ""}
+      {amounts.map(([symbol, atomic], i) => (
+        <span key={symbol}>
+          {i > 0 ? " and " : ""}
+          <Amount money={{ amount: atomic.toString(), asset: { symbol, decimals: 6 } }} size="sm" />
+        </span>
+      ))}
+      .{free.length ? ` ${free.join(" and ")} cost nothing.` : ""}
+    </p>
   );
 }
 

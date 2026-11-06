@@ -11,12 +11,13 @@ interface Props {
   approvals: Resource<Approval[]>;
   envelope: Resource<EnvelopeView>;
   query: URLSearchParams;
+  onSigned: (a: Approval) => void;
+  onSettled: (a: Approval, job: JobView) => void;
+  onClose: (a: Approval) => void;
 }
 
-export function Approvals({ approvals, envelope, query }: Props) {
-  const [closed, setClosed] = useState<string[]>([]);
-  const waiting = (approvals.data ?? []).filter((a) => !closed.includes(a.id));
-  const current = waiting[0];
+export function Approvals({ approvals, envelope, query, onSigned, onSettled, onClose }: Props) {
+  const current = approvals.data?.[0];
 
   if (approvals.loading && !approvals.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
@@ -39,7 +40,9 @@ export function Approvals({ approvals, envelope, query }: Props) {
       approval={current}
       view={envelope.data}
       scenario={scenario}
-      onClose={() => setClosed((c) => [...c, current.id])}
+      onSigned={() => onSigned(current)}
+      onSettled={(job) => onSettled(current, job)}
+      onClose={() => onClose(current)}
     />
   );
 }
@@ -48,28 +51,41 @@ function ApprovalFlow({
   approval,
   view,
   scenario,
+  onSigned,
+  onSettled,
   onClose,
 }: {
   approval: Approval;
   view: EnvelopeView;
   scenario: Scenario;
+  onSigned: () => void;
+  onSettled: (job: JobView) => void;
   onClose: () => void;
 }) {
   const [job, setJob] = useState<JobView | null>(null);
   const stop = useRef<(() => void) | null>(null);
+  // The envelope the human saw when signing. Checks must not re-run against the spend this call adds.
+  const [seen] = useState(view);
   const { listing } = approval;
   const { offer } = listing;
   const money = usd(approval.amount, approval.rail);
-  const checks = envelopeChecks(view, approval);
+  const checks = envelopeChecks(seen, approval);
   const decision = checkEnvelope(
-    view.envelope,
-    view.spent,
+    seen.envelope,
+    seen.spent,
     { seller: offer.seller, offerHash: listing.hash, amount: approval.amount },
     nowUnix(),
   );
   const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded");
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
 
   useEffect(() => () => stop.current?.(), []);
+  useEffect(() => {
+    if (final && job) onSettledRef.current(job);
+    // Report each final step once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [final]);
 
   return (
     <article className="approval" aria-labelledby="approval-title">
@@ -132,10 +148,10 @@ function ApprovalFlow({
 
       {job ? <JobLedger job={job} approval={approval} /> : null}
 
-      <div className="approval__actions">
-        {final ? (
-          <Outcome job={job!} approval={approval} onClose={onClose} />
-        ) : (
+      {final ? (
+        <Outcome job={job!} approval={approval} onClose={onClose} />
+      ) : (
+        <div className="approval__dock">
           <>
             <HoldToSign
               ariaLabel={`Countersign ${formatMoney(money)} to ${offer.title}`}
@@ -145,17 +161,18 @@ function ApprovalFlow({
               signed={job !== null}
               label={decision.ok ? "Hold to countersign" : "The envelope refuses this call"}
               onSigned={() => {
+                onSigned();
                 stop.current = playJob(approval, scenario, setJob);
               }}
             />
             {job ? null : (
-              <Button variant="quiet" block onClick={onClose}>
+              <Button variant="quiet" block className="approval__decline" onClick={onClose}>
                 Decline
               </Button>
             )}
           </>
-        )}
-      </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -298,7 +315,7 @@ function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval;
   }
   if (job.step === "refunded") {
     return (
-      <div className="outcome outcome--settled" role="status">
+      <div className="outcome outcome--neutral" role="status">
         <p className="outcome__title">Refunded. The deadline passed.</p>
         <p className="outcome__body">
           <Amount money={signed} size="sm" /> is back with your agent. Anyone could send the refund once the deadline passed,
