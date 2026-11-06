@@ -13,6 +13,7 @@ cff6ed2 e2e: add the human run dependency and ignore its local output
 787f05b e2e: write the human run's report, LATEST and leak scan
 96f152e e2e: run the human acceptance flow against the deployed console
 105e741 e2e: cover the human helpers offline and document the run
+08fd3d3 e2e: read no test secrets when the listing runs no project
 ```
 
 No later commit touches `.github/workflows/human-e2e.yml`.
@@ -164,8 +165,9 @@ nor the hub was called.
   `bun:*`; the offline suite is the required `bun test e2e/human/test` suite and `bun:test` is how
   those tests are declared. Everything Playwright loads under Node (config, lib, the spec) uses only
   Node APIs, viem and `@playwright/test`.
-- **`--list` writes no report.** The reporter returns in `onEnd` when no project state exists, so
-  listing does not create a misleading run.
+- **`--list` writes no report and reads no secrets.** The reporter returns in `onEnd` before it
+  builds the keyring when no project state exists, so listing neither creates a misleading run nor
+  touches the files under `~/.config/countersign`.
 - **`e2e/human/runs/` is not ignored.** Only `artifacts/`, `test-results/` and `playwright-report/`
   were added, as specified. The run report is therefore a normal file; the lane can decide whether to
   commit it.
