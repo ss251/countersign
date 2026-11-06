@@ -75,10 +75,11 @@ describe("eip3009 and gateway option matching", () => {
     await runner.ready;
 
     const accepts = (await requirementsFor(hub, hash)).accepts;
-    expect(accepts.map((entry) => entry.extra?.name)).toEqual(["GatewayWalletBatched", "USDC"]);
+    // The router orders the accepts (D13); this test is about matching, so it reads entries by name.
+    expect(accepts.map((entry) => entry.extra?.name).sort()).toEqual(["GatewayWalletBatched", "USDC"]);
 
-    const gatewayEntry = accepts[0];
-    const directEntry = accepts[1];
+    const gatewayEntry = accepts.find((entry) => entry.extra?.name === "GatewayWalletBatched");
+    const directEntry = accepts.find((entry) => entry.extra?.name === "USDC");
     if (!gatewayEntry || !directEntry) throw new Error("missing accepts entry");
 
     const first = await call(
@@ -125,7 +126,7 @@ describe("eip3009 and gateway option matching", () => {
     runners.push(runner);
     await runner.ready;
 
-    const entry = (await requirementsFor(hub, hash)).accepts[1];
+    const entry = (await requirementsFor(hub, hash)).accepts.find((entry) => entry.extra?.name === "USDC");
     if (!entry) throw new Error("missing accepts entry");
 
     const response = await call(

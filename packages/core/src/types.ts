@@ -197,6 +197,17 @@ export interface SlipBody {
   chainId?: number;
 }
 
+/**
+ * The hub's record of how it picked the rail a call settled on. It sits outside SlipBody,
+ * like the settlement transaction, so the seller does not attest it and slipCommitHash
+ * never changes.
+ */
+export interface RouteTrace {
+  chosen: RailId;
+  reason: string;
+  attempts: Array<{ rail: RailId; outcome: "challenge-failed" | "settle-failed" | "settled"; at: number }>;
+}
+
 export interface Slip {
   body: SlipBody;
   hash: Hex;
@@ -205,7 +216,7 @@ export interface Slip {
   /** The buyer's payment exactly as it was sent. */
   payment: PaymentPayload;
   /** Where the money finished: release tx hash, transfer tx hash, Hedera tx id or Stripe payment reference. */
-  settlement: { transaction: string; network: Network; url?: string; receipt?: string };
+  settlement: { transaction: string; network: Network; url?: string; receipt?: string; route?: RouteTrace };
 }
 
 // ---------------------------------------------------------------------------
