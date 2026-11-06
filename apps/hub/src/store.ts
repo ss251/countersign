@@ -18,13 +18,18 @@ export type JobStatus =
   | "failed"
   | "refunded"
   | "delivered"
-  | "disputed";
+  | "disputed"
+  /**
+   * The payment is verified but not submitted; a rail that settles after delivery holds the job
+   * here until the gate passes. Nothing is charged in this state.
+   */
+  | "verified";
 
 /** How a delivered job's review ended (escrow v2, D12). */
 export type ReviewOutcome = "accepted" | "disputed" | "window-elapsed";
 
 /** The closed-or-open states ratings understand. Delivered jobs are open, disputed jobs refunded. */
-type RatingStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
+type RatingStatus = "funded" | "verified" | "paid" | "released" | "settled" | "failed" | "refunded";
 
 /**
  * Who a failed delivery is on. `seller`: the runner took the job and refused it, answered

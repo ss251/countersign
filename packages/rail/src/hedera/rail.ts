@@ -135,7 +135,8 @@ function toX402Payload(p: PaymentPayload): X402Payload {
 
 export async function createHederaRail(opts: HederaRailOptions = {}): Promise<HederaRail> {
   const facilitators = opts.facilitators ?? FACILITATORS.map((f) => httpFacilitator(f.name, f.url));
-  const maxTimeoutSeconds = Math.min(Math.max(opts.maxTimeoutSeconds ?? 120, 30), 180);
+  // The transfer must stay valid through delivery plus settlement, so ask for Hedera's maximum, 180 s.
+  const maxTimeoutSeconds = Math.min(Math.max(opts.maxTimeoutSeconds ?? 180, 30), 180);
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   const verifySig = opts.verifyPayerSignature ?? createHederaVerifyPayerSignature();
   const clockSkewSeconds = opts.clockSkewSeconds ?? 5;
@@ -280,10 +281,26 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
 
   const rail: HederaRail = {
     declaration: HEDERA_DECLARATION,
+    settlesAfterDelivery: true,
     get active() {
       return active;
     },
     refresh,
+
+    pending(payment: PaymentPayload): { transaction: string; validUntil: number } | null {
+      if (walletPayloadOf(payment.payload)) return null;
+      const transaction = payment.payload?.transaction;
+      if (typeof transaction !== "string") return null;
+      try {
+        const inspected = decodeTransfer(transaction);
+        return {
+          transaction: inspected.transactionId,
+          validUntil: inspected.validStart + inspected.validDurationSeconds,
+        };
+      } catch {
+        return null;
+      }
+    },
 
     challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
       const payTo = offer.payTo?.hedera;
