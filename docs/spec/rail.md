@@ -43,3 +43,21 @@ A rail is eligible when the hub declares it, the buyer's `rails` cap (if any) na
 Candidates sort healthy before degraded. Without an opt-in they then sort protected before unprotected, then by cost, then by `finalitySeconds` (undeclared last), then by rail id. A buyer opts in with `allowUnprotected` (`X-Countersign-Allow-Unprotected: 1`) or by naming at least one unprotected rail in `X-Countersign-Rails`; cost then competes across both kinds. Unprotected rails stay eligible and listed either way. The chosen rail is the first candidate. The trace gives each eligible rail its rank (`chosen`, `fallback 1`, ...) or the reason it was refused; an unprotected fallback pushed down by protection says it does not refund the buyer and is listed after the escrow rails. The reason names protection, or the degraded or demoted rail that forced the fallback.
 
 The hub reads buyer caps only from `X-Countersign-Rails` (comma-separated ids), `X-Countersign-Max-Finality` (a positive integer) and `X-Countersign-Allow-Unprotected` (`1`); malformed values are ignored. It keeps failures in memory per rail and offer, records `challenge-failed`, `settle-failed` and `settled` attempts for ten minutes with at most twenty per key, and puts `{chosen, reason, trace}` on the 402's `extensions.route`. A failed settle demotes that rail for the next 402. On success the slip's `settlement.route` is `{chosen, reason, attempts}`, carrying at most the last five attempts; like `settlement.receipt`, it sits outside `SlipBody`, so `slipCommitHash` is unchanged. `/healthz` reports the policy, health grouped by rail as a count of degraded offers, and the last twenty decisions.
+
+## Who pays, and from which wallet
+
+The person's wallet on EVM, the agent's account on Hedera, one envelope over both.
+
+| Class of user | Wallet | Rails | Status |
+|---|---|---|---|
+| Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
+| Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
+| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held by default |
+
+Privy has no Hedera, and none of these is one wallet for every rail.
+
+Two things are true today and differ from the table's end state:
+- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
+
+Each status, with its evidence: [status.md](../status.md).
