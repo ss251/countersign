@@ -212,7 +212,6 @@ Never use `https://rpc-testnet.whitechain.io`. That host is a different chain, 2
 - No floats for money. Every bigint crosses JSON as a digit string.
 - Never log bodies, signatures or keys.
 - Small present-tense commits, no emoji, no `Co-authored-by`.
-- Never write any earlier project's name. In prose the product is lowercase `countersign`.
 
 ## Acceptance
 
@@ -233,7 +232,7 @@ Stop, commit what works, and report if any of these happen:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-02-escrow-rail.md` covering:
+Write `$M/reports/wc-02-escrow-rail.md` covering:
 
 - what was built;
 - test counts;

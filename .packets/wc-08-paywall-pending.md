@@ -1,6 +1,6 @@
 # wc-08: the paywall keeps a pending payment claimed
 
-Issue: #14, the drop-in. This packet is cs-w1's should-fix from `reports/review-7cee602.md` (in `/Users/thescoho/Developer/countersign-mumbai/reports/`).
+Issue: #14, the drop-in. This packet is cs-w1's should-fix from `reports/review-7cee602.md` (in `$M/reports/`).
 
 ## Goal
 
@@ -48,7 +48,6 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
 ## Constraints
 
 - **No browser of any kind on this machine.** No headless Chrome, Playwright, Puppeteer or screenshot tools. Verify with tests only.
-- No network in tests. Small present-tense commits ending `refs #14`, no emoji, no `Co-authored-by`. Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -64,4 +63,4 @@ Stop if a change is needed outside the lease, a failure survives three different
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-08-paywall-pending.md`.
+Write `$M/reports/wc-08-paywall-pending.md`.

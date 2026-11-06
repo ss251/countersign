@@ -54,7 +54,6 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
 - **No browser** of any kind on this machine. That means no headless Chrome, no Playwright, no Puppeteer and no screenshot tools.
 - **No network** in tests.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -73,4 +72,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-08b-paywall-serve-landed.md`.
+Write `$M/reports/wc-08b-paywall-serve-landed.md`.

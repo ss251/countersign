@@ -15,7 +15,7 @@ The decided fix: the offer advertises only what the runner can serve. Every `num
 - `packages/rail/src/hedera/mcp-schema.ts` (new) and `packages/rail/src/hedera/test/mcp-schema.test.ts` (new)
 - `scripts/hedera/mcp-seller.ts`: the schema step and the summary only
 - `scripts/hedera/agent-run.ts`: the `output` evidence and one new `decoded` evidence line
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-09b-mcp-whole-amounts.md`
+- Report: `$M/reports/hd-09b-mcp-whole-amounts.md`
 
 ## Required
 

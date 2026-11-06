@@ -116,7 +116,21 @@ export interface SlipView {
 /** A receipt tree: the root slip and every slip it commits, by hash. */
 export interface TreeView {
   root: Hex;
-  nodes: Record<string, { slip: Slip; title: string; sellerName: string }>;
+  nodes: Record<
+    string,
+    {
+      slip: Slip;
+      title: string;
+      sellerName: string;
+      /**
+       * Slip hashes of purchases the hub recorded inside this node's job (the inner call named this job in
+       * its lineage), whether or not the seller signed them into body.children. Only the hub's record.
+       */
+      observed?: string[];
+    }
+  >;
+  /** Child hashes a slip signed that this hub does not hold. */
+  missing?: string[];
 }
 
 /** A seller as the hub's /sellers reports it: counts derived from its jobs and slips. */

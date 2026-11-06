@@ -6,14 +6,14 @@ Issue #163. `packages/verify/src/verify.ts` sends every slip whose payment schem
 
 Route by the payment, not the scheme. A held payment is checked as what it is: a Hedera schedule, created by the buyer, that executed and moved exactly the slip's amount to the slip's payee. That check reads the mirror node when one is given.
 
-This gates the captain's item 4: production pays held only once a held slip verifies VALID. Tracked by issue #163 (refs #41).
+This gates the project lead's item 4: production pays held only once a held slip verifies VALID. Tracked by issue #163 (refs #41).
 
 ## Lease
 
 - `packages/verify/src/verify.ts`
 - `packages/verify/src/cli.ts`: the `--mirror` flag and its usage line only.
 - `packages/verify/test/held.test.ts` (new).
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-14-verify-held.md`
+- Report: `$M/reports/hd-14-verify-held.md`
 
 ## The decided design
 

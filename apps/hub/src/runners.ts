@@ -4,6 +4,7 @@ import {
   type Hex,
 } from "viem";
 import {
+  canaryMessage,
   runnerAuthMessage,
   type HubToRunner,
   type JobOrder,
@@ -31,6 +32,13 @@ interface LockPending {
   finish(result: LockResult): void;
 }
 
+export type CanaryResult = { ok: true } | { ok: false; reason: string };
+
+interface PendingCanary {
+  offerHash: string;
+  finish(result: CanaryResult): void;
+}
+
 interface Connection {
   ws: WSContext;
   nonce: string;
@@ -39,6 +47,7 @@ interface Connection {
   lastPongAt: number;
   pending: Map<string, Pending>;
   locks: Map<string, LockPending>;
+  canaries: Map<string, PendingCanary>;
 }
 
 const PING_EVERY_MS = 20_000;
@@ -61,6 +70,7 @@ export class RunnerLink {
     for (const conn of this.connections.values()) {
       for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
       for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
+      for (const canary of conn.canaries.values()) canary.finish({ ok: false, reason: "closed" });
       conn.ws.close(1001, "hub stopping");
     }
     this.connections.clear();
@@ -78,6 +88,12 @@ export class RunnerLink {
       if (conn.seller !== null && conn.offers.has(offerHash)) return true;
     }
     return false;
+  }
+
+  /** Milliseconds since the runner holding this offer last answered a ping or said hello, or null when no runner holds it. */
+  pongAgeMs(offerHash: string): number | null {
+    const conn = this.find(offerHash);
+    return conn === null ? null : Date.now() - conn.lastPongAt;
   }
 
   events(): WSEvents {
@@ -155,6 +171,36 @@ export class RunnerLink {
     });
   }
 
+  async canary(offerHash: string, timeoutMs: number): Promise<CanaryResult> {
+    const conn = this.find(offerHash);
+    if (conn === null) return { ok: false, reason: "offline" };
+
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const nonce = `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+
+    return new Promise<CanaryResult>((resolve) => {
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: CanaryResult): void => {
+        if (done) return;
+        done = true;
+        if (timer !== undefined) clearTimeout(timer);
+        conn.canaries.delete(nonce);
+        resolve(result);
+      };
+
+      conn.canaries.set(nonce, { offerHash, finish });
+      timer = setTimeout(() => finish({ ok: false, reason: "timeout" }), Math.max(0, timeoutMs));
+
+      const frame: HubToRunner = { t: "canary", offerHash: offerHash as Hex, nonce };
+      try {
+        conn.ws.send(JSON.stringify(frame));
+      } catch {
+        finish({ ok: false, reason: "closed" });
+      }
+    });
+  }
+
   private key(ws: WSContext): object {
     return (ws.raw ?? ws) as object;
   }
@@ -168,6 +214,7 @@ export class RunnerLink {
       lastPongAt: Date.now(),
       pending: new Map(),
       locks: new Map(),
+      canaries: new Map(),
     };
     this.connections.set(this.key(ws), conn);
     const challenge: HubToRunner = { t: "challenge", nonce: conn.nonce };
@@ -181,6 +228,7 @@ export class RunnerLink {
     this.connections.delete(key);
     for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
     for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
+    for (const canary of conn.canaries.values()) canary.finish({ ok: false, reason: "closed" });
   }
 
   private async message(ws: WSContext, data: unknown): Promise<void> {
@@ -223,6 +271,13 @@ export class RunnerLink {
     }
     if (frame.t === "lock-refused") {
       this.lockRefused(conn, frame as unknown as RunnerToHub);
+    }
+    if (frame.t === "canary") {
+      await this.canaryReply(conn, frame as unknown as RunnerToHub);
+      return;
+    }
+    if (frame.t === "canary-fail") {
+      this.canaryFail(conn, frame as unknown as RunnerToHub);
     }
   }
 
@@ -312,6 +367,40 @@ export class RunnerLink {
     pending.finish({ refused: reason });
   }
 
+  private async canaryReply(conn: Connection, frame: RunnerToHub): Promise<void> {
+    if (frame.t !== "canary" || typeof frame.nonce !== "string") return;
+    const entry = conn.canaries.get(frame.nonce);
+    if (!entry) return;
+    if (typeof frame.offerHash !== "string" || !sameText(frame.offerHash, entry.offerHash)) {
+      entry.finish({ ok: false, reason: "wrong-offer" });
+      return;
+    }
+
+    let signer: Address;
+    try {
+      signer = await recoverMessageAddress({
+        message: canaryMessage(entry.offerHash as Hex, frame.nonce),
+        signature: frame.sig,
+      });
+    } catch {
+      entry.finish({ ok: false, reason: "bad-signature" });
+      return;
+    }
+    const seller = this.store.getOffer(entry.offerHash)?.seller;
+    if (typeof seller === "string" && sameText(signer, seller)) {
+      entry.finish({ ok: true });
+      return;
+    }
+    entry.finish({ ok: false, reason: "bad-signature" });
+  }
+
+  private canaryFail(conn: Connection, frame: RunnerToHub): void {
+    if (frame.t !== "canary-fail" || typeof frame.nonce !== "string") return;
+    const entry = conn.canaries.get(frame.nonce);
+    if (!entry) return;
+    entry.finish({ ok: false, reason: typeof frame.reason === "string" ? frame.reason : "refused" });
+  }
+
   private reject(conn: Connection, message: string): void {
     const frame: HubToRunner = { t: "error", message };
     try {
@@ -336,6 +425,7 @@ export class RunnerLink {
         this.connections.delete(key);
         for (const pending of conn.pending.values()) pending.finish({ fail: "pong-timeout" });
         for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
+        for (const canary of conn.canaries.values()) canary.finish({ ok: false, reason: "pong-timeout" });
         conn.ws.close(4000, "pong timeout");
         continue;
       }
@@ -346,6 +436,7 @@ export class RunnerLink {
         this.connections.delete(key);
         for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
         for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
+        for (const canary of conn.canaries.values()) canary.finish({ ok: false, reason: "closed" });
       }
     }
   }

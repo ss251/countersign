@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createPublicClient, createWalletClient, fallback, http } from "viem";
+import { createPublicClient, createWalletClient, fallback, getAddress, http } from "viem";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { formatUnits } from "@countersign/core";
@@ -12,8 +12,9 @@ import { settleCountersign, verifyCountersign } from "./countersign-scheme.ts";
 import type { CountersignContext } from "./countersign-scheme.ts";
 import { cancelJob, jobStatus, refundJob, releaseJob } from "./escrow-ops.ts";
 import type { EscrowOpResult } from "./escrow-ops.ts";
-import { settleExact, verifyExact } from "./exact.ts";
+import { settleExact, verifyExact, readNow } from "./exact.ts";
 import type { ExactClock, ExactContext, VerifyRequest } from "./exact.ts";
+import { tokenAbi } from "./eip3009.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
 import { isRefundReason, Ledger } from "./ledger.ts";
 import type { RefundReason } from "./ledger.ts";
@@ -49,6 +50,27 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     now,
   };
   const app = new Hono();
+  const escrow = relayer.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
+  const funding = readFunding(reader, escrow, relayer.address);
+  let feeSplitUsdtCache: { at: number; value: string } | null = null;
+
+  async function feeSplitUsdt(feeSplit: Address): Promise<string | null> {
+    const at = readNow(now);
+    if (feeSplitUsdtCache && at - feeSplitUsdtCache.at < 30) return feeSplitUsdtCache.value;
+    try {
+      const value = await reader.readContract({
+        address: USDT.address,
+        abi: tokenAbi,
+        functionName: "balanceOf",
+        args: [feeSplit],
+      });
+      const text = typeof value === "bigint" ? value.toString(10) : String(value);
+      feeSplitUsdtCache = { at, value: text };
+      return text;
+    } catch {
+      return null;
+    }
+  }
 
   app.use("*", cors({ origin: "*" }));
 
@@ -56,6 +78,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
 
   app.get("/status", async (c) => {
     const status = await relayer.status();
+    const loaded = await funding;
     return c.json({
       address: status.address,
       balanceWei: status.balanceWei.toString(),
@@ -64,10 +87,13 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       policy: jsonSafe(status.policy),
       payees: status.policy.allowedPayees,
       minAmount: status.policy.minAmount.toString(),
-      escrow: relayer.allowedEscrows[0] ?? WHITECHAIN_ESCROW,
+      escrow,
       token: USDT.address,
       network: NETWORK,
       chainId: WHITECHAIN_CHAIN_ID,
+      funding: loaded
+        ? { ...loaded, feeSplitUsdt: await feeSplitUsdt(loaded.feeSplit) }
+        : null,
     });
   });
 
@@ -267,6 +293,76 @@ export function createRelayApp(options: RelayAppOptions): Hono {
   return app;
 }
 
+
+const feeSplitAbi = [
+  {
+    type: "function",
+    name: "payees",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "", type: "address[]" },
+      { name: "", type: "uint16[]" },
+    ],
+  },
+] as const;
+
+type Funding = {
+  feeSplit: Address;
+  payees: Array<{ address: Address; shareBps: number }>;
+  relayerShareBps: number;
+  tollBps: number;
+};
+
+async function readFunding(
+  reader: ChainReader,
+  escrow: Address,
+  relayer: Address,
+): Promise<Funding | null> {
+  try {
+    const treasury = await reader.readContract({
+      address: escrow,
+      abi: escrowAbi,
+      functionName: "treasury",
+    });
+    const feeSplit = getAddress(treasury as string);
+    const result = await reader.readContract({
+      address: feeSplit,
+      abi: feeSplitAbi,
+      functionName: "payees",
+    });
+    const [addresses, shares] = result as [Address[], Array<number | bigint>];
+    if (
+      !Array.isArray(addresses) ||
+      !Array.isArray(shares) ||
+      addresses.length !== shares.length
+    ) {
+      return null;
+    }
+    const payees = addresses.map((address, index) => {
+      const shareBps = Number(shares[index]);
+      if (!Number.isSafeInteger(shareBps) || shareBps < 0) {
+        throw new Error(`invalid share for ${address}`);
+      }
+      return { address: getAddress(address), shareBps };
+    });
+    const tollRaw = await reader.readContract({
+      address: escrow,
+      abi: escrowAbi,
+      functionName: "tollBps",
+    });
+    const tollBps = Number(tollRaw);
+    if (!Number.isSafeInteger(tollBps) || tollBps < 0) {
+      throw new Error(`invalid tollBps for ${escrow}`);
+    }
+    const own = payees.find(
+      (payee) => payee.address.toLowerCase() === relayer.toLowerCase(),
+    );
+    return { feeSplit, payees, relayerShareBps: own?.shareBps ?? 0, tollBps };
+  } catch {
+    return null;
+  }
+}
 
 const tollBpsCache = new Map<string, number>();
 

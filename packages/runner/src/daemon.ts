@@ -5,6 +5,7 @@
 
 import {
   canonicalHash,
+  canaryMessage,
   checkSchema,
   lockTypedData,
   offerHash,
@@ -271,6 +272,25 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       case "lock":
         await handleLock(target, message);
         return;
+      case "canary": {
+        const entry = served.find(
+          (item) => item.hash.toLowerCase() === message.offerHash.toLowerCase(),
+        );
+        if (!entry) {
+          send(target, {
+            t: "canary-fail",
+            offerHash: message.offerHash,
+            nonce: message.nonce,
+            reason: "not-served",
+          });
+          return;
+        }
+        const sig = await cfg.account.signMessage({
+          message: canaryMessage(entry.hash, message.nonce),
+        });
+        send(target, { t: "canary", offerHash: entry.hash, nonce: message.nonce, sig });
+        return;
+      }
       case "error":
         return;
     }

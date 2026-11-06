@@ -1,7 +1,7 @@
 # cs-62-e2e-v2: the e2e suite on escrow v2 (Arc), phase 1
 
 Lane: cs-e2e. Base: `cs/e2e` after it has merged `cs/int` with PR #164 (escrow v2). Branch:
-`cs/cs-62`. Captain, STEER-1950 answers: production Arc switches to v2 with one env change back to v1
+`cs/cs-62`. Project lead, STEER-1950 answers: production Arc switches to v2 with one env change back to v1
 as the fallback, and the full e2e suite runs on v2.
 
 Phase 1 runs the claims the suite already proves on the v2 contract, with offers of review window 0 and
