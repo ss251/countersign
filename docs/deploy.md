@@ -15,11 +15,11 @@ From the repository root, with the Railway CLI logged in and linked to the `coun
 
 ```sh
 bash apps/web/deploy.sh                    # console: builds apps/web, uploads dist + server.ts
-bash deploy/railway/deploy-hub.sh cs/int   # hub: uploads `git archive cs/int`, production dependencies only
+bash deploy/railway/deploy-hub.sh            # hub: uploads `git archive origin/main`; refuses any other commit
 ```
 
 - `apps/web/deploy.sh` builds with `VITE_HUB_URL=https://hub-production-e85e.up.railway.app` by default, so the console reads the live hub unless a visitor opens it with `?hub=off`. The hub answers CORS for every route the console calls. `VITE_HUB_URL=/hub` builds against the console's same-origin proxy instead. `DRY_RUN=1` stages the upload without sending it.
-- `deploy-hub.sh` deploys an exact commit: only committed files, nothing from the working tree.
+- `deploy-hub.sh` deploys only `origin/main`'s exact commit, with committed files only and nothing from the working tree. It writes the commit into the image, and the running hub reports it as `commit` on `/healthz`.
 
 ### Variables
 
