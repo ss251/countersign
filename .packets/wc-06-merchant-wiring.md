@@ -10,7 +10,8 @@ wc-05 put the merchant server behind a bearer token, restricted its CORS, and ad
 
 - `apps/web/src/routes/merchant/**`
 - `apps/web/test/merchant.test.ts`
-- `packages/relay/src/ledger.ts`, `packages/relay/src/exact.ts`, `packages/relay/src/countersign-scheme.ts`, `packages/relay/src/server.ts`. Description field only (change 4).
+- `packages/relay/src/ledger.ts`, `packages/relay/src/exact.ts`, `packages/relay/src/countersign-scheme.ts`, `packages/relay/src/server.ts`. The description field (change 4) and `closeKind` (change 7c) only.
+- `packages/relay/src/reconcile.ts` (change 9).
 - `packages/relay/test/*.test.ts`. Tests for the description field only.
 
 Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.lock` before each commit.
@@ -71,6 +72,15 @@ Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.loc
    ```
 
    Do this only if `apps/web/src/app/routes.ts` in your base reads `surface` from route modules (cs-ui `b2d3fba`). If it doesn't, skip this item and say so in the report.
+
+9. **Reconcile never forgets a refund that landed.** Fix `packages/relay/src/reconcile.ts`, adding it to this packet's lease. `receiptFor` currently maps every RPC error to "no receipt". After `valid_before + 60`, a flaky RPC can then delete the record of a refund that actually landed, which lets the merchant refund twice. Change it so that:
+   - Only viem's `TransactionReceiptNotFoundError` (check `error.name`) counts as "not found". Any other error leaves the refund pending, unchanged.
+   - When there is no receipt, read the token's `authorizationState(from, nonce)` through `reader.readContract`. `true` means the authorisation was used, so confirm the refund with block `0`. Delete the refund only when the state is `false` and `now > valid_before + 60`.
+
+   Tests:
+   - an RPC error keeps the refund pending even after the window;
+   - a used nonce without a receipt confirms the refund;
+   - an unused nonce past the window deletes it.
 
 ## Tests
 
