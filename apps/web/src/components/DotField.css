@@ -1,0 +1,19 @@
+/*
+ * The field sits behind the whole app. #root is made a stacking context so a negative-z-index
+ * fixed layer stays above the page's paper and below every surface the console draws; no page
+ * component needs a z-index of its own, and the layer never takes a click.
+ */
+#root {
+  isolation: isolate;
+}
+
+.dot-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: var(--ink);
+}

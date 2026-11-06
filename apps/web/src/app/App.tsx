@@ -6,6 +6,7 @@ import { Wordmark } from "../ui/Mark.tsx";
 import { SiteFooter } from "./SiteFooter.tsx";
 import { SiteLinks } from "./SiteLinks.tsx";
 import { WalletButton } from "../ui/WalletButton.tsx";
+import { DotField } from "../components/DotField.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
 import "./nav.css";
@@ -37,6 +38,7 @@ export function App() {
 
   return (
     <div className="shell" data-surface={surface}>
+      <DotField />
       <a className="shell__skip" href="#main" onClick={(e) => skipToMain(e)}>
         Skip to content
       </a>
