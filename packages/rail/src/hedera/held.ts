@@ -164,6 +164,19 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
     }
   }
 
+  /** Drop a hold only once its schedule can no longer pay: executed, deleted, or expired. */
+  async function dropHold(jobId: Hex): Promise<SettleResult> {
+    const hold = holds.get(jobId);
+    if (!hold) return fail("unknown_job");
+    const schedule = await getSchedule(hold.scheduleId, mirror);
+    if (!schedule) return fail("unknown_schedule");
+    if (schedule.executedTimestamp) return fail("executed");
+    const expires = secondsOf(schedule.expirationTime);
+    if (!schedule.deleted && !(expires !== null && now() >= expires)) return fail("still_signable");
+    holds.delete(jobId);
+    return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
+  }
+
   const escrow: EscrowOps = {
     async release(jobId, _slipHash, _sellerSig, countersign) {
       const hold = holds.get(jobId);
@@ -198,26 +211,22 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
         netFor(moved, hold.payer) === -BigInt(hold.amount);
       if (!exact) return fail(`execution_failed: ${record.result}`);
 
+      const schedule = await getSchedule(hold.scheduleId, mirror);
+      if (!schedule?.executedTimestamp) return fail("execution_failed: schedule not executed");
+      if (schedule.executedTimestamp !== record.consensusTimestamp) {
+        return fail("execution_failed: schedule executed elsewhere");
+      }
+
       holds.delete(jobId);
       return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
     },
 
     async refund(jobId) {
-      const hold = holds.get(jobId);
-      if (!hold) return fail("unknown_job");
-      const schedule = await getSchedule(hold.scheduleId, mirror);
-      if (schedule?.executedTimestamp) return fail("executed");
-      holds.delete(jobId);
-      return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
+      return dropHold(jobId);
     },
 
     async cancel(jobId, _sellerSig) {
-      const hold = holds.get(jobId);
-      if (!hold) return fail("unknown_job");
-      const schedule = await getSchedule(hold.scheduleId, mirror);
-      if (schedule?.executedTimestamp) return fail("executed");
-      holds.delete(jobId);
-      return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
+      return dropHold(jobId);
     },
 
     async status(jobId) {
@@ -278,6 +287,7 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       const at = now();
       if (expires !== null && at >= expires) return invalid("schedule_expired");
       if (schedule.waitForExpiry) return invalid("wait_for_expiry");
+      if (schedule.adminKey !== null) return invalid("admin_key");
       if (expires === null) return invalid("hold_window");
       const remaining = expires - at;
       if (remaining < requirements.maxTimeoutSeconds + 60 || remaining > 3600) {

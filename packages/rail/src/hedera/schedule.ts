@@ -29,6 +29,8 @@ export interface MirrorSchedule {
   expirationTime: string | null;
   deleted: boolean;
   waitForExpiry: boolean;
+  /** The schedule's admin key, or null when none is set. */
+  adminKey: unknown;
   /** Base64 SchedulableTransactionBody: the transfer the seller is asked to sign. */
   transactionBody: string;
   signatures: unknown[];
@@ -43,6 +45,7 @@ interface RawSchedule {
   expiration_time?: string | null;
   deleted?: boolean;
   wait_for_expiry?: boolean;
+  admin_key?: unknown;
   transaction_body: string;
   signatures?: unknown[];
 }
@@ -57,6 +60,7 @@ function normalizeSchedule(raw: RawSchedule): MirrorSchedule {
     expirationTime: raw.expiration_time ?? null,
     deleted: raw.deleted === true,
     waitForExpiry: raw.wait_for_expiry === true,
+    adminKey: raw.admin_key ?? null,
     transactionBody: raw.transaction_body,
     signatures: raw.signatures ?? [],
   };
