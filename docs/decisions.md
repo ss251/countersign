@@ -197,3 +197,11 @@ Status: design only, in [spec/escrow.md](spec/escrow.md) under "Escrow v2". Rajd
 - **The economics.** A default after `settleBy`, a dispute inside the review window, and a gate failure all pay the buyer `amount + bond`. A dispute before delivery and a cancel by the payee by the deadline return the bond. Disputing before delivery returns the bond so that no buyer can take it before the seller has had a chance to deliver. Aggressive disputes inside the window are the accepted trade.
 - **H1 and the lows are unchanged from D15.** There is one settle window of 600 s after the deadline for `release` and `failDelivery`, the toll accrues, a payee can never be the escrow, and every time boundary follows one rule.
 
+
+## D17 — a call nested inside a purchase of the same offer or seller is refused before payment (06 Nov; refs #27)
+
+A call's `lineage` lists the jobIds of the purchases it is nested inside, outermost first (`CallRequest` in `packages/core/src/wire.ts`). The hub now uses it for what it was declared for: refusing cycles.
+
+- **The rule.** Before any 402 or payment, the hub resolves each lineage jobId it knows. If an ancestor job bought the same offer, or an offer from the same seller, the call is refused with 409 `lineage-cycle`: "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged."
+- **Where.** First in the paid-call pipeline, right after the offer is loaded. It runs before the ENS lock, both input gates, the online check and the rails.
+- **What it cannot see.** A jobId this hub does not hold, such as a purchase made through another hub, is skipped. A caller that sends no lineage is not checked. Lineage comes from the caller, so the check stops honest agents from looping, not a buyer who hides its ancestry.
