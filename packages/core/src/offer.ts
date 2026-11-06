@@ -1,6 +1,7 @@
 import { type Hex, isAddress } from "viem";
 import { parseAtomic } from "./amount.ts";
 import { canonicalHash } from "./canonical.ts";
+import { isEnsName } from "./ens.ts";
 import { RAIL_IDS, type Offer } from "./types.ts";
 
 export function offerHash(offer: Offer): Hex {
@@ -43,4 +44,5 @@ export function assertOffer(value: unknown): asserts value is Offer {
   if (o!.upstream && (typeof o!.upstream.url !== "string" || typeof o!.upstream.licence !== "string")) {
     fail("offer.upstream needs url and licence");
   }
+  if (o!.ens !== undefined && !isEnsName(o!.ens)) fail("offer.ens must be an ENS name in normal form");
 }
