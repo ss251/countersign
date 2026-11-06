@@ -142,8 +142,9 @@
   border-top: 2px solid var(--ink);
 }
 
+/* The buyer's half is the countersignature: blue ink, as on the hold. Red is for refusal alone. */
 .slip__half--buyer {
-  border-top-color: var(--seal);
+  border-top-color: var(--usdc);
 }
 
 .slip__half-title {
@@ -157,7 +158,7 @@
 }
 
 .slip__half--buyer .slip__half-who {
-  color: var(--seal);
+  color: var(--usdc);
 }
 
 .slip__amount {

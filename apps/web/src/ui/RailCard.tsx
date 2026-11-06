@@ -13,6 +13,7 @@ const GAS: Record<RailDeclaration["gasPaidBy"], string> = {
   relayer: "Our relayer",
   facilitator: "The x402 facilitator",
   gateway: "Circle Gateway",
+  buyer: "The buyer's own transaction",
 };
 
 /** A rail, declared in data: what moved the money and when it counts as settled. */
@@ -38,7 +39,7 @@ export function RailCard({ declaration: d, tx, link = true }: { declaration: Rai
           </>,
         ],
         d.escrow ? ["Escrow", <Hash value={d.escrow} label="escrow address" />] : null,
-        ["Gas", `${GAS[d.gasPaidBy]} pays it. The buyer never does.`],
+        ["Gas", d.gasPaidBy === "buyer" ? `${GAS.buyer} pays it.` : `${GAS[d.gasPaidBy]} pays it. The buyer never does.`],
         ["Final", d.finality],
         tx
           ? [

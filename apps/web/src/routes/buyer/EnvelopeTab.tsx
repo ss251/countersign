@@ -4,10 +4,27 @@ import type { Resource } from "../../lib/api.ts";
 import { formatAmount, formatClock, formatMoney, remainingAtomic, usd } from "../../lib/format.ts";
 import type { Envelope, EnvelopeView } from "../../lib/types.ts";
 import { Meter } from "../../ui/Meter.tsx";
+import { approvalToken, rememberApprovalToken } from "../../lib/hub.ts";
+import { Absent } from "../../ui/Absent.tsx";
 import { Amount, Button, Hash } from "../../ui/primitives.tsx";
+import { TokenForm } from "./Approvals.tsx";
 
 /** The human’s limits: budget, per-seller limit, when to ask, allowlist, revoke. */
-export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) {
+export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView | null> }) {
+  if (envelope.source === "absent") {
+    return (
+      <Absent reason={envelope.reason ?? "This hub has no envelope to show."} onRetry={envelope.reload}>
+        {envelope.needsToken && !approvalToken() ? (
+          <TokenForm
+            onSave={(t) => {
+              rememberApprovalToken(t);
+              envelope.reload();
+            }}
+          />
+        ) : null}
+      </Absent>
+    );
+  }
   const view = envelope.data;
   if (!view) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
@@ -283,7 +300,7 @@ function Allowlist({
         <form className="allow__form" onSubmit={add} noValidate>
           <label className="field">
             <span className="field__label">Name</span>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" placeholder="hedera-tools" />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" placeholder="What you call this seller" />
           </label>
           <label className="field">
             <span className="field__label">Address</span>
