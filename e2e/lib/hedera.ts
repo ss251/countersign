@@ -101,3 +101,51 @@ export function hashscanTx(id: string): string {
 export function hashscanTopic(topicId: string): string {
   return `${HEDERA.hashscan}/topic/${topicId}`;
 }
+
+export interface Debit {
+  txId: string;
+  amount: bigint;
+}
+
+async function pages<T>(first: string, pick: (body: unknown) => T[]): Promise<T[]> {
+  const out: T[] = [];
+  let path: string | null = first;
+  for (let i = 0; path && i < 20; i++) {
+    const { status, body } = await getJson(path);
+    if (status === 404) break;
+    if (status !== 200) throw new Error(`mirror answered ${status} for ${path}`);
+    out.push(...pick(body));
+    path = (body as { links?: { next?: string | null } }).links?.next ?? null;
+  }
+  return out;
+}
+
+/** Every successful transfer since `since` (unix seconds) in which the account paid this token. */
+export async function tokenDebits(account: string, token: string, since: number): Promise<Debit[]> {
+  const txs = await pages(
+    `/api/v1/transactions?account.id=${account}&transactiontype=CRYPTOTRANSFER&result=success&order=asc&limit=100&timestamp=gte:${since}.000000000`,
+    (b) => ((b as { transactions?: Array<{ transaction_id: string; token_transfers?: MirrorTx["tokenTransfers"] }> }).transactions ?? []),
+  );
+  const out: Debit[] = [];
+  for (const t of txs) {
+    const net = (t.token_transfers ?? []).filter((x) => x.token_id === token && x.account === account).reduce((s, x) => s + BigInt(x.amount), 0n);
+    if (net < 0n) out.push({ txId: t.transaction_id, amount: -net });
+  }
+  return out;
+}
+
+/** Every message on the topic since `since` (unix seconds), decoded. */
+export async function topicSince(topicId: string, since: number): Promise<TopicMessage[]> {
+  return pages(`/api/v1/topics/${topicId}/messages?order=asc&limit=100&timestamp=gte:${since}.000000000`, (b) =>
+    ((b as { messages?: Array<{ sequence_number: number; consensus_timestamp: string; payer_account_id: string; message: string }> }).messages ?? []).map((m) => {
+      const text = Buffer.from(m.message, "base64").toString("utf8");
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = text;
+      }
+      return { sequence: m.sequence_number, consensusTimestamp: m.consensus_timestamp, payerAccount: m.payer_account_id, json };
+    }),
+  );
+}
