@@ -802,3 +802,173 @@ Only `scripts/release/imports.ts`, `scripts/release/surface.ts`,
 `tsconfig.json`, `.gitignore`, key or env file was touched. The three commits are the
 shebang fix, the extra-entry/engine feature, and the tests.
 
+## cs-70f
+
+### What changed
+
+- `build.ts` `guardPackage` now judges only the emitted `.js` files. The
+  `sourceFiles()` helper and the second loop that scanned source-map
+  `sourcesContent` are gone. The first loop keeps the emitted file, line and column,
+  and its `(source <file>)` attribution. No existing test asserted the removed source
+  scan, so no assertion had to be removed.
+- Attribution now resolves the emitted line and column through the source map with
+  `findMappedSource` (`node:module` `SourceMap`) before falling back to the text
+  search in `findSourceWithText`. This mattered for the real CLI: both
+  `Bun.serve` and `Bun.spawn` are in `dist/bin.js`, and the text search attributed
+  both of them to `packages/buyer/src/openai/server.ts`, leaving the child exception
+  stale. The mapping attributes the second hit to
+  `packages/runner/src/child.ts:97`.
+- `surface.ts` adds `GUARD_EXCEPTIONS`, a per-package list of
+  `{ source, pattern, reason }`, plus `checkGuardExceptionTable`,
+  `guardExceptionsFor`, `findGuardException` and `staleGuardExceptionLines`.
+  A hit is excused only when its attributed source and pattern both match. An
+  unattributed hit is never excused, and an empty `source`, `pattern` or `reason`
+  throws. Every excused hit prints
+  `cli: guard exception <source> "<pattern>" (<reason>)`. An exception that excuses
+  nothing fails with `stale guard exception for cli: <source> "<pattern>"`.
+- The `cli` table has exactly two entries:
+  - `packages/runner/src/child.ts`, `"Bun."`: `runWithBun` runs only when
+    `globalThis.Bun` is defined; under Node `defaultSpawner` returns `node` and
+    `node:child_process` is used.
+  - `packages/buyer/src/openai/server.ts`, `"Bun."`: started only by the buyer
+    `openai` subcommand, which the `countersign` wrapper does not expose.
+  `relay` and `mcp` have none.
+- A `cli` build prints plainly:
+  `cli: smoke test does not run a sell job through the child spawner; that path is guarded by the runtime check only`.
+
+### Tests
+
+`scripts/release/test/guard-exceptions.test.ts` covers a matching source and pattern,
+the same source with a different pattern, the same pattern in a different source, an
+unattributed hit, an empty reason, empty source and pattern, a stale exception naming
+itself, the shipped table, and `relay`/`mcp` having none. `guard.test.ts` gained one
+test for source-map position attribution; its existing tests are unchanged.
+
+```
+$ bun install --linker hoisted && bun run typecheck && bun test scripts/release
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [3.90s]
+$ tsc -p tsconfig.json
+bun test v1.3.14 (0d9b296a)
+
+ 84 pass
+ 0 fail
+ 155 expect() calls
+Ran 84 tests across 11 files. [141.00ms]
+```
+
+### Gate 2: the relay is unchanged
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: packed files clean (4 files)
+relay: .release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 2s
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+node 20 --version: v20.20.2
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+### Gate 3: the CLI, for real
+
+`origin/cs/cs-70` had advanced past this branch's base with the cs-70g packet, while
+the cs-70f commits were still local, so the throw-away worktree merged both
+`origin/cs/cs-70` and the local `cs/cs-70` branch.
+
+```
+$ git fetch origin
+$ git worktree add --detach "$HOME/Developer/countersign-wt/k3-cli" origin/cs/tr-09
+$ cd "$HOME/Developer/countersign-wt/k3-cli"
+$ git merge --no-edit origin/cs/cs-70
+$ git merge --no-edit cs/cs-70
+$ bun install --linker hoisted
+bun install v1.3.14 (0d9b296a)
+Saved lockfile
+
+748 packages installed [26.71s]
+$ bun scripts/release/build.ts --only cli --out .release
+cli: extra dependency @countersign-hub/mcp skipped (packages/mcp not found)
+cli: dependencies 0 of 0 declared: 
+cli: guard exception packages/buyer/src/openai/server.ts "Bun." (started only by the buyer openai subcommand, which the countersign wrapper does not expose)
+cli: guard exception packages/runner/src/child.ts "Bun." (runWithBun runs only when globalThis.Bun is defined; under Node defaultSpawner returns node and node:child_process is used)
+cli: packed files clean (3 files)
+cli: smoke test does not run a sell job through the child spawner; that path is guarded by the runtime check only
+cli: .release/countersign-hub-cli-0.1.0.tgz
+  size: 636862 bytes
+  files:
+    dist/bin.js
+    dist/child-entry.js
+    package.json
+```
+
+The dependencies line says `0 of 0 declared`. The CLI declares no dependencies and
+imports its sibling packages by relative path, so the externals list is empty and all
+third-party code is inlined. The staged manifest has `"dependencies": {}`.
+`dist/bin.js` is 45,796 lines and `dist/child-entry.js` is 40,746 lines: this is a
+self-contained CLI tarball, not one with a dependency tree. The packed-file leak check
+passed on all three files.
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-cli-0.1.0 init: ...
+PASS countersign-hub-cli-0.1.0 install: added 1 package in 140ms
+PASS cli published name: @countersign-hub/cli (expected @countersign-hub/cli)
+node 22 --version: v22.23.4
+PASS cli bin countersign --help [node v26.7.0]: countersign 0.1.0 Sell. ... Buy. ...
+PASS cli bin countersign --help [node v22.23.4]: countersign 0.1.0 Sell. ... Buy. ...
+PASS cli child entry dist/child-entry.js [node v26.7.0]
+PASS cli child entry dist/child-entry.js [node v22.23.4]
+```
+
+The one thing the smoke test does not run is a sell job through the child spawner. It
+runs `countersign --help` and checks that `dist/child-entry.js` exists in the install;
+the `runWithBun` path is guarded by the `globalThis.Bun` runtime check and the named
+exception, not by a smoke run.
+
+The worktree was removed afterwards with `git worktree remove --force` and
+`git worktree prune`.
+
+### Gate 4: missing lanes still fail
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release-req
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+`.release-req` was removed afterwards.
+
+### Commits and files
+
+The three commits are the fix (`df39674`, guard the emitted bundle instead of source
+map text), the feature (`c6be2d5`, allow named guard exceptions for the CLI), and the
+tests (`ba0204b`, test the guard exception table). Only `scripts/release/build.ts`,
+`scripts/release/guard.ts`, `scripts/release/surface.ts` and tests under
+`scripts/release/test/` changed. No package source, root `package.json`, `bun.lock`,
+`tsconfig.json`, `.gitignore`, key or env file was touched.
+
