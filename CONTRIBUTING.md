@@ -74,7 +74,7 @@ bun run web:build     # when apps/web changes
 ## Secrets and safety
 
 - No keys and no `.env` files in the tree. `.gitignore` excludes every `.env*` except `.env.example`.
-- Pushes are scanned with gitleaks. Run it yourself before you push:
+- The maintainers scan every push they make with gitleaks. CI does not run it, so run it yourself before you push:
 
   ```sh
   gitleaks git --log-opts="origin/cs/int..HEAD" .
@@ -90,7 +90,7 @@ bun run web:build     # when apps/web changes
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments |
 | `packages/` | `core` (types, canonical JSON, offer, countersignature, envelope, slip), `rail`, `buyer`, `runner`, `verify`, `relay` |
 | `apps/` | `hub` (the server) and `web` (the console) |
-| `docs/` | `spec/` (one page per protocol object), `decisions.md`, `proof.md`, `hedera.md` |
+| `docs/` | `status.md` (what is built and what is not), `spec/` (one page per protocol object), `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md` |
 | `examples/catalogue` | the skills the demo sellers serve |
 | `scripts/` | Hedera and Gateway operator scripts |
 

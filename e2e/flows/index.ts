@@ -4,8 +4,12 @@ import { arcGateway } from "./arc-gateway.flow.ts";
 import { arcSpine } from "./arc-spine.flow.ts";
 import { arcWrongAmount } from "./arc-wrong-amount.flow.ts";
 import { discovery } from "./discovery.flow.ts";
+import { erc8004Arc, erc8004Identity } from "./erc8004-identity.flow.ts";
+import { hederaSchedule } from "./hedera-schedule.flow.ts";
 import { hedera } from "./hedera.flow.ts";
-import { productionConsole, productionHub } from "./production.flow.ts";
+import { hederaMcp } from "./hedera-mcp.flow.ts";
+import { mpp } from "./mpp.flow.ts";
+import { productionApprovals, productionConsole, productionHub } from "./production.flow.ts";
 import { publicGateway } from "./public-gateway.flow.ts";
 import { publicHedera } from "./public-hedera.flow.ts";
 import { publicSpine } from "./public-spine.flow.ts";
@@ -34,8 +38,14 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "12", flow: publicSpine },
   { n: "15", flow: publicHedera },
   { n: "16", flow: publicGateway },
+  { n: "17", flow: hederaMcp },
+  { n: "18", flow: erc8004Identity },
+  { n: "18b", flow: erc8004Arc },
+  { n: "19", flow: mpp },
+  { n: "20", flow: hederaSchedule },
   { n: "14a", flow: productionConsole },
   { n: "14b", flow: productionHub },
+  { n: "14c", flow: productionApprovals },
   { n: "9", flow: web },
 ];
 

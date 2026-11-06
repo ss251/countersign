@@ -102,7 +102,7 @@ describe("discovery", () => {
       name: "countersign",
       website: "http://hub.test",
       docsUrl: "http://hub.test/openapi.json",
-      description: "Escrowed, countersigned x402 calls to software that sells itself.",
+      description: "Countersigned x402 calls to software that sells itself, escrowed on the escrow rails.",
       category: "INFRASTRUCTURE",
       tags: ["x402", "escrow", skill.adapter, ...skill.rails],
     });

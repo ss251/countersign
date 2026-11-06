@@ -1,4 +1,5 @@
 import type { PageProps } from "../../app/routes.ts";
+import { hubOff } from "./api.ts";
 import { Desk } from "./Desk.tsx";
 import { Receipt } from "./Receipt.tsx";
 import "./merchant.css";
@@ -7,9 +8,12 @@ import "./merchant.css";
 export const surface = (params: string[]) => (params[0] === "receipt" ? "bare" : "desk");
 
 export default function MerchantPage({ params, query }: PageProps) {
-  const fixture = query.get("fixture") === "1";
+  // Live by default. Only ?hub=off shows the sample ledger, loaded on demand (STEER-1730).
+  const offline = hubOff(query);
   if (params[0] === "receipt") {
-    return <Receipt id={params[1] ?? ""} fixture={fixture} />;
+    return <Receipt id={params[1] ?? ""} offline={offline} />;
   }
-  return <Desk fixture={fixture} />;
+  // A new source is a new desk: switching between the sample and live never shows one inside the other.
+  const merchant = query.get("merchant");
+  return <Desk key={offline ? "sample" : `live:${merchant ?? ""}`} offline={offline} merchantQuery={merchant} />;
 }

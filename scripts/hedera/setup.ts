@@ -1,8 +1,8 @@
 // Hedera testnet setup for the hedera rail. Idempotent: every step checks before it acts.
 //   bun scripts/hedera/setup.ts
 // 1. finds the operator account the faucet created for HD_OPERATOR_EVM
-// 2. creates the agent and seller accounts (ECDSA key with EVM alias) unless they already exist
-// 3. associates testnet USDC with the agent and the seller
+// 2. creates the agent, seller and seller-sign accounts (ECDSA key with EVM alias) unless they already exist
+// 3. associates testnet USDC with the agent, the seller and the seller-sign account
 // 4. creates the spend-log topic: no admin key, so it cannot be changed or deleted; submit key = agent
 import {
   AccountCreateTransaction,
@@ -35,18 +35,21 @@ const opBalance = await hbarBalance(opId);
 const seed = {
   AGENT: Hbar.fromTinybars(((opBalance * 30n) / 100n).toString()),
   SELLER: Hbar.fromTinybars(((opBalance * 10n) / 100n).toString()),
+  // Enough for ScheduleSign fees only, not a spending balance. The operator pays every USDC
+  // association below, so this seed is not needed for the association's ~0.72 HBAR fee.
+  SELLER_SIGN: Hbar.fromTinybars("30000000"),
 };
 
-const ids = { AGENT: "", SELLER: "" };
-for (const role of ["AGENT", "SELLER"] as const) {
+const ids = { AGENT: "", SELLER: "", SELLER_SIGN: "" };
+for (const role of ["AGENT", "SELLER", "SELLER_SIGN"] as const) {
   const k = key(env, `HD_${role}_KEY`);
   let id = env[`HD_${role}_ID`] ?? (await resolveAccount(need(env, `HD_${role}_EVM`)));
   if (!id) {
-    const tx = await new AccountCreateTransaction()
-      .setECDSAKeyWithAlias(k.publicKey)
-      .setInitialBalance(seed[role])
-      .freezeWith(op)
-      .sign(k);
+    const create = new AccountCreateTransaction().setECDSAKeyWithAlias(k.publicKey).setInitialBalance(seed[role]);
+    // The seller-sign account must sign for every transfer in, so a scheduled credit cannot run
+    // until its key lands on the schedule.
+    if (role === "SELLER_SIGN") create.setReceiverSignatureRequired(true);
+    const tx = await create.freezeWith(op).sign(k);
     const receipt = await (await tx.execute(op)).getReceipt(op);
     if (!receipt.accountId) throw new Error(`no account id in the ${role} creation receipt`);
     id = receipt.accountId.toString();
@@ -56,22 +59,20 @@ for (const role of ["AGENT", "SELLER"] as const) {
   writeEnv({ [`HD_${role}_ID`]: id });
 }
 
-for (const role of ["AGENT", "SELLER"] as const) {
+for (const role of ["AGENT", "SELLER", "SELLER_SIGN"] as const) {
   const id = ids[role];
   if ((await tokenBalance(id, USDC_TESTNET)) !== null) continue;
   const k = key(env, `HD_${role}_KEY`);
-  // The account pays for its own association; for a faucet-made hollow account this also completes it.
-  const self = testnetClient(id, k);
+  // The operator pays for the association, so an account needs no HBAR of its own. The account
+  // still signs: for a faucet-made hollow account this also completes it.
   try {
-    const tx = await new TokenAssociateTransaction().setAccountId(id).setTokenIds([USDC_TESTNET]).freezeWith(self).sign(k);
-    const receipt = await (await tx.execute(self)).getReceipt(self);
+    const tx = await new TokenAssociateTransaction().setAccountId(id).setTokenIds([USDC_TESTNET]).freezeWith(op).sign(k);
+    const receipt = await (await tx.execute(op)).getReceipt(op);
     console.log(`associated USDC ${USDC_TESTNET} with ${role.toLowerCase()} ${id}: ${receipt.status.toString()}`);
   } catch (e) {
     // The mirror node lags consensus, so a fresh association can look missing; that one is fine.
     const status = e instanceof ReceiptStatusError || e instanceof StatusError ? e.status : undefined;
     if (status !== Status.TokenAlreadyAssociatedToAccount) throw e;
-  } finally {
-    self.close();
   }
 }
 
@@ -91,4 +92,5 @@ op.close();
 console.log(`operator ${opId}  ${hashscanAccount(opId)}`);
 console.log(`agent    ${ids.AGENT}  ${hashscanAccount(ids.AGENT)}`);
 console.log(`seller   ${ids.SELLER}  ${hashscanAccount(ids.SELLER)}`);
+console.log(`signer   ${ids.SELLER_SIGN}  ${hashscanAccount(ids.SELLER_SIGN)}`);
 console.log(`topic    ${topic}  ${hashscanTopic(topic)}`);

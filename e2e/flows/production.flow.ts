@@ -12,7 +12,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { check, equal, type Flow, type FlowCtx } from "../lib/flow.ts";
+import { check, equal, NotRun, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { ROOT } from "../lib/paths.ts";
 
 const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
@@ -147,7 +147,7 @@ export const productionHub: Flow = {
     });
 
     await ctx.step("production declares every rail it claims", async () => {
-      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera").split(",").map((x) => x.trim()).filter(Boolean);
+      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
       const res = await ctx.http("rails", `${hub}/rails`);
       equal(res.status, 200, "rails status");
       const ids = ((res.json as { rails?: Array<{ id: string }> }).rails ?? []).map((r) => r.id);
@@ -165,9 +165,6 @@ export const productionHub: Flow = {
         { screen: "registry", path: "/sellers" },
         { screen: "registry, assistant", path: `/offers/search?q=${q("arc")}&limit=10` },
         { screen: "offer page", path: `/offers/${seen.offerHash}` },
-        { screen: "buyer, assistant", path: `/envelopes/${seen.agent}` },
-        { screen: "buyer", path: `/approvals?agent=${seen.agent}&status=pending` },
-        { screen: "buyer", path: `/approvals?agent=${seen.agent}&status=decided` },
         { screen: "buyer", path: `/jobs?buyer=${seen.agent}&limit=50` },
         { screen: "seller dashboard", path: `/jobs?seller=${seen.seller}&limit=50` },
         { screen: "merchant desk", path: `/orders?seller=${seen.seller}&limit=50` },
@@ -182,9 +179,75 @@ export const productionHub: Flow = {
       }
       if (!seen.slipHash) failures.push("no settlement carries a slip hash to read (slip, verify)");
       ctx.note(`checked ${endpoints.length} endpoints for agent ${seen.agent} and seller ${seen.seller}`);
+      ctx.note("the approval routes, /envelopes and /approvals, are checked by production-approvals: they depend on production's approver configuration");
       check(failures.length === 0, `${failures.length} of ${endpoints.length} fail: ${failures.join("; ")}`);
     });
+  },
+};
 
+/**
+ * 14c · The approval path on production: the envelope mirror and the approvals the buyer's phone
+ * reads. They depend on production's approver configuration (`HUMAN_APPROVAL_TOKEN`). Until it is
+ * set, the hub answers 503 `no-approver` and this flow reports NOT RUN (in progress). Once it is
+ * set, every route must answer 200, open to the console, and the decision route must pass CORS
+ * preflight with an `authorization` header.
+ */
+export const productionApprovals: Flow = {
+  name: "production-approvals",
+  title: "Production approval path for the buyer's phone",
+  owner: "cs-ui",
+  network: "none",
+  notRun: (env) => (env.options.publicHub ? null : "no public hub configured"),
+  async run(ctx) {
+    const hub = (ctx.env.options.publicHub as string).replace(/\/+$/, "");
+    const origin = consoleUrl();
+    const agent = await ctx.step("the agent the phone follows", async () => {
+      const st = await ctx.http("settlements", `${hub}/settlements?limit=1`);
+      equal(st.status, 200, "settlements status");
+      return (st.json as { settlements?: Array<{ buyer?: string }> }).settlements?.[0]?.buyer ?? ctx.env.secrets.address("CS_BUYER_ADDRESS");
+    });
+    const paths = [`/envelopes/${agent}`, `/approvals?agent=${agent}&status=pending`, `/approvals?agent=${agent}&status=decided`];
+    const read = async (label: string, auth: Record<string, string>) => {
+      const out: Array<{ path: string; status: number; code?: string; allow: string | null }> = [];
+      for (const path of paths) {
+        const res = await ctx.http(`${label} ${path.split("?")[0]}`, `${hub}${path}`, { headers: { origin, ...auth } });
+        out.push({ path, status: res.status, code: (res.json as { code?: string } | undefined)?.code, allow: res.headers.get("access-control-allow-origin") });
+      }
+      return out;
+    };
+    const anonymous = await ctx.step("the approval routes answer a client with no token", () => read("approvals, no token", {}));
+    if (anonymous.every((a) => a.status === 503 && a.code === "no-approver")) {
+      throw new NotRun("in progress: depends on production approver configuration (HUMAN_APPROVAL_TOKEN, STEER-1955 (c))");
+    }
+    await ctx.step("without the approver's token the routes refuse", () => {
+      const open = anonymous.filter((a) => a.status !== 401);
+      check(open.length === 0, `approval data answers a client with no token: ${open.map((a) => `${a.status} ${a.path.split("?")[0]}`).join("; ")}`);
+    });
+    if (!ctx.env.secrets.has("HUMAN_APPROVAL_TOKEN")) throw new NotRun("no approver token on this machine (approval.env)");
+    // The console sends the human's token the same way (apps/web/src/lib/api.ts, tokenHeader).
+    const answers = await ctx.step("with the approver's token the routes answer", () =>
+      read("approvals, with token", { authorization: `Bearer ${ctx.env.secrets.get("HUMAN_APPROVAL_TOKEN")}` }),
+    );
+    await ctx.step("every approval route answers, open to the console", async () => {
+      const bad: string[] = [];
+      for (const a of answers) {
+        const route = a.path.split("?")[0] as string;
+        // An agent that never published its envelope mirror gets the documented 404, which the
+        // phone shows as an honest absence; any other non-200 is a broken route.
+        const honestAbsence = route.startsWith("/envelopes/") && a.status === 404 && a.code === "unknown-agent";
+        if (honestAbsence) ctx.note(`the phone follows ${agent}, which has published no envelope mirror here, so the phone shows its absent state`);
+        else if (a.status !== 200) bad.push(`${a.status}${a.code ? ` ${a.code}` : ""} ${route}`);
+        if (a.allow !== "*" && a.allow !== origin) bad.push(`no CORS for the console on ${route}`);
+      }
+      // An agent that did publish its mirror is served: the EVM buyer's.
+      const buyer = ctx.env.secrets.address("CS_BUYER_ADDRESS");
+      const mirror = await ctx.http("envelope of the EVM buyer", `${hub}/envelopes/${buyer}`, {
+        headers: { origin, authorization: `Bearer ${ctx.env.secrets.get("HUMAN_APPROVAL_TOKEN")}` },
+      });
+      if (mirror.status !== 200) bad.push(`${mirror.status} /envelopes/${buyer} (a published mirror)`);
+      else equal((mirror.json as { envelope?: { agent?: string } }).envelope?.agent?.toLowerCase(), buyer.toLowerCase(), "the mirror's agent");
+      check(bad.length === 0, `${bad.length} fail: ${bad.join("; ")}`);
+    });
     await ctx.step("the approval decision passes CORS preflight", async () => {
       const res = await ctx.http("approval decision preflight", `${hub}/approvals/preflight-check/decision`, {
         method: "OPTIONS",

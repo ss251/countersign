@@ -1,14 +1,16 @@
 #!/usr/bin/env bun
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
-import { formatUnits, parseUnits, RAIL_IDS, type Envelope, type RailId } from "@countersign/core";
+import { formatUnits, parseUnits, RAIL_IDS, sepoliaEnsResolver, type Envelope, type RailId } from "@countersign/core";
 import { BuyError, buy } from "./buy.ts";
 import { CIRCLE_CATALOGUE, hubCallOf, payableVia, readCatalogue } from "./catalogue.ts";
 import { HubClient } from "./hub-client.ts";
 import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
-import { countersignPayer, gatewayPayer } from "./payer.ts";
+import { publishEnvelope } from "./mirror.ts";
+import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
 import { resume } from "./resume.ts";
+import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
 
 interface Parsed {
@@ -91,21 +93,26 @@ async function main(): Promise<void> {
     if (fromUrl) hub = new HubClient(fromUrl.hub);
     const hash = (fromUrl?.offerHash ?? pos[1]) as Hex | undefined;
     const raw = one("input");
-    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>]");
+    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
     const rail = parseRail(one("rail"));
+    const approvals = parseApprovals(one("approvals"));
     const account = agentAccount();
     const result = await buy({
       hub,
       offerHash: hash,
       input: JSON.parse(raw),
-      payers: [countersignPayer(account), gatewayPayer(account)],
+      payers: [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)],
       envelope: state.loadEnvelope(),
       journal,
       state,
       now: Math.floor(Date.now() / 1000),
       approve: flags.has("approve"),
       known,
+      ens: sepoliaEnsResolver(process.env.CS_ENS_RPC_URL ? { rpcUrl: process.env.CS_ENS_RPC_URL } : {}),
+      account,
+      mirror: flags.has("hub"),
       ...(rail !== undefined ? { rail } : {}),
+      ...(approvals !== undefined ? { approvals } : {}),
     });
     console.log(JSON.stringify(result.output, null, 2));
     console.log("Released. Slip minted.");
@@ -133,16 +140,50 @@ async function main(): Promise<void> {
     if (flags.has("unrevoke")) env.revoked = false;
     state.saveEnvelope(env);
     console.log(`Envelope saved. Budget ${usd(env.cap)} USDC, ${usd(env.perMerchant)} per seller${env.revoked ? ", revoked" : ""}.`);
+  } else if ((cmd === "accept" || cmd === "dispute") && pos[1] !== undefined) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(pos[1])) throw new Error(`Usage: ${cmd} <jobId>`);
+    const args = { hub, journal, state, known, signer: agentAccount(), jobId: pos[1] as Hex, now: Math.floor(Date.now() / 1000) };
+    const done = cmd === "accept" ? await acceptJob(args) : await disputeJob(args);
+    console.log(
+      cmd === "accept"
+        ? `Accepted ${done.jobId}. The hub relays it; the seller is paid when it lands.`
+        : `Disputed ${done.jobId}. The hub relays it; run resume to see the refund land.`,
+    );
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
+  } else if (cmd === "publish-envelope") {
+    const account = agentAccount();
+    const ok = await publishEnvelope({
+      hub,
+      account,
+      envelope: state.loadEnvelope(),
+      spent: journal.spend(),
+      now: Math.floor(Date.now() / 1000),
+    });
+    console.log(ok ? "Envelope published." : "Envelope publish failed.");
   } else if (cmd === "resume") {
-    const rows = await resume({ hub, journal, state, known });
+    const mirror = flags.has("hub")
+      ? { account: agentAccount(), envelope: state.loadEnvelope() }
+      : undefined;
+    const rows = await resume({
+      hub,
+      journal,
+      state,
+      known,
+      ...(mirror !== undefined ? { mirror } : {}),
+    });
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
-    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] | envelope show|set | journal | resume");
+    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> | envelope show|set | publish-envelope | journal | resume");
     console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
   }
+}
+
+function parseApprovals(raw: string | undefined): "local" | "hub" | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "local" || raw === "hub") return raw;
+  throw new Error(`Unknown approvals mode ${raw}.`);
 }
 
 function parseRail(raw: string | undefined): RailId | undefined {
