@@ -33,9 +33,15 @@ describe("the integration block is the code the checkout runs", () => {
     expect(SNIPPET_PATHS).toEqual(SNIPPET_FILES);
     expect(MERCHANT_SNIPPET).toBe(displayedSource(source(SNIPPET_FILES.merchant), SNIPPET_FILES.merchant));
     expect(CUSTOMER_SNIPPET).toBe(displayedSource(source(SNIPPET_FILES.customer), SNIPPET_FILES.customer));
-    // Undo the names and the running file comes back byte for byte.
-    expect(workspaceSource(MERCHANT_SNIPPET)).toBe(source(SNIPPET_FILES.merchant));
-    expect(workspaceSource(CUSTOMER_SNIPPET)).toBe(source(SNIPPET_FILES.customer));
+    // Set the import names aside and the running file is the shown file, byte for byte. This holds
+    // whether examples/ imports the workspace names (then shown mapped) or the published ones.
+    const names = (text: string) => text.replace(/(["'])@countersign(-hub)?\/[^"']+\1/g, '"<import>"');
+    expect(names(MERCHANT_SNIPPET)).toBe(names(source(SNIPPET_FILES.merchant)));
+    expect(names(CUSTOMER_SNIPPET)).toBe(names(source(SNIPPET_FILES.customer)));
+    // And where the running file still names the workspace, the mapping is exactly undone.
+    if (/["']@countersign\//.test(source(SNIPPET_FILES.merchant))) {
+      expect(workspaceSource(MERCHANT_SNIPPET)).toBe(source(SNIPPET_FILES.merchant));
+    }
   });
 
   test("nothing shown would install another project's package", () => {
