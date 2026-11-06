@@ -24,15 +24,26 @@ interface Ring {
   power: number;
 }
 
+/** Under reduced motion the field is one still frame: no animation loop, and no ripples from the pointer. */
+export function reducesMotion(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Whether the field animates: only when asked to run, and never under reduced motion. */
+export function glyphLoopRuns(running: boolean): boolean {
+  return running && !reducesMotion();
+}
+
 export function GlyphField({ running, theme, target }: { running: boolean; theme: string; target: React.RefObject<HTMLElement | null> }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const runRef = useRef(running);
-  runRef.current = running;
+  runRef.current = glyphLoopRuns(running);
 
   useEffect(() => {
     const el = canvas.current;
     const ctx = el?.getContext("2d");
     if (!el || !ctx) return;
+    const still = reducesMotion();
 
     const css = getComputedStyle(el);
     const ink = rgb(css.getPropertyValue("--ink"), [216, 220, 255]);
@@ -129,11 +140,12 @@ export function GlyphField({ running, theme, target }: { running: boolean; theme
       if (!raf) draw(performance.now());
     });
     ro.observe(el);
-    const host = target.current;
+    // Under reduced motion nothing listens and nothing loops: the field is drawn once and holds.
+    const host = still ? null : target.current;
     host?.addEventListener("pointermove", onMove);
     host?.addEventListener("pointerdown", onDown);
 
-    if (runRef.current) raf = requestAnimationFrame(frame);
+    if (runRef.current && !still) raf = requestAnimationFrame(frame);
     else draw(performance.now());
 
     return () => {
