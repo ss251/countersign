@@ -50,7 +50,9 @@ describe("stable offers", () => {
       skillSha256: skill.sha256,
     });
 
-    expect(second).toBe(first);
+    expect(offerHash(first.offer)).toBe(first.offerHash);
+    expect(second.offerHash).toBe(first.offerHash);
+    expect(second.offer).toEqual(first.offer);
   });
 
   test("a changed input gets a fresh issuedAt", async () => {
@@ -69,9 +71,14 @@ describe("stable offers", () => {
       skillSha256: skill.sha256,
     });
     const changed = skillOffer({ ...base, price: "2000", now: 200 });
-    const hash = await publishOffer(hubUrl, account, changed, { stateDir, skillSha256: skill.sha256 });
+    const published = await publishOffer(hubUrl, account, changed, {
+      stateDir,
+      skillSha256: skill.sha256,
+    });
 
-    expect(hash).toBe(offerHash(changed));
+    expect(offerHash(published.offer)).toBe(published.offerHash);
+    expect(published.offerHash).toBe(offerHash(changed));
+    expect(published.offer).toEqual(changed);
   });
 });
 
