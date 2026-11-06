@@ -127,6 +127,7 @@ export const RAIL_LABEL: Record<RailId, string> = {
   erc8183: "Arc · ERC-8183",
   whitechain: "Whitechain · USDT",
   hedera: "Hedera · x402",
+  "hedera-scheduled": "Hedera · scheduled",
   mpp: "Stripe · MPP",
 };
 

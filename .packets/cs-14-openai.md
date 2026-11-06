@@ -99,3 +99,5 @@ Every command passes, with no new skipped tests.
 ## Finish
 
 Commit with small present-tense messages ending `(refs #53)`, and no trailers. Write `.packets/reports/cs-14-openai.md`. Do not push, merge or deploy.
+
+Note from the integrator: this branch includes `cs/cs-13` (buyer approvals: `buy()` gained `approvals`, `account` and `mirror` options, and the CLI gained `--approvals hub` and `publish-envelope`). It is in review for `cs/int`. Call `buy()` with the defaults, `approvals: "local"`, and keep the existing CLI commands intact.

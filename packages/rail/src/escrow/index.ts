@@ -30,6 +30,7 @@ import {
   checkCountersign,
   type CountersignExtra,
   type CountersignPayload,
+  isV2Terms,
   type Network,
   type Offer,
   offerHash,
@@ -41,6 +42,7 @@ import {
 } from "@countersign/core";
 import type { ChallengeContext, EscrowOps, Rail, RailDeclaration } from "../rail.ts";
 import { escrowAbi } from "./abi.ts";
+import { escrowV2Abi } from "./abi-v2.ts";
 
 const erc3009ReadAbi = [
   {
@@ -67,6 +69,8 @@ export interface EscrowRailConfig {
   chainId: number;
   rpcUrl: string;
   escrow: Address;
+  /** Escrow contract version. Default 1, the deployed escrows. Only 2 exposes the review methods. */
+  version?: 1 | 2;
   token: Address;
   tokenName: string;
   tokenVersion: string;
@@ -96,7 +100,13 @@ export interface EscrowRailConfig {
   walletClient?: WalletClient<Transport, Chain, LocalAccount>;
 }
 
-export const STATUS = ["none", "funded", "released", "refunded", "failed"] as const;
+export const STATUS = ["none", "funded", "released", "refunded", "failed", "delivered", "disputed"] as const;
+
+/** Escrow v2's settle window: release and failDelivery land until deadline + 600, refund after it. */
+export const DISPUTE_WINDOW_SECONDS = 600;
+
+const V2_TERMS_REFUSED = "Refused. The countersigned bond or review window is not the offer's.";
+const V2_ON_V1_REFUSED = "Refused. This rail is v1; it does not take escrow v2 terms.";
 
 /** Offer prices are atomic 6-decimal USD; scale them to the token's decimals. */
 export function priceInToken(price: string, decimals: number): string {
@@ -127,6 +137,7 @@ function isPayload(p: unknown): p is CountersignPayload {
 
 export function escrowRail(cfg: EscrowRailConfig): Rail {
   const network: Network = `eip155:${cfg.chainId}`;
+  const version = cfg.version ?? 1;
   const now = cfg.now ?? (() => Math.floor(Date.now() / 1000));
   const skew = cfg.deadlineSkew ?? 15;
   const maxExtra = cfg.maxExtraSeconds ?? 300;
@@ -187,7 +198,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   }
 
   function challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
-    const extra: CountersignExtra & { bond: string } = {
+    const extra: CountersignExtra & { bond: string; reviewWindow?: number; escrowVersion?: 2 } = {
       rail: cfg.id,
       escrow: getAddress(cfg.escrow),
       chainId: cfg.chainId,
@@ -195,7 +206,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
       deadlineSeconds: offer.deadline,
       tokenName: cfg.tokenName,
       tokenVersion: cfg.tokenVersion,
-      bond: offer.bond,
+      bond: offer.bond ?? "0",
+      ...(version === 2 ? { reviewWindow: offerReviewWindow(offer), escrowVersion: 2 as const } : {}),
     };
     return {
       scheme: "countersign",
@@ -211,11 +223,24 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   async function verify(payment: PaymentPayload, req: PaymentRequirements): Promise<VerifyResult> {
     const p = payment.payload;
     if (!isPayload(p)) return { isValid: false, invalidReason: "Refused. The payment is not a countersignature." };
-    const extra = req.extra as unknown as CountersignExtra | undefined;
+    const extra = req.extra as unknown as (CountersignExtra & { bond?: unknown; reviewWindow?: unknown }) | undefined;
     if (!extra || req.scheme !== "countersign" || req.network !== network) {
       return { isValid: false, invalidReason: "Refused. This rail does not take that payment." };
     }
     const t = p.terms;
+    if (version === 1 && isV2Terms(t)) {
+      return { isValid: false, invalidReason: V2_ON_V1_REFUSED };
+    }
+    if (version === 2) {
+      const offeredWindow = typeof extra.reviewWindow === "number" ? extra.reviewWindow : 0;
+      if (
+        !isV2Terms(t) ||
+        !sameAtomic(t.bond, extra.bond) ||
+        (t.reviewWindow ?? 0) !== offeredWindow
+      ) {
+        return { isValid: false, invalidReason: V2_TERMS_REFUSED };
+      }
+    }
     if (t.offerHash.toLowerCase() !== extra.offerHash.toLowerCase()) {
       return { isValid: false, invalidReason: "Refused. The countersignature names another offer." };
     }
@@ -261,6 +286,19 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     if (!v.isValid) return { success: false, errorReason: v.invalidReason, transaction: "", network };
     const p = payment.payload as unknown as CountersignPayload;
     const extra = req.extra as unknown as CountersignExtra & { bond?: unknown };
+    if (version === 2) {
+      return submit(
+        "funding",
+        () =>
+          wallet!.writeContract({
+            address: cfg.escrow,
+            abi: escrowV2Abi,
+            functionName: "fund",
+            args: fundArgsV2(extra.offerHash, p),
+          }),
+        v.payer,
+      );
+    }
     const bond = atomicOrZero(extra.bond);
     if (bond > 0n) {
       const args = fundArgs(extra.offerHash, p);
@@ -282,6 +320,42 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
       v.payer,
     );
   }
+
+  const v2Ops: Pick<EscrowOps, "accept" | "dispute" | "releaseAfterWindow" | "reviewOf" | "sweepToll"> =
+    version === 2
+      ? {
+          accept: (jobId, buyerSig) =>
+            submit("acceptance", () =>
+              wallet!.writeContract({ address: cfg.escrow, abi: escrowV2Abi, functionName: "accept", args: [jobId, buyerSig] }),
+            ),
+          dispute: (jobId, buyerSig) =>
+            submit("dispute", () =>
+              wallet!.writeContract({ address: cfg.escrow, abi: escrowV2Abi, functionName: "dispute", args: [jobId, buyerSig] }),
+            ),
+          releaseAfterWindow: (jobId) =>
+            submit("window release", () =>
+              wallet!.writeContract({
+                address: cfg.escrow,
+                abi: escrowV2Abi,
+                functionName: "releaseAfterWindow",
+                args: [jobId],
+              }),
+            ),
+          reviewOf: async (jobId) => {
+            const [window, deliveredAt, endsAt] = await pub.readContract({
+              address: cfg.escrow,
+              abi: escrowV2Abi,
+              functionName: "reviewOf",
+              args: [jobId],
+            });
+            return { window: Number(window), deliveredAt: Number(deliveredAt), endsAt: Number(endsAt) };
+          },
+          sweepToll: () =>
+            submit("toll sweep", () =>
+              wallet!.writeContract({ address: cfg.escrow, abi: escrowV2Abi, functionName: "sweepToll", args: [] }),
+            ),
+        }
+      : {};
 
   const escrow: EscrowOps = {
     release: (jobId, slipHash, sellerSig) => {
@@ -308,6 +382,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
         wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "failDelivery", args: [jobId] }),
       ),
     bondOfPayee: (payee) => bondOfPayee(pub, cfg.escrow, payee),
+    ...v2Ops,
+    disputeWindowSeconds: version === 2 ? DISPUTE_WINDOW_SECONDS : 0,
     status: async (jobId) => {
       const job = await pub.readContract({ address: cfg.escrow, abi: escrowAbi, functionName: "jobOf", args: [jobId] });
       return STATUS[job.status] ?? "none";
@@ -361,6 +437,44 @@ export function fundArgs(offer: Hex, p: CountersignPayload) {
       s: sig.s,
     },
   ] as const;
+}
+
+/** offer.reviewWindow when the published offer carries one (v2), else 0. */
+export function offerReviewWindow(offer: Offer): number {
+  const value = (offer as Offer & { reviewWindow?: unknown }).reviewWindow;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
+/** The contract's fund() arguments for a v2 countersignature. Exported for tests and the runner. */
+export function fundArgsV2(offer: Hex, p: CountersignPayload) {
+  const sig = parseSignature(p.signature);
+  const v = sig.v !== undefined ? Number(sig.v) : (sig.yParity ?? 0) + 27;
+  return [
+    offer,
+    {
+      buyer: getAddress(p.terms.buyer),
+      payee: getAddress(p.terms.payee),
+      amount: BigInt(p.terms.amount),
+      deadline: BigInt(p.terms.deadline),
+      salt: BigInt(p.terms.salt),
+      bond: BigInt(p.terms.bond ?? "0"),
+      reviewWindow: BigInt(p.terms.reviewWindow ?? 0),
+      validAfter: BigInt(p.authorization.validAfter),
+      validBefore: BigInt(p.authorization.validBefore),
+      v,
+      r: sig.r,
+      s: sig.s,
+    },
+  ] as const;
+}
+
+function sameAtomic(a: string | undefined, b: unknown): boolean {
+  if (typeof b !== "string" || !/^\d+$/.test(b)) return false;
+  try {
+    return BigInt(a ?? "0") === BigInt(b);
+  } catch {
+    return false;
+  }
 }
 
 function short(e: unknown): string {

@@ -31,6 +31,9 @@ export interface JournalEntry {
   /** The escrow and chain the job was signed for, on escrow rails. */
   escrow?: string;
   chainId?: number;
+  /** Escrow v2 terms the buyer countersigned, kept so the jobId can be re-derived. */
+  bond?: string;
+  reviewWindow?: number;
   slipHash?: string;
   closeTx?: string;
   reason?: string;
