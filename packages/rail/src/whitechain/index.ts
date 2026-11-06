@@ -36,6 +36,9 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
   const relayUrl = opts.relayUrl.replace(/\/+$/, "");
   const version = opts.version ?? 1;
   if (version === 2 && !opts.escrow) throw new Error("whitechain escrow v2 needs its escrow address");
+  // On v2 the relay acts on the hub's word for its funder and arbiter powers: a bonded fund and a
+  // late release both carry the hub's bearer token.
+  const hubToken = version === 2 ? opts.relayToken?.trim() || undefined : undefined;
   const escrowAddress = opts.escrow ?? WHITECHAIN_ESCROW;
   const base = escrowRail({
     id: "whitechain",
@@ -93,12 +96,16 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
     paymentRequirements: PaymentRequirements,
     opts?: { lockSig?: Hex },
   ): Promise<SettleResult> {
-    const out = await post("/settle", {
-      x402Version: 2,
-      paymentPayload,
-      paymentRequirements,
-      ...(opts?.lockSig ? { lockSig: opts.lockSig } : {}),
-    });
+    const out = await post(
+      "/settle",
+      {
+        x402Version: 2,
+        paymentPayload,
+        paymentRequirements,
+        ...(opts?.lockSig ? { lockSig: opts.lockSig } : {}),
+      },
+      opts?.lockSig && hubToken ? { authorization: `Bearer ${hubToken}` } : {},
+    );
     if (!out || typeof out.success !== "boolean") return unreachable();
     return out as unknown as SettleResult;
   }
@@ -136,6 +143,9 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
       close("/escrow/dispute", { jobId, status, buyerSig });
     escrow.releaseAfterWindow = (jobId) => close("/escrow/release-after-window", { jobId });
     if (token) {
+      // Past the deadline the relay releases only on the hub's word, so the hub's release carries it.
+      escrow.release = (jobId, slipHash, sellerSig) =>
+        close("/escrow/release", { jobId, slipHash, sellerSig }, { authorization: `Bearer ${token}` });
       escrow.failDelivery = (jobId) =>
         close("/escrow/fail", { jobId }, { authorization: `Bearer ${token}` });
     }

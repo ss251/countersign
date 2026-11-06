@@ -1,5 +1,5 @@
 import { getAddress, type Address, type Chain, type Hex, type PublicClient, type Transport } from "viem";
-import { escrowRail, type ReviewState } from "@countersign/rail";
+import { escrowAbi, escrowRail, type ReviewState } from "@countersign/rail";
 import { txUrl } from "./chain.ts";
 import { readNow } from "./exact.ts";
 import type { CountersignContext } from "./countersign-scheme.ts";
@@ -40,6 +40,32 @@ function jobEscrow(job: JobRecord | null, ctx: EscrowContext): Address {
 
 function isJobId(value: unknown): value is Hex {
   return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+/**
+ * Past a v2 job's deadline only the escrow's arbiter may release, and on Whitechain the arbiter is
+ * this relay's own key. So a release after the deadline must come from the hub, which checked the
+ * delivery. "After" mirrors the contract: now > deadline. It reads the job on chain, and answers
+ * "unknown" when it cannot, so the caller refuses rather than guesses. A v1 job never needs the hub.
+ */
+export async function releaseNeedsHub(jobId: Hex, ctx: EscrowContext): Promise<boolean | "unknown"> {
+  const escrow = jobEscrow(ctx.ledger.getJob(jobId), ctx);
+  if (ctx.relayer.escrowVersion(escrow) !== 2) return false;
+  let deadline: number;
+  try {
+    const onChain = (await ctx.reader.readContract({
+      address: escrow,
+      abi: escrowAbi,
+      functionName: "jobOf",
+      args: [jobId],
+    })) as { deadline?: bigint | number };
+    deadline = Number(onChain.deadline);
+  } catch {
+    return "unknown";
+  }
+  // No job on chain (deadline 0) cannot be released at all; the normal path refuses it.
+  if (!Number.isSafeInteger(deadline) || deadline <= 0) return false;
+  return readNow(ctx.now) > deadline;
 }
 
 export async function jobStatus(jobId: string, ctx: EscrowContext): Promise<JobView | null> {

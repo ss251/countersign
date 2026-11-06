@@ -20,6 +20,7 @@ import {
   refundJob,
   releaseAfterWindowJob,
   releaseJob,
+  releaseNeedsHub,
 } from "./escrow-ops.ts";
 import type { EscrowOpResult } from "./escrow-ops.ts";
 import { settleExact, verifyExact, readNow } from "./exact.ts";
@@ -146,6 +147,19 @@ export function createRelayApp(options: RelayAppOptions): Hono {
         400,
       );
     }
+    // A lockSig means a bonded v2 fund, which this relay submits as the Lock's funder. Only the hub
+    // sends one, so only the hub's bearer may ask for it, exactly as for /escrow/fail. Otherwise a
+    // fund that reverted could be re-posted by anyone holding the now-public lockSig.
+    const carriesLock =
+      typeof body.value === "object" && body.value !== null && "lockSig" in (body.value as object);
+    if (carriesLock) {
+      if (!hubToken) {
+        return c.json({ success: false, errorReason: "lock_not_configured", transaction: "", network: NETWORK }, 503);
+      }
+      if (!authorizedHub(c.req.header("authorization"), hubToken)) {
+        return c.json({ success: false, errorReason: "hub_auth_required", transaction: "", network: NETWORK }, 401);
+      }
+    }
     if (schemeOf(body.value) === "countersign") {
       return c.json(await settleCountersign(body.value, csCtx));
     }
@@ -245,6 +259,17 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     const body = await readJson(c);
     const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
     if (!v || !isHex32(v.jobId) || !isHex32(v.slipHash) || !isHexString(v.sellerSig)) return bad(c);
+    // A late v2 release is the arbiter's power, and on Whitechain the arbiter is this relay's key:
+    // only the hub, which checked the delivery, may ask for one, exactly as for /escrow/fail.
+    const fromHub = hubToken !== undefined && authorizedHub(c.req.header("authorization"), hubToken);
+    if (!fromHub) {
+      const needsHub = await releaseNeedsHub(v.jobId, csCtx);
+      if (needsHub === "unknown") return c.json({ ok: false, reason: "job_unreadable" }, 503);
+      if (needsHub) {
+        if (!hubToken) return c.json({ ok: false, reason: "late_release_not_configured" }, 503);
+        return c.json({ ok: false, reason: "hub_auth_required" }, 401);
+      }
+    }
     return replyOp(
       c,
       await releaseJob({ jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig }, csCtx),
