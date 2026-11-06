@@ -24,8 +24,19 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "history", label: "History" },
 ];
 
-/** The buyer is a phone: 390 px, one column, thumb-reach actions at the bottom. */
-export default function BuyerPage({ query }: PageProps) {
+/**
+ * The buyer is a phone: 390 px, one column, thumb-reach actions at the bottom.
+ *
+ * Asking for another agent or another hub in the address starts the phone afresh: its reads, its
+ * polling and what it has countersigned belong to one agent on one hub. Nothing from the previous
+ * agent can stay on screen, or be held, while the new one loads.
+ */
+export default function BuyerPage(props: PageProps) {
+  const who = `${props.query.get("hub") ?? ""}|${props.query.get("agent") ?? ""}`;
+  return <Phone key={who} {...props} />;
+}
+
+function Phone({ query }: PageProps) {
   const tab = TABS.find((t) => t.id === query.get("tab"))?.id ?? "approvals";
   const envelope = useResource(() => api.envelope(), []);
   const approvals = useResource(() => api.approvals(), []);
