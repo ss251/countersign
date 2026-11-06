@@ -7,7 +7,10 @@ const config = await Bun.file(new URL("../vite.config.ts", import.meta.url)).tex
 
 describe("the console's link previews", () => {
   test("the preview image's origin is a build value with today's host as the default", () => {
-    expect(html).toContain('<meta property="og:image" content="%VITE_PUBLIC_ORIGIN%/og.png" />');
+    // The reviewed social card (STEER-0115): og.png stays in public/, unreferenced.
+    expect(html).toContain('<meta property="og:image" content="%VITE_PUBLIC_ORIGIN%/media/og.jpg" />');
+    expect(html).toContain('<meta name="twitter:image" content="%VITE_PUBLIC_ORIGIN%/media/og.jpg" />');
+    expect(html).not.toContain("og.png");
     expect(html).not.toMatch(/up\.railway\.app/);
     expect(config).toContain('process.env.VITE_PUBLIC_ORIGIN ??= "https://web-production-a58de.up.railway.app"');
   });

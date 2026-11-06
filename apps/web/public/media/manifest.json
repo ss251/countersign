@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-06",
+  "licence": "Generated with Higgsfield. Higgsfield's Terms of Service, section 4 (https://higgsfield.ai/terms): Higgsfield claims no ownership of outputs and does not restrict their commercial use; outputs may be used by Higgsfield to improve its models. Distributed here under this repository's licence.",
+  "disclosure": "These are AI-generated abstract visuals. The demo narration and the screen recordings are real.",
+  "plates": {
+    "plate-hero": {
+      "model": "flux_3_image (FLUX 3 Image), 16:9, 2k",
+      "prompt": "Low-key macro still life photograph. Black cotton rag paper, almost lightless, with fine self-coloured black fibres. Two sheets overlap along one shallow diagonal seam; only their torn deckled edges catch a single grazing light from the far left, leaving thin silver highlights along the tears. One twisted cotton thread in deep oxblood red lies taut along the seam from lower left to upper right; it is the only colour in the frame. Most of the frame falls away into near-black, and the upper left half is empty dark paper. 100 mm macro lens, shallow depth of field. No text."
+    },
+    "plate-seam": {
+      "model": "flux_3_image (FLUX 3 Image), 16:9, 2k",
+      "prompt": "Low-key macro still life photograph. Black cotton rag paper, almost lightless, with fine self-coloured black fibres. Two sheets overlap along one shallow diagonal seam; only their torn deckled edges catch a single grazing light from the far left, leaving thin silver highlights along the tears. One twisted cotton thread in deep oxblood red lies taut along the seam from lower left to upper right; it is the only colour in the frame. Most of the frame falls away into near-black, and the upper left half is empty dark paper. 100 mm macro lens, shallow depth of field. No text.",
+      "note": "a second take of the same prompt"
+    }
+  },
+  "assets": [
+    {
+      "id": "hero",
+      "use": "Landing hero loop. Decoration only: poster first, loaded after first paint, never played under prefers-reduced-motion.",
+      "files": {
+        "hero.webm": 786258,
+        "hero.mp4": 1042295,
+        "hero-poster.jpg": 84866
+      },
+      "source": "plate-hero",
+      "model": "kling_o3_flf (Kling 3.0 Omni, first and last frame), mode pro, sound off, 16:9; start and end frame are the same plate, so the clip loops, 10 s",
+      "prompt": "Locked-off overhead macro shot of this black rag paper and its single oxblood thread. Almost nothing moves. The one grazing light from the left slowly breathes a little brighter and then dimmer along the torn edge, and the thread tightens very slightly and settles again, a few loose fibres on it stirring as if in a faint draught. The camera never moves. Nothing new appears. The last frame returns exactly to the first.",
+      "post": "retimed 10 s to 8 s so the loop stays closed, scaled to 1920x1080, 24 fps, audio removed; VP9 CRF 31 two-pass and H.264 CRF 21 with faststart"
+    },
+    {
+      "id": "sting-arc",
+      "use": "Rail sting for Arc. The three stings share one frame and differ only in motion: the thread lifts from the seam in one arc and lays back down.",
+      "files": {
+        "sting-arc.webm": 183724,
+        "sting-arc.mp4": 241517,
+        "sting-arc-poster.jpg": 66810
+      },
+      "source": "plate-seam",
+      "model": "kling_o3_flf (Kling 3.0 Omni, first and last frame), mode pro, sound off, 16:9; start and end frame are the same plate, so the clip loops, 5 s",
+      "prompt": "Locked-off overhead macro shot of this black paper seam and its oxblood thread. The thread lifts from the seam in one smooth, unhurried arc, rising towards the camera at its middle like a drawn bow, holds for a beat, then lays back down exactly where it was. The camera never moves and nothing else enters the frame.",
+      "post": "retimed 5 s to 4 s so it ends where it began, scaled to 1280x720, 24 fps, audio removed; VP9 CRF 33 two-pass and H.264 CRF 23 with faststart"
+    },
+    {
+      "id": "sting-whitechain",
+      "use": "Rail sting for Whitechain. The three stings share one frame and differ only in motion: the thread travels along its own length, its twist running past like the links of a chain.",
+      "files": {
+        "sting-whitechain.webm": 239846,
+        "sting-whitechain.mp4": 292166,
+        "sting-whitechain-poster.jpg": 66970
+      },
+      "source": "plate-seam",
+      "model": "kling_o3_flf (Kling 3.0 Omni, first and last frame), mode pro, sound off, 16:9; start and end frame are the same plate, so the clip loops, 5 s",
+      "prompt": "Locked-off overhead macro shot of this black paper seam and its oxblood thread. The thread slides steadily along its own length, from lower left towards upper right, as if drawn through the seam from beyond the frame; its twist runs past like the links of a chain, at an even pace, then eases to a stop. Its path never changes and nothing else enters the frame. The camera never moves.",
+      "post": "retimed 5 s to 4 s so it ends where it began, scaled to 1280x720, 24 fps, audio removed; VP9 CRF 33 two-pass and H.264 CRF 23 with faststart"
+    },
+    {
+      "id": "sting-hedera",
+      "use": "Rail sting for Hedera. The three stings share one frame and differ only in motion: a glint of light travels the length of the thread and fades, like a message passing down a line.",
+      "files": {
+        "sting-hedera.webm": 159025,
+        "sting-hedera.mp4": 221562,
+        "sting-hedera-poster.jpg": 66621
+      },
+      "source": "plate-seam",
+      "model": "kling_o3_flf (Kling 3.0 Omni, first and last frame), mode pro, sound off, 16:9; start and end frame are the same plate, so the clip loops, 5 s",
+      "prompt": "Locked-off overhead macro shot of this black paper seam and its oxblood thread. Nothing moves except the light: a narrow sliver of the grazing light travels along the thread from lower left to upper right, catching each twist in turn like a message passing down a line, then fades, and the frame settles back to how it began. No glow and no new objects; the camera never moves.",
+      "post": "retimed 5 s to 4 s so it ends where it began, scaled to 1280x720, 24 fps, audio removed; VP9 CRF 33 two-pass and H.264 CRF 23 with faststart"
+    },
+    {
+      "id": "og",
+      "use": "Social card, 1200x630.",
+      "files": {
+        "og.jpg": 118057
+      },
+      "source": "plate-hero, cropped",
+      "model": "flux_3_image for the plate; the statement and the wordmark are set in the console's own system type, not generated",
+      "prompt": "Low-key macro still life photograph. Black cotton rag paper, almost lightless, with fine self-coloured black fibres. Two sheets overlap along one shallow diagonal seam; only their torn deckled edges catch a single grazing light from the far left, leaving thin silver highlights along the tears. One twisted cotton thread in deep oxblood red lies taut along the seam from lower left to upper right; it is the only colour in the frame. Most of the frame falls away into near-black, and the upper left half is empty dark paper. 100 mm macro lens, shallow depth of field. No text.",
+      "post": "cropped to 1200x630; type set in HTML and rendered by Chrome; JPEG quality 86"
+    }
+  ],
+  "notShipped": []
+}

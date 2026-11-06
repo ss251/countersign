@@ -137,9 +137,7 @@ function Claim({
   return (
     <div className={cx("story__claim", on && "is-on")} onFocus={onFocus}>
       <div className="landing__first-inner">
-        <h1 id="statement" className="landing__statement">
-          payments that only move when the work lands.
-        </h1>
+        {/* The statement is the plate's one line now (STEER-0115); this beat carries what follows it. */}
         <div className="landing__under">
           <p className="landing__what">
             countersign lets an agent pay for a tool only inside limits you sign. On an escrow rail the payment waits until the
