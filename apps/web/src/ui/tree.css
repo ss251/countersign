@@ -60,7 +60,7 @@
 }
 
 .tree__title {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 a.tree__title {

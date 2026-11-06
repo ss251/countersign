@@ -104,7 +104,7 @@ describe("the landing's hero number is the hub's /rails length", () => {
 
   test("no hub rails means no live text at all", () => {
     const html = renderToString(createElement(Figures, { stats: hubStats(7), missing: undefined, railsLive: undefined }));
-    expect(textOf(html)).not.toContain("Rails live");
+    expect(textOf(html)).not.toContain("live");
   });
 
   test("the landing feeds the hero the hub's /rails length, never a count that includes retired rails", async () => {

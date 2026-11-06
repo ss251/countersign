@@ -62,6 +62,12 @@
   --display: var(--sans);
   /* Headings only (the wordmark, the hero line, h1 and .display): the house face production ships; UI and body stay on --sans. */
   --display-face: "Countersign Display", ui-sans-serif, system-ui, sans-serif;
+  /* Display weights follow the hero: light and tight. Segoe UI has no 500, so --w-strong renders at 400 on
+     Windows and a half step up on Apple; nothing in the app goes heavier. */
+  --w-display: 400;
+  --w-strong: 500;
+  --track-hero: -0.045em;
+  --track-display: -0.035em;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Type scale. 16 is body; 14 dense rows; 13 and 12 captions; 11 only under tab icons. */

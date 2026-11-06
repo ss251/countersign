@@ -35,7 +35,7 @@
 
 .start__link {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
   text-underline-offset: 0.2em;
 }
@@ -54,7 +54,7 @@
 
 .start__offer-title {
   font-size: var(--t-17);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .start__seller {

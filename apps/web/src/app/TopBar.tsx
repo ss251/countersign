@@ -53,7 +53,7 @@ export function TopBar({ active, overlay }: { active: string; overlay: boolean }
     <header className="topbar" data-overlay={overlay && !solid && !sheet ? "" : undefined}>
       <div className="topbar__inner">
         <Link to="/" className="topbar__brand" aria-label="countersign, home">
-          <Wordmark />
+          <Wordmark size={28} />
         </Link>
         <nav className="topbar__nav" aria-label="Views">
           {GROUPS.map((g) => {

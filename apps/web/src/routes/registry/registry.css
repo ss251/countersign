@@ -76,7 +76,7 @@
   gap: 6px;
   max-width: 100%;
   font-size: var(--t-17);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   overflow-wrap: anywhere;
 }
 

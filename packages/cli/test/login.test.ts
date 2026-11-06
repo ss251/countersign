@@ -652,7 +652,7 @@ describe("DX", () => {
     expect(calls).toEqual([]);
   });
 
-  test("VERSION is 0.1.1", () => {
-    expect(VERSION).toBe("0.1.1");
+  test("VERSION is 0.1.2", () => {
+    expect(VERSION).toBe("0.1.2");
   });
 });
