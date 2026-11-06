@@ -52,7 +52,7 @@ The person's wallet on EVM, the agent's account on Hedera, one envelope over bot
 |---|---|---|---|
 | Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
 | Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
-| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub. By default the payment is held until the seller countersigns; the seller's key can also release it alone, without delivering |
+| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held: the payment moves only when the seller countersigns and the hub co-signs after a checked delivery |
 
 Privy has no Hedera, and none of these is one wallet for every rail.
 
