@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else. You are on `cs/ui-C`, cut from `origin/main`.
 
-## The captain's words and the firstmate's finding
+## The project lead's words and the firstmate's finding
 
 "Find and kill the Studio-looking surface in the buyer flow, or label it explicitly as the Studio-built console, and make sure no route silently swaps identity."
 

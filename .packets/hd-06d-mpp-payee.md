@@ -15,7 +15,7 @@ Tracked by issue #5.
 - `packages/rail/src/mpp/**`, tests included
 - `scripts/mpp/server.ts`, only if a change above needs it
 - `docs/mpp.md`: the challenge and receipt mapping sections only
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-06d-mpp-payee.md`
+- Report: `$M/reports/hd-06d-mpp-payee.md`
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build decisions D1 to D8 of `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-hedera-held-default.md` exactly. Read it first. It is the captain's item 4 for tonight: Hedera scheduled checkout becomes the default Hedera path, so a failed delivery no longer loses the buyer's money. Tracked by issue #41.
+Build decisions D1 to D8 of `$M/hd/DESIGN-hedera-held-default.md` exactly. Read it first. It is the project lead's item 4 for tonight: Hedera scheduled checkout becomes the default Hedera path, so a failed delivery no longer loses the buyer's money. Tracked by issue #41.
 
 This packet covers the rail and the hub. The runner's countersigner and the agent's held path come next in hd-13. Do not build them here.
 
@@ -25,7 +25,7 @@ This packet covers the rail and the hub. The runner's countersigner and the agen
   - `packages/rail/src/hedera/test/held.test.ts` (new);
   - `apps/hub/test/held.test.ts` (new);
   - `apps/hub/test/runner-client.ts`: only to let a test's `respond` add `countersign` to the result frame.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-12-held-rail.md`
+- Report: `$M/reports/hd-12-held-rail.md`
 
 ## The decided design
 

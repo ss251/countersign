@@ -8,13 +8,13 @@ This branch starts from `cs/cs-13`, which adds `apps/hub/src/buyerplumbing.ts` w
 
 ## Goal
 
-The captain's audit (STEER-1730) found that the seller dashboard and the merchant desk run on fixtures in production, because the hub serves no seller-side reads. Add these routes, in exactly the shape the merchant desk binds to:
+The project lead's audit (STEER-1730) found that the seller dashboard and the merchant desk run on fixtures in production, because the hub serves no seller-side reads. Add these routes, in exactly the shape the merchant desk binds to:
 
 - `GET /orders?seller=`
 - `GET /orders/:id`
 - `GET /jobs?seller=`
 
-The shape is cs-wc's contract, `/Users/thescoho/Developer/countersign-mumbai/wc/orders-contract.md`. Read it first. Every field it names must be present with that name and type. Extra fields are allowed.
+The shape is cs-wc's contract, `$M/wc/orders-contract.md`. Read it first. Every field it names must be present with that name and type. Extra fields are allowed.
 
 ## Lease
 

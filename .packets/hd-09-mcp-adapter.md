@@ -32,7 +32,7 @@ The runner lease transfers to cs-hd for this packet only.
   - `packages/rail/src/hedera/test/agent-kit-mcp.test.ts` (new);
   - `scripts/hedera/mcp-seller.ts` (new);
   - `scripts/hedera/agent-run.ts`: two flags and two evidence lines.
-- **Report:** `/Users/thescoho/Developer/countersign-mumbai/reports/hd-09-mcp-adapter.md`.
+- **Report:** `$M/reports/hd-09-mcp-adapter.md`.
 
 Touch nothing else. Never stage `bun.lock`.
 

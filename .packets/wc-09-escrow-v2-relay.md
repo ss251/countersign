@@ -170,7 +170,6 @@ Read only: the contract, its ABI and `contracts/deployments/whitechain-sepolia.j
 - **No browser** of any kind on this machine. That means no headless Chrome, no Playwright, no Puppeteer and no screenshot tools.
 - **No network** in tests.
 - **Commits:** small, present tense, ending `refs #98`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -190,4 +189,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-09-escrow-v2-relay.md`.
+Write `$M/reports/wc-09-escrow-v2-relay.md`.

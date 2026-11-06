@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build decisions D9 and D10 of `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-hedera-held-default.md` exactly. Read it first.
+Build decisions D9 and D10 of `$M/hd/DESIGN-hedera-held-default.md` exactly. Read it first.
 
 hd-12 (already on this branch) added:
 - the `hedera-scheduled` rail;
@@ -31,7 +31,7 @@ Tracked by issue #41.
   - `packages/buyer/src/hedera/test/held.test.ts`
   - `packages/rail/src/hedera/test/get-transaction.test.ts`
   - `packages/rail/src/hedera/test/held-create.test.ts`
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-13-held-default.md`
+- Report: `$M/reports/hd-13-held-default.md`
 
 ## The decided design
 
