@@ -6,36 +6,15 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Address, Hex } from "viem";
+import type { Hex } from "viem";
 import { canonicalJson, fromBase64Json, PAYMENT_REQUIRED_HEADER, type PaymentRequired, type Slip } from "@countersign/core";
-import { GatewayClient } from "../../packages/rail/src/gateway/client.ts";
 import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC, verifyCli } from "../lib/actors.ts";
-import { units, type Wallet } from "../lib/budget.ts";
+import { units } from "../lib/budget.ts";
+import { gatewayAvailable, gatewayWallet } from "../lib/gateway.ts";
 import { ARC, sameAddress } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow, type RunEnv } from "../lib/flow.ts";
+import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
 import { sleep } from "../lib/http.ts";
-import type { Secrets } from "../lib/secrets.ts";
 import { PRICE } from "./arc-spine.flow.ts";
-
-async function gatewayAvailable(s: Secrets, address: Address): Promise<bigint> {
-  const client = new GatewayClient({ chain: "arcTestnet", privateKey: s.key("CS_BUYER_KEY") });
-  return (await client.getBalances(address)).gateway.available;
-}
-
-function gatewayWallet(env: RunEnv): Wallet {
-  const s = env.secrets;
-  const address = s.address("CS_BUYER_ADDRESS");
-  return {
-    id: "arc.buyer.gateway",
-    label: "Arc buyer's Gateway balance",
-    network: "arc",
-    asset: "USDC",
-    address,
-    decimals: 6,
-    topUp: (amount) => `WAITING orch-cs deposit ${amount} USDC into the buyer's Circle Gateway balance (${address}, scripts/gateway/deposit.ts)`,
-    read: () => gatewayAvailable(s, address),
-  };
-}
 
 export const arcGateway: Flow = {
   name: "arc-gateway",
