@@ -215,12 +215,13 @@ export const api = {
     try {
       const m = await hubGet<EnvelopeMirror>(`/envelopes/${agent}`, 5000, tokenHeader());
       return live({
-        envelope: m.envelope,
+        envelope: { ...m.envelope, revoked: m.revocation != null },
         spent: m.spent,
         agentName: shortHex(agent),
         // No askAbove in the agent's envelope means it never asks: every call inside the limits goes through.
         askAbove: m.envelope.askAbove ?? null,
         names: {},
+        revokedAt: m.revocation?.revokedAt,
         mirror: { signedAt: toUnix(m.signedAt), agent },
       });
     } catch (e) {
@@ -307,6 +308,32 @@ export const api = {
     const { decidedAt, sig } = await signDecision(approval, decision);
     await hubPost(`/approvals/${approval.id}/decision`, { decision, decidedAt, sig }, { authorization: `Bearer ${token}` });
   },
+  /**
+   * Revoke the agent's envelope on the hub with a signature from this phone's approver key. The
+   * answer says whether the hub recorded it; only a read back of the envelope says so for good.
+   */
+  revokeEnvelope: async (
+    agent: string,
+    body: { revokedAt: number; sig: string },
+  ): Promise<{ ok: true; revokedAt: number } | { ok: false; message: string }> => {
+    const base = hubBase();
+    if (!base) return { ok: false, message: "No hub is chosen, so there is nothing to revoke on." };
+    let res: Response;
+    try {
+      res = await fetch(`${base}/envelopes/${agent}/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...tokenHeader() },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      return { ok: false, message: "The hub did not answer, so this phone cannot say whether the revoke reached it. Reload to see." };
+    }
+    const json = (await res.json().catch(() => null)) as { message?: string; revoked?: boolean; revokedAt?: number } | null;
+    if (res.ok && json?.revoked === true && typeof json.revokedAt === "number") {
+      return { ok: true, revokedAt: json.revokedAt };
+    }
+    return { ok: false, message: json?.message ?? `The hub answered ${res.status}.` };
+  },
   /** The agent's jobs right now, so a countersigned call is matched to the job it starts and not an older one. */
   jobIds: async (agent: string): Promise<Set<string>> => {
     const r = await orMissing(hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${agent}&limit=20`)).catch(() => undefined);
@@ -322,6 +349,7 @@ interface EnvelopeMirror {
   signedAt: number;
   sig: string;
   verified: boolean;
+  revocation?: { revokedAt: number } | null;
 }
 
 interface HubApproval {
