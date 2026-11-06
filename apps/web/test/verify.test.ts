@@ -59,6 +59,13 @@ describe("verifySlip", () => {
     expect(v.checks.filter((c) => c.state === "pass").map((c) => c.id)).not.toContain("settlement");
   });
 
+  test("a release on chain never vouches for a body that does not hash to it", async () => {
+    const s = clone(escrowSlip);
+    s.body.amount = "100000";
+    const v = await verifySlip(s, { readChain: false });
+    expect(v.checks.find((c) => c.id === "onchain")).toBeUndefined();
+  });
+
   test("exact-scheme rails show the payment as not checked rather than passed", async () => {
     const exact = slips.find((s) => s.payment.accepted.scheme === "exact")!;
     const v = await verifySlip(exact);

@@ -1,0 +1,286 @@
+/* The registry: ruled seller cards, each with who it is, how it has delivered, and what it sells. */
+
+.registry .page__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* Search, then two rows of text toggles with counts: the top bar's voice, no chips. */
+
+.filters {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.filters__search {
+  max-width: 420px;
+}
+
+/* Rows 12px apart so two toggles' 44px targets never overlap when the row wraps. */
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+}
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-size: var(--t-14);
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 transparent;
+  transition:
+    color var(--d-1) var(--ease-out),
+    box-shadow var(--d-1) var(--ease-out);
+}
+
+/* 32px to the eye, 44px to the thumb. */
+.toggle::after {
+  content: "";
+  position: absolute;
+  inset: -6px -8px;
+}
+
+.toggle__n {
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+.toggle.is-on {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toggle:hover {
+    color: var(--ink);
+  }
+}
+
+.registry__count {
+  margin-bottom: var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.registry__none {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-6) 0;
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.registry__none-title {
+  font-weight: 500;
+}
+
+/* A seller card: ruled, never floating. */
+
+.sellers {
+  display: grid;
+  gap: var(--sp-6);
+}
+
+.seller {
+  display: grid;
+  min-width: 0;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+}
+
+.seller--skeleton {
+  min-height: 248px;
+}
+
+.seller__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+.seller__who {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.seller__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: var(--t-17);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.seller__name.is-unnamed {
+  color: var(--slate);
+  font-weight: 500;
+}
+
+.seller__tick {
+  flex: none;
+  color: var(--ink);
+}
+
+.seller__id {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* The reputation strip: small caps over tabular figures, ruled above and below, four across. */
+.seller__strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.seller__strip > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.seller__strip > div + div {
+  border-left: var(--hair) solid var(--line);
+}
+
+.seller__strip dd {
+  font-family: var(--mono);
+  font-size: var(--t-14);
+}
+
+/* The offers: one compact row each, the price at the right. */
+
+.seller__offers {
+  display: grid;
+}
+
+.orow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr);
+  align-items: baseline;
+  column-gap: var(--sp-4);
+  row-gap: 2px;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--t-14);
+}
+
+.orow + .orow {
+  border-top: var(--hair) solid var(--line);
+}
+
+.orow__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orow__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+}
+
+.orow__title a {
+  color: var(--ink);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-underline-offset: 0.2em;
+}
+
+.orow__summary {
+  overflow: hidden;
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orow__rails {
+  min-width: 0;
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.orow__state {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--t-13);
+}
+
+.orow__calls {
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+.orow__delisted {
+  color: var(--slate);
+}
+
+.orow__price {
+  text-align: right;
+}
+
+.orow.is-delisted .orow__title a,
+.orow.is-delisted .orow__price {
+  color: var(--slate);
+}
+
+/* Narrow: the strip goes two by two, an offer row folds into two lines with the price on the first. */
+
+@media (max-width: 760px) {
+  .seller__strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .seller__strip > div:nth-child(3) {
+    border-left: 0;
+  }
+  .seller__strip > div:nth-child(n + 3) {
+    border-top: var(--hair) solid var(--line);
+  }
+  .orow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "main price"
+      "rails state";
+    row-gap: var(--sp-2);
+  }
+  .orow__main {
+    grid-area: main;
+  }
+  .orow__price {
+    grid-area: price;
+  }
+  .orow__rails {
+    grid-area: rails;
+  }
+  .orow__state {
+    grid-area: state;
+    justify-items: end;
+    text-align: right;
+  }
+}

@@ -7,6 +7,9 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  /* An app, not a document: no pull-to-refresh or rubber band behind the screens. */
+  overscroll-behavior: none;
   background: var(--paper);
 }
 
@@ -15,11 +18,12 @@ body {
   min-height: 100dvh;
   background: var(--paper);
   color: var(--ink);
-  font: 400 var(--t-15) / 1.5 var(--sans);
+  font: 400 var(--t-16) / 1.5 var(--sans);
+  /* A missing weight must look missing, not be faked. */
+  font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  -webkit-tap-highlight-color: transparent;
 }
 
 h1,
@@ -66,6 +70,20 @@ textarea {
 
 button {
   cursor: pointer;
+  /* Labels on controls are not content: selecting them reads as a glitch. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* No double-tap zoom wait on anything tappable. */
+button,
+a,
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
 }
 
 button:disabled {
@@ -77,10 +95,12 @@ a {
   text-decoration-line: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.22em;
+  text-decoration-skip-ink: auto;
   text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  transition: text-decoration-color var(--d-1) ease;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   a:hover {
     text-decoration-color: currentColor;
   }
@@ -121,13 +141,39 @@ a {
   border: 0;
 }
 
+/*
+ * Reduced motion means less movement, not none: fades and colour changes stay because they
+ * explain state. Movement (slides, presses, pulses) stops.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .btn:active,
+  .hold--holding {
+    transform: none !important;
+  }
+}
+
+/*
+ * Nothing may widen the page. Grid and flex children default to their content's width, so one
+ * long URL, hash or command pushes a phone layout sideways. Long text wraps anywhere; code
+ * scrolls inside its own box.
+ */
+.page,
+.page > *,
+.section,
+.command,
+.code,
+pre {
+  min-width: 0;
+  max-width: 100%;
+}
+
+a {
+  overflow-wrap: anywhere;
 }

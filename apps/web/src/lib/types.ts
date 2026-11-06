@@ -35,7 +35,8 @@ export interface Money {
 export interface Listing {
   hash: Hex;
   offer: Offer;
-  seller: { name: string; agentId?: string };
+  /** named is false when the hub has no name for the seller and name is only its short address. */
+  seller: { name: string; agentId?: string; named?: boolean };
   /** Derived from slips, never self-reported. Absent until the hub reports it. */
   stats?: { calls: number; released: number; refunded: number };
   status: "listed" | "delisted";
@@ -50,6 +51,8 @@ export type DiscoverySource = "circle" | "registry";
 /** A call above the envelope's ask threshold, held for the human. */
 export interface Approval {
   id: string;
+  /** The agent's address, when the request came through the hub. Fixture approvals have none. */
+  agent?: string;
   agentName: string;
   listing: Listing;
   /** Atomic amount the agent proposes to countersign. */
@@ -84,12 +87,17 @@ export interface EnvelopeView {
   envelope: Envelope;
   spent: EnvelopeSpend;
   agentName: string;
-  /** Atomic. Calls above it wait for the human's hold. */
-  askAbove: string;
+  /** Atomic. Calls above it wait for the human's hold; null when the agent never asks. */
+  askAbove: string | null;
   /** Seller address (lowercase) to display name. */
   names: Record<string, string>;
   /** Circle Gateway deposit that nanopayments draw from. */
   gatewayBalance?: string;
+  /**
+   * Set when this is the agent's signed mirror on the hub. The limits are then read-only here:
+   * they live on the agent's machine, and nothing on the hub can loosen them.
+   */
+  mirror?: { signedAt: number; agent: string };
 }
 
 /** A slip with the offer title the hub knows for it. */
@@ -104,4 +112,49 @@ export interface SlipView {
 export interface TreeView {
   root: Hex;
   nodes: Record<string, { slip: Slip; title: string; sellerName: string }>;
+}
+
+/** A seller as the hub's /sellers reports it: counts derived from its jobs and slips. */
+export interface SellerRecord {
+  address: string;
+  name: string | null;
+  payees: Partial<Record<RailId, string>>;
+  offers: Array<{ offerHash: string; title: string; price: string; rails: RailId[]; online: boolean }>;
+  calls: number;
+  released: number;
+  settled: number;
+  refunded: number;
+  failed: number;
+  /** Atomic sum of released and settled amounts. */
+  volume: string;
+  erc8004: { agentId: string; identityRegistry: string; reputation: null | { count: number; score: number } } | null;
+}
+
+/** One ranked result from the hub's offer search, with the hub's own reasons. */
+export interface SearchResult {
+  offerHash: string;
+  offer: Offer;
+  online: boolean;
+  score: number;
+  why: string[];
+}
+
+/** A release or a refund, as the overview lists it. */
+export interface Settlement {
+  jobId: string;
+  offerHash: string;
+  title: string;
+  seller: string;
+  /** Atomic. */
+  amount: string;
+  rail: RailId;
+  network: string;
+  /** released: an escrow paid the seller; settled: a direct rail paid; refunded: the money went back. */
+  kind: "released" | "settled" | "refunded";
+  tx: string;
+  /** Explorer link for tx, when the hub knows one. */
+  explorer?: string | null;
+  slipHash?: string | null;
+  /** Unix seconds. */
+  at: number;
 }

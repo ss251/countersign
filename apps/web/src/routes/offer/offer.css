@@ -1,0 +1,238 @@
+/* One offer: identity and price first, then how to call it, then the contract of the call. */
+
+.offer {
+  display: grid;
+  gap: var(--sp-10);
+}
+
+.offer__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  max-width: 860px;
+}
+
+.offer__head > *,
+.offer__title-row > *,
+.offer__by > * {
+  min-width: 0;
+}
+
+.offer__crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.offer__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.offer__by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.offer__seller {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.offer__verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.offer__price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-4);
+  margin-top: var(--sp-2);
+}
+
+.offer__per,
+.offer__rails,
+.offer__source {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.offer__summary {
+  max-width: 68ch;
+  margin-top: var(--sp-2);
+}
+
+/* Long descriptions show three lines until asked. */
+.offer__summary.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.offer__more {
+  justify-self: start;
+}
+
+.offer__source a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.offer__call {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 860px;
+}
+
+.offer__call-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+/* Two real ways to call it, so a switch; never a fake second tab. */
+.switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-2);
+  background: var(--sunk);
+}
+
+.switch__item {
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.switch__item.is-on {
+  background: var(--raised);
+  box-shadow: var(--elev-1);
+  color: var(--ink);
+}
+
+.offer__cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-8);
+  max-width: 1080px;
+}
+
+@media (max-width: 860px) {
+  .offer__cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.offer__details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--t-14);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Parameters: name, type, required, then what it is. */
+.params {
+  display: grid;
+  border-top: var(--hair) solid var(--line);
+}
+
+.params__row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 2px var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.params__name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.params__type {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.params__req {
+  justify-self: start;
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.params__req.is-required {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.params__desc {
+  grid-column: 1 / -1;
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.terms {
+  display: grid;
+  max-width: 860px;
+  border-top: var(--hair) solid var(--line);
+}
+
+.terms div {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+}
+
+@media (max-width: 560px) {
+  .terms div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+.terms dt {
+  color: var(--slate);
+}
+
+.offer__rail-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-3);
+  max-width: 1080px;
+}
+
+.offer__rail {
+  padding: var(--sp-2) var(--sp-5);
+}
+
+.offer__disc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  font-size: var(--t-14);
+  font-weight: 500;
+}

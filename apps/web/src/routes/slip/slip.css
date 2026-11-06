@@ -2,9 +2,9 @@
   display: grid;
   gap: var(--sp-6);
   padding: var(--sp-6) var(--sp-8) var(--sp-8);
-  border: 1px solid var(--line);
   border-radius: var(--r-3);
   background: var(--raised);
+  box-shadow: var(--elev-1);
 }
 
 @media (max-width: 640px) {
@@ -27,12 +27,7 @@
   color: var(--slate);
   font-weight: 500;
   letter-spacing: -0.02em;
-}
-
-.slip__head-end {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
+  min-width: 0;
 }
 
 .slip__lead {
@@ -49,14 +44,31 @@
   min-width: 0;
 }
 
-.slip__title {
-  font-size: var(--t-32);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+/* The status is the headline: what happened to the money. */
+.slip__status {
+  color: var(--settle);
+  font-size: var(--t-44);
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 
-.slip__sub {
+.slip__what {
+  font-size: var(--t-17);
+}
+
+.slip__offer {
+  font-weight: 600;
+}
+
+.slip__when {
   color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.slip__promise {
+  max-width: 64ch;
+  color: var(--slate);
+  font-size: var(--t-15);
 }
 
 /* A tear line with a notch at each edge, like the stub of a cheque. */
@@ -130,8 +142,9 @@
   border-top: 2px solid var(--ink);
 }
 
+/* The buyer's half is the countersignature: blue ink, as on the hold. Red is for refusal alone. */
 .slip__half--buyer {
-  border-top-color: var(--seal);
+  border-top-color: var(--usdc);
 }
 
 .slip__half-title {
@@ -145,7 +158,7 @@
 }
 
 .slip__half--buyer .slip__half-who {
-  color: var(--seal);
+  color: var(--usdc);
 }
 
 .slip__amount {

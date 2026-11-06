@@ -1,37 +1,52 @@
-/* Money */
+/*
+ * Money. Mono, tabular, full precision, the unit after it in small caps. Ink at rest; blue only
+ * while it moves (an amount in flight, the amount being countersigned).
+ */
 
 .amount {
-  color: var(--usdc);
-  font-weight: 500;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
+.amount--flight {
+  color: var(--usdc);
+}
+
+/* Small caps by hand: the mono face has none, and nothing here is synthesised. */
 .amount__asset {
-  margin-left: 0.3em;
-  font-size: 0.72em;
+  margin-left: 0.4em;
+  font-family: var(--sans);
+  font-size: 0.68em;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.72;
 }
 
 .amount--sm {
   font-size: var(--t-14);
 }
 .amount--md {
-  font-size: var(--t-17);
+  font-size: var(--t-16);
 }
 .amount--lg {
   font-size: var(--t-24);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .amount--xl {
   font-size: var(--t-44);
-  font-weight: 500;
-  letter-spacing: -0.025em;
+  font-weight: 400;
+  letter-spacing: -0.04em;
   line-height: 1.05;
 }
+.amount--lg .amount__asset,
 .amount--xl .amount__asset {
-  font-size: 0.4em;
-  letter-spacing: 0.04em;
+  font-size: max(0.4em, var(--t-13));
+  letter-spacing: 0.08em;
 }
 
 /* Hashes and addresses */
@@ -60,6 +75,13 @@
 
 a.hash__value {
   text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+/* A transaction link is money that moved: the one place a hash is blue. */
+a.hash__value.is-tx {
+  color: var(--usdc);
+  text-decoration-color: color-mix(in oklab, var(--usdc) 40%, transparent);
 }
 
 .copy {
@@ -77,59 +99,118 @@ a.hash__value {
   transition: color var(--d-1) var(--ease-out);
 }
 
-/* A 40px touch target around a 24px glyph. */
+/* A 44px touch target around a 24px glyph. */
 .copy::after {
   content: "";
   position: absolute;
-  inset: -8px;
+  inset: -10px;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .copy:hover {
     color: var(--ink);
   }
 }
 
-/* Status words */
+/*
+ * Status is a dot and a word. The word is ink except for the two outcomes that own a colour:
+ * settled is green, refused is red. A refund settles nothing: an ink ring. Money still moving
+ * gets a blue dot beside an ink word.
+ */
 
 .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  color: var(--ink);
   font-size: var(--t-13);
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-/* Green means the seller was paid. A refund settles nothing, so it stays neutral. */
-.status--released {
-  color: var(--settle);
-}
-.status--refunded {
-  color: var(--slate);
-}
-.status--refused,
-.status--countersigned {
-  color: var(--seal);
-}
-.status--held {
-  color: var(--usdc);
-}
-.status--delivered {
-  color: var(--ink);
+.status::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dot, currentColor);
 }
 
-/* Tags */
+.status--released,
+.status--settled {
+  color: var(--settle);
+}
+.status--refused {
+  color: var(--seal);
+}
+.status--refunded::before {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.status--held,
+.status--countersigned {
+  --dot: var(--usdc);
+}
+.status--delivered {
+  --dot: var(--ink);
+}
+
+/* A rail's state, by shape alone: filled is live, half is degraded, a ring is off. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: var(--t-13);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.state::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.state--live::before {
+  background: currentColor;
+}
+
+/* Half filled with a second inset shadow: no gradient, the curve follows the radius. */
+.state--degraded::before {
+  box-shadow:
+    inset 0 0 0 1.5px currentColor,
+    inset 4px 0 0 currentColor;
+}
+
+.state--off {
+  color: var(--slate);
+}
+
+/* Small caps over a value: the field voice of a receipt. */
+.label {
+  color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+/* Tags are words, not chips: a category in small caps, quiet. */
 
 .rail-tag,
 .tag {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-1);
   color: var(--slate);
-  font-size: var(--t-12);
-  font-weight: 500;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -145,7 +226,7 @@ a.hash__value {
   justify-content: space-between;
   gap: var(--sp-4);
   padding: var(--sp-2) 0;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
   min-width: 0;
 }
 
@@ -183,17 +264,21 @@ a.hash__value {
   white-space: nowrap;
   user-select: none;
   transition:
-    transform var(--d-1) var(--ease-out),
-    background-color var(--d-1) var(--ease-out),
-    border-color var(--d-1) var(--ease-out);
+    transform var(--d-press) var(--ease-out),
+    background-color var(--d-1) ease,
+    box-shadow var(--d-1) ease;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
+/* Disabled has its own colours, not an opacity, so it reads the same on any surface. */
 .btn:disabled {
-  opacity: 0.45;
+  background: var(--sunk);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
 }
 
 .btn--block {
@@ -207,7 +292,7 @@ a.hash__value {
 
 .btn--secondary {
   background: var(--raised);
-  border-color: var(--line);
+  box-shadow: var(--elev-1);
   color: var(--ink);
 }
 
@@ -223,9 +308,12 @@ a.hash__value {
   color: var(--seal);
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--ink) 88%, var(--paper));
+  }
   .btn--secondary:hover:not(:disabled) {
-    border-color: color-mix(in oklab, var(--ink) 30%, var(--line));
+    box-shadow: var(--elev-1-hover);
   }
   .btn--quiet:hover:not(:disabled) {
     color: var(--ink);
@@ -237,10 +325,11 @@ a.hash__value {
 
 /* Surfaces */
 
+/* A ruled box on the same paper. Nothing floats. */
 .card {
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  background: none;
 }
 
 .empty {
@@ -261,17 +350,25 @@ a.hash__value {
   font-size: var(--t-14);
 }
 
+/* Stand-in numbers say so: a ring and a word, never a badge. */
 .fixture-note {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 6px;
-  border: 1px dashed var(--line);
-  border-radius: var(--r-1);
+  gap: 0.45em;
   color: var(--slate);
   font-size: var(--t-11);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
+}
+
+.fixture-note::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px currentColor;
 }
 
 /* Money that never moved: a refusal, or a refund that returned it. */
@@ -281,22 +378,75 @@ a.hash__value {
   text-decoration-thickness: 1px;
 }
 
+/*
+ * The desk's ruled table: small-caps heads, 1 px rules between rows, figures right-aligned and
+ * tabular. Dense but quiet: 14 px rows on a generous line.
+ */
+.desk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-14);
+  line-height: 1.45;
+}
+
+.desk-table th {
+  padding: 0 var(--sp-3) var(--sp-2);
+  border-bottom: var(--hair) solid var(--line);
+  color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.desk-table td {
+  padding: var(--sp-3);
+  border-bottom: var(--hair) solid var(--line);
+  vertical-align: top;
+}
+
+.desk-table th:first-child,
+.desk-table td:first-child {
+  padding-left: 0;
+}
+
+.desk-table th:last-child,
+.desk-table td:last-child {
+  padding-right: 0;
+}
+
+.desk-table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-table .is-sub {
+  display: block;
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
 /* Meter */
 
+/* Spent of the budget: a ruled bar. Spent money has moved, so it is ink; blue is for money in flight. */
 .meter {
   position: relative;
-  height: 6px;
+  height: 4px;
   overflow: hidden;
-  border-radius: var(--r-pill);
+  border-radius: 1px;
   background: var(--line);
 }
 
+/* Scaled, not resized: transform skips layout. */
 .meter__fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
   border-radius: inherit;
-  background: var(--usdc);
-  transition: width var(--d-3) var(--ease-out);
+  background: var(--ink);
+  transform-origin: left center;
+  transition: transform var(--d-3) var(--ease-out);
 }
 
 /* Inputs: 16px so iOS does not zoom. */
@@ -312,8 +462,11 @@ a.hash__value {
   font-size: 16px;
 }
 
-.input.mono {
-  font-size: 15px;
+/* 16px wherever a finger types, or iOS zooms the page; mono may shrink only under a mouse. */
+@media (pointer: fine) {
+  .input.mono {
+    font-size: 15px;
+  }
 }
 
 .input:focus-visible {
@@ -348,9 +501,10 @@ a.hash__value {
   max-width: none;
   margin: auto auto var(--sp-4);
   padding: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-3);
   background: var(--raised);
+  box-shadow: var(--elev-2);
   color: var(--ink);
 }
 
@@ -365,7 +519,7 @@ a.hash__value {
 }
 
 .sheet[open] {
-  animation: sheet-in var(--d-3) var(--ease-out);
+  animation: sheet-in var(--d-3) var(--ease-drawer);
 }
 
 @keyframes sheet-in {
@@ -378,7 +532,7 @@ a.hash__value {
 .sheet__body {
   display: grid;
   gap: var(--sp-3);
-  padding: var(--sp-5);
+  padding: var(--sp-5) var(--sp-5) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
 }
 
 .sheet__title {
@@ -393,4 +547,109 @@ a.hash__value {
   display: grid;
   gap: var(--sp-2);
   margin-top: var(--sp-2);
+}
+
+/* Field help and errors, shared by every form. */
+.field__hint {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.field__error {
+  color: var(--seal);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+/* Code and commands */
+.code,
+.command__body {
+  margin: 0;
+  padding: var(--sp-4);
+  overflow: auto;
+  border-radius: var(--r-2);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+/* Commands scroll sideways and never break inside a token: a broken flag is a broken command. */
+.command__body {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+
+.command__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* An envelope checklist: one ruled line per rule. Shared by the phone and the desk. */
+
+.checks {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.checks__list {
+  display: grid;
+  border-top: var(--hair) solid var(--line);
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+  line-height: 1.45;
+}
+
+.check__glyph {
+  margin-top: 2px;
+}
+
+.check--pass {
+  color: var(--ink);
+}
+
+.check--fail {
+  color: var(--seal);
+}
+
+.check--ask .check__glyph {
+  color: var(--ink);
+}
+
+.checks__refusal {
+  color: var(--seal);
+  font-size: var(--t-14);
+}
+
+
+/* A seller's address glyph: ink on the paper, inside a hairline frame. */
+.glyph {
+  flex: none;
+}
+
+.glyph__frame {
+  fill: none;
+  stroke: var(--line);
+}
+
+.glyph__cell {
+  fill: var(--ink);
+  opacity: 0.86;
 }
