@@ -276,7 +276,7 @@ function buyerTyped(
 function releaseTyped(overrides: { escrow?: string; chainId?: number } = {}): TypedDataInput {
   return {
     domain: {
-      name: "CountersignedEscrow",
+      name: "Countersign",
       version: "1",
       chainId: overrides.chainId ?? CHAIN_ID,
       verifyingContract: overrides.escrow ?? ESCROW,
@@ -593,7 +593,7 @@ describe("CLI signing", () => {
     remember(releaseBody.signature);
     expect((await recoverTyped(release, releaseBody.signature)).toLowerCase()).toBe(ADDRESS);
 
-    const message = "countersign runner abc123";
+    const message = `countersign runner ${"ab".repeat(16)}`;
     const signed = await signMessage(hub, session.token, message);
     expect(signed.status).toBe(200);
     const messageBody = (await signed.json()) as { signature: string; address: string };
@@ -625,7 +625,7 @@ describe("CLI redaction", () => {
     const typedBody = (await signed.json()) as { signature: string; address: string };
     remember(typedBody.signature);
 
-    const messaged = await signMessage(hub, session.token, "countersign runner abc123");
+    const messaged = await signMessage(hub, session.token, `countersign runner ${"ab".repeat(16)}`);
     expect(messaged.status).toBe(200);
     const messageBody = (await messaged.json()) as { signature: string; address: string };
     remember(messageBody.signature);
