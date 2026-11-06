@@ -35,8 +35,10 @@ export interface HederaAgentOptions {
   payer: HederaPayer;
   envelope: Envelope;
   topicId: string;
-  /** Client whose operator is the agent: it pays for and signs the HCS appends. */
-  logClient: Client;
+  /** Client whose operator is the agent: it pays for and signs the HCS appends. Omit when `appendLog` is given. */
+  logClient?: Client;
+  /** Append one entry. When given, used instead of appending with `logClient` and `topicId`. */
+  appendLog?: (entry: SpendEntry) => Promise<{ sequence: number }>;
   spent?: EnvelopeSpend;
   fetch?: typeof fetch;
   mirror?: MirrorOptions;
@@ -91,6 +93,8 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       cap: opts.envelope.cap,
       at: now(),
     };
+    if (opts.appendLog) return (await opts.appendLog(entry)).sequence;
+    if (!opts.logClient) throw new Error("hedera agent needs logClient or appendLog");
     return (await appendEntry(opts.logClient, opts.topicId, entry)).sequence;
   }
 
