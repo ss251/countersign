@@ -104,6 +104,15 @@ export function chosenAgent(): string | null {
   }
 }
 
+/** Follow this agent from now on, as ?agent= does: the envelope the person just created. */
+export function rememberAgent(agent: string): void {
+  try {
+    if (/^0x[0-9a-fA-F]{40}$/.test(agent)) window.localStorage.setItem(AGENT_KEY, agent);
+  } catch {
+    // Private mode: nothing was kept.
+  }
+}
+
 /** The hub a link chose on this device; null when none was stored and the build's default applies. */
 export function chosenHub(): string | null {
   try {
