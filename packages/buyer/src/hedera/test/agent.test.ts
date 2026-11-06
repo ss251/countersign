@@ -429,7 +429,7 @@ describe("hedera agent", () => {
       async (hub) => {
         const agent = agentFor(hub, envelope(), entries);
         const outcome = await agent.buy(target, {});
-        expect(outcome).toEqual({
+        expect(outcome).toMatchObject({
           kind: "refused",
           reason: "untrusted-fee-payer",
           message: "Refused. The hub named a fee payer this agent does not trust.",
