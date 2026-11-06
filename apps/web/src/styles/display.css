@@ -1,0 +1,29 @@
+/* Countersign Display: a house face for display type only (see public/fonts/README.md). */
+@font-face {
+  font-family: "Countersign Display";
+  src: url("/fonts/CountersignDisplay-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Countersign Display";
+  src: url("/fonts/CountersignDisplay-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Countersign Display";
+  src: url("/fonts/CountersignDisplay-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.display,
+h1,
+.h1 {
+  font-family: "Countersign Display", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.015em;
+}
