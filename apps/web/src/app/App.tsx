@@ -5,6 +5,7 @@ import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
 import { Wordmark } from "../ui/Mark.tsx";
 import { SiteFooter } from "./SiteFooter.tsx";
 import { SiteLinks } from "./SiteLinks.tsx";
+import { WalletButton } from "../ui/WalletButton.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
 import "./nav.css";
@@ -91,6 +92,7 @@ function TopBar({ active }: { active: string }) {
           {links("topbar__link")}
           <SiteLinks.GitHub className="topbar__link" />
         </nav>
+        <WalletButton />
         <button
           type="button"
           className="topbar__menu"
@@ -104,6 +106,7 @@ function TopBar({ active }: { active: string }) {
       {open ? (
         <nav id="topbar-sheet" className="topbar__sheet" aria-label="Views">
           {links("topbar__sheet-link")}
+          <WalletButton />
         </nav>
       ) : null}
     </header>
