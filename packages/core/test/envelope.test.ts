@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { checkEnvelope, recordSpend, type Envelope, type EnvelopeSpend } from "../src/index.ts";
+import { checkEnvelope, needsHuman, recordSpend, type Envelope, type EnvelopeSpend } from "../src/index.ts";
 
 const SELLER = "0x3333333333333333333333333333333333333333";
 const OTHER = "0x5555555555555555555555555555555555555555";
@@ -55,5 +55,14 @@ describe("envelope", () => {
     expect(r.ok === false && r.message).toBe("Refused. The envelope was revoked.");
     const x = checkEnvelope({ ...env, expiresAt: 100 }, none, req("1"), 100);
     expect(x.ok === false && x.reason).toBe("expired");
+  });
+});
+
+describe("askAbove", () => {
+  test("holds only above the threshold", () => {
+    expect(needsHuman(env, "1")).toBe(false);
+    const e = { ...env, askAbove: "500000" };
+    expect(needsHuman(e, "500000")).toBe(false);
+    expect(needsHuman(e, "500001")).toBe(true);
   });
 });

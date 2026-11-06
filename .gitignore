@@ -22,3 +22,8 @@ subgraph/build/
 .claude/
 .DS_Store
 *.log
+
+# runtime data (sqlite, journals)
+data/
+*.sqlite
+*.sqlite-*
