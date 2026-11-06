@@ -6,31 +6,32 @@ No human approves a payment. The agent's envelope (budget cap, per-merchant limi
 
 ## Payment flow, traced through one real payment
 
-The agent `0.0.11337064` bought one call for 0.01 USDC from a seller paid at `0.0.11337065`, with no human approving. Every value below was read back from Hedera testnet.
+The agent `0.0.11337064` bought one call to Circle's `use-usdc` skill (Apache-2.0) for 0.05 USDC through the countersign hub, with no human approving. The seller's runner served the skill and was paid on Hedera at `0.0.11337065`. Every value below was read back from Hedera testnet.
 
-1. **Discover.** The agent lists offers with `GET /offers` and picks one that settles on the `hedera` rail: offer `0x3be64f4c…8d3b`.
+1. **Discover.** The agent lists offers with `GET /offers` on the hub and picks the one that settles on the `hedera` rail: offer `0xfd440a4a…22fc`. The seller's runner published it with `--rails hedera --pay-to hedera=0.0.11337065`.
 2. **Challenge.** The hub answers `402` with x402 v2 payment requirements:
    - `scheme: exact` and `network: hedera:testnet`;
-   - `asset: 0.0.429274` (USDC) and `amount: 10000` (0.01 USDC);
+   - `asset: 0.0.429274` (USDC) and `amount: 50000` (0.05 USDC);
    - `payTo: 0.0.11337065`;
    - `extra.feePayer: 0.0.9185802`, the x402.org facilitator's account, read live from its `GET /supported`.
-3. **Envelope.** Before signing, the agent checks its envelope. The cap was 0.025 USDC and 0.01 USDC was already spent, a total the agent rebuilds from its own HCS log. The call fits, so it is approved.
-4. **Countersign.** The agent signs one Hedera `TransferTransaction`: `-10000` from itself and `+10000` to the seller on token `0.0.429274`, with memo `cs1:3be64f4c…8d3b`. One signature binds all three:
+3. **Envelope.** Before signing, the agent checks its envelope. The cap was 0.125 USDC and 0.05 USDC was already spent, a total the agent rebuilds from its own HCS log. The call fits, so it is approved.
+4. **Countersign.** The agent signs one Hedera `TransferTransaction`: `-50000` from itself and `+50000` to the seller on token `0.0.429274`, with memo `cs1:fd440a4a…22fc`. One signature binds all three:
    - the memo binds the offer;
    - the transfer list binds the amount and the payee;
    - the transaction id names the facilitator as fee payer, so the agent never pays gas.
 5. **Verify.** The hub's hedera rail decodes the transfer and checks it before any facilitator sees it: exactly one debit and one credit, the exact amount and payee, the offer memo, the payer's signature against its on-chain key, and a validity window no longer than the offer allows. Then it asks the facilitator's `POST /verify`.
-6. **Settle.** The facilitator adds its fee-payer signature and submits. Transaction [`0.0.9185802@1793959685.864333631`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631) reached consensus at `1793959695.377881104` with result `SUCCESS`. The agent was debited 0.01 USDC and the seller credited 0.01 USDC, and the facilitator paid the 0.0162 HBAR network fee.
-7. **Log.** The agent appended the spend to its HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070) as [message #3](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/3), at consensus `1793959697.058168104`. The entry names the offer, the payee, the amount and the transaction.
-8. **Refuse.** A second call would have spent 0.03 of the 0.025 cap. The agent refused before signing anything: "Refused. This would spend 0.03 of a 0.025 budget." The refusal is logged too, as [message #4](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/4).
-9. **Audit.** Anyone can replay the topic from the mirror node and match each spend to its transfer: `bun scripts/hedera/audit.ts`.
+6. **Settle.** The facilitator adds its fee-payer signature and submits. Transaction [`0.0.9185802@1793962668.996163078`](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078) reached consensus at `1793962677.946026104` with result `SUCCESS`. The agent was debited 0.05 USDC and the seller credited 0.05 USDC, and the facilitator paid the 0.0162 HBAR network fee.
+7. **Deliver.** The hub hands the job to the seller's runner, which returns the skill. Slip `0x765ad929…6966` is signed by the seller and records the rail, the payee, the amount and the settlement with its HashScan link.
+8. **Log.** The agent appended the spend to its HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070) as [message #10](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/10), at consensus `1793962679.700443752`.
+9. **Refuse.** A second call would have spent 0.15 of the 0.125 cap. The agent refused before signing anything: "Refused. This would spend 0.15 of a 0.125 budget." The refusal is logged too, as [message #11](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/11).
+10. **Audit.** Anyone can replay the topic from the mirror node and match each spend to its transfer. For this run's window, the audit reported `matched 1, unbacked 0, unlogged 0`.
 
 Two refusals protect the money.
 
 - **A price that moves after signing cannot settle.** The signed amount no longer equals the requirement, so the rail refuses before settlement, and the facilitator's exact-amount rule would refuse it again.
 - **A replayed payment is refused.** The rail claims each transaction id once before any facilitator call. When a facilitator does not answer, only a consensus that happened after the attempt counts as settled.
 
-This run used `scripts/hedera/hub-standin.ts`, a one-offer stand-in hub that runs the same `createHederaRail()` the hub runs with `HEDERA_RAIL=1`.
+Reproduce it with the commands under "Setup": the hub with `HEDERA_RAIL=1`, a runner serving the skill on the hedera rail, and `scripts/hedera/beat --hub <hub>`.
 
 ## Live facts (testnet, checked 2026-11-06)
 
@@ -117,6 +118,17 @@ bun scripts/hedera/smoke.ts [x402.org|blocky402|local]   # one rail payment end 
 bun scripts/hedera/hub-standin.ts 8797                   # a one-offer stand-in hub behind the hedera rail
 bun scripts/hedera/agent-run.ts http://127.0.0.1:8797 --cap 15000 --times 2   # the agent pays, then hits its cap
 bun scripts/hedera/audit.ts    # replay the HCS spend log and reconcile it against the chain
+scripts/hedera/beat            # the recorded demo beat: one paid call, the cap refusal, both HCS entries, the audit
+```
+
+Through the real hub. Set the seller key in `CS_SELLER_KEY` from the seller's key file, and never pass it as an argument:
+
+```sh
+HEDERA_RAIL=1 PORT=8811 bun run apps/hub/src/index.ts
+bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8811 \
+  --skill examples/catalogue/circle/use-usdc/SKILL.md --price 50000 \
+  --rails hedera --pay-to hedera=0.0.11337065
+scripts/hedera/beat --hub http://127.0.0.1:8811
 ```
 
 `agent-run.ts` and `audit.ts` both take `--json`, which prints one evidence object for the `#/demo` page on stdout, in the form `{beat, ok, evidence: [{label, value, url?}]}`. The usual lines go to stderr. The smoke test appends its own spend to the HCS log, like the agent does.

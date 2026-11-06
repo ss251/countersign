@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { RailId } from "@countersign/core";
 import { Link, navigate } from "../../app/router.tsx";
-import { formatDuration, RAIL_LABEL, symbolFor, usd } from "../../lib/format.ts";
+import { api } from "../../lib/api.ts";
+import { formatDuration, nowUnix, RAIL_LABEL, symbolFor, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
 import { Amount, Button, CopyButton, cx, RailTag } from "../../ui/primitives.tsx";
 import {
@@ -41,6 +42,10 @@ export function PublishWizard() {
   const [upstreamUrl, setUpstreamUrl] = useState("");
   const [licence, setLicence] = useState("");
   const [hub] = useState(() => absoluteHub(hubBase(), window.location.origin));
+  const [openedAt] = useState(() => nowUnix());
+  // Late to accuse: a field shows its error once it has lost focus, or once Continue was pressed.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const blur = (field: string) => setTouched((t) => (t.has(field) ? t : new Set(t).add(field)));
   const heading = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
 
@@ -65,6 +70,7 @@ export function PublishWizard() {
   };
   const stepErrors = [[errors.skill], [errors.price, errors.deadline, errors.rails, errors.upstream], [], []];
   const show = (i: number) => tried[i] === true;
+  const shown = (i: number, field: keyof typeof errors) => (show(i) || touched.has(field) ? errors[field] : null);
 
   const next = () => {
     setTried((t) => t.map((v, i) => (i === step ? true : v)));
@@ -97,6 +103,9 @@ export function PublishWizard() {
         </p>
       </header>
 
+      <p className="steps__count num" aria-live="polite">
+        Step {step + 1} of {STEPS.length}
+      </p>
       <ol className="steps" aria-label="Steps">
         {STEPS.map((label, i) => (
           <li key={label} className={cx("steps__item", i === step && "is-current", i < step && "is-done")} aria-current={i === step ? "step" : undefined}>
@@ -113,6 +122,7 @@ export function PublishWizard() {
         ))}
       </ol>
 
+      <div className="wizard__grid">
       <form
         className="wizard__panel"
         noValidate
@@ -127,7 +137,7 @@ export function PublishWizard() {
         </h2>
 
         {step === 0 ? (
-          <SkillStep text={text} setText={setText} error={show(0) ? errors.skill : null} parsed={parsed} />
+          <SkillStep text={text} setText={setText} error={shown(0, "skill")} parsed={parsed} onBlur={() => blur("skill")} />
         ) : null}
 
         {step === 1 ? (
@@ -142,13 +152,20 @@ export function PublishWizard() {
             setUpstreamUrl={setUpstreamUrl}
             licence={licence}
             setLicence={setLicence}
-            errors={show(1) ? errors : { price: null, deadline: null, rails: null, upstream: null, skill: null }}
+            errors={{
+              price: shown(1, "price"),
+              deadline: shown(1, "deadline"),
+              rails: shown(1, "rails"),
+              upstream: shown(1, "upstream"),
+              skill: null,
+            }}
+            onBlurField={blur}
             seconds={seconds}
           />
         ) : null}
 
         {step === 2 && parsed ? (
-          <CheckStep skill={parsed} atomic={atomic} seconds={seconds} rails={rails} upstream={upstream} />
+          <CheckStep skill={parsed} atomic={atomic} seconds={seconds} rails={rails} upstream={upstream} onEdit={setStep} />
         ) : null}
 
         {step === 3 ? (
@@ -163,6 +180,7 @@ export function PublishWizard() {
               Run both from the repository root, beside your SKILL.md. The offer is listed once the hub has its signature, and
               buyers can pay once the runner is connected.
             </p>
+            {parsed ? <ListedWatch title={parsed.name} atomic={atomic} rails={rails} since={openedAt} /> : null}
           </div>
         ) : null}
 
@@ -181,7 +199,85 @@ export function PublishWizard() {
           </Button>
         </div>
       </form>
+      <aside className="wizard__preview" aria-label="How buyers will see it">
+        <Preview skill={parsed} atomic={priceResult.ok ? atomic : null} seconds={seconds} rails={rails} />
+      </aside>
+      </div>
     </div>
+  );
+}
+
+/** Beside the form: the offer exactly as buyers will meet it, updating as the seller types. */
+function Preview({ skill, atomic, seconds, rails }: { skill: ParsedSkill | null; atomic: string | null; seconds: number; rails: RailId[] }) {
+  const title = skill?.name ?? "your-skill";
+  const money = atomic ? usd(atomic, rails[0]) : null;
+  return (
+    <div className="preview">
+      <p className="preview__label">In the registry</p>
+      <div className="preview__row">
+        <div className="preview__main">
+          <p className="preview__title">
+            {title} <span className="tag">skill</span>
+          </p>
+          <p className="preview__summary">{skill?.summary || "The description from your SKILL.md appears here."}</p>
+          <p className="preview__meta">
+            Calls not counted yet · {rails.length ? rails.map((r) => RAIL_LABEL[r]).join(", ") : "no rail yet"}
+          </p>
+        </div>
+        {money ? <Amount money={money} size="md" /> : <span className="preview__muted">no price yet</span>}
+      </div>
+      <p className="preview__label">On the buyer’s phone</p>
+      <div className="preview__card">
+        <p className="preview__muted">You countersign exactly</p>
+        {money ? <Amount money={money} size="lg" /> : <p className="preview__muted">no price yet</p>}
+        <p className="preview__muted">
+          for {title}
+          {seconds ? `, delivered within ${formatDuration(seconds)} or refundable by anyone` : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Watches the hub until the runner's signed offer appears, then says so and links to it. */
+function ListedWatch({ title, atomic, rails, since }: { title: string; atomic: string; rails: RailId[]; since: number }) {
+  const [found, setFound] = useState<string | null>(null);
+  useEffect(() => {
+    if (found) return;
+    let live = true;
+    const look = async () => {
+      try {
+        const r = await api.listings();
+        const hit = r.data.find(
+          (l) =>
+            l.offer.title === title &&
+            l.offer.price === atomic &&
+            l.offer.rails.join(",") === rails.join(",") &&
+            l.offer.issuedAt >= since - 120,
+        );
+        if (live && hit) setFound(hit.hash);
+      } catch {
+        // The hub may be restarting; the next look tries again.
+      }
+    };
+    void look();
+    const timer = window.setInterval(() => void look(), 4000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [title, atomic, rails, since, found]);
+  return found ? (
+    <div className="listed" role="status">
+      <p className="listed__title">Listed.</p>
+      <p>
+        The hub has your signed offer. <Link to={`/offer/${found}`}>Open its offer page</Link>.
+      </p>
+    </div>
+  ) : (
+    <p className="listed__waiting" role="status">
+      Waiting for your runner to publish. This page checks the hub every few seconds.
+    </p>
   );
 }
 
@@ -190,11 +286,13 @@ function SkillStep({
   setText,
   error,
   parsed,
+  onBlur,
 }: {
   text: string;
   setText: (t: string) => void;
   error: string | null;
   parsed: ParsedSkill | null;
+  onBlur: () => void;
 }) {
   const id = useId();
   const file = useRef<HTMLInputElement>(null);
@@ -215,6 +313,7 @@ function SkillStep({
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           onChange={(e) => setText(e.target.value)}
+          onBlur={onBlur}
         />
         {error ? (
           <p id={`${id}-error`} className="field__error">
@@ -262,6 +361,7 @@ function TermsStep(props: {
   licence: string;
   setLicence: (v: string) => void;
   errors: Record<"price" | "deadline" | "rails" | "upstream" | "skill", string | null>;
+  onBlurField: (field: string) => void;
   seconds: number;
 }) {
   const { errors } = props;
@@ -283,6 +383,7 @@ function TermsStep(props: {
               aria-invalid={errors.price ? true : undefined}
               aria-describedby={errors.price ? `${ids.price}-error` : undefined}
               onChange={(e) => props.setPrice(e.target.value)}
+              onBlur={() => props.onBlurField("price")}
             />
             <span className="input-suffix__unit" aria-hidden="true">
               {symbol}
@@ -302,6 +403,7 @@ function TermsStep(props: {
               aria-invalid={errors.deadline ? true : undefined}
               aria-describedby={errors.deadline ? `${ids.deadline}-error` : `${ids.deadline}-hint`}
               onChange={(e) => props.setDeadline(e.target.value)}
+              onBlur={() => props.onBlurField("deadline")}
             />
             <span className="input-suffix__unit" aria-hidden="true">
               {props.seconds ? formatDuration(props.seconds) : "s"}
@@ -348,6 +450,7 @@ function TermsStep(props: {
             placeholder="https://github.com/…"
             aria-invalid={errors.upstream ? true : undefined}
             onChange={(e) => props.setUpstreamUrl(e.target.value)}
+            onBlur={() => props.onBlurField("upstream")}
           />
         </Field>
         <Field id={ids.licence} label="Licence" hint="As the upstream publishes it.">
@@ -359,6 +462,7 @@ function TermsStep(props: {
             value={props.licence}
             placeholder="Apache-2.0"
             onChange={(e) => props.setLicence(e.target.value)}
+            onBlur={() => props.onBlurField("upstream")}
           />
         </Field>
       </div>
@@ -372,12 +476,14 @@ function CheckStep({
   seconds,
   rails,
   upstream,
+  onEdit,
 }: {
   skill: ParsedSkill;
   atomic: string;
   seconds: number;
   rails: RailId[];
   upstream?: { url: string; licence: string };
+  onEdit: (step: number) => void;
 }) {
   const preview = offerPreview({ title: skill.name, summary: skill.summary, price: atomic, deadline: seconds, rails, upstream });
   const excerpt = skill.body.split(/\r?\n/).slice(0, 12).join("\n");
@@ -385,9 +491,19 @@ function CheckStep({
     <div className="wizard__fields">
       <div className="split-check">
         <section className="split-check__half" aria-labelledby="sees">
-          <h3 id="sees" className="split-check__title">
-            What buyers see
-          </h3>
+          <div className="split-check__head">
+            <h3 id="sees" className="split-check__title">
+              What buyers see
+            </h3>
+            <span className="split-check__edits">
+              <button type="button" className="link-button" onClick={() => onEdit(0)}>
+                Edit skill
+              </button>
+              <button type="button" className="link-button" onClick={() => onEdit(1)}>
+                Edit terms
+              </button>
+            </span>
+          </div>
           <p className="split-check__name">{skill.name}</p>
           <p className="split-check__summary">{skill.summary}</p>
           <Amount money={usd(atomic, rails[0])} size="lg" />

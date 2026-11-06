@@ -5,7 +5,7 @@ import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { RAIL_LABEL, usd } from "../../lib/format.ts";
 import type { Listing, SellerRecord } from "../../lib/types.ts";
-import { Amount, Button, Empty, FixtureNote, Hash, RailTag, Tag, cx } from "../../ui/primitives.tsx";
+import { Amount, Button, Empty, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
 import "./registry.css";
 
@@ -29,6 +29,10 @@ export interface SellerGroup {
   /** Calls that failed before any money moved. */
   failed: number;
   online: number;
+  /** Whether anything has counted this seller's calls yet: slips in fixtures, or the hub's /sellers. */
+  counted: boolean;
+  /** False when the hub has no name for this seller. */
+  named: boolean;
 }
 
 /** Take the hub's own counts and identity where it reports them; they come from slips and jobs. */
@@ -46,6 +50,8 @@ export function withRecords(groups: SellerGroup[], records: SellerRecord[] | nul
         released: r.released + r.settled,
         refunded: r.refunded,
         failed: r.failed,
+        counted: true,
+        named: r.name !== null || g.named,
       };
     })
     .sort((a, b) => b.released - a.released || a.name.localeCompare(b.name));
@@ -58,8 +64,20 @@ export function groupBySeller(listings: Listing[]): SellerGroup[] {
     const address = l.offer.seller.toLowerCase();
     const g =
       groups.get(address) ??
-      ({ address, name: l.seller.name, agentId: l.seller.agentId, offers: [], released: 0, refunded: 0, failed: 0, online: 0 } satisfies SellerGroup);
+      ({
+        address,
+        name: l.seller.name,
+        agentId: l.seller.agentId,
+        offers: [],
+        released: 0,
+        refunded: 0,
+        failed: 0,
+        online: 0,
+        counted: false,
+        named: l.seller.named !== false,
+      } satisfies SellerGroup);
     g.offers.push(l);
+    if (l.stats) g.counted = true;
     g.released += l.stats?.released ?? 0;
     g.refunded += l.stats?.refunded ?? 0;
     if (l.online) g.online += 1;
@@ -94,10 +112,12 @@ export default function RegistryPage(_props: PageProps) {
   const [adapter, setAdapter] = useState<AdapterFilter>("all");
   const [rail, setRail] = useState<RailId | "all">("all");
   const searchId = useId();
-  const railId = useId();
 
   const all = listings.data ?? [];
   const rails = useMemo(() => [...new Set(all.flatMap((l) => l.offer.rails))], [all]);
+  // Counts on every pill reflect the other filters, so a pill never promises rows it cannot show.
+  const adapterCount = (a: AdapterFilter) => all.filter((l) => matches(l, text, a, rail)).length;
+  const railCount = (r: RailId | "all") => all.filter((l) => matches(l, text, adapter, r)).length;
   const visible = all.filter((l) => matches(l, text, adapter, rail));
   const groups = withRecords(groupBySeller(visible), sellers.data);
   const filtered = Boolean(text.trim()) || adapter !== "all" || rail !== "all";
@@ -152,31 +172,28 @@ export default function RegistryPage(_props: PageProps) {
                 onChange={(e) => setText(e.target.value)}
               />
             </div>
-            <div className="segmented" role="group" aria-label="Adapter">
+            <div className="pills" role="group" aria-label="Adapter">
               {ADAPTERS.map((a) => (
                 <button
                   key={a.id}
                   type="button"
-                  className={cx("segmented__item", adapter === a.id && "is-on")}
+                  className={cx("pill", adapter === a.id && "is-on")}
                   aria-pressed={adapter === a.id}
                   onClick={() => setAdapter(a.id)}
                 >
-                  {a.label}
+                  {a.label} <span className="pill__n num">{adapterCount(a.id)}</span>
                 </button>
               ))}
             </div>
-            <div className="field filters__rail">
-              <label className="sr-only" htmlFor={railId}>
-                Rail
-              </label>
-              <select id={railId} className="input" value={rail} onChange={(e) => setRail(e.target.value as RailId | "all")}>
-                <option value="all">All rails</option>
-                {rails.map((r) => (
-                  <option key={r} value={r}>
-                    {RAIL_LABEL[r]}
-                  </option>
-                ))}
-              </select>
+            <div className="pills" role="group" aria-label="Rail">
+              <button type="button" className={cx("pill", rail === "all" && "is-on")} aria-pressed={rail === "all"} onClick={() => setRail("all")}>
+                Every rail <span className="pill__n num">{railCount("all")}</span>
+              </button>
+              {rails.map((r) => (
+                <button key={r} type="button" className={cx("pill", rail === r && "is-on")} aria-pressed={rail === r} onClick={() => setRail(r)}>
+                  {RAIL_LABEL[r]} <span className="pill__n num">{railCount(r)}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -212,29 +229,28 @@ function SellerBlock({ g }: { g: SellerGroup }) {
     <section className="seller-block" aria-label={`Seller ${g.name}`}>
       <header className="seller-block__head">
         <div className="seller-block__who">
-          <p className="seller-block__name">{g.name}</p>
-          <Hash value={g.address} label={`${g.name} address`} />
+          <p className={cx("seller-block__name", !g.named && "is-unnamed")}>{g.named ? g.name : "Unnamed seller"}</p>
+          <p className="seller-block__id">
+            {g.agentId ? (
+              <span className="seller-block__verified">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                ERC-8004 agent <span className="num">{g.agentId}</span>
+              </span>
+            ) : (
+              <span className="seller-block__unverified">Not registered with ERC-8004</span>
+            )}
+            <Hash value={g.address} label={`${g.name} address`} />
+          </p>
         </div>
-        <dl className="seller-block__facts">
-          <div>
-            <dt>Identity</dt>
-            <dd className={g.agentId ? undefined : "is-quiet"}>
-              {g.agentId ? <span className="num">ERC-8004 agent {g.agentId}</span> : "Not registered"}
-            </dd>
-          </div>
-          <div>
-            <dt>Record</dt>
-            <dd className="num">
-              {g.released + g.refunded + g.failed === 0
-                ? "No calls yet"
-                : `${g.released} paid · ${g.refunded} refunded${g.failed ? ` · ${g.failed} failed` : ""}`}
-            </dd>
-          </div>
-          <div>
-            <dt>Delivered</dt>
-            <dd className="num">{deliveryRate(g.released, g.refunded)}</dd>
-          </div>
-        </dl>
+        <p className="seller-block__record num">
+          {!g.counted
+            ? "Calls not counted yet"
+            : g.released + g.refunded + g.failed === 0
+              ? "No calls yet"
+            : `${g.released} paid · ${g.refunded} refunded${g.failed ? ` · ${g.failed} failed` : ""} · ${deliveryRate(g.released, g.refunded + g.failed)} delivered`}
+        </p>
       </header>
       <ul className="offer-list">
         {g.offers.map((l) => (
@@ -245,18 +261,20 @@ function SellerBlock({ g }: { g: SellerGroup }) {
                 <Tag>{l.offer.adapter}</Tag>
               </p>
               <p className="offer-line__summary">{l.offer.summary}</p>
-              <p className="offer-line__rails">
-                {l.offer.rails.map((r) => (
-                  <RailTag key={r} rail={r} />
-                ))}
+              <p className="offer-line__meta num">
+                {l.status === "delisted"
+                  ? `Delisted${l.reason ? `: ${l.reason}` : ""}`
+                  : !l.stats
+                    ? "Calls not counted yet"
+                    : l.stats.released + l.stats.refunded > 0
+                      ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
+                      : "No calls yet"}
+                {" · "}
+                {l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}
+                {l.online === undefined ? "" : l.online ? " · runner online" : " · runner offline"}
               </p>
             </div>
-            <div className="offer-line__end">
-              <Amount money={usd(l.offer.price, l.offer.rails[0])} size="md" />
-              <span className={cx("offer-line__state", l.online === false && "is-off")}>
-                {l.status === "delisted" ? `Delisted${l.reason ? `: ${l.reason}` : ""}` : l.online === undefined ? "" : l.online ? "Online" : "Offline"}
-              </span>
-            </div>
+            <Amount money={usd(l.offer.price, l.offer.rails[0])} size="md" />
           </li>
         ))}
       </ul>

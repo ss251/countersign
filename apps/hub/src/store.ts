@@ -36,6 +36,20 @@ export interface JobPatch {
   closedAt?: number | null;
 }
 
+/** A job joined with its offer's seller and its stored slip, for ratings and stats. */
+export interface RatingJob {
+  jobId: Hex;
+  offerHash: Hex;
+  seller: string;
+  rail: RailId;
+  buyer: string;
+  amount: string;
+  status: JobStatus;
+  slipHash: Hex | null;
+  slip: Slip | null;
+  createdAt: number;
+}
+
 interface OfferRow {
   offer_hash: string;
   seller: string;
@@ -58,6 +72,11 @@ interface JobRow {
   slip_hash: string | null;
   created_at: number;
   closed_at: number | null;
+}
+
+interface RatingJobRow extends JobRow {
+  seller: string;
+  slip_json: string | null;
 }
 
 interface SlipRow {
@@ -266,6 +285,34 @@ export class Store {
   getSlip(slipHash: string): Slip | null {
     const row = this.db.query<SlipRow, [string]>("SELECT * FROM slips WHERE slip_hash = ?").get(slipHash);
     return row ? (JSON.parse(row.slip_json) as Slip) : null;
+  }
+
+  /**
+   * Every job with the seller of its offer and the slip the hub stored for it, oldest first.
+   * Read-only: ratings and stats are derived from this and nothing else.
+   */
+  ratingJobs(): RatingJob[] {
+    return this.db
+      .query<RatingJobRow, []>(
+        `SELECT jobs.*, offers.seller AS seller, slips.slip_json AS slip_json
+           FROM jobs
+           JOIN offers ON offers.offer_hash = jobs.offer_hash
+           LEFT JOIN slips ON slips.slip_hash = jobs.slip_hash
+          ORDER BY jobs.created_at ASC, jobs.rowid ASC`,
+      )
+      .all()
+      .map((row) => ({
+        jobId: row.job_id as Hex,
+        offerHash: row.offer_hash as Hex,
+        seller: row.seller,
+        rail: row.rail as RailId,
+        buyer: row.buyer,
+        amount: row.amount,
+        status: row.status as JobStatus,
+        slipHash: row.slip_hash as Hex | null,
+        slip: row.slip_json === null ? null : (JSON.parse(row.slip_json) as Slip),
+        createdAt: row.created_at,
+      }));
   }
 
   /** Jobs whose money is still locked and whose deadline has arrived. */
