@@ -223,7 +223,7 @@ The expiry path, where nothing moves, is flow 21b.
 
 ### 21, 21b · hedera-held (on demand)
 
-About 0.16 HBAR a purchase, so the hourly run skips both as `NOT RUN (on demand)`. Both pay production's Agent Kit offer (17's seller), which lists `hedera-scheduled` first: the agent creates a scheduled USDC transfer to the seller's signing account, and nothing moves until the seller signs it after a checked delivery. Both report NOT RUN while production does not declare `hedera-scheduled` or the offer does not list it first, and while the agent in the branch has no held path.
+About 0.16 HBAR a purchase, so the hourly run skips both as `NOT RUN (on demand)`. `bun run e2e -- --with hedera-held --with hedera-held-undelivered` is a full run that also runs them, so `LATEST.md` shows them. Both pay production's Agent Kit offer (17's seller), which lists `hedera-scheduled` first: the agent creates a scheduled USDC transfer to the seller's signing account, and nothing moves until the seller signs it after a checked delivery. Both report NOT RUN while production does not declare `hedera-scheduled` or the offer does not list it first, and while the agent in the branch has no held path.
 
 Both first check the same three things:
 

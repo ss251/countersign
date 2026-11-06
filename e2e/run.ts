@@ -8,6 +8,7 @@
  *   bun run e2e -- --dry                 read balances and plan, spend nothing
  *   bun run e2e -- --public-hub <url>    also check discovery on this public hub
  *   bun run e2e -- --no-public           skip the public hub
+ *   bun run e2e -- --with <name> ...     a full run that also runs these on-demand flows
  *
  * Exit code 0 when no flow failed, 1 when one did, 2 on bad arguments.
  */
@@ -28,11 +29,13 @@ interface Args {
   flows: string[];
   list: boolean;
   dry: boolean;
+  /** On-demand flows, kept out of the hourly run for their cost, that this full run also runs. */
+  with: string[];
   publicHub?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { flows: [], list: false, dry: false, publicHub: process.env.E2E_PUBLIC_HUB ?? DEFAULT_PUBLIC_HUB };
+  const args: Args = { flows: [], list: false, dry: false, with: [], publicHub: process.env.E2E_PUBLIC_HUB ?? DEFAULT_PUBLIC_HUB };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => {
@@ -43,6 +46,7 @@ function parseArgs(argv: string[]): Args {
     if (a === "--flow") args.flows.push(value());
     else if (a === "--list") args.list = true;
     else if (a === "--dry") args.dry = true;
+    else if (a === "--with") args.with.push(value());
     else if (a === "--public-hub") args.publicHub = value();
     else if (a === "--no-public") delete args.publicHub;
     else usage(`unknown argument ${a}`);
@@ -52,7 +56,7 @@ function parseArgs(argv: string[]): Args {
 
 function usage(problem: string): never {
   console.error(`e2e: ${problem}`);
-  console.error("usage: bun run e2e [-- --flow <name> ...] [--list] [--dry] [--public-hub <url> | --no-public]");
+  console.error("usage: bun run e2e [-- --flow <name> ... | --with <name> ...] [--list] [--dry] [--public-hub <url> | --no-public]");
   console.error(`flows: ${FLOWS.map((f) => f.name).join(", ")}`);
   process.exit(2);
 }
@@ -87,6 +91,11 @@ function newRunId(at: Date): string {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const selected = select(args.flows);
+  for (const name of args.with) {
+    const f = FLOWS.find((x) => x.name === name);
+    if (!f?.onDemand) usage(f ? `${name} is not an on-demand flow; a full run already runs it` : `no flow named ${name}`);
+    if (args.flows.length > 0) usage("--with adds on-demand flows to a full run; with --flow, name them there");
+  }
   const startedAt = new Date();
   const runId = newRunId(startedAt);
   const dir = join(ARTIFACTS_DIR, runId);
@@ -130,7 +139,8 @@ async function main(): Promise<void> {
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
 
   // A full run skips on-demand flows, so their spends do not count against it.
-  const plan = await planBudget(selected.filter((f) => !(f.onDemand && args.flows.length === 0)), env);
+  const skipOnDemand = (f: Flow) => Boolean(f.onDemand) && args.flows.length === 0 && !args.with.includes(f.name);
+  const plan = await planBudget(selected.filter((f) => !skipOnDemand(f)), env);
   for (const [id, b] of plan.balances) {
     const w = selected.flatMap((f) => {
       try {
@@ -144,7 +154,7 @@ async function main(): Promise<void> {
   }
   for (const r of plan.requests) log(`  budget: ${r}`);
   if (args.dry) {
-    for (const f of selected) log(`  ${f.name}: ${f.notRun?.(env) ? `NOT RUN (${f.notRun(env)})` : plan.short.has(f.name) ? "SKIPPED (funds)" : "would run"}`);
+    for (const f of selected) log(`  ${f.name}: ${f.notRun?.(env) ? `NOT RUN (${f.notRun(env)})` : skipOnDemand(f) ? `NOT RUN (on demand: ${f.onDemand})` : plan.short.has(f.name) ? "SKIPPED (funds)" : "would run"}`);
     return;
   }
 
@@ -153,7 +163,7 @@ async function main(): Promise<void> {
   for (const flow of selected) {
     log(`[${NUMBERS.get(flow.name) ?? "?"}] ${flow.name} · ${flow.title}`);
     let result: FlowResult;
-    const blocked = flow.notRun?.(env) ?? (flow.onDemand && args.flows.length === 0 ? `on demand: ${flow.onDemand}` : null);
+    const blocked = flow.notRun?.(env) ?? (skipOnDemand(flow) ? `on demand: ${flow.onDemand}` : null);
     const unmet = (flow.needs ?? []).find((n) => byName.get(n)?.status !== "PASS");
     const short = plan.short.get(flow.name);
     if (blocked) result = stub(flow, `NOT RUN (${blocked})`);
