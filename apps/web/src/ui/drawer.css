@@ -1,0 +1,104 @@
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.drawer__backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--raisin) 55%, transparent);
+  opacity: 1;
+  transition: opacity 300ms ease;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.drawer__panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100vw);
+  background: var(--paper);
+  box-shadow: var(--elev-2);
+  outline: none;
+  transform: translateX(0);
+  transition: transform 320ms var(--ease-drawer);
+
+  @starting-style {
+    transform: translateX(100%);
+  }
+}
+
+/* Closing is quicker than opening: the system answers, nobody waits on it. */
+.drawer[data-closing] .drawer__backdrop {
+  opacity: 0;
+  transition-duration: 200ms;
+}
+
+.drawer[data-closing] .drawer__panel {
+  transform: translateX(100%);
+  transition: transform 200ms var(--ease-out);
+}
+
+.drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: var(--bar);
+  padding: 0 var(--sp-4) 0 var(--sp-6);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.drawer__title {
+  font-family: var(--display);
+  font-size: var(--t-20);
+  font-weight: 700;
+}
+
+.drawer__close {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--slate);
+  transition:
+    background-color var(--d-1) ease,
+    transform var(--d-press) var(--ease-out);
+}
+
+.drawer__close:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .drawer__close:hover {
+    color: var(--ink);
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+}
+
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer__panel,
+  .drawer[data-closing] .drawer__panel {
+    transform: none;
+    transition: none;
+  }
+}

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource, type JobView } from "../../lib/api.ts";
-import { formatAmount, nowUnix, remainingAtomic, shortHex, usd } from "../../lib/format.ts";
+import { formatAgo, formatAmount, nowUnix, remainingAtomic, shortHex, usd } from "../../lib/format.ts";
 import { chosenAgent, chosenHub, forgetChoices } from "../../lib/hub.ts";
-import type { Approval, Purchase } from "../../lib/types.ts";
-import { cx, FixtureNote } from "../../ui/primitives.tsx";
+import type { Approval, EnvelopeView, Purchase } from "../../lib/types.ts";
+import type { Resource } from "../../lib/api.ts";
+import { Drawer } from "../../ui/Drawer.tsx";
+import { Amount, cx, FixtureNote, Status } from "../../ui/primitives.tsx";
 import { Approvals } from "./Approvals.tsx";
 import { AskTab } from "./AskTab.tsx";
 import { EnvelopeTab } from "./EnvelopeTab.tsx";
@@ -27,7 +29,9 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ];
 
 /**
- * The buyer is a phone: 390 px, one column, thumb-reach actions at the bottom.
+ * The buyer: the human behind an agent. On a desk, the requests waiting for you are the page, with
+ * your envelope and history beside them; their full views open in a drawer from the right, at the
+ * same ?tab= addresses the phone uses. On a phone it is one column with a tab bar under the thumb.
  *
  * Asking for another agent or another hub in the address starts the phone afresh: its reads, its
  * polling and what it has countersigned belong to one agent on one hub. Nothing from the previous
@@ -125,109 +129,285 @@ function Phone({ query }: PageProps) {
     return `/buyer${s ? `?${s}` : ""}`;
   };
 
-  return (
-    <div className="phone-stage">
-    <aside className="phone-note" aria-label="About this view">
-      <p className="phone-note__eyebrow">The buyer's phone</p>
-      <p className="phone-note__title">The human behind an agent.</p>
-      <p className="phone-note__body">
-        Your agent buys inside the envelope you set. Above your limit it waits, and you approve the exact offer and amount
-        here.
-      </p>
-    </aside>
-    {/* The right note balances the stage at 1440: what happens on the phone, each step true today (DESIGN-LOG 12). */}
-    <aside className="phone-note phone-note--end" aria-label="How approvals work">
-      <p className="phone-note__eyebrow">On this phone</p>
-      <ol className="phone-steps">
-        <li>Your agent asks only above your limit. Inside it, it buys on its own.</li>
-        <li>You see the exact offer, amount and seller, checked against the envelope your agent signed.</li>
-        <li>You countersign with this phone's own key. The hub checks it against the envelope before the agent can pay.</li>
-      </ol>
-    </aside>
-    <div className="phone">
-      <header className="phone__bar">
-        <p className="phone__title">Buyer's phone</p>
-        <div className="phone__bar-end">
-          <FixtureNote show={fixtures} />
-          {view && left ? (
-            <Link
-              to={tabHref("envelope")}
-              className={cx("phone__budget num", revoked && "phone__budget--revoked")}
-              aria-label={revoked ? "Envelope revoked" : `${formatAmount(left)} ${left.asset.symbol} left. Open the envelope.`}
-            >
-              {revoked ? (
-                "Revoked"
-              ) : (
-                <>
-                  <span className="phone__budget-amount">{formatAmount(left)}</span> left
-                </>
-              )}
-            </Link>
-          ) : null}
-        </div>
-      </header>
-      <p className="phone__who">You approve what your agent asks to buy.</p>
-      {agent || hub ? (
-        <p className="phone__chosen" data-testid="buyer-chosen">
-          {agent ? (
-            <>
-              Showing agent <span className="mono">{shortHex(agent)}</span>
-            </>
-          ) : null}
-          {hub ? (
-            <>
-              {agent ? " on hub " : "On hub "}
-              {hubLabel(hub)}
-            </>
-          ) : null}
-          , chosen by a link.{" "}
-          <button
-            type="button"
-            data-testid="buyer-use-my-own"
-            onClick={() => {
-              forgetChoices();
-              navigate("/buyer");
-            }}
-          >
-            Use my own
-          </button>
-        </p>
-      ) : null}
+  const narrow = useNarrowBuyer();
 
-      <div className="phone__body">
-        {tab === "approvals" ? (
-          <Approvals
-            approvals={approvals}
-            envelope={envelope}
-            query={query}
-            onSigned={(a) => setSigned((s) => [...s, a.id])}
-            onSettled={settle}
-            onClose={(a) => {
-              latest.current.closed.add(a.id);
-              approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id));
-            }}
-          />
+  const chosen =
+    agent || hub ? (
+      <p className="buyer__chosen" data-testid="buyer-chosen">
+        {agent ? (
+          <>
+            Showing agent <span className="mono">{shortHex(agent)}</span>
+          </>
         ) : null}
-        {tab === "ask" ? <AskTab envelope={envelope} /> : null}
-        {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
-        {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+        {hub ? (
+          <>
+            {agent ? " on hub " : "On hub "}
+            {hubLabel(hub)}
+          </>
+        ) : null}
+        , chosen by a link.{" "}
+        <button
+          type="button"
+          data-testid="buyer-use-my-own"
+          onClick={() => {
+            forgetChoices();
+            navigate("/buyer");
+          }}
+        >
+          Use my own
+        </button>
+      </p>
+    ) : null;
+
+  const approvalsView = (
+    <Approvals
+      approvals={approvals}
+      envelope={envelope}
+      query={query}
+      onSigned={(a) => setSigned((s) => [...s, a.id])}
+      onSettled={settle}
+      onClose={(a) => {
+        latest.current.closed.add(a.id);
+        approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id));
+      }}
+    />
+  );
+
+  const budget =
+    view && left ? (
+      <Link
+        to={tabHref("envelope")}
+        className={cx("buyer__budget num", revoked && "buyer__budget--revoked")}
+        aria-label={revoked ? "Envelope revoked" : `${formatAmount(left)} ${left.asset.symbol} left. Open the envelope.`}
+      >
+        {revoked ? (
+          "Revoked"
+        ) : (
+          <>
+            <span className="buyer__budget-amount">{formatAmount(left)}</span> left
+          </>
+        )}
+      </Link>
+    ) : null;
+
+  if (narrow) {
+    return (
+      <div className="buyer buyer--phone">
+        <header className="buyer__bar">
+          <p className="buyer__bar-title">Buyer</p>
+          <div className="buyer__bar-end">
+            <FixtureNote show={fixtures} />
+            {budget}
+          </div>
+        </header>
+        {chosen}
+        <div className="buyer__body">
+          {tab === "approvals" ? approvalsView : null}
+          {tab === "ask" ? <AskTab envelope={envelope} /> : null}
+          {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
+          {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+        </div>
+        <nav className="tabbar" aria-label="Buyer">
+          {TABS.map((t) => (
+            <Link key={t.id} to={tabHref(t.id)} className="tabbar__tab" aria-current={tab === t.id ? "page" : undefined}>
+              <TabIcon id={t.id} />
+              <span className="tabbar__label">{t.label}</span>
+              {t.id === "approvals" && waiting > 0 ? (
+                <span className="tabbar__badge num" aria-label={`${waiting} waiting`}>
+                  {waiting}
+                </span>
+              ) : null}
+            </Link>
+          ))}
+        </nav>
+      </div>
+    );
+  }
+
+  return (
+    <div className="buyer">
+      <header className="buyer__head">
+        <div className="buyer__kickers">
+          <p className="pill-kicker">The buyer</p>
+          <FixtureNote show={fixtures} />
+        </div>
+        <h1 className="buyer__title">Approve what your agent buys.</h1>
+        <p className="buyer__lede">
+          Your agent buys inside the envelope you set. Above your limit it waits here, and you countersign the exact offer and
+          amount with this browser&apos;s own key.
+        </p>
+        {chosen}
+      </header>
+
+      <div className="buyer__grid">
+        <section className="buyer__main" aria-labelledby="buyer-waiting">
+          <div className="buyer__section-head">
+            <h2 id="buyer-waiting" className="section-label">
+              Waiting for you
+            </h2>
+            {waiting > 0 ? <span className="count-pill num">{waiting}</span> : null}
+          </div>
+          {approvalsView}
+        </section>
+
+        <aside className="buyer__rail" aria-label="Your envelope and history">
+          <EnvelopeCard envelope={envelope} left={left} revoked={revoked} href={tabHref("envelope")} />
+          <HistoryCard purchases={purchases} href={tabHref("history")} />
+          <section className="rail-card rail-card--ask">
+            <p className="section-label">Ask</p>
+            <p className="rail-card__text">Tell your agent what you need and it finds a paid tool that fits your envelope.</p>
+            <Link to="/assistant" className="btn btn--secondary rail-card__go">
+              Ask for a paid tool
+            </Link>
+          </section>
+          <section className="rail-card rail-card--how" aria-label="How approvals work">
+            <p className="section-label">How it works</p>
+            <ol className="buyer-steps">
+              <li>Your agent asks only above your limit. Inside it, it buys on its own.</li>
+              <li>You see the exact offer, amount and seller, checked against the envelope your agent signed.</li>
+              <li>You countersign with this browser&apos;s own key. The hub checks it against the envelope before the agent can pay.</li>
+            </ol>
+          </section>
+        </aside>
       </div>
 
-      <nav className="tabbar" aria-label="Buyer">
-        {TABS.map((t) => (
-          <Link key={t.id} to={tabHref(t.id)} className="tabbar__tab" aria-current={tab === t.id ? "page" : undefined}>
-            <TabIcon id={t.id} />
-            <span className="tabbar__label">{t.label}</span>
-            {t.id === "approvals" && waiting > 0 ? (
-              <span className="tabbar__badge num" aria-label={`${waiting} waiting`}>
-                {waiting}
+      {tab !== "approvals" ? (
+        <Drawer title={tab === "envelope" ? "Your envelope" : tab === "history" ? "History" : "Ask"} onClose={() => navigate(tabHref("approvals"))}>
+          {tab === "ask" ? <AskTab envelope={envelope} /> : null}
+          {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
+          {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+        </Drawer>
+      ) : null}
+    </div>
+  );
+}
+
+/* The rail's summaries: each opens its full view in the drawer. */
+
+function EnvelopeCard({
+  envelope,
+  left,
+  revoked,
+  href,
+}: {
+  envelope: Resource<EnvelopeView | null>;
+  left: ReturnType<typeof usd> | undefined;
+  revoked: boolean;
+  href: string;
+}) {
+  const view = envelope.data;
+  return (
+    <section className="rail-card" aria-labelledby="rail-envelope">
+      <div className="rail-card__head">
+        <h2 id="rail-envelope" className="section-label">
+          Your envelope
+        </h2>
+        <Link to={href} className="rail-card__link">
+          {view?.mirror ? "View" : "Edit limits"}
+        </Link>
+      </div>
+      {view && left ? (
+        <>
+          <p className="rail-card__big">
+            {revoked ? (
+              <span className="status status--refused">Revoked</span>
+            ) : (
+              <>
+                <Amount money={left} size="lg" /> <span className="rail-card__quiet">left</span>
+              </>
+            )}
+          </p>
+          <div className="rail-meter" aria-hidden="true">
+            <span style={{ width: `${spentShare(view)}%` }} />
+          </div>
+          <dl className="rail-kv">
+            <div>
+              <dt>Budget</dt>
+              <dd>
+                <Amount money={usd(view.envelope.cap)} size="sm" />
+              </dd>
+            </div>
+            <div>
+              <dt>Per seller</dt>
+              <dd>
+                <Amount money={usd(view.envelope.perMerchant)} size="sm" />
+              </dd>
+            </div>
+            <div>
+              <dt>Ask above</dt>
+              <dd>{view.askAbove === null ? "Never" : <Amount money={usd(view.askAbove)} size="sm" />}</dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <p className="rail-card__text">
+          {envelope.source === "absent" ? "This hub has not shared an envelope with this browser." : "Reading your envelope…"}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function HistoryCard({ purchases, href }: { purchases: Resource<Purchase[] | null>; href: string }) {
+  const latest = (purchases.data ?? []).slice(0, 3);
+  return (
+    <section className="rail-card" aria-labelledby="rail-history">
+      <div className="rail-card__head">
+        <h2 id="rail-history" className="section-label">
+          Recent
+        </h2>
+        <Link to={href} className="rail-card__link">
+          All history
+        </Link>
+      </div>
+      {latest.length > 0 ? (
+        <ul className="rail-list">
+          {latest.map((p) => (
+            <li key={`${p.jobId}-${p.status}`}>
+              <span className="rail-list__what">
+                <span className="rail-list__title">{p.title || "Untitled offer"}</span>
+                <span className="rail-list__meta">
+                  {p.seller.name} · {formatAgo(p.at)}
+                </span>
               </span>
-            ) : null}
-          </Link>
-        ))}
-      </nav>
-    </div>
-    </div>
+              <span className="rail-list__end">
+                <Amount money={usd(p.amount, p.rail)} size="sm" />
+                <Status status={p.status} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rail-card__text">
+          {purchases.source === "absent"
+            ? "Your agent's purchases are private to this hub until you open them."
+            : purchases.data
+              ? "No purchases yet. When your agent buys, each call shows here with its slip."
+              : "Reading your history…"}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function spentShare(view: EnvelopeView): number {
+  const cap = Number(view.envelope.cap);
+  if (!cap) return 0;
+  return Math.min(100, Math.max(0, (Number(view.spent.total) / cap) * 100));
+}
+
+/** Below this the buyer is a phone: one column and a tab bar. */
+const PHONE_QUERY = "(max-width: 959px)";
+
+function useNarrowBuyer(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia(PHONE_QUERY);
+      list.addEventListener("change", onChange);
+      return () => list.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
   );
 }
 

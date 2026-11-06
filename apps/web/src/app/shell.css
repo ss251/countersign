@@ -487,8 +487,8 @@
   cursor: progress;
 }
 
-/* On the landing the bar shares the hero's column, so the wordmark sits over the headline's edge. */
-.shell[data-surface="story"] .topbar__inner {
+/* Every page shares one column with the landing, so the wordmark sits over each page's title edge. */
+.topbar__inner {
   --gutter: clamp(16px, 5vw, 64px);
   max-width: calc(1240px + 2 * var(--gutter));
   padding: 0 var(--gutter);
