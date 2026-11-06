@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { timingSafeEqual } from "node:crypto";
 import { createPublicClient, createWalletClient, fallback, http } from "viem";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -10,7 +11,16 @@ import { SpendCeiling } from "./ceiling.ts";
 import { loadRelayConfig } from "./config.ts";
 import { settleCountersign, verifyCountersign } from "./countersign-scheme.ts";
 import type { CountersignContext } from "./countersign-scheme.ts";
-import { cancelJob, jobStatus, refundJob, releaseJob } from "./escrow-ops.ts";
+import {
+  acceptJob,
+  cancelJob,
+  disputeJob,
+  failDeliveryJob,
+  jobStatus,
+  refundJob,
+  releaseAfterWindowJob,
+  releaseJob,
+} from "./escrow-ops.ts";
 import type { EscrowOpResult } from "./escrow-ops.ts";
 import { settleExact, verifyExact } from "./exact.ts";
 import type { ExactClock, ExactContext, VerifyRequest } from "./exact.ts";
@@ -26,6 +36,8 @@ import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 export type RelayAppConfig = {
   port?: number;
   relayUrl?: string;
+  /** The bearer token /escrow/fail requires. Absent means the route answers 503. */
+  hubToken?: string;
 };
 
 export type RelayAppOptions = {
@@ -49,6 +61,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     now,
   };
   const app = new Hono();
+  const hubToken = options.config?.hubToken;
 
   app.use("*", cors({ origin: "*" }));
 
@@ -65,6 +78,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       payees: status.policy.allowedPayees,
       minAmount: status.policy.minAmount.toString(),
       escrow: relayer.allowedEscrows[0] ?? WHITECHAIN_ESCROW,
+      escrowV2: status.policy.escrowV2 ?? null,
       token: USDT.address,
       network: NETWORK,
       chainId: WHITECHAIN_CHAIN_ID,
@@ -186,8 +200,20 @@ export function createRelayApp(options: RelayAppOptions): Hono {
 
   const bad = (c: { json: (body: unknown, status: 400) => Response }) =>
     c.json({ ok: false, reason: "invalid_payload" }, 400);
-  const replyOp = (c: { json: (body: unknown, status: 200 | 404 | 422) => Response }, result: EscrowOpResult) =>
-    c.json(result, result.ok ? 200 : result.reason === "job_not_found" ? 404 : 422);
+  const replyOp = (
+    c: { json: (body: unknown, status: 200 | 404 | 409 | 422) => Response },
+    result: EscrowOpResult,
+  ) =>
+    c.json(
+      result,
+      result.ok
+        ? 200
+        : result.reason === "job_not_found"
+          ? 404
+          : result.reason === "not_supported_on_v1"
+            ? 409
+            : 422,
+    );
 
   app.post("/escrow/release", async (c) => {
     const body = await readJson(c);
@@ -219,6 +245,38 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
     if (!v || !isHex32(v.jobId)) return bad(c);
     return replyOp(c, await refundJob({ jobId: v.jobId }, csCtx));
+  });
+
+  app.post("/escrow/accept", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId) || !isHexString(v.buyerSig)) return bad(c);
+    return replyOp(c, await acceptJob({ jobId: v.jobId, buyerSig: v.buyerSig }, csCtx));
+  });
+
+  app.post("/escrow/dispute", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId) || !isHexString(v.buyerSig)) return bad(c);
+    return replyOp(c, await disputeJob({ jobId: v.jobId, buyerSig: v.buyerSig }, csCtx));
+  });
+
+  app.post("/escrow/release-after-window", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId)) return bad(c);
+    return replyOp(c, await releaseAfterWindowJob({ jobId: v.jobId }, csCtx));
+  });
+
+  app.post("/escrow/fail", async (c) => {
+    if (!hubToken) return c.json({ ok: false, reason: "fail_not_configured" }, 503);
+    if (!authorizedHub(c.req.header("authorization"), hubToken)) {
+      return c.json({ ok: false, reason: "hub_auth_required" }, 401);
+    }
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId)) return bad(c);
+    return replyOp(c, await failDeliveryJob({ jobId: v.jobId }, csCtx));
   });
 
   app.get("/escrow/jobs/:jobId", async (c) => {
@@ -294,6 +352,17 @@ function schemeOf(body: unknown): unknown {
 
 function isHexString(value: unknown): value is `0x${string}` {
   return typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value);
+}
+
+function authorizedHub(header: string | undefined, token: string): boolean {
+  if (typeof header !== "string") return false;
+  const prefix = "Bearer ";
+  if (!header.startsWith(prefix)) return false;
+  const encoder = new TextEncoder();
+  const provided = encoder.encode(header.slice(prefix.length));
+  const expected = encoder.encode(token);
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(provided, expected);
 }
 
 function isHex32(value: unknown): value is `0x${string}` {

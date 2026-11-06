@@ -89,7 +89,17 @@ export type NewPayment = {
   description?: string | null;
 };
 
-export type JobStatus = "pending" | "funded" | "released" | "cancelled" | "refunded";
+export type JobStatus =
+  | "pending"
+  | "funded"
+  | "released"
+  | "cancelled"
+  | "refunded"
+  | "delivered"
+  | "disputed"
+  | "failed";
+
+export type CloseVia = "accept" | "window";
 
 export type JobRecord = {
   jobId: string;
@@ -108,6 +118,18 @@ export type JobRecord = {
   closedAt: number | null;
   resource: string | null;
   description: string | null;
+  /** The escrow this job was funded on; null on rows from before the column, which are v1. */
+  escrow: string | null;
+  /** When a v2 delivery was committed, in ms. */
+  deliveredAt: number | null;
+  /** When the review window ends, in ms. */
+  reviewEndsAt: number | null;
+  /** The review window in seconds. */
+  reviewWindow: number | null;
+  /** The bond the contract locked for this job, in atomic units. "0" when there is none. */
+  bond: string;
+  /** How a v2 released job closed: the buyer's accept, or the window. */
+  closeVia: CloseVia | null;
 };
 
 export type NewJob = {
@@ -123,6 +145,8 @@ export type NewJob = {
   createdAt: number;
   resource?: string | null;
   description?: string | null;
+  escrow?: string | null;
+  bond?: string;
 };
 
 export type JobFilter = {
@@ -131,7 +155,12 @@ export type JobFilter = {
 };
 
 export type OrderKind = "exact" | "escrow";
-export type CloseKind = "release" | "cancel" | "deadline_refund";
+export type CloseKind =
+  | "release"
+  | "cancel"
+  | "deadline_refund"
+  | "dispute_refund"
+  | "delivery_failed";
 export type OrderStatus =
   | "paid"
   | "partially_refunded"
@@ -139,6 +168,7 @@ export type OrderStatus =
   | "refund_pending"
   | "pending"
   | "held"
+  | "in_review"
   | "cancelled";
 
 export type Order = {
@@ -167,6 +197,17 @@ export type Order = {
   deadline?: number;
   resource?: string | null;
   description?: string | null;
+  /** A v2 delivery waiting for review, in ms and seconds. */
+  deliveredAt?: number;
+  reviewEndsAt?: number;
+  reviewWindow?: number;
+  /** A released job the buyer accepted, with the close transaction. */
+  acceptedAt?: number;
+  acceptTx?: string;
+  /** A released job that closed by the review window. */
+  releasedAfterWindow?: boolean;
+  /** The seller's bond, when the seller lost it. */
+  bondSlashed?: string;
 };
 
 export type OrderFilter = {
@@ -191,6 +232,12 @@ type JobRow = {
   closed_at: number | null;
   resource: string | null;
   description: string | null;
+  escrow: string | null;
+  delivered_at: number | null;
+  review_ends_at: number | null;
+  review_window: number | null;
+  bond: string | null;
+  close_via: string | null;
 };
 
 export type PaymentFilter = {
@@ -278,7 +325,13 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     closed_at INTEGER,
     resource TEXT,
-    description TEXT
+    description TEXT,
+    escrow TEXT,
+    delivered_at INTEGER,
+    review_ends_at INTEGER,
+    review_window INTEGER,
+    bond TEXT,
+    close_via TEXT
   );
   CREATE INDEX IF NOT EXISTS jobs_payee ON jobs (payee);
   CREATE INDEX IF NOT EXISTS jobs_buyer ON jobs (buyer);
@@ -476,8 +529,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO jobs
-          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description, escrow, bond)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.jobId,
@@ -492,6 +545,8 @@ export class Ledger {
         job.createdAt,
         job.resource ?? null,
         job.description ?? null,
+        job.escrow ?? null,
+        job.bond ?? "0",
       );
   }
 
@@ -512,21 +567,51 @@ export class Ledger {
     return result.changes > 0;
   }
 
-  /** funded -> released | cancelled | refunded. Any other starting state is left alone. */
+  /** A v2 release with a window: the job is delivered, and is not closed yet. */
+  deliverJob(
+    jobId: string,
+    input: {
+      slipHash?: string;
+      deliveredAt: number;
+      reviewEndsAt: number;
+      reviewWindow: number;
+    },
+  ): boolean {
+    const result = this.db
+      .query(
+        `UPDATE jobs
+            SET status = 'delivered', slip_hash = ?, delivered_at = ?, review_ends_at = ?, review_window = ?
+          WHERE LOWER(job_id) = LOWER(?) AND status = 'funded'`,
+      )
+      .run(
+        input.slipHash ?? null,
+        input.deliveredAt,
+        input.reviewEndsAt,
+        input.reviewWindow,
+        jobId,
+      );
+    return result.changes > 0;
+  }
+
+  /**
+   * funded | delivered -> released | cancelled | refunded | disputed | failed.
+   * Any other starting state is left alone.
+   */
   closeJob(
     jobId: string,
-    status: "released" | "cancelled" | "refunded",
+    status: "released" | "cancelled" | "refunded" | "disputed" | "failed",
     closeTx: string,
     slipHash?: string,
     closedAt: number = Date.now(),
     closeReason?: RefundReason | null,
+    closeVia?: CloseVia | null,
   ): boolean {
     const result = this.db
       .query(
-        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?, close_reason = ?
-         WHERE LOWER(job_id) = LOWER(?) AND status = 'funded'`,
+        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?, close_reason = ?, close_via = ?
+         WHERE LOWER(job_id) = LOWER(?) AND status IN ('funded', 'delivered')`,
       )
-      .run(status, closeTx, slipHash ?? null, closedAt, closeReason ?? null, jobId);
+      .run(status, closeTx, slipHash ?? null, closedAt, closeReason ?? null, closeVia ?? null, jobId);
     return result.changes > 0;
   }
 
@@ -643,6 +728,9 @@ export class Ledger {
       case "funded":
         status = "held";
         break;
+      case "delivered":
+        status = "in_review";
+        break;
       case "released":
         status = hasPending ? "refund_pending" : transferStatus(job.amount, refunded);
         break;
@@ -650,6 +738,8 @@ export class Ledger {
         status = "cancelled";
         break;
       case "refunded":
+      case "disputed":
+      case "failed":
         status = "refunded";
         break;
     }
@@ -676,6 +766,20 @@ export class Ledger {
       deadline: job.deadline,
       resource: job.resource,
       description: job.description,
+      ...(job.status === "delivered"
+        ? {
+            deliveredAt: job.deliveredAt ?? undefined,
+            reviewEndsAt: job.reviewEndsAt ?? undefined,
+            reviewWindow: job.reviewWindow ?? undefined,
+          }
+        : {}),
+      ...(job.status === "released" && job.closeVia === "accept"
+        ? { acceptedAt: job.closedAt ?? undefined, acceptTx: job.closeTx ?? undefined }
+        : {}),
+      ...(job.status === "released" && job.closeVia === "window"
+        ? { releasedAfterWindow: true }
+        : {}),
+      ...(bondSlashed(job) ? { bondSlashed: job.bond } : {}),
     };
   }
 
@@ -822,8 +926,27 @@ export class Ledger {
     const jobColumns = this.db
       .query<{ name: string }, []>("PRAGMA table_info(jobs)")
       .all();
-    if (!jobColumns.some((column) => column.name === "close_reason")) {
+    const jobNames = new Set(jobColumns.map((column) => column.name));
+    if (!jobNames.has("close_reason")) {
       this.db.exec("ALTER TABLE jobs ADD COLUMN close_reason TEXT");
+    }
+    if (!jobNames.has("escrow")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN escrow TEXT");
+    }
+    if (!jobNames.has("delivered_at")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN delivered_at INTEGER");
+    }
+    if (!jobNames.has("review_ends_at")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN review_ends_at INTEGER");
+    }
+    if (!jobNames.has("review_window")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN review_window INTEGER");
+    }
+    if (!jobNames.has("bond")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN bond TEXT");
+    }
+    if (!jobNames.has("close_via")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN close_via TEXT");
     }
   }
 }
@@ -836,10 +959,23 @@ function closeKindOf(status: JobStatus): CloseKind | null {
       return "cancel";
     case "refunded":
       return "deadline_refund";
+    case "disputed":
+      return "dispute_refund";
+    case "failed":
+      return "delivery_failed";
     case "pending":
     case "funded":
+    case "delivered":
       return null;
   }
+}
+
+/** True when the seller's bond went to the buyer. */
+function bondSlashed(job: JobRecord): boolean {
+  if (job.bond === "0" || !/^\d+$/.test(job.bond)) return false;
+  if (job.status === "failed") return true;
+  if (job.status === "refunded") return true;
+  return job.status === "disputed" && job.deliveredAt !== null;
 }
 
 function transferStatus(amount: bigint, refunded: bigint): OrderStatus {
@@ -848,9 +984,18 @@ function transferStatus(amount: bigint, refunded: bigint): OrderStatus {
 }
 
 function toJob(row: JobRow): JobRecord {
-  const status = (["pending", "funded", "released", "cancelled", "refunded"] as const).find(
-    (value) => value === row.status,
-  );
+  const status = (
+    [
+      "pending",
+      "funded",
+      "released",
+      "cancelled",
+      "refunded",
+      "delivered",
+      "disputed",
+      "failed",
+    ] as const
+  ).find((value) => value === row.status);
   return {
     jobId: row.job_id,
     offerHash: row.offer_hash,
@@ -868,6 +1013,12 @@ function toJob(row: JobRow): JobRecord {
     closedAt: row.closed_at,
     resource: row.resource,
     description: row.description,
+    escrow: row.escrow,
+    deliveredAt: row.delivered_at,
+    reviewEndsAt: row.review_ends_at,
+    reviewWindow: row.review_window,
+    bond: row.bond ?? "0",
+    closeVia: row.close_via === "accept" || row.close_via === "window" ? row.close_via : null,
   };
 }
 

@@ -1,6 +1,6 @@
 import { parseSignature } from "viem";
 import type { Address, Hash, Hex, LocalAccount } from "viem";
-import { escrowAbi, fundArgs } from "@countersign/rail";
+import { escrowAbi, escrowV2Abi, fundArgs, fundArgsV2 } from "@countersign/rail";
 import type { CountersignPayload } from "@countersign/core";
 import { whitechainSepolia } from "./chain.ts";
 import type { CeilingRefusal, CeilingSnapshot, SpendCeiling } from "./ceiling.ts";
@@ -15,6 +15,8 @@ export type RelayerPolicy = {
   receiptTimeoutMs: number;
   allowedTokens: Address[];
   allowedEscrows: Address[];
+  /** The v2 escrow, when one is configured. Addresses not equal to it are v1. */
+  escrowV2?: Address;
   allowedPayees: Address[];
   minAmount: bigint;
 };
@@ -38,6 +40,8 @@ export type EscrowFundCall = {
   escrow: Address;
   offerHash: Hex;
   payload: CountersignPayload;
+  /** 2 funds with the v2 Countersignature; 1 is the v1 shape. */
+  version: 1 | 2;
 };
 
 export type EscrowReleaseCall = {
@@ -61,7 +65,41 @@ export type EscrowRefundCall = {
   jobId: Hex;
 };
 
-export type EscrowCall = EscrowFundCall | EscrowReleaseCall | EscrowCancelCall | EscrowRefundCall;
+export type EscrowAcceptCall = {
+  kind: "escrowAccept";
+  escrow: Address;
+  jobId: Hex;
+  buyerSig: Hex;
+};
+
+export type EscrowDisputeCall = {
+  kind: "escrowDispute";
+  escrow: Address;
+  jobId: Hex;
+  buyerSig: Hex;
+};
+
+export type EscrowReleaseAfterWindowCall = {
+  kind: "escrowReleaseAfterWindow";
+  escrow: Address;
+  jobId: Hex;
+};
+
+export type EscrowFailDeliveryCall = {
+  kind: "escrowFailDelivery";
+  escrow: Address;
+  jobId: Hex;
+};
+
+export type EscrowCall =
+  | EscrowFundCall
+  | EscrowReleaseCall
+  | EscrowCancelCall
+  | EscrowRefundCall
+  | EscrowAcceptCall
+  | EscrowDisputeCall
+  | EscrowReleaseAfterWindowCall
+  | EscrowFailDeliveryCall;
 
 export type RelayCall = TransferCall | EscrowCall;
 
@@ -125,6 +163,13 @@ export class Relayer {
 
   isAllowedPayee(payee: string): boolean {
     return this.policy.allowedPayees.some((allowed) => sameAddress(allowed, payee));
+  }
+
+  /** The escrow contract's version, by its configured address. Anything but the v2 address is v1. */
+  escrowVersion(escrow: string): 1 | 2 {
+    // The config puts v2 second in the allowlist; escrowV2 is the explicit pin.
+    const v2 = this.policy.escrowV2 ?? this.policy.allowedEscrows[1];
+    return v2 && sameAddress(v2, escrow) ? 2 : 1;
   }
 
   private allowed(call: RelayCall): boolean {
@@ -278,6 +323,14 @@ function toContractCall(call: RelayCall): ContractCall {
       };
     }
     case "escrowFund":
+      if (call.version === 2) {
+        return {
+          address: call.escrow,
+          abi: escrowV2Abi,
+          functionName: "fund",
+          args: fundArgsV2(call.offerHash, call.payload),
+        };
+      }
       return {
         address: call.escrow,
         abi: escrowAbi,
@@ -303,6 +356,34 @@ function toContractCall(call: RelayCall): ContractCall {
         address: call.escrow,
         abi: escrowAbi,
         functionName: "refund",
+        args: [call.jobId],
+      };
+    case "escrowAccept":
+      return {
+        address: call.escrow,
+        abi: escrowV2Abi,
+        functionName: "accept",
+        args: [call.jobId, call.buyerSig],
+      };
+    case "escrowDispute":
+      return {
+        address: call.escrow,
+        abi: escrowV2Abi,
+        functionName: "dispute",
+        args: [call.jobId, call.buyerSig],
+      };
+    case "escrowReleaseAfterWindow":
+      return {
+        address: call.escrow,
+        abi: escrowV2Abi,
+        functionName: "releaseAfterWindow",
+        args: [call.jobId],
+      };
+    case "escrowFailDelivery":
+      return {
+        address: call.escrow,
+        abi: escrowV2Abi,
+        functionName: "failDelivery",
         args: [call.jobId],
       };
   }
