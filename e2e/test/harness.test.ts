@@ -214,7 +214,7 @@ describe("budget", () => {
 });
 
 describe("retired flows", () => {
-  const RETIRED = "retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed";
+  const RETIRED = "retired: the Gateway rail was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed";
 
   test("a retired flow is reported NOT RUN and reserves nothing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "e2e-retired-"));

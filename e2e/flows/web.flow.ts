@@ -2,7 +2,7 @@
  * 9 · Web routes. Every route at phone and desktop width, in both themes, with no console errors
  * and no clipped navigation.
  *
- * This needs a browser, and no browser runs on the build machine. The captain cut a headless browser
+ * This needs a browser, and no browser runs on the build machine. The project lead cut a headless browser
  * for these checks (STEER-1812): the firstmate's screenshot rounds at 390 and 1440, light and dark,
  * cover them. The flow stays written against a driver interface and reports NOT RUN (cut).
  */
@@ -31,7 +31,7 @@ export const VIEWPORTS = [
 ] as const;
 export const SCHEMES = ["light", "dark"] as const;
 
-/** Supplied only when the captain approves a driver; none exists on the build machine. */
+/** Supplied only when the project lead approves a driver; none exists on the build machine. */
 let driver: WebDriver | null = null;
 export function useWebDriver(d: WebDriver): void {
   driver = d;
@@ -42,7 +42,7 @@ export const web: Flow = {
   title: "Web routes at 390 and 1440, light and dark",
   owner: "cs-ui",
   network: "none",
-  // Cut by the captain (STEER-1812): the firstmate's screenshot rounds cover the visual checks.
+  // Cut by the project lead (STEER-1812): the firstmate's screenshot rounds cover the visual checks.
   notRun: () => (driver ? null : "cut: screenshot rounds cover it"),
   async run(ctx) {
     const d = driver;
