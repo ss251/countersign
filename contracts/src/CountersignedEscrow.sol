@@ -135,6 +135,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     {
         if (msg.sender == address(this)) revert BadPayee(msg.sender);
         if (bond > price) revert BondTooHigh(bond, price);
+        if (bond != 0 && reviewWindow == 0) revert BondNeedsWindow();
         if (reviewWindow > MAX_REVIEW_WINDOW) revert ReviewTooLong(reviewWindow);
         termsOf[msg.sender][offerHash] =
             BondTerms({price: price, bond: bond, reviewWindow: reviewWindow, minDuration: minDuration});

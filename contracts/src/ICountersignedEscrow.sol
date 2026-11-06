@@ -93,6 +93,7 @@ interface ICountersignedEscrow {
     error BondMissing(address payee, uint256 requested, uint256 available);
     error TermsMismatch(bytes32 jobId);
     error BondTooHigh(uint256 bond, uint256 price);
+    error BondNeedsWindow();
     error BadPayee(address payee);
     error ReviewTooLong(uint64 reviewWindow);
     error SettleWindowClosed(bytes32 jobId, uint256 settleBy);
@@ -115,6 +116,8 @@ interface ICountersignedEscrow {
 
     /// @notice The caller, as payee, states the only price, bond and window a bonded or windowed
     ///         job on `offerHash` may carry, and the shortest time to its deadline at funding.
+    ///         A bond needs a review window: with window 0 the payee releases on any receipt and
+    ///         takes the payment plus its whole bond back.
     function setTerms(bytes32 offerHash, uint256 price, uint256 bond, uint64 reviewWindow, uint64 minDuration)
         external;
 

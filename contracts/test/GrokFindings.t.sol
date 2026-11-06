@@ -213,7 +213,7 @@ contract GrokFindingsTest is GrokEscrowSigning {
 
     function test_W_a_bond_needs_a_review_window() public {
         vm.prank(seller);
-        vm.expectRevert();
+        vm.expectRevert(ICountersignedEscrow.BondNeedsWindow.selector);
         escrow.setTerms(OFFER, PRICE, BOND, 0, 0);
     }
 }
