@@ -137,7 +137,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
@@ -150,7 +150,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `apps/hub` | The hub: offers, 402 challenges, jobs, slips, discovery, runner connections. |
 | `apps/web` | The console. |
 | `packages/core` | Types, canonical JSON, offer, countersignature, envelope, slip. The reference for `docs/spec`. |
-| `packages/rail` | The `Rail` interface and the escrow, Whitechain, Gateway, Hedera and MPP rails. |
+| `packages/rail` | The `Rail` interface, the escrow, Whitechain, eip3009, Gateway, Hedera and MPP rails, and the rail router. |
 | `packages/buyer` | The buyer agent and its CLI. |
 | `packages/runner` | The seller's runner and its CLI. |
 | `packages/verify` | The standalone slip verifier. |
@@ -176,7 +176,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
 - **Direct rails pay before delivery.** On Hedera and Gateway the hub settles before the seller runs, and nothing returns that payment if the delivery fails. Only the escrow rails hold the money until the output checks out.
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not collected.** No deployed contract holds it. The contract change is on a branch ([#93](https://github.com/ss251/countersign/issues/93)) and needs a new deployment.
+- **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
 
 ## Terms
