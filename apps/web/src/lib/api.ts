@@ -12,6 +12,8 @@ import {
   hubPost,
   hubRails,
   hubSlip,
+  linkAgent,
+  signedInAgent,
   type HubListing,
 } from "./hub.ts";
 import type {
@@ -385,9 +387,13 @@ const toUnix = (t: number) => (t > 1e12 ? Math.floor(t / 1000) : t);
 
 let agentFound: string | null = null;
 
-/** The agent to follow: the one chosen with ?agent=, otherwise the hub's most recent buyer. */
+/** The agent to follow: this URL's ?agent=; the wallet signed in here; a remembered link; the hub's latest buyer. */
 async function resolveAgent(): Promise<string | null> {
   if (!hubBase()) return null;
+  const linked = linkAgent();
+  if (linked) return linked;
+  const signed = signedInAgent();
+  if (signed) return signed;
   const chosen = chosenAgent();
   if (chosen) return chosen;
   if (agentFound) return agentFound;
