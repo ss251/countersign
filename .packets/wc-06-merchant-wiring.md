@@ -34,7 +34,10 @@ Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.loc
    - **Relay ledger:** store the payment's `resource.description` as a new nullable `description` column on payments and jobs. Use `ALTER TABLE` when the column is missing.
    - **Where it is set:** in `settleExact` and `settleCountersign`, from `paymentPayload.resource.description` when that is a string, capped at 120 characters.
    - **Where it shows:** `Order` and `/orders/:id` gain `description`.
-   - **Merchant view:** the Item column shows `description ?? resource ?? "Order " + shortHash(id)`.
+   - **Merchant view:** the Item column shows `description ?? hubTitle ?? resource ?? "Order " + shortHash(id)`.
+     - `hubTitle` is the offer title from the hub. For an order with `offerHash`, fetch `GET ${VITE_HUB_URL ?? "/hub"}/offers/<offerHash>`, which answers `Listing = { offerHash, offer: { title, … }, online, status }`.
+     - Cache it per offerHash for the page's lifetime. A failure is cached as "no title". Never block rendering on it.
+     - The hub's 402 carries the title as `resource.description`, but buyers may echo only the URL back, so this lookup is the reliable source.
 
 5. **Receipt shows how the money finished.** `Receipt.tsx` adds a row driven by `status` and `closeTx`:
    - released (`paid` with `closeTx`): "Released" with the tx link;
