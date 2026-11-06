@@ -111,3 +111,17 @@ export function networkName(network: string): string {
       return network;
   }
 }
+
+/** Explorer transaction URL template for a network, with {tx} where the id goes. */
+export function explorerTemplate(network: string): string {
+  switch (network) {
+    case "eip155:5042002":
+      return "https://testnet.arcscan.app/tx/{tx}";
+    case "eip155:1874":
+      return "https://explorer.testnet.whitechain.io/tx/{tx}";
+    case "hedera:testnet":
+      return "https://hashscan.io/testnet/transaction/{tx}";
+    default:
+      return "";
+  }
+}

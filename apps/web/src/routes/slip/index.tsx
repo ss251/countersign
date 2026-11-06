@@ -3,8 +3,8 @@ import type { CountersignPayload, Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, formatMoney, RAIL_LABEL, usd } from "../../lib/format.ts";
-import { verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
+import { formatDateTime, formatMoney, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { canReadChain, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { RailCard } from "../../ui/RailCard.tsx";
 import { ReceiptTree } from "../../ui/ReceiptTree.tsx";
@@ -20,11 +20,21 @@ export default function SlipPage({ params }: PageProps) {
   const children = view.data?.slip.body.children.length ?? 0;
   const tree = useResource(() => api.tree(hash), [hash, children > 0]);
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
+  const [reading, setReading] = useState(false);
 
   useEffect(() => {
     setVerdict(null);
     if (view.data) void verifySlip(view.data.slip).then(setVerdict);
   }, [view.data]);
+
+  const readChain = () => {
+    if (!view.data) return;
+    setReading(true);
+    void verifySlip(view.data.slip, { readChain: true }).then((v) => {
+      setVerdict(v);
+      setReading(false);
+    });
+  };
 
   if (view.loading && !view.data) return <div className="page" aria-busy="true" />;
   if (!view.data) {
@@ -153,10 +163,23 @@ export default function SlipPage({ params }: PageProps) {
         </article>
 
         <aside className="page__rail" aria-label="Verification">
-          <Verdict verdict={verdict} />
+          <Verdict
+            verdict={verdict}
+            chain={{
+              // Stand-in slips name transactions that are on no chain, so there is nothing to read.
+              can: view.source === "hub" && canReadChain(slip),
+              busy: reading,
+              onRead: readChain,
+              explorer:
+                view.source === "hub" && declaration.explorerTx
+                  ? declaration.explorerTx.replace("{tx}", encodeURIComponent(slip.settlement.transaction))
+                  : undefined,
+            }}
+          />
           <p className="section__note">
             Anyone can repeat this with the slip alone: the hash, the seller's signature and the buyer's countersignature
-            are all inside it. {formatMoney(money)} moved on {declaration.network}.
+            are all inside it. The chain answers the rest: whether {formatMoney(money)} was released on{" "}
+            {networkName(body.network)}.
           </p>
         </aside>
       </div>

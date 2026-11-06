@@ -11,7 +11,18 @@ export interface PageProps {
   query: URLSearchParams;
 }
 
-type PageModule = { default: ComponentType<PageProps> };
+/**
+ * phone: a 390 px screen that draws its own chrome (the buyer).
+ * desk:  the shared top bar and a desktop layout.
+ * bare:  no app chrome at all, for pages a customer opens, like a receipt.
+ */
+export type Surface = "phone" | "desk" | "bare";
+
+type PageModule = {
+  default: ComponentType<PageProps>;
+  /** A route may declare its surface, per sub-path: export const surface = (params) => ... */
+  surface?: Surface | ((params: string[]) => Surface);
+};
 type Page = ComponentType<PageProps>;
 
 // Eager on purpose: one bundle, one stylesheet, nothing to wait for on a cold load.
@@ -24,7 +35,7 @@ export interface Resolved {
   name: string;
   Page: Page;
   params: string[];
-  surface: "phone" | "desk";
+  surface: Surface;
 }
 
 export function resolve(segments: string[]): Resolved | null {
@@ -33,7 +44,9 @@ export function resolve(segments: string[]): Resolved | null {
   const key = `../routes/${name}/index.tsx`;
   const mod = modules[key];
   if (!mod) return null;
-  return { name, Page: mod.default, params: segments.slice(1), surface: PHONE.has(name) ? "phone" : "desk" };
+  const params = segments.slice(1);
+  const declared = typeof mod.surface === "function" ? mod.surface(params) : mod.surface;
+  return { name, Page: mod.default, params, surface: declared ?? (PHONE.has(name) ? "phone" : "desk") };
 }
 
 export function hasRoute(name: string): boolean {

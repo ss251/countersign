@@ -1,4 +1,4 @@
-import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
 import { Wordmark } from "../ui/Mark.tsx";
@@ -38,6 +38,29 @@ function skipToMain(e: React.MouseEvent<HTMLAnchorElement>) {
 }
 
 function TopBar({ active }: { active: string }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => setOpen(false), [active]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const links = (className: string) =>
+    VIEWS.map((v) => (
+      <Link
+        key={v.name}
+        to={`/${v.name}`}
+        className={className}
+        aria-current={active === v.name ? "page" : undefined}
+        onClick={() => setOpen(false)}
+      >
+        {v.label}
+      </Link>
+    ));
+
   return (
     <header className="topbar">
       <div className="topbar__inner">
@@ -45,18 +68,23 @@ function TopBar({ active }: { active: string }) {
           <Wordmark />
         </Link>
         <nav className="topbar__nav" aria-label="Views">
-          {VIEWS.map((v) => (
-            <Link
-              key={v.name}
-              to={`/${v.name}`}
-              className="topbar__link"
-              aria-current={active === v.name ? "page" : undefined}
-            >
-              {v.label}
-            </Link>
-          ))}
+          {links("topbar__link")}
         </nav>
+        <button
+          type="button"
+          className="topbar__menu"
+          aria-expanded={open}
+          aria-controls="topbar-sheet"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Close" : "Views"}
+        </button>
       </div>
+      {open ? (
+        <nav id="topbar-sheet" className="topbar__sheet" aria-label="Views">
+          {links("topbar__sheet-link")}
+        </nav>
+      ) : null}
     </header>
   );
 }

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as fx from "../fixtures/index.ts";
-import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, SlipView, TreeView } from "./types.ts";
+import { explorerTemplate, shortHex, symbolFor } from "./format.ts";
+import { HubError, hubBase, hubOffer, hubOffers, hubRails, hubSlip, type HubListing } from "./hub.ts";
+import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, Slip, SlipView, TreeView } from "./types.ts";
 
 /**
- * Every read the screens make goes through here. Until a hub endpoint exists the
- * answer comes from src/fixtures and says so (source: "fixtures"), so a screen
- * can never pass stand-in numbers off as live ones.
+ * Every read the screens make goes through here. With a hub chosen (see hub.ts) the
+ * answer is live and its failures surface as errors. With none, or for reads the hub
+ * does not serve yet, the answer comes from src/fixtures and says so
+ * (source: "fixtures"), so a screen never passes stand-in numbers off as live ones.
  */
 
 export type Source = "hub" | "fixtures";
@@ -18,15 +21,81 @@ export interface Loaded<T> {
 /** Fixtures answer at once: no artificial latency, so a recording never waits on a placeholder. */
 const settle = <T,>(data: T): Promise<Loaded<T>> => Promise.resolve({ data, source: "fixtures" });
 
+const live = <T,>(data: T): Loaded<T> => ({ data, source: "hub" });
+
+/** undefined for a 404, so "no such thing" and "hub down" stay different. */
+async function orMissing<T>(p: Promise<T>): Promise<T | undefined> {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof HubError && e.status === 404) return undefined;
+    throw e;
+  }
+}
+
+function toListing(l: HubListing): Listing {
+  return { hash: l.offerHash, offer: l.offer, seller: { name: shortHex(l.offer.seller) }, status: l.status, online: l.online };
+}
+
+/** What a slip itself says about its rail, for a hub that does not declare it. */
+function declarationFromSlip(slip: Slip): RailDeclaration {
+  const { body } = slip;
+  return {
+    id: body.rail,
+    network: body.network,
+    scheme: slip.payment.accepted.scheme,
+    asset: { network: body.network, address: body.asset, symbol: symbolFor(body.rail), decimals: 6 },
+    kind: body.escrow ? "escrow" : "direct",
+    escrow: body.escrow,
+    gasPaidBy: "hub",
+    finality: "Not declared by this hub.",
+    explorerTx: explorerTemplate(body.network),
+  };
+}
+
+async function slipView(hash: string): Promise<SlipView | undefined> {
+  const slip = await orMissing(hubSlip(hash));
+  if (!slip) return undefined;
+  const [listing, rails] = await Promise.all([
+    hubOffer(slip.body.offerHash).catch(() => undefined),
+    hubRails().catch(() => [] as RailDeclaration[]),
+  ]);
+  return {
+    slip,
+    title: listing?.offer.title ?? `offer ${shortHex(slip.body.offerHash)}`,
+    sellerName: shortHex(slip.body.seller),
+    declaration: rails.find((r) => r.id === slip.body.rail) ?? declarationFromSlip(slip),
+  };
+}
+
+async function treeView(root: string): Promise<TreeView> {
+  const nodes: TreeView["nodes"] = {};
+  const visit = async (hash: string, depth: number): Promise<void> => {
+    if (depth > 8 || nodes[hash]) return;
+    const v = await slipView(hash);
+    if (!v) return;
+    nodes[hash] = { slip: v.slip, title: v.title, sellerName: v.sellerName };
+    await Promise.all(v.slip.body.children.map((c) => visit(c, depth + 1)));
+  };
+  await visit(root, 0);
+  return { root: root as TreeView["root"], nodes };
+}
+
 export const api = {
-  listings: () => settle<Listing[]>(fx.listings),
-  listing: (hash: string) => settle<Listing | undefined>(fx.listingByHash(hash) ?? fx.listingByTitle(hash)),
-  rails: () => settle<RailDeclaration[]>(Object.values(fx.rails)),
+  listings: async (): Promise<Loaded<Listing[]>> =>
+    hubBase() ? live((await hubOffers()).map(toListing)) : settle(fx.listings),
+  listing: async (hash: string): Promise<Loaded<Listing | undefined>> => {
+    if (!hubBase()) return settle(fx.listingByHash(hash) ?? fx.listingByTitle(hash));
+    const l = await orMissing(hubOffer(hash));
+    return live(l ? toListing(l) : undefined);
+  },
+  rails: async (): Promise<Loaded<RailDeclaration[]>> => (hubBase() ? live(await hubRails()) : settle(Object.values(fx.rails))),
+  slip: async (hash: string): Promise<Loaded<SlipView | undefined>> => (hubBase() ? live(await slipView(hash)) : settle(fx.slipByHash(hash))),
+  tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle(fx.tree)),
+  // The phone reads the buyer agent's own state, which no hub endpoint serves yet.
   envelope: () => settle<EnvelopeView>(structuredClone(fx.envelope)),
   approvals: () => settle<Approval[]>(fx.approvals),
   purchases: () => settle<Purchase[]>(fx.purchases),
-  slip: (hash: string) => settle<SlipView | undefined>(fx.slipByHash(hash)),
-  tree: (_root: string) => settle<TreeView>(fx.tree),
 };
 
 /* A job as the phone sees it after the hold. */

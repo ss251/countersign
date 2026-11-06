@@ -37,7 +37,32 @@ describe("verifySlip", () => {
     const payload = s.payment.payload as { terms: { offerHash: string } };
     payload.terms.offerHash = `0x${"11".repeat(32)}`;
     const v = await verifySlip(s);
-    expect(v.checks.find((c) => c.id === "countersign")?.state).toBe("fail");
+    expect(v.valid).toBe(false);
+    expect(v.checks.find((c) => c.id === "terms")?.state).toBe("fail");
+  });
+
+  test("settlement is never ticked without reading the chain", async () => {
+    for (const slip of slips) {
+      const v = await verifySlip(slip);
+      expect(v.chain).toBe("not-read");
+      const settlement = v.checks.find((c) => c.id === "settlement");
+      expect(settlement?.state).toBe("info");
+      expect(v.checks.some((c) => c.id === "onchain")).toBe(false);
+    }
+  });
+
+  test("a tampered slip is invalid and still claims nothing about the chain", async () => {
+    const s = clone(escrowSlip);
+    s.body.amount = "100000";
+    const v = await verifySlip(s);
+    expect(v.valid).toBe(false);
+    expect(v.checks.filter((c) => c.state === "pass").map((c) => c.id)).not.toContain("settlement");
+  });
+
+  test("exact-scheme rails show the payment as not checked rather than passed", async () => {
+    const exact = slips.find((s) => s.payment.accepted.scheme === "exact")!;
+    const v = await verifySlip(exact);
+    expect(v.checks.find((c) => c.id === "countersignature")?.state).toBe("info");
   });
 });
 

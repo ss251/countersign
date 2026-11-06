@@ -3,7 +3,8 @@ import type { Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api } from "../../lib/api.ts";
-import { parseSlip, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
+import { explorerTemplate } from "../../lib/format.ts";
+import { canReadChain, parseSlip, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
 import * as fx from "../../fixtures/index.ts";
 import { Verdict } from "../../ui/Verdict.tsx";
 import { Button } from "../../ui/primitives.tsx";
@@ -19,6 +20,8 @@ export default function VerifyPage({ params }: PageProps) {
   const [text, setText] = useState("");
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [checking, setChecking] = useState(false);
+  const [current, setCurrent] = useState<Slip | null>(null);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -28,9 +31,17 @@ export default function VerifyPage({ params }: PageProps) {
     setError(null);
     setChecking(true);
     setVerdict(null);
+    setCurrent(slip);
     const v = await verifySlip(slip);
     setVerdict(v);
     setChecking(false);
+  };
+
+  const readChain = async () => {
+    if (!current) return;
+    setReading(true);
+    setVerdict(await verifySlip(current, { readChain: true }));
+    setReading(false);
   };
 
   const check = (raw: string) => {
@@ -70,8 +81,8 @@ export default function VerifyPage({ params }: PageProps) {
         <p className="page__eyebrow">Verify</p>
         <h1 className="page__title">Check a slip without asking anyone.</h1>
         <p className="page__lede">
-          Paste a slip or open the file. This page recomputes its hash and recovers both signatures in your browser. It
-          sends nothing anywhere.
+          Paste a slip or open the file. This page recomputes its hash and recovers both signatures in your browser, with
+          no hub and no account. It asks the chain only when you press Check the chain.
         </p>
       </header>
 
@@ -172,7 +183,21 @@ export default function VerifyPage({ params }: PageProps) {
 
         <aside className="page__rail" aria-label="Result">
           {verdict || checking ? (
-            <Verdict verdict={verdict} />
+            <Verdict
+              verdict={verdict}
+              chain={
+                current
+                  ? {
+                      can: canReadChain(current),
+                      busy: reading,
+                      onRead: () => void readChain(),
+                      explorer: explorerTemplate(current.body.network)
+                        ? explorerTemplate(current.body.network).replace("{tx}", encodeURIComponent(current.settlement.transaction))
+                        : undefined,
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <div className="verify__idle">
               <p className="verify__idle-title">What gets checked</p>
@@ -180,7 +205,10 @@ export default function VerifyPage({ params }: PageProps) {
                 <li>The slip hash is the keccak-256 of its body in canonical JSON, so no field can change.</li>
                 <li>The seller signed Release over that hash. On escrow rails it is the same signature the contract checked.</li>
                 <li>The buyer's one countersignature binds this offer hash and this amount.</li>
-                <li>The settlement names the transaction that moved the money.</li>
+                <li>
+                  The settlement is not taken on trust. Press Check the chain to read the escrow's Released event for this
+                  job and slip from a public RPC.
+                </li>
               </ol>
               <p className="section__note">
                 A slip from a call opens here too: follow <span className="mono">/verify/&lt;slip hash&gt;</span>, or
