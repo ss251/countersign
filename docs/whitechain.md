@@ -9,6 +9,8 @@ How countersign runs on Whitechain Sepolia: network facts, the USDT it settles i
 | Name | Whitechain Sepolia (OP Stack L2 on Ethereum Sepolia) |
 | Chain ID | `1874` (`0x752`) |
 | RPC | `https://rpc.testnet.whitechain.io` — public, no key, 50 rps sustained / 500 burst per IP, `429` with `Retry-After: 1` past that |
+| RPC, second | `https://rpc.ankr.com/whitechain_testnet` (Ankr, also answers `1874`) |
+| RPC trap | `https://rpc-testnet.whitechain.io`, with a hyphen, is the **old testnet, chain 2625**. It answers every query and reports zero balances for our addresses. Never use it. The relay checks `eth_chainId` at startup and refuses to run on anything but `1874`. |
 | WebSocket | `wss://rpc.testnet.whitechain.io/ws` |
 | Explorer | `https://explorer.testnet.whitechain.io` (Blockscout) |
 | Explorer API | `https://explorer.testnet.whitechain.io/api/v2` (REST) and `/api` (Etherscan-compatible) |

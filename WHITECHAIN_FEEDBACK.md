@@ -14,6 +14,8 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 - **14:55** — The faucet amount is stated three ways. The docs and the help centre say 0.5 WBT per claim. The faucet's own `/api/info` says `"payout": "2"`.
 - **14:58** — On `0xcedf…`, both `version()` and `eip712Domain()` revert, so anyone building EIP-3009 or permit signatures has to guess the EIP-712 domain version. We worked out `1` by recomputing `DOMAIN_SEPARATOR()` for each candidate.
 
+- **15:06** — Two RPC hostnames differ by a single character. `rpc.testnet.whitechain.io` is Whitechain Sepolia (1874). `rpc-testnet.whitechain.io` is the old testnet (2625), and it still answers. On 2625 every balance we checked read zero, which looks like a funding failure rather than the wrong chain. A deprecation notice on the old host, or an error from it, would have saved us a scare.
+
 ## What the docs were missing
 
 - A USDT page. It should give the prize token's address, its EIP-712 domain (`Tether USD`, version `1`), which EIP-3009 functions it supports, and how to get some for testing.
