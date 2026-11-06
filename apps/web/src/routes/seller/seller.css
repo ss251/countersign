@@ -392,17 +392,6 @@ button.steps__button {
   gap: var(--sp-5);
 }
 
-.field__hint {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-.field__error {
-  color: var(--seal);
-  font-size: var(--t-13);
-  font-weight: 500;
-}
-
 .input-suffix {
   position: relative;
   display: flex;
@@ -550,35 +539,4 @@ button.steps__button {
   .split-check__half--yours {
     border-top: var(--hair) solid var(--line);
   }
-}
-
-/* Code and commands */
-.code,
-.command__body {
-  margin: 0;
-  padding: var(--sp-4);
-  overflow: auto;
-  border-radius: var(--r-2);
-  background: var(--sunk);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre;
-}
-
-.command__body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.command {
-  display: grid;
-  gap: var(--sp-2);
-}
-
-.command__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
