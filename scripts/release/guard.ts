@@ -1,3 +1,4 @@
+import { SourceMap, type SourceMapPayload } from "node:module";
 import { isRecord } from "./json.ts";
 
 export type GuardViolation = {
@@ -146,6 +147,34 @@ export function formatGuardFailure(file: string, violations: readonly GuardViola
     .map((violation) => `${violation.pattern} at ${violation.line}:${violation.column}`)
     .join(", ");
   return `Node guard failed in ${file}: ${details}`;
+}
+
+/**
+ * Resolves an emitted line and column to the original source through the
+ * source map. Returns null when the map is unreadable or the position has no
+ * mapping.
+ */
+export function findMappedSource(
+  mapJson: string,
+  line: number,
+  column: number,
+): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(mapJson);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  try {
+    const map = new SourceMap(parsed as unknown as SourceMapPayload);
+    const entry = map.findEntry(line - 1, column - 1);
+    if (!("originalSource" in entry)) return null;
+    const source = entry.originalSource;
+    return typeof source === "string" && source.length > 0 ? source : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

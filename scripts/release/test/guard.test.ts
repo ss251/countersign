@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  findMappedSource,
   findNodeGuardViolations,
   findSourceWithText,
   formatGuardFailure,
@@ -58,5 +59,15 @@ describe("the Node guard", () => {
     expect(findSourceWithText(map, "bun:sqlite", "bun:")).toBe(
       "../../packages/relay/src/ledger.ts",
     );
+  });
+
+  test("the mapping names the original file for an emitted position", () => {
+    const map = JSON.stringify({
+      version: 3,
+      sources: ["../../packages/runner/src/child.ts"],
+      names: [],
+      mappings: "AAAA",
+    });
+    expect(findMappedSource(map, 1, 1)).toBe("../../packages/runner/src/child.ts");
   });
 });

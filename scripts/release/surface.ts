@@ -44,6 +44,103 @@ export const EXTRA_DEPENDENCIES: ExtraDependencyTable = {
   cli: { "@countersign-hub/mcp": "mcp" },
 };
 
+export type GuardException = {
+  /** Repository-relative source path the source map attributes the emitted hit to. */
+  source: string;
+  /** Node guard pattern, such as `Bun.`. */
+  pattern: string;
+  /** Non-empty sentence explaining why the hit cannot run on Node. */
+  reason: string;
+};
+
+export type GuardExceptionTable = Readonly<
+  Record<string, readonly GuardException[] | undefined>
+>;
+
+/**
+ * Emitted Bun-only hits that a package can ship because Node cannot reach them.
+ * An exception excuses a hit only when the source map attributes it to this
+ * source and the pattern matches. Every entry must excuse one hit per build: a
+ * stale entry is an error so the table cannot rot.
+ */
+export const GUARD_EXCEPTIONS: GuardExceptionTable = {
+  relay: [],
+  mcp: [],
+  cli: [
+    {
+      source: "packages/runner/src/child.ts",
+      pattern: "Bun.",
+      reason:
+        "runWithBun runs only when globalThis.Bun is defined; under Node defaultSpawner " +
+        "returns node and node:child_process is used",
+    },
+    {
+      source: "packages/buyer/src/openai/server.ts",
+      pattern: "Bun.",
+      reason:
+        "started only by the buyer openai subcommand, which the countersign wrapper " +
+        "does not expose",
+    },
+  ],
+};
+
+/** Checks every entry in the table; an empty source, pattern or reason throws. */
+export function checkGuardExceptionTable(table: GuardExceptionTable = GUARD_EXCEPTIONS): void {
+  for (const [short, exceptions] of Object.entries(table)) {
+    for (const exception of exceptions ?? []) {
+      if (exception.source.trim().length === 0) {
+        throw new Error(`${short}: guard exception has an empty source`);
+      }
+      if (exception.pattern.trim().length === 0) {
+        throw new Error(`${short}: guard exception has an empty pattern`);
+      }
+      if (exception.reason.trim().length === 0) {
+        throw new Error(`${short}: guard exception has an empty reason`);
+      }
+    }
+  }
+}
+
+export function guardExceptionsFor(
+  short: string,
+  table: GuardExceptionTable = GUARD_EXCEPTIONS,
+): readonly GuardException[] {
+  checkGuardExceptionTable(table);
+  return table[short] ?? [];
+}
+
+/**
+ * The exception excusing an emitted hit, or null. A hit with no attributed
+ * source is never excused.
+ */
+export function findGuardException(
+  exceptions: readonly GuardException[],
+  source: string | null,
+  pattern: string,
+): GuardException | null {
+  if (source === null) return null;
+  return (
+    exceptions.find(
+      (exception) => exception.source === source && exception.pattern === pattern,
+    ) ?? null
+  );
+}
+
+/** One error line for every exception that excused nothing in this build. */
+export function staleGuardExceptionLines(
+  short: string,
+  exceptions: readonly GuardException[],
+  excused: readonly GuardException[],
+): string[] {
+  const used = new Set(excused);
+  return exceptions
+    .filter((exception) => !used.has(exception))
+    .map(
+      (exception) =>
+        `stale guard exception for ${short}: ${exception.source} "${exception.pattern}"`,
+    );
+}
+
 export function extraEntriesFor(short: string): readonly ExtraEntry[] {
   return EXTRA_ENTRIES[short] ?? [];
 }

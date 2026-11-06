@@ -12,7 +12,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseBuildArgs, planBuild } from "./args.ts";
 import { externalPatterns } from "./external.ts";
-import { findNodeGuardViolations, findSourceWithText } from "./guard.ts";
+import { findMappedSource, findNodeGuardViolations, findSourceWithText } from "./guard.ts";
 import {
   scanImportPackages,
   selectDependencies,
@@ -35,8 +35,12 @@ import { tarballPrefix } from "./published.ts";
 import { withNodeShebang } from "./shebang.ts";
 import {
   extraDependenciesFor,
+  findGuardException,
+  guardExceptionsFor,
   omittedExportLines,
   PUBLISH_SURFACE,
+  staleGuardExceptionLines,
+  type GuardException,
 } from "./surface.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
@@ -176,30 +180,10 @@ function rewriteBins(stageDir: string, staged: JsonObject): void {
   }
 }
 
-function sourceFiles(mapPath: string, mapBase: string): { file: string; code: string }[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(mapPath, "utf8"));
-  } catch {
-    return [];
-  }
-  if (!isRecord(parsed)) return [];
-  const sources = parsed.sources;
-  const contents = parsed.sourcesContent;
-  if (!Array.isArray(sources) || !Array.isArray(contents)) return [];
-  const files: { file: string; code: string }[] = [];
-  for (let i = 0; i < sources.length; i++) {
-    const source = sources[i];
-    const code = contents[i];
-    if (typeof source !== "string" || typeof code !== "string") continue;
-    files.push({ file: displayPath(resolveMapSource(mapBase, source)), code });
-  }
-  return files;
-}
-
 function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
+  const exceptions = guardExceptionsFor(short);
+  const excused: GuardException[] = [];
   const problems: string[] = [];
-  const reported = new Set<string>();
   const maps = new Map<string, string>();
 
   for (const file of emitted) {
@@ -207,9 +191,6 @@ function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
     const violations = findNodeGuardViolations(code);
     const seen = new Set<string>();
     for (const violation of violations) {
-      if (seen.has(violation.pattern)) continue;
-      seen.add(violation.pattern);
-
       let origin: string | null = null;
       if (file.mapPath !== undefined) {
         let mapJson = maps.get(file.mapPath);
@@ -217,31 +198,25 @@ function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
           mapJson = readFileSync(file.mapPath, "utf8");
           maps.set(file.mapPath, mapJson);
         }
-        const source = findSourceWithText(mapJson, violation.text, violation.pattern);
+        const mapped = findMappedSource(mapJson, violation.line, violation.column);
+        const source = mapped ?? findSourceWithText(mapJson, violation.text, violation.pattern);
         if (source !== null) origin = displayPath(resolveMapSource(file.mapBase, source));
+      }
+      const key = `${origin ?? ""}:${violation.pattern}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const exception = findGuardException(exceptions, origin, violation.pattern);
+      if (exception !== null) {
+        excused.push(exception);
+        console.log(
+          `${short}: guard exception ${exception.source} "${exception.pattern}" ` +
+            `(${exception.reason})`,
+        );
+        continue;
       }
       const suffix = origin === null ? "" : ` (source ${origin})`;
       problems.push(`${file.file}:${violation.line}:${violation.column} "${violation.text}"${suffix}`);
-      if (origin !== null) reported.add(`${origin}:${violation.pattern}`);
-    }
-  }
-
-  const scanned = new Set<string>();
-  for (const file of emitted) {
-    if (file.mapPath === undefined || scanned.has(file.mapPath)) continue;
-    scanned.add(file.mapPath);
-    for (const source of sourceFiles(file.mapPath, file.mapBase)) {
-      const seen = new Set<string>();
-      for (const violation of findNodeGuardViolations(source.code)) {
-        if (seen.has(violation.pattern)) continue;
-        seen.add(violation.pattern);
-        const key = `${source.file}:${violation.pattern}`;
-        if (reported.has(key)) continue;
-        reported.add(key);
-        problems.push(
-          `${source.file}:${violation.line}:${violation.column} "${violation.text}"`,
-        );
-      }
     }
   }
 
@@ -251,6 +226,9 @@ function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
         "Bun-only APIs in package sources are not rewritten by this build.",
     );
   }
+
+  const stale = staleGuardExceptionLines(short, exceptions, excused);
+  if (stale.length > 0) throw new Error(stale.join("\n"));
 }
 
 function packedFiles(record: JsonObject, tarball: string): string[] {
@@ -389,6 +367,12 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
   const packed = pack({ short, version: staged.version, stageDir, outRoot });
   const clean = checkFiles(packed.tarball, readTarball(packed.tarball), LEAK_ENVIRONMENT);
   console.log(`${short}: packed files clean (${clean} files)`);
+  if (short === "cli") {
+    console.log(
+      "cli: smoke test does not run a sell job through the child spawner; " +
+        "that path is guarded by the runtime check only",
+    );
+  }
   return packed;
 }
 
