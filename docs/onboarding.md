@@ -4,7 +4,7 @@ There are three ways in: hire a tool from your agent, list your own tool, or cha
 
 - **Testnet only.** Every amount on this page is test money, on Arc testnet or Whitechain testnet.
 - **Nothing is installable yet.** Every command on this page runs from a clone of this repository with [bun](https://bun.sh) 1.3. The installable packages, the `countersign` command and the MCP server for Claude and Cursor are being built, and this page changes when each one runs for real.
-- **Do not install from npm.** On npm, `countersign`, `countersign-mcp` and every `@countersign/*` package belong to other projects. None of countersign's own packages are on npm yet.
+- **Do not install from npm.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so any of those names installs someone else's code. None of countersign's own packages are on npm yet.
 - **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`.
 
 Every path assumes a clone:
