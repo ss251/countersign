@@ -40,7 +40,7 @@ export function App() {
       <a className="shell__skip" href="#main" onClick={(e) => skipToMain(e)}>
         Skip to content
       </a>
-      {surface === "desk" ? <TopBar active={match?.name ?? ""} /> : null}
+      {surface === "desk" || surface === "story" ? <TopBar active={match?.name ?? ""} /> : null}
       <main id="main" className="shell__main" tabIndex={-1}>
         <PageBoundary key={location.path}>
           {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}

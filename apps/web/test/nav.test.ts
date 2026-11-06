@@ -25,7 +25,8 @@ mock.module("../src/app/router.tsx", () => ({
   ...router,
   useLocation: () => router.parseLocation("/registry"),
 }));
-mock.module("../src/app/routes.ts", () => ({ VIEWS }));
+// The same shape as buyer-shell.test.ts's mock: one process shares one module registry, so every mock of routes.ts carries both.
+mock.module("../src/app/routes.ts", () => ({ VIEWS, hasRoute: () => false }));
 
 const { SiteLinks } = await import("../src/app/SiteLinks.tsx");
 const { SiteFooter } = await import("../src/app/SiteFooter.tsx");
