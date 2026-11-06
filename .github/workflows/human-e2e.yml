@@ -1,0 +1,74 @@
+name: human e2e
+
+on:
+  schedule:
+    - cron: "30 21 * * *"
+  workflow_dispatch:
+    inputs:
+      project:
+        description: which project to run
+        type: choice
+        options: [both, privy, injected]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: human-e2e
+  cancel-in-progress: false
+
+jobs:
+  human:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: run the human acceptance flow
+        working-directory: e2e
+        env:
+          E2E_HUMAN_FUNDER_KEY: ${{ secrets.E2E_HUMAN_FUNDER_KEY }}
+          PRIVY_TEST_EMAIL: ${{ secrets.PRIVY_TEST_EMAIL }}
+          PRIVY_TEST_OTP: ${{ secrets.PRIVY_TEST_OTP }}
+          E2E_HUMAN_CONSOLE: ${{ vars.E2E_HUMAN_CONSOLE }}
+          E2E_HUMAN_HUB: ${{ vars.E2E_HUMAN_HUB }}
+        run: |
+          case "${{ github.event.inputs.project }}" in
+            privy) args="--project=privy" ;;
+            injected) args="--project=injected" ;;
+            *) args="" ;;
+          esac
+          npx playwright test -c human/playwright.config.ts $args
+
+      - name: upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-e2e
+          path: |
+            e2e/human/artifacts/
+            e2e/human/runs/
+          retention-days: 14
+
+      - name: summarize
+        if: always()
+        run: |
+          if [ -f e2e/human/runs/LATEST.md ]; then
+            cat e2e/human/runs/LATEST.md >> "$GITHUB_STEP_SUMMARY"
+          fi

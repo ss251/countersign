@@ -25,7 +25,7 @@ export const publicHedera: Flow = {
     const w = wallets(env.secrets);
     return [
       { wallet: w.hdAgentUsdc(), amount: MAX_PRICE, floor: units("0.10", 6) },
-      { wallet: w.hdAgentHbar(), amount: units("0.05", 8), floor: units("0.5", 8) },
+      { wallet: w.hdAgentHbar(), amount: units("0.01", 8), floor: units("0.5", 8) }, // the facilitator pays the transfer fee; the agent pays its HCS entries
     ];
   },
   async run(ctx) {
