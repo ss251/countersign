@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PrivateKey } from "@hiero-ledger/sdk";
+import { newHubReleaseKey } from "@countersign/rail/hedera";
 import { railsFromEnv } from "../src/rails.ts";
 
 describe("the held rail needs the hub's release key", () => {
@@ -12,10 +12,10 @@ describe("the held rail needs the hub's release key", () => {
   });
 
   test("starts when a generated hub key is set", async () => {
-    const key = PrivateKey.generateED25519();
+    const key = newHubReleaseKey();
     const lines: string[] = [];
     const rails = await railsFromEnv(
-      { HEDERA_SCHEDULED_RAIL: "1", HEDERA_HELD_HUB_KEY: key.toStringDer() },
+      { HEDERA_SCHEDULED_RAIL: "1", HEDERA_HELD_HUB_KEY: key },
       {},
       (line) => lines.push(line),
     );

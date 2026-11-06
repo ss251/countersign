@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { proto } from "@hiero-ledger/proto";
 import {
   AccountId,
@@ -15,7 +16,7 @@ import {
 import { offerHash, type PaymentPayload, type PaymentRequirements } from "@countersign/core";
 import { keccak256, toBytes, type Hex } from "viem";
 import { HEDERA_TESTNET, USDC_TESTNET } from "../constants.ts";
-import { createHederaHeldRail, heldJobId, type HeldRail, type HeldRailOptions } from "../held.ts";
+import { createHederaHeldRail, heldJobId, newHubReleaseKey, type HeldRail, type HeldRailOptions } from "../held.ts";
 import { offerMemo } from "../memo.ts";
 import { NODE, PAYEE, PAYER, offer, payerKey } from "./fixtures.ts";
 
@@ -287,6 +288,24 @@ describe("construction", () => {
     await expect(
       createHederaHeldRail({ mirror: {} } as unknown as HeldRailOptions),
     ).rejects.toThrow("the held rail needs its hub release key");
+  });
+
+  test("starts from a string key and names its raw public key", async () => {
+    const key = newHubReleaseKey();
+    const { rail } = await railFor(happyState(), { hubKey: key });
+    expect(requirements(rail).extra?.hubKey).toBe(PrivateKey.fromStringED25519(key).publicKey.toStringRaw());
+  });
+
+  test("refuses a malformed key without leaking it", async () => {
+    const random = randomBytes(16).toString("hex");
+    let message = "";
+    try {
+      await createHederaHeldRail({ hubKey: `not-a-key-${random}`, mirror: {} });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe("the held rail's hub release key is not an ED25519 key");
+    expect(message).not.toContain(random);
   });
 });
 

@@ -1,4 +1,3 @@
-import { PrivateKey } from "@hiero-ledger/sdk";
 import { privateKeyToAccount } from "viem/accounts";
 import { eip3009Rail, escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
 import { createHederaHeldRail, createHederaRail } from "@countersign/rail/hedera";
@@ -143,7 +142,7 @@ export async function railsFromEnv(
         (() => {
           const value = env.HEDERA_HELD_HUB_KEY;
           if (!value) throw new Error("HEDERA_HELD_HUB_KEY is not set");
-          return createHederaHeldRail({ hubKey: PrivateKey.fromStringED25519(value) });
+          return createHederaHeldRail({ hubKey: value });
         }),
       log,
     );

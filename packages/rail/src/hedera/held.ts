@@ -49,8 +49,8 @@ interface Hold {
 }
 
 export interface HeldRailOptions {
-  /** The hub's ED25519 release key; the held payee must require it. */
-  hubKey: PrivateKey;
+  /** The hub's ED25519 release key, or its DER string; the held payee must require it. */
+  hubKey: PrivateKey | string;
   mirror?: MirrorOptions;
   /** Unix seconds. */
   now?: () => number;
@@ -149,9 +149,23 @@ export function heldJobId(createTxId: string): Hex {
   return keccak256(toBytes(createTxId));
 }
 
+/** A fresh ED25519 release key in the DER form the hub's environment carries; for tests and scripts. */
+export function newHubReleaseKey(): string {
+  return PrivateKey.generateED25519().toStringDer();
+}
+
 export async function createHederaHeldRail(opts: HeldRailOptions): Promise<HeldRail> {
   if (!opts.hubKey) throw new Error("the held rail needs its hub release key");
-  const hubKey = opts.hubKey;
+  let hubKey: PrivateKey;
+  if (typeof opts.hubKey === "string") {
+    try {
+      hubKey = PrivateKey.fromStringED25519(opts.hubKey);
+    } catch {
+      throw new Error("the held rail's hub release key is not an ED25519 key");
+    }
+  } else {
+    hubKey = opts.hubKey;
+  }
   const hubPublicKey = Buffer.from(hubKey.publicKey.toBytesRaw());
   const mirror = opts.mirror ?? {};
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
