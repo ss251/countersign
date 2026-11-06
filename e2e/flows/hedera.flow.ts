@@ -16,7 +16,7 @@ import { HEDERA } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
 import { hashscanTx, mirrorTransaction, mirrorTxId, netToken, tokenDebits, topicMessage, topicSince } from "../lib/hedera.ts";
 import { sleep } from "../lib/http.ts";
-import { agentRun, evidence as find, OPEN_CAP } from "../lib/agent.ts";
+import { agentRun, evidence as find, hederaExact, OPEN_CAP } from "../lib/agent.ts";
 
 const PRICE = 10_000n; // 0.01 USDC
 
@@ -30,7 +30,7 @@ export const hedera: Flow = {
     return [
       { wallet: w.hdAgentUsdc(), amount: PRICE, floor: units("0.10", 6) },
       // Two HCS messages, well under 0.01 HBAR each; the facilitator pays the transfer fee.
-      { wallet: w.hdAgentHbar(), amount: units("0.05", 8), floor: units("0.5", 8) },
+      { wallet: w.hdAgentHbar(), amount: units("0.01", 8), floor: units("0.5", 8) }, // the facilitator pays the transfer fee; the agent pays its HCS entries
     ];
   },
   async run(ctx) {
@@ -64,8 +64,8 @@ export const hedera: Flow = {
       const header = res.headers.get(PAYMENT_REQUIRED_HEADER);
       check(header, "402 carries PAYMENT-REQUIRED");
       const required = fromBase64Json<PaymentRequired>(header);
-      const e = required.accepts.find((a) => a.network === "hedera:testnet");
-      check(e, `the 402 accepts hedera:testnet (it accepts ${required.accepts.map((a) => a.network).join(", ")})`);
+      const e = hederaExact(required);
+      check(e, `the 402 accepts hedera:testnet, scheme exact (it accepts ${required.accepts.map((a) => `${a.network}/${a.scheme}`).join(", ")})`);
       equal(e.scheme, "exact", "Hedera scheme");
       equal(e.payTo, sellerAccount, "Hedera payee");
       equal(e.asset, HEDERA.usdc, "Hedera asset is USDC");

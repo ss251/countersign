@@ -7,7 +7,7 @@
 
 import { fromBase64Json, PAYMENT_REQUIRED_HEADER, canonicalHash, type Offer, type PaymentRequired, type Slip } from "@countersign/core";
 import { verifyCli } from "../lib/actors.ts";
-import { agentRun, evidence, OPEN_CAP } from "../lib/agent.ts";
+import { agentRun, evidence, hederaExact, OPEN_CAP } from "../lib/agent.ts";
 import { units, wallets } from "../lib/budget.ts";
 import { ARC, HEDERA } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
@@ -25,7 +25,7 @@ export const publicHedera: Flow = {
     const w = wallets(env.secrets);
     return [
       { wallet: w.hdAgentUsdc(), amount: MAX_PRICE, floor: units("0.10", 6) },
-      { wallet: w.hdAgentHbar(), amount: units("0.05", 8), floor: units("0.5", 8) },
+      { wallet: w.hdAgentHbar(), amount: units("0.01", 8), floor: units("0.5", 8) }, // the facilitator pays the transfer fee; the agent pays its HCS entries
     ];
   },
   async run(ctx) {
@@ -59,15 +59,15 @@ export const publicHedera: Flow = {
       equal(res.status, 402, "unpaid call status");
       const header = res.headers.get(PAYMENT_REQUIRED_HEADER);
       check(header, "402 carries PAYMENT-REQUIRED");
-      const e = fromBase64Json<PaymentRequired>(header).accepts.find((a) => a.network === "hedera:testnet");
-      check(e, "the 402 accepts hedera:testnet");
+      const e = hederaExact(fromBase64Json<PaymentRequired>(header));
+      check(e, "the 402 accepts hedera:testnet, scheme exact");
       equal(e.payTo, payee, "Hedera payee");
       equal(e.asset, HEDERA.usdc, "Hedera asset");
       equal(e.amount, price.toString(), "Hedera amount");
     });
 
     const paid = await ctx.step("agent pays through the public hub, no human step", async () => {
-      const run = await agentRun(ctx, "public", base, OPEN_CAP, listing.offerHash);
+      const run = await agentRun(ctx, "public", base, OPEN_CAP, { offer: listing.offerHash });
       equal(run.code, 0, `agent exit code (stderr ${JSON.stringify(run.stderr.trim().slice(-300))})`);
       equal(run.ok, true, "agent evidence ok");
       sameHex(String(evidence(run.evidence, "offer").value), listing.offerHash, "the agent bought the live Hedera offer");

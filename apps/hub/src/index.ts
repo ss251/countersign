@@ -8,8 +8,19 @@ import { erc8004IdentityLookup } from "./identity.ts";
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
 const ARC_ERC8004_IDENTITY = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 import { runJanitor } from "./janitor.ts";
+import { assertBootable, BootRefused } from "./network.ts";
 import { railsFromEnv } from "./rails.ts";
 import { Store } from "./store.ts";
+
+// Fail closed before anything else: an unknown network, or a mainnet with anything pending, stops here.
+try {
+  assertBootable(process.env);
+} catch (error) {
+  if (!(error instanceof BootRefused)) throw error;
+  console.error("[hub] refused to boot:");
+  for (const problem of error.problems) console.error(`[hub]   - ${problem}`);
+  process.exit(1);
+}
 
 const port = Number(process.env.PORT ?? 8787);
 const dbPath = process.env.HUB_DB ?? "data/hub.sqlite";

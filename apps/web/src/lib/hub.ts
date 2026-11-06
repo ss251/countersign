@@ -104,6 +104,25 @@ export function chosenAgent(): string | null {
   }
 }
 
+/** The hub a link chose on this device; null when none was stored and the build's default applies. */
+export function chosenHub(): string | null {
+  try {
+    return window.localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Forget the agent and hub links chose, so the console follows this hub's defaults again. */
+export function forgetChoices(): void {
+  try {
+    window.localStorage.removeItem(AGENT_KEY);
+    window.localStorage.removeItem(KEY);
+  } catch {
+    // Private mode: nothing was kept.
+  }
+}
+
 /** The human's approval token, kept on this device only and sent only to this hub. */
 const TOKEN_KEY = "countersign.approval-token";
 export function approvalToken(): string | null {

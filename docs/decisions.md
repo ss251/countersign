@@ -138,7 +138,7 @@ With sixteen hours to the deadline, the team dropped these so the build finishes
 - Unified balance.
 - The subgraph and `/graph/stats` (#4). There is no Goldsky account to deploy it with.
 - Railway preview environments for pull requests. If they come back, the preview secrets rule in `docs/deploy.md` still applies.
-- A headless browser for the e2e `web` flow. No browser runs on the build machine, so the screens are checked by hand in a real browser at 390 and 1440 px, light and dark.
+- A headless browser for the e2e `web` flow. No browser runs on the build machine, so the screens are checked by hand in a real browser at 390 and 1440 px, light and dark. **Un-cut by D14, amended (below).**
 
 ## D11, amended — a countersignature can never become a bond deposit; only the arbiter funds a bonded job (06 Nov; refs #93)
 
@@ -197,3 +197,31 @@ Status: design only, in [spec/escrow.md](spec/escrow.md) under "Escrow v2". Rajd
 - **The economics.** A default after `settleBy`, a dispute inside the review window, and a gate failure all pay the buyer `amount + bond`. A dispute before delivery and a cancel by the payee by the deadline return the bond. Disputing before delivery returns the bond so that no buyer can take it before the seller has had a chance to deliver. Aggressive disputes inside the window are the accepted trade.
 - **H1 and the lows are unchanged from D15.** There is one settle window of 600 s after the deadline for `release` and `failDelivery`, the toll accrues, a payee can never be the escrow, and every time boundary follows one rule.
 
+
+## D14, amended — a headless browser comes back, in CI only, for a human end-to-end test (06 Nov, 21:05 IST; captain)
+
+The headless browser is no longer cut. A person has to be able to sign in, connect and buy without instructions, and only a browser driving the deployed app can show that. This test is the acceptance gate for the console work.
+
+- **Its own project.** `e2e/human` is a Playwright project, separate from the fast suite in `e2e/`. It drives the deployed console and hub the way a person does:
+  1. sign in;
+  2. connect a wallet;
+  3. discover an offer and countersign it;
+  4. fund the escrow on Arc from that wallet;
+  5. let the seller deliver;
+  6. verify the slip;
+  7. have the merchant refund.
+- **Where it runs.** In CI only: on demand (`workflow_dispatch`) and nightly. It never runs on pull requests, and never on the build machine, where the no-browser rule still holds.
+- **Its report.** It writes its own report, `e2e/human/runs/LATEST.md`, never `e2e/runs/LATEST.md`. A Privy outage must not turn a green build red.
+- **Sign-in.** Sign-in uses Privy (email or passkey, with an embedded wallet on Arc testnet) once its app id and secret are set: `VITE_PRIVY_APP_ID` on the console, and `PRIVY_APP_ID` with `PRIVY_APP_SECRET` on the hub.
+  - Without them there is no Privy button, and the console's injected wallet connect is the path.
+  - The test then runs that path with a test EIP-1193 provider from a throwaway key.
+- **Funding.** The test wallet is funded with 1 USDC on Arc by a dedicated test-funder key before it buys, and the test asserts the balance. The deployer's own key never sits in CI.
+- **Status.** `docs/status.md` marks this `IN DESIGN` until the project exists, and `SHIPPED` only when it runs green.
+
+## D17 — a call nested inside a purchase of the same offer or seller is refused before payment (06 Nov; refs #27)
+
+A call's `lineage` lists the jobIds of the purchases it is nested inside, outermost first (`CallRequest` in `packages/core/src/wire.ts`). The hub now uses it for what it was declared for: refusing cycles.
+
+- **The rule.** Before any 402 or payment, the hub resolves each lineage jobId it knows. If an ancestor job bought the same offer, or an offer from the same seller, the call is refused with 409 `lineage-cycle`: "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged."
+- **Where.** First in the paid-call pipeline, right after the offer is loaded. It runs before the ENS lock, both input gates, the online check and the rails.
+- **What it cannot see.** A jobId this hub does not hold, such as a purchase made through another hub, is skipped. A caller that sends no lineage is not checked. Lineage comes from the caller, so the check stops honest agents from looping, not a buyer who hides its ancestry.
