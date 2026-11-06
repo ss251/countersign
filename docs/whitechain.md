@@ -158,6 +158,16 @@ The relayer pays gas for strangers, so every call goes through `Relayer.submit` 
 
 The relay also refuses to start if its RPC does not answer as chain 1874.
 
+**What a call costs the relayer.** These are the fees the explorer reports at the 5 gwei base fee:
+
+| Call | Fee |
+|---|---|
+| EIP-3009 transfer (exact payment or refund) | 0.00051 WBT |
+| escrow `fund` | 0.00108 WBT |
+| escrow `cancel` | 0.00033 WBT |
+
+One faucet drip of about 1.5 WBT therefore pays for roughly 1,400 to 3,000 customer calls.
+
 **Where the relayer's WBT comes from.** Today it comes from the testnet faucet. On every escrow payment, half of the 1% toll goes through `FeeSplit` to the relayer's address. The business's fee pays for the gas, and the relayer can swap that USDT for WBT on the same pool.
 
 ## Verifying contracts
