@@ -20,10 +20,19 @@ The three methods are the x402 v2 facilitator trio: `challenge` builds one entry
 |---|---|---|---|---|
 | `escrow` | `eip155:5042002` (Arc testnet) | `countersign` | escrow | hub |
 | `whitechain` | `eip155:1874` (Whitechain Sepolia) | `countersign` | escrow | relayer |
+| `eip3009` | `eip155:5042002` (Arc testnet) | `exact` | direct | hub |
 | `hedera` | `hedera:testnet` | `exact` | direct | facilitator |
 | `gateway` | `eip155:5042002` | `exact` (GatewayWalletBatched) | batched | Circle Gateway |
 
 Headers follow x402 v2: `PAYMENT-REQUIRED` on the 402, `PAYMENT-SIGNATURE` on the paid retry and `PAYMENT-RESPONSE` on the answer, each holding base64 JSON.
+
+## eip3009
+
+A direct USDC transfer on Arc testnet, under the token's own EIP-712 domain: `{name: "USDC", version: "2", chainId: 5042002, verifyingContract: 0x3600000000000000000000000000000000000000}`. The buyer signs `TransferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce)` straight to the seller, in x402's `exact` payload shape.
+
+The hub checks the signature recovers to `from`, that `to` is the offered payee, `value` is the price, the validity window is current and inside this rail's window (`now + 6 <= validBefore <= now + maxTimeoutSeconds + 30`), the nonce is unused on chain, and the payer's balance covers the amount. It then submits `transferWithAuthorization` with its relayer account, so the buyer pays no gas.
+
+Settlement is final in the Arc block that includes the transfer, before the work is dispatched. A failed delivery is therefore not refunded automatically; the slip records the failure. This is the same finality as the gateway rail and unlike escrow.
 
 ## Router
 
