@@ -12,6 +12,21 @@ export type OrderStatus =
 /** How an escrow order closed: released to the merchant, cancelled by them, or refunded after the deadline. */
 export type CloseKind = "release" | "cancel" | "deadline_refund";
 
+/** Why money went back. The relay keeps it with the refund; it is optional everywhere. */
+export type RefundReason = "requested_by_customer" | "duplicate" | "not_delivered" | "other";
+
+export const REFUND_REASONS: ReadonlyArray<{ value: RefundReason; label: string }> = [
+  { value: "requested_by_customer", label: "Requested by customer" },
+  { value: "duplicate", label: "Duplicate payment" },
+  { value: "not_delivered", label: "Not delivered" },
+  { value: "other", label: "Other" },
+];
+
+export function reasonLabel(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  return REFUND_REASONS.find((entry) => entry.value === reason)?.label ?? null;
+}
+
 export interface Order {
   id: string;
   kind: OrderKind;
@@ -34,6 +49,18 @@ export interface Order {
   deadline?: number;
   resource?: string | null;
   description?: string | null;
+  /** The countersigned slip's hash, emitted on chain when the escrow released. */
+  slipHash?: string | null;
+  /** When an escrow order closed (released, cancelled or refunded), in ms. */
+  closedAt?: number | null;
+  closeReason?: RefundReason | null;
+  /** Hub records name their rail and chain; the Whitechain relay's do not, and mean these defaults. */
+  rail?: string;
+  network?: string;
+  networkName?: string;
+  asset?: { symbol: string; decimals: number };
+  /** Explorer base for this order's links. */
+  explorer?: string;
 }
 
 export interface RefundRecord {
@@ -41,6 +68,10 @@ export interface RefundRecord {
   txHash: string;
   blockNumber?: string;
   nonce?: string;
+  status?: "pending" | "confirmed";
+  reason?: string | null;
+  /** When the refund was sent, in ms; older relays do not record it. */
+  at?: number | null;
 }
 
 export interface ReceiptOrder extends Order {
@@ -155,16 +186,21 @@ export function statusLabel(status: OrderStatus): string {
   }
 }
 
-/** Only Paid is green. Held money is blue where it is shown as an amount; its badge stays neutral. */
+/**
+ * The colour of a status dot. Green is settled: the merchant was paid. Blue is money still in
+ * flight: held in escrow, or a transfer that has not landed. Returned money settles nothing, so
+ * refunded and cancelled are ink.
+ */
 export function statusTone(status: OrderStatus): StatusTone {
   switch (status) {
     case "paid":
       return "settled";
     case "pending":
     case "held":
+    case "refund_pending":
+      return "money";
     case "partially_refunded":
     case "refunded":
-    case "refund_pending":
     case "cancelled":
       return "neutral";
   }
@@ -213,10 +249,36 @@ export function totals(orders: readonly Order[]): Totals {
   };
 }
 
-/** What the merchant sold, in words: the payment's description, the hub's offer title, the URL, or the id. */
+/**
+ * What the merchant sold, in words: the payment's description, the hub's offer title, a label made
+ * from the paid URL's last path segment, or the id. Never a raw URL: a host such as 127.0.0.1 means
+ * nothing to the merchant and leaks the setup.
+ */
 export function itemLabel(order: Pick<Order, "id" | "description" | "resource">, hubTitle?: string | null): string {
-  const text = order.description?.trim() || hubTitle?.trim() || order.resource?.trim();
-  return text || `Order ${shortHash(order.id)}`;
+  const text = order.description?.trim() || hubTitle?.trim();
+  return text || pathLabel(order.resource) || `Order ${shortHash(order.id)}`;
+}
+
+/** "http://127.0.0.1:8404/forecast" -> "Forecast"; "https://shop.example/whitechain/check-out" -> "Check out". */
+export function pathLabel(resource: string | null | undefined): string | null {
+  const raw = resource?.trim();
+  if (!raw) return null;
+  let path = raw;
+  try {
+    path = new URL(raw).pathname;
+  } catch {
+    // Not a URL: read it as a path.
+  }
+  const last = path.split(/[/?#]/).filter(Boolean).pop();
+  if (!last || /^\d+$/.test(last) || /^0x[0-9a-f]+$/i.test(last)) return null;
+  let words = last;
+  try {
+    words = decodeURIComponent(last);
+  } catch {
+    // Keep the segment as written.
+  }
+  words = words.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_+.]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : null;
 }
 
 /** "6 Nov 2026, 14:32 IST": the viewer's own clock, with its zone named. */
@@ -254,12 +316,30 @@ export function normalizeRefundReply(body: unknown, httpStatus: number): RefundR
   return typeof reply.refunded === "string" ? { ok: true, txHash, refunded: reply.refunded } : { ok: true, txHash };
 }
 
-export function txUrl(hash: string): string {
-  return `${EXPLORER}/tx/${hash}`;
+export function txUrl(hash: string, explorer: string = EXPLORER): string {
+  return `${explorer}/tx/${hash}`;
 }
 
-export function addressUrl(address: string): string {
-  return `${EXPLORER}/address/${address}`;
+export function addressUrl(address: string, explorer: string = EXPLORER): string {
+  return `${explorer}/address/${address}`;
+}
+
+/* An order without these fields is a Whitechain relay record. */
+export function assetOf(order: Pick<Order, "asset">): string {
+  return order.asset?.symbol || "USDT";
+}
+
+export function networkNameOf(order: Pick<Order, "networkName" | "network">): string {
+  if (order.networkName) return order.networkName;
+  return !order.network || order.network === "eip155:1874" ? "Whitechain Sepolia" : order.network;
+}
+
+export function explorerOf(order: Pick<Order, "explorer">): string {
+  return order.explorer?.replace(/\/+$/, "") || EXPLORER;
+}
+
+export function isWhitechain(order: Pick<Order, "network">): boolean {
+  return !order.network || order.network === "eip155:1874";
 }
 
 function shortDate(ms: number): string {
@@ -363,4 +443,424 @@ export function receivedAt(order: Pick<Order, "kind" | "status" | "closeKind" | 
   if (!wasReceived(order)) return null;
   // Older relays send no receivedAt; a direct payment settles when it is created.
   return order.kind === "exact" ? order.createdAt : null;
+}
+
+/* ------------------------------------------------------------ the desk's arithmetic */
+
+/**
+ * The header: released − refunded − toll = net. Held escrow is not the merchant's until it
+ * releases, so it stands beside the sum as pending and never enters it. Atomic USDT.
+ */
+export interface Equation {
+  released: bigint;
+  refunded: bigint;
+  toll: bigint;
+  net: bigint;
+  /** In escrow, releasing on delivery: shown, never counted. */
+  held: bigint;
+}
+
+export function equation(orders: readonly Order[]): Equation {
+  const sums = totals(orders);
+  const released = BigInt(sums.received);
+  const refunded = BigInt(sums.refunded);
+  const toll = BigInt(sums.fees);
+  return { released, refunded, toll, net: released - refunded - toll, held: BigInt(sums.held) };
+}
+
+/** True while an order's money is still in flight: held in escrow, or a payment settling. */
+export function isPending(order: Pick<Order, "kind" | "status">): boolean {
+  return order.status === "pending" || (order.kind === "escrow" && order.status === "held");
+}
+
+/** What one order adds to the balance: only money that reached the merchant, less toll and refunds. */
+export function contribution(order: Order): bigint {
+  if (!wasReceived(order)) return 0n;
+  return (
+    parseAtomic(order.amount, "USDT") - parseAtomic(order.fee ?? "0", "USDT") - parseAtomic(order.refunded, "USDT")
+  );
+}
+
+export interface LedgerRow {
+  order: Order;
+  /** The running balance once this order is counted, oldest first. */
+  balance: bigint;
+  /** Held or settling: the row shows "Pending" in place of a balance, and adds nothing to it. */
+  pending: boolean;
+}
+
+/** Every order with its running balance, newest first. The newest counted balance is the header's Net. */
+export function ledger(orders: readonly Order[]): LedgerRow[] {
+  const oldestFirst = [...orders].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  let balance = 0n;
+  const rows = oldestFirst.map((order) => {
+    balance += contribution(order);
+    return { order, balance, pending: isPending(order) };
+  });
+  return rows.reverse();
+}
+
+/** The lines under an amount that explain why the balance moved by less than it. */
+export type Adjustment =
+  | { kind: "toll"; amount: bigint }
+  | { kind: "refunded"; amount: bigint }
+  | { kind: "returned"; amount: bigint; close: "cancel" | "deadline_refund" }
+  | { kind: "held" }
+  | { kind: "settling" };
+
+export function adjustments(order: Order): Adjustment[] {
+  if (order.status === "pending") return [{ kind: "settling" }];
+  if (order.kind === "escrow" && order.status === "held") return [{ kind: "held" }];
+  if (order.closeKind === "cancel" || order.closeKind === "deadline_refund") {
+    return [{ kind: "returned", amount: parseAtomic(order.amount, "USDT"), close: order.closeKind }];
+  }
+  const lines: Adjustment[] = [];
+  const fee = parseAtomic(order.fee ?? "0", "USDT");
+  const refunded = parseAtomic(order.refunded, "USDT");
+  if (fee > 0n) lines.push({ kind: "toll", amount: fee });
+  if (refunded > 0n) lines.push({ kind: "refunded", amount: refunded });
+  return lines;
+}
+
+function fractionDigits(atomic: bigint): number {
+  const magnitude = atomic < 0n ? -atomic : atomic;
+  return (magnitude % USDT_SCALE).toString().padStart(USDT_DECIMALS, "0").replace(/0+$/, "").length;
+}
+
+/** The fewest decimals, at least `min`, that show every value exactly, so a column lines up. */
+export function decimalsFor(values: readonly bigint[], min = 2): number {
+  return values.reduce((most, value) => Math.max(most, fractionDigits(value)), min);
+}
+
+/**
+ * Atomic USDT at a fixed number of decimals, with a true minus sign. Never rounds: a value that
+ * needs more places than asked gets them, so no digit of money is ever hidden.
+ */
+export function formatFixed(atomic: bigint, decimals: number): string {
+  const places = Math.min(Math.max(decimals, fractionDigits(atomic)), USDT_DECIMALS);
+  const negative = atomic < 0n;
+  const magnitude = negative ? -atomic : atomic;
+  const whole = magnitude / USDT_SCALE;
+  const fraction = (magnitude % USDT_SCALE).toString().padStart(USDT_DECIMALS, "0").slice(0, places);
+  return `${negative ? "−" : ""}${whole}${places > 0 ? `.${fraction}` : ""}`;
+}
+
+export type AmountCheck = { ok: true; atomic: bigint } | { ok: false; message: string };
+
+/** A refund amount typed by the merchant: a plain decimal, more than zero, never more than what is left. */
+export function checkRefundAmount(input: string, remainder: bigint): AmountCheck {
+  const text = input.trim();
+  if (text === "") return { ok: false, message: "Enter an amount." };
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!match || ((match[1] ?? "") === "" && (match[2] ?? "") === "")) {
+    return { ok: false, message: "Enter an amount like 0.25." };
+  }
+  const fraction = match[2] ?? "";
+  if (fraction.length > USDT_DECIMALS) return { ok: false, message: "USDT has six decimals at most." };
+  const atomic = BigInt(match[1] || "0") * USDT_SCALE + BigInt(fraction.padEnd(USDT_DECIMALS, "0"));
+  if (atomic <= 0n) return { ok: false, message: "Enter more than 0." };
+  if (atomic > remainder) {
+    return { ok: false, message: `Only ${formatUsdt(remainder.toString())} USDT is left to refund.` };
+  }
+  return { ok: true, atomic };
+}
+
+/** "merchant_balance_low" -> "Merchant balance low" */
+export function refusalWords(reason: string): string {
+  const cleaned = reason
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\.+$/, "");
+  if (cleaned === "") return "The refund did not go through";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function formatBlock(block: string): string {
+  return /^\d+$/.test(block) ? Number(block).toLocaleString("en-GB") : block;
+}
+
+/* ------------------------------------------------------------------- the timeline */
+
+export type EventTone = "money" | "settled" | "neutral" | "refused";
+
+export interface TimelineEvent {
+  key: string;
+  tone: EventTone;
+  /** What happened, in words. */
+  title: string;
+  /** A second line: the reason, the toll, the deadline. */
+  detail?: string | null;
+  at?: number | null;
+  block?: string | null;
+  txHash?: string | null;
+  slipHash?: string | null;
+}
+
+/** A refund the chain or the relay refused during this visit. Nothing records these server side. */
+export interface Refusal {
+  at: number;
+  reason: string;
+}
+
+/**
+ * What happened to an order, newest first, each step with its proof. `who` sets the voice: the
+ * merchant reads "Released to you", the customer reads "Released to the merchant".
+ */
+export function timeline(
+  order: ReceiptOrder,
+  who: "merchant" | "customer",
+  refusals: readonly Refusal[] = [],
+): TimelineEvent[] {
+  const amount = formatUsdt(order.amount);
+  const unit = assetOf(order);
+  const events: TimelineEvent[] = [];
+
+  if (order.kind === "escrow") {
+    const deadline = order.deadline ? shortHumanDate(order.deadline) : null;
+    const back = who === "merchant" ? "the customer" : "you";
+    events.push({
+      key: "fund",
+      tone: "money",
+      title: order.status === "pending" ? `Funding escrow with ${amount} ${unit}` : `${amount} ${unit} held in escrow`,
+      detail: deadline
+        ? `Releases on delivery. Returns to ${back} if not delivered by ${deadline}.`
+        : "Releases on delivery.",
+      at: order.createdAt,
+      txHash: order.settleTx,
+    });
+  } else {
+    events.push({
+      key: "pay",
+      tone: order.status === "pending" ? "money" : "settled",
+      title: `${who === "merchant" ? "Received" : "Paid"} ${amount} ${unit}`,
+      detail: order.status === "pending" ? `Settling on ${networkNameOf(order)}.` : null,
+      at: order.createdAt,
+      txHash: order.settleTx,
+    });
+  }
+
+  const closedAt = order.closedAt ?? null;
+  if (order.closeKind === "release") {
+    const fee = parseAtomic(order.fee ?? "0", "USDT");
+    events.push({
+      key: "release",
+      tone: "settled",
+      title: who === "merchant" ? "Released to you" : "Released to the merchant",
+      detail: fee > 0n ? `Toll ${formatUsdt(fee.toString())} ${unit}.` : null,
+      at: order.receivedAt ?? closedAt,
+      txHash: order.closeTx ?? null,
+      slipHash: order.slipHash ?? null,
+    });
+  } else if (order.closeKind === "cancel") {
+    events.push({
+      key: "cancel",
+      tone: "neutral",
+      title:
+        who === "merchant"
+          ? `Cancelled. ${amount} ${unit} returned to the customer`
+          : `Cancelled by the merchant. ${amount} ${unit} returned to you`,
+      detail: reasonLabel(order.closeReason),
+      at: closedAt,
+      txHash: order.closeTx ?? null,
+    });
+  } else if (order.closeKind === "deadline_refund") {
+    events.push({
+      key: "deadline",
+      tone: "neutral",
+      title: `Not delivered in time. ${amount} ${unit} returned${who === "merchant" ? " to the customer" : " to you"}`,
+      at: closedAt,
+      txHash: order.closeTx ?? null,
+    });
+  }
+
+  const records: RefundRecord[] = order.refunds?.length
+    ? order.refunds
+    : order.refundTxs.map((txHash) => ({ txHash }));
+  records.forEach((refund, index) => {
+    const value = refund.amount ?? (records.length === 1 ? order.refunded : undefined);
+    const shown = value && value !== "0" ? `${formatUsdt(value)} ${unit}` : null;
+    const pending = refund.status === "pending";
+    events.push({
+      key: `refund-${refund.txHash}-${index}`,
+      tone: pending ? "money" : "neutral",
+      title: pending ? `Refund${shown ? ` of ${shown}` : ""} settling` : `Refunded${shown ? ` ${shown}` : ""}`,
+      detail: reasonLabel(refund.reason),
+      at: refund.at ?? null,
+      block: refund.blockNumber ?? null,
+      txHash: refund.txHash,
+    });
+  });
+
+  // Steps the relay did not time inherit the time of the step before them, so the order holds.
+  let last = 0;
+  const timed = events.map((event) => {
+    last = event.at ?? last;
+    return { event, when: last };
+  });
+  refusals.forEach((refusal, index) => {
+    timed.push({
+      event: {
+        key: `refused-${refusal.at}-${index}`,
+        tone: "refused",
+        title: `Refund refused. ${refusalWords(refusal.reason)}`,
+        at: refusal.at,
+      },
+      when: refusal.at,
+    });
+  });
+  timed.sort((a, b) => a.when - b.when);
+  return timed.map((entry) => entry.event).reverse();
+}
+
+/* ------------------------------------------------------------- hub records */
+
+const STATUSES: readonly OrderStatus[] = [
+  "pending",
+  "held",
+  "paid",
+  "partially_refunded",
+  "refunded",
+  "refund_pending",
+  "cancelled",
+];
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function atomic(value: unknown, fallback = "0"): string {
+  if (typeof value === "string" && /^\d+$/.test(value)) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  return fallback;
+}
+
+/**
+ * A time in ms. The escrow keeps its deadline in seconds, as the chain does, and the relay passes it
+ * on as it is; a value too small to be ms after 2001 is read as seconds.
+ */
+function millis(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return value < 1e12 ? value * 1000 : value;
+}
+
+function statusOf(value: unknown): OrderStatus | null {
+  const raw = typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : "";
+  if (raw === "released" || raw === "settled") return "paid";
+  if (raw === "partly_refunded") return "partially_refunded";
+  return (STATUSES as readonly string[]).includes(raw) ? (raw as OrderStatus) : null;
+}
+
+/**
+ * One record from the hub's /orders (wc/orders-contract.md), or the Whitechain relay's, as the
+ * desk's Order. Anything that cannot be a real order (no id, no amount, no known status) is
+ * dropped rather than guessed at.
+ */
+export function fromHubOrder(raw: unknown): Order | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = text(r.id) ?? text(r.jobId);
+  const status = statusOf(r.status);
+  const amount = atomic(r.amount, "");
+  if (!id || !status || amount === "") return null;
+  const closeKind = r.closeKind === "release" || r.closeKind === "cancel" || r.closeKind === "deadline_refund" ? r.closeKind : null;
+  const asset =
+    r.asset && typeof r.asset === "object" && text((r.asset as Record<string, unknown>).symbol)
+      ? {
+          symbol: text((r.asset as Record<string, unknown>).symbol)!,
+          decimals: Number((r.asset as Record<string, unknown>).decimals ?? 6),
+        }
+      : undefined;
+  const refunded = atomic(r.refunded);
+  return {
+    id,
+    kind: r.kind === "exact" ? "exact" : "escrow",
+    customer: text(r.customer) ?? text(r.buyer) ?? "",
+    merchant: text(r.merchant) ?? text(r.seller) ?? "",
+    amount,
+    fee: atomic(r.fee),
+    refunded,
+    refundable: atomic(r.refundable, status === "held" || status === "paid" ? amount : "0"),
+    status,
+    closeKind: closeKind ?? (status === "paid" && r.kind !== "exact" ? "release" : null),
+    createdAt: millis(r.createdAt) ?? 0,
+    receivedAt: millis(r.receivedAt),
+    closedAt: millis(r.closedAt),
+    settleTx: text(r.settleTx) ?? "",
+    closeTx: text(r.closeTx),
+    refundTxs: Array.isArray(r.refundTxs) ? r.refundTxs.filter((tx): tx is string => typeof tx === "string") : [],
+    slipHash: text(r.slipHash),
+    offerHash: text(r.offerHash) ?? undefined,
+    deadline: millis(r.deadline) ?? undefined,
+    description: text(r.description) ?? text(r.offerTitle),
+    resource: text(r.resource),
+    rail: text(r.rail) ?? undefined,
+    network: text(r.network) ?? undefined,
+    networkName: text(r.networkName) ?? undefined,
+    asset,
+    explorer: text(r.explorer) ?? undefined,
+  };
+}
+
+/** A single record from /orders/:id, with every refund it reports. */
+export function fromHubRecord(raw: unknown): ReceiptOrder | null {
+  const order = fromHubOrder(raw);
+  if (!order) return null;
+  const list = (raw as { refunds?: unknown }).refunds;
+  const refunds: RefundRecord[] = Array.isArray(list)
+    ? list.flatMap((entry): RefundRecord[] => {
+        if (!entry || typeof entry !== "object") return [];
+        const e = entry as Record<string, unknown>;
+        const txHash = text(e.txHash);
+        if (!txHash) return [];
+        return [
+          {
+            txHash,
+            amount: atomic(e.amount, "") || undefined,
+            blockNumber: atomic(e.blockNumber, "") || undefined,
+            status: e.status === "pending" ? "pending" : "confirmed",
+            reason: text(e.reason),
+            at: millis(e.at),
+          },
+        ];
+      })
+    : [];
+  return { ...order, refunds };
+}
+
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+export const ORDERS_CSV_HEADER =
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+
+/** The accountant's export: the relay's orders.csv columns, built from whatever the desk is showing. */
+export function ordersCsv(orders: readonly Order[]): string {
+  const rows = [ORDERS_CSV_HEADER];
+  for (const order of orders) {
+    const net = contribution(order);
+    const explorer = explorerOf(order);
+    rows.push(
+      [
+        new Date(order.createdAt).toISOString(),
+        order.id,
+        order.kind,
+        order.customer,
+        order.merchant,
+        formatUsdt(order.amount),
+        formatUsdt(order.fee ?? "0"),
+        formatUsdt(order.refunded),
+        `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
+        order.status,
+        order.settleTx ? txUrl(order.settleTx, explorer) : "",
+        order.closeTx ? txUrl(order.closeTx, explorer) : "",
+        order.refundTxs.map((hash) => txUrl(hash, explorer)).join(" "),
+      ]
+        .map(csvField)
+        .join(","),
+    );
+  }
+  return `${rows.join("\n")}\n`;
 }

@@ -1,8 +1,9 @@
-import type { Order, ReceiptOrder, RelayStatus } from "./model.ts";
-import { formatUsdt, txUrl, wasReceived } from "./model.ts";
+import type { Order, ReceiptOrder, RefundRecord, RelayStatus } from "./model.ts";
+import { ordersCsv, txUrl } from "./model.ts";
 
 /*
- * Fixture orders for reviewing the screens with no services running (?fixture=1).
+ * The sample ledger, for reviewing the screens with no hub (?hub=off). Loaded only by dynamic
+ * import, so the default bundle never carries it.
  * Four are the real Whitechain Sepolia history of this merchant, so every proof link opens a
  * real transaction. The held order and the partly refunded one are made up, with hashes of
  * their own; no hash appears twice.
@@ -51,8 +52,10 @@ export const fixtureOrders: Order[] = [
     closeKind: "release",
     createdAt: NOW - 9 * MINUTE,
     receivedAt: NOW - 9 * MINUTE + 4_000,
+    closedAt: NOW - 9 * MINUTE + 4_000,
     settleTx: "0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c",
     closeTx: "0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812",
+    slipHash: "0x7f69ea83dd410372d0ec8eb178f7a45affd16f11f5865655381495afff5edf6c",
     refundTxs: [],
     offerHash: "0xc94049eb809dca1ee14d91cf69ee2f9d807aee085d0c14ba8422d65eaab21b7b",
     description: "whitechain-dev",
@@ -129,6 +132,7 @@ export const fixtureOrders: Order[] = [
     closeKind: "cancel",
     createdAt: NOW - 2 * HOUR - 8 * MINUTE,
     receivedAt: null,
+    closedAt: NOW - 2 * HOUR - 8 * MINUTE + 13_000,
     settleTx: "0x3e82355da37166f668d4bc1c428d8b03a262915ef2a856ebb10b1423b89e2447",
     closeTx: "0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9",
     refundTxs: [],
@@ -136,10 +140,11 @@ export const fixtureOrders: Order[] = [
   },
 ];
 
-/** The refund a fixture desk pretends to send: a hash of its own for each order, never reused. */
-export function fixtureRefundTx(orderId: string): string {
+/** The refund a fixture desk pretends to send: a hash of its own per order and per attempt, never reused. */
+export function fixtureRefundTx(orderId: string, attempt = 0): string {
   const body = orderId.slice(2);
-  return `0x${body.slice(32)}${body.slice(0, 32)}`;
+  const cut = (32 + 8 * attempt) % 64 || 4;
+  return `0x${body.slice(cut)}${body.slice(0, cut)}`;
 }
 
 export const fixtureStatus: RelayStatus = {
@@ -158,56 +163,49 @@ export const fixtureStatus: RelayStatus = {
   chainId: 1874,
 };
 
-export function findFixtureOrder(id: string): ReceiptOrder | null {
-  const wanted = id.toLowerCase();
-  const order = fixtureOrders.find((candidate) => candidate.id.toLowerCase() === wanted);
-  if (!order) return null;
+/*
+ * Each fixture refund as the relay's /orders/:id reports it. The real refund carries its real block
+ * and no time, as today's relay records it; the made-up one carries a time.
+ */
+const fixtureRefunds: Record<string, RefundRecord[]> = {
+  "0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc": [
+    {
+      amount: "250000",
+      txHash: "0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5",
+      blockNumber: "12361744",
+      status: "confirmed",
+    },
+  ],
+  "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b": [
+    {
+      amount: "250000",
+      txHash: "0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c",
+      blockNumber: "12362904",
+      status: "confirmed",
+      at: NOW - 46 * MINUTE,
+    },
+  ],
+};
+
+/** An order as /orders/:id reports it, plus any refunds this visit added on top of the fixtures. */
+export function fixtureDetail(order: Order, added: readonly RefundRecord[] = []): ReceiptOrder {
+  const refunds = [...(fixtureRefunds[order.id.toLowerCase()] ?? []), ...added];
   return {
     ...order,
-    refunds: order.refundTxs.map((txHash, index) => ({
-      amount: index === 0 ? order.refunded : undefined,
-      txHash,
-    })),
+    refunds,
     settleTxUrl: txUrl(order.settleTx),
     ...(order.closeTx ? { closeTxUrl: txUrl(order.closeTx) } : {}),
-    refundTxUrls: order.refundTxs.map((txHash) => txUrl(txHash)),
+    refundTxUrls: refunds.map((refund) => txUrl(refund.txHash)),
   };
 }
 
-function csvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+export function findFixtureOrder(id: string): ReceiptOrder | null {
+  const wanted = id.toLowerCase();
+  const order = fixtureOrders.find((candidate) => candidate.id.toLowerCase() === wanted);
+  return order ? fixtureDetail(order) : null;
 }
 
-const CSV_HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
-
-/** The same columns the relay's orders.csv exports, from the fixtures. */
+/** The export a sample desk downloads: the same builder and columns as a live one. */
 export function fixtureCsv(): string {
-  const rows = [CSV_HEADER];
-  for (const order of fixtureOrders) {
-    const amount = wasReceived(order) ? BigInt(order.amount) : 0n;
-    const fee = BigInt(order.fee ?? "0");
-    const refunded = BigInt(order.refunded);
-    const net = amount - fee - refunded;
-    rows.push(
-      [
-        new Date(order.createdAt).toISOString(),
-        order.id,
-        order.kind,
-        order.customer,
-        order.merchant,
-        formatUsdt(order.amount),
-        formatUsdt(fee.toString()),
-        formatUsdt(order.refunded),
-        `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
-        order.status,
-        txUrl(order.settleTx),
-        order.closeTx ? txUrl(order.closeTx) : "",
-        order.refundTxs.map((hash) => txUrl(hash)).join(" "),
-      ]
-        .map(csvField)
-        .join(","),
-    );
-  }
-  return `${rows.join("\n")}\n`;
+  return ordersCsv(fixtureOrders);
 }
