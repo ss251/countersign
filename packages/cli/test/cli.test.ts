@@ -173,7 +173,7 @@ describe("runnerArgs", () => {
 describe("run", () => {
   test("--version writes exactly the version", async () => {
     await run(["--version"], depsFor().deps);
-    expect(stdout.join("")).toBe("countersign 0.1.1\n");
+    expect(stdout.join("")).toBe("countersign 0.1.2\n");
   });
 
   test("help, --help and no arguments write the usage", async () => {
@@ -285,6 +285,6 @@ describe("run", () => {
       cwd: join(import.meta.dir, "../../.."),
     });
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.toString()).toBe("countersign 0.1.1\n");
+    expect(result.stdout.toString()).toBe("countersign 0.1.2\n");
   });
 });
