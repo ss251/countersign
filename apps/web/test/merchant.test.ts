@@ -20,9 +20,13 @@ import {
   type Order,
 } from "../src/routes/merchant/model.ts";
 import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder, isStandIn } from "../src/routes/merchant/fixtures.ts";
+import { reviewSamples } from "../src/routes/merchant/review-samples.ts";
 import { offersRefund } from "../src/routes/merchant/Panel.tsx";
 import { NOT_SERVED, fetchOrder, fetchOrders, refundOrder, unlockRefunds } from "../src/routes/merchant/api.ts";
 import {
+  countdown,
+  isPending,
+  windowWords,
   ORDERS_CSV_HEADER,
   assetOf,
   explorerOf,
@@ -324,6 +328,7 @@ describe("the clearing desk's arithmetic", () => {
       released: 1_350_000n,
       refunded: 500_000n,
       toll: 500n,
+      bondLost: 0n,
       net: 849_500n,
       held: 400_000n,
     });
@@ -689,5 +694,74 @@ describe("stand-in hashes (STEER-1730: never rendered as links)", () => {
   test("every simulated refund hash is a stand-in", () => {
     const hash = fixtureRefundTx(fixtureOrders[0]!.id, 3);
     expect(isStandIn(hash)).toBe(true);
+  });
+});
+
+describe("escrow v2 review states (built against the hub's served fields; nothing shows until #98 is live)", () => {
+  const samples = reviewSamples();
+  const [inReview, accepted, afterWindow, disputed, failed] = samples as [Order, Order, Order, Order, Order];
+
+  test("only the dev server carries the review samples; tests and production builds do not", () => {
+    expect(fixtureOrders.some((order) => order.status === "in_review")).toBe(false);
+    for (const order of samples) expect(isStandIn(order.settleTx)).toBe(true);
+  });
+
+  test("in review is held, pending and never in Net; the payee may still cancel it whole", () => {
+    expect(statusLabel("in_review")).toBe("In review");
+    expect(statusTone("in_review")).toBe("money");
+    expect(isPending(inReview)).toBe(true);
+    expect(contribution(inReview)).toBe(0n);
+    expect(equation([inReview]).held).toBe(200_000n);
+    expect(equation([inReview]).net).toBe(0n);
+    expect(canRefund(inReview)).toBe(true);
+    expect(refundLabel(inReview)).toBe("Cancel and refund 0.20");
+    expect(matchesFilter(inReview, "held")).toBe(true);
+    expect(adjustments(inReview)).toEqual([{ kind: "review", endsAt: inReview.reviewEndsAt ?? null }]);
+  });
+
+  test("a lost bond is its own term in Net and in the running balance", () => {
+    const sums = equation([failed]);
+    expect(sums.bondLost).toBe(100_000n);
+    expect(sums.net).toBe(-100_000n);
+    expect(contribution(failed)).toBe(-100_000n);
+    expect(adjustments(failed)).toEqual([
+      { kind: "returned", amount: 100_000n, close: "delivery_failed" },
+      { kind: "bond", amount: 100_000n },
+    ]);
+  });
+
+  test("the timeline tells each ending in the reader's voice", () => {
+    expect(timeline({ ...inReview }, "merchant").map((event) => event.key)).toEqual(["delivered", "fund"]);
+    const acceptedSteps = timeline({ ...accepted }, "merchant");
+    expect(acceptedSteps.map((event) => event.key)).toEqual(["release", "accepted", "delivered", "fund"]);
+    // Accepting releases in the same transaction: linked once, on the acceptance.
+    expect(acceptedSteps[0]!.txHash).toBeNull();
+    expect(timeline({ ...afterWindow }, "customer")[0]!.title).toBe("Released to the merchant after the review window");
+    expect(timeline({ ...disputed }, "merchant")[0]).toMatchObject({ tone: "refused", title: "Disputed by the customer. 0.30 USDT returned to them" });
+    expect(timeline({ ...failed }, "customer")[0]).toMatchObject({
+      tone: "refused",
+      detail: "The seller's bond of 0.10 USDT was paid to you.",
+    });
+  });
+
+  test("hub records carry the review fields, in ms, and 'delivered' reads as in review", () => {
+    const order = fromHubOrder({
+      ...inReview,
+      status: "delivered",
+      deliveredAt: 1_793_960_000,
+      reviewEndsAt: 1_793_960_300_000,
+      releasedAfterWindow: false,
+      bondSlashed: "0",
+    })!;
+    expect(order.status).toBe("in_review");
+    expect(order.deliveredAt).toBe(1_793_960_000_000);
+    expect(order.reviewEndsAt).toBe(1_793_960_300_000);
+  });
+
+  test("the review clock reads as people count", () => {
+    expect(countdown(272_000)).toBe("4:32");
+    expect(countdown(3_725_000)).toBe("1:02:05");
+    expect(countdown(-1)).toBe("0:00");
+    expect(windowWords(300)).toBe("5-minute");
   });
 });
