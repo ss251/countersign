@@ -39,15 +39,11 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
       <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload}>
         {approvals.needsToken && !approvalToken() ? (
           <>
-            <p className="phone__newcomer">
-              New here? Connect a wallet in the top bar.
-              {hasRoute("start") ? (
-                <>
-                  {" "}
-                  Or <Link to="/start">start here</Link>.
-                </>
-              ) : null}
-            </p>
+            {hasRoute("start") ? (
+              <p className="phone__newcomer">
+                New here? <Link to="/start">Start here</Link>.
+              </p>
+            ) : null}
             <details className="disclose" data-testid="buyer-own-hub">
               <summary>I run my own hub</summary>
               <p className="disclose__body">
