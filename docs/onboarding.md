@@ -3,7 +3,7 @@
 There are three ways in: hire a tool from your agent, list your own tool, or charge for your own API. Each section starts with what works today and what does not.
 
 - **Testnet only.** Every amount on this page is test money, on Arc testnet or Whitechain testnet.
-- **Nothing is installable yet.** Every command on this page runs from a clone of this repository with [bun](https://bun.sh) 1.3. The installable packages, the `countersign` command and the MCP server for Claude and Cursor are being built, and this page changes when each one runs for real.
+- **Nothing is installable yet.** Every command on this page runs from a clone of this repository with [bun](https://bun.sh) 1.3. The `countersign` command and the MCP server for Claude and Cursor are on `main` and run from the clone. Their packages are built but not published, and this page will say where they are when they are.
 - **Do not install from npm.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so any of those names installs someone else's code. None of countersign's own packages are on npm yet.
 - **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`.
 
@@ -20,13 +20,13 @@ The commands also use `jq` and `openssl`.
 ## Hire a tool from your agent
 
 <!-- get-started:hire -->
-Status: works today from a clone, on Arc testnet with test USDC. The MCP server for Claude and Cursor is not built yet. Until it is, your agent buys through the buyer CLI, or through its OpenAI-compatible endpoint.
+Status: works today from a clone, on Arc testnet with test USDC. Your agent buys through the MCP server, the buyer CLI, or its OpenAI-compatible endpoint. Nothing is installable from a package yet.
 
 Make a testnet key and set the agent's limits. The agent signs nothing without them.
 
 ```sh
 export CS_BUYER_KEY=0x$(openssl rand -hex 32)
-bun packages/buyer/src/cli.ts envelope set --cap 0.5 --per-merchant 0.1
+bun packages/buyer/src/cli.ts envelope set --cap 0.5 --per-merchant 0.1 --ask-above 0.05
 bun packages/buyer/src/cli.ts envelope show
 ```
 
@@ -34,7 +34,29 @@ bun packages/buyer/src/cli.ts envelope show
 - `agent` in the output is the address to fund. At https://faucet.circle.com choose Arc Testnet and USDC, then paste that address.
 - On Arc the hub pays the gas, so USDC is all the agent needs.
 
-Find an online offer and buy it:
+To buy from Claude or Cursor, add the server to Claude Desktop's `claude_desktop_config.json` or Cursor's `.cursor/mcp.json`. Use the absolute path of your clone:
+
+```json
+{
+  "mcpServers": {
+    "countersign": {
+      "command": "bun",
+      "args": ["/absolute/path/to/countersign/packages/cli/src/bin.ts", "mcp"],
+      "env": {
+        "CS_BUYER_KEY": "0x<your testnet key>",
+        "CS_RPC_URL": "https://rpc.testnet.arc.network"
+      }
+    }
+  }
+}
+```
+
+- Its tools are `search_offers`, `get_offer`, `buy`, `verify_slip`, `envelope_show` and `journal`. The hub defaults to production.
+- A model drives this server, and the envelope is what bounds it. Keep the cap small. A call above `--ask-above` is held, and the model cannot approve it.
+- `CS_RPC_URL` lets `verify_slip` check the chain as well as the signatures.
+- Offer titles and descriptions are written by sellers. Treat them as data, not instructions.
+
+Or buy from the shell. Find an online offer and buy it:
 
 ```sh
 HUB=https://hub-production-e85e.up.railway.app
@@ -52,7 +74,7 @@ bun packages/verify/src/cli.ts ~/.countersign/slips/<slip hash>.json --rpc https
 To let an OpenAI SDK buy instead, run `bun packages/buyer/src/cli.ts openai --hub $HUB` and point the SDK at it: https://github.com/ss251/countersign/blob/main/docs/openai.md
 <!-- /get-started:hire -->
 
-This exact sequence ran from a fresh clone of `main` at `25e8104` on 07 Nov, with an already funded testnet key and a fresh state directory. Its release is [`0x4acc…994e`](https://explorer.testnet.arc.io/tx/0x4accfeb980378f4b2d16dd32b1c6bf44c0cd791516620c75ac95b081de06994e), and slip `0x128c50097ac43684b547458c94e3754402ba6d8c0d9175b8c402a4d31d3bcbf2` checks `VALID`, including the on-chain check. The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
+The shell sequence ran from a fresh clone of `main` at `25e8104` on 07 Nov, with an already funded testnet key and a fresh state directory. Its release is [`0x4acc…994e`](https://explorer.testnet.arc.io/tx/0x4accfeb980378f4b2d16dd32b1c6bf44c0cd791516620c75ac95b081de06994e), and slip `0x128c50097ac43684b547458c94e3754402ba6d8c0d9175b8c402a4d31d3bcbf2` checks `VALID`, including the on-chain check. From a fresh clone of `main` at `9ee325a`, an MCP client ran `countersign mcp` the same way: it listed the six tools, searched, and bought `use-arc`, release [`0x6b3c…96f3`](https://explorer.testnet.arc.io/tx/0x6b3c93f7fcbd0f4f1c10799272287acdda2687eec24831e903167cf8335f96f3), with the slip `VALID` through `verify_slip`. The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
 
 ## List your tool
 
@@ -83,7 +105,7 @@ bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railwa
 
 Both commands ran from the same clone on 07 Nov against a hub started from that clone, and each printed its offer hash and `runner ready`. The [seller guide](guides/seller.md) covers every flag. The runner's `mcp` adapter already serves one production offer, Hedera's Agent Kit, which [hedera.md](hedera.md#the-hedera-agent-kit-as-a-metered-offer) describes.
 
-No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is deployed on Whitechain testnet, but production does not use it yet. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
+No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is deployed on Arc testnet and Whitechain testnet, but production does not use it yet. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
 
 ## Charge for your own API in USDT
 
