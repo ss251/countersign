@@ -107,6 +107,7 @@ async function makeV2Body(
       resource: { url: "http://merchant.example/x" },
     },
     paymentRequirements: req,
+    lockSig: SIG,
   };
   return { body, buyer, jobId };
 }
@@ -226,7 +227,11 @@ describe("v2 routes", () => {
       const relay = createTestRelay();
       withV2(relay);
       const { jobId } = await fundedV2(relay);
-      const res = await post(appFor(relay), path, { jobId, buyerSig: SIG });
+      const res = await post(appFor(relay), path, {
+        jobId,
+        buyerSig: SIG,
+        ...(path === "/escrow/dispute" ? { status: 1 } : {}),
+      });
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ ok: true, status: expected });
       expect(relay.ledger.getJob(jobId)!.status).toBe(expected);
@@ -238,7 +243,11 @@ describe("v2 routes", () => {
     withV2(relay);
     const app = appFor(relay);
     for (const path of ["/escrow/accept", "/escrow/dispute", "/escrow/release-after-window"]) {
-      const res = await post(app, path, { jobId: `0x${"12".repeat(32)}`, buyerSig: SIG });
+      const res = await post(app, path, {
+        jobId: `0x${"12".repeat(32)}`,
+        buyerSig: SIG,
+        ...(path === "/escrow/dispute" ? { status: 1 } : {}),
+      });
       expect(res.status).toBe(404);
       expect(await res.json()).toEqual({ ok: false, reason: "job_not_found" });
     }
@@ -250,7 +259,11 @@ describe("v2 routes", () => {
     const { jobId } = await fundedV1(relay);
     const app = appFor(relay);
     for (const path of ["/escrow/accept", "/escrow/dispute", "/escrow/release-after-window"]) {
-      const res = await post(app, path, { jobId, buyerSig: SIG });
+      const res = await post(app, path, {
+        jobId,
+        buyerSig: SIG,
+        ...(path === "/escrow/dispute" ? { status: 1 } : {}),
+      });
       expect(res.status).toBe(409);
       expect(await res.json()).toEqual({ ok: false, reason: "not_supported_on_v1" });
     }
@@ -354,12 +367,11 @@ describe("ledger transitions", () => {
     ]);
   });
 
-  test("from delivered, accept and releaseAfterWindow release, dispute disputes, cancel cancels", async () => {
+  test("from delivered, accept and releaseAfterWindow release, dispute disputes", async () => {
     for (const [name, run, expected] of [
       ["accept", (jobId: string, relay: TestRelay) => acceptJob({ jobId, buyerSig: SIG }, csContext(relay)), "released"],
       ["window", (jobId: string, relay: TestRelay) => releaseAfterWindowJob({ jobId }, csContext(relay)), "released"],
-      ["dispute", (jobId: string, relay: TestRelay) => disputeJob({ jobId, buyerSig: SIG }, csContext(relay)), "disputed"],
-      ["cancel", (jobId: string, relay: TestRelay) => cancelJob({ jobId, sellerSig: SIG }, csContext(relay)), "cancelled"],
+      ["dispute", (jobId: string, relay: TestRelay) => disputeJob({ jobId, status: 5, buyerSig: SIG }, csContext(relay)), "disputed"],
     ] as const) {
       const relay = createTestRelay();
       const reads = withV2(relay);
@@ -373,8 +385,23 @@ describe("ledger transitions", () => {
       expect(job.status).toBe(expected);
       if (name === "accept") expect(job.closeVia).toBe("accept");
       if (name === "window") expect(job.closeVia).toBe("window");
-      if (name === "cancel") expect(job.closeVia).toBeNull();
     }
+  });
+
+  test("from delivered, cancel is refused as job_not_open with no call", async () => {
+    const relay = createTestRelay();
+    const reads = withV2(relay);
+    const made = await fundedV2(relay, { reviewWindow: 300 });
+    reads.reviews.set(made.jobId.toLowerCase(), [300n, BigInt(NOW), BigInt(NOW + 300)]);
+    await releaseJob({ jobId: made.jobId, slipHash: SLIP, sellerSig: SIG }, csContext(relay));
+    expect(relay.ledger.getJob(made.jobId)!.status).toBe("delivered");
+    const writes = relay.chain.writes.length;
+
+    const result = await cancelJob({ jobId: made.jobId, sellerSig: SIG }, csContext(relay));
+
+    expect(result).toEqual({ ok: false, reason: "job_not_open" });
+    expect(relay.chain.writes).toHaveLength(writes);
+    expect(relay.ledger.getJob(made.jobId)!.status).toBe("delivered");
   });
 
   test("failDelivery gives failed", async () => {

@@ -197,7 +197,7 @@ describe("the slip hash survives a close from delivered", () => {
       (jobId: string, relay: TestRelay) => releaseAfterWindowJob({ jobId }, csContext(relay)),
       "released",
     ],
-    ["dispute", (jobId: string, relay: TestRelay) => disputeJob({ jobId, buyerSig: SIG }, csContext(relay)), "disputed"],
+    ["dispute", (jobId: string, relay: TestRelay) => disputeJob({ jobId, status: 5, buyerSig: SIG }, csContext(relay)), "disputed"],
   ] as const) {
     test(name, async () => {
       const relay = createTestRelay();

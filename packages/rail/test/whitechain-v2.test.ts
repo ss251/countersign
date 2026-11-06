@@ -69,12 +69,12 @@ describe("whitechain rail v2", () => {
     const rail = whitechainRail({ relayUrl: "http://relay", version: 2, escrow: V2, fetch: s.fn, relayToken: TOKEN });
     const ops = rail.escrow!;
     expect((await ops.accept!(JOB, SIG)).success).toBe(true);
-    expect((await ops.dispute!(JOB, SIG)).success).toBe(true);
+    expect((await ops.dispute!(JOB, 5, SIG)).success).toBe(true);
     expect((await ops.releaseAfterWindow!(JOB)).success).toBe(true);
     expect((await ops.failDelivery!(JOB)).success).toBe(true);
     expect(s.seen).toEqual([
       { url: "http://relay/escrow/accept", body: { jobId: JOB, buyerSig: SIG }, headers: { "content-type": "application/json" } },
-      { url: "http://relay/escrow/dispute", body: { jobId: JOB, buyerSig: SIG }, headers: { "content-type": "application/json" } },
+      { url: "http://relay/escrow/dispute", body: { jobId: JOB, status: 5, buyerSig: SIG }, headers: { "content-type": "application/json" } },
       { url: "http://relay/escrow/release-after-window", body: { jobId: JOB }, headers: { "content-type": "application/json" } },
       {
         url: "http://relay/escrow/fail",
