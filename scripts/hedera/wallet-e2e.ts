@@ -63,6 +63,18 @@ function say(...line: unknown[]): void {
   else console.log(...line);
 }
 
+async function within<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -149,7 +161,11 @@ try {
 
   const connection = await dapp.connect();
   await wallet.pair(connection.uri);
-  const session = await connection.approval;
+  const session = await within(
+    connection.approval,
+    60_000,
+    "the wallet did not approve the session within 60 s",
+  );
   evidence.sessionTopic = session.topic;
   evidence.account = session.account;
   if (session.account !== walletEnv.accountId) {
@@ -227,6 +243,10 @@ say(`verify   ${evidence.verifier.valid}`);
 for (const finding of evidence.verifier.findings.filter((entry) => !entry.ok)) {
   say(`finding  ${finding.check}: ${finding.detail}`);
 }
-if (!json) say(`ok       ${ok}`);
-if (json) console.log(JSON.stringify({ beat: "hedera-wallet", ok, evidence }));
-process.exitCode = ok ? 0 : 1;
+if (json) {
+  const line = JSON.stringify({ beat: "hedera-wallet", ok, evidence });
+  await Bun.write(Bun.stdout, line + "\n");
+} else {
+  say(`ok       ${ok}`);
+}
+process.exit(ok ? 0 : 1);
