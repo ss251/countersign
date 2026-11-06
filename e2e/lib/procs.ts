@@ -89,7 +89,11 @@ export function spawnProc(spec: ProcSpec): Proc {
 
   const pumps = Promise.all([pump(child.stdout, "out"), pump(child.stderr, "err")]).catch(() => undefined);
   let done = false;
+  let exitCode: number | null = null;
+  let exitSignal: string | null = null;
   const exited = child.exited.then(async (code) => {
+    exitCode = code;
+    exitSignal = child.signalCode;
     await pumps;
     done = true;
     wake();
@@ -117,7 +121,11 @@ export function spawnProc(spec: ProcSpec): Proc {
           if (m) return finish(() => resolve(m));
           if (done) {
             return finish(() =>
-              reject(new Error(`${spec.name} exited before printing ${pattern}; last output: ${tail(text.out + text.err)}`)),
+              reject(
+                new Error(
+                  `${spec.name} exited before printing ${pattern} (exit code ${exitCode}, signal ${exitSignal ?? "none"}); last output: ${tail(text.out + text.err)}`,
+                ),
+              ),
             );
           }
         };

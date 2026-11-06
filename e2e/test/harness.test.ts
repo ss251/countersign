@@ -3,15 +3,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { PaymentRequired, PaymentRequirements } from "@countersign/core";
 import { agentTakes, hederaExact, hederaHeld } from "../lib/agent.ts";
 import { formatAmount, planBudget, units, type Wallet } from "../lib/budget.ts";
 import { check, equal, NotRun, runFlow, type Flow, type RunEnv } from "../lib/flow.ts";
 import { readWithRetry } from "../lib/http.ts";
-import { REAL_ROOT, redactPaths } from "../lib/paths.ts";
+import { mppxBin, REAL_ROOT, redactPaths } from "../lib/paths.ts";
 import { spawnProc, runCmd } from "../lib/procs.ts";
 import { renderRun } from "../lib/report.ts";
 import { parseEnv, Secrets } from "../lib/secrets.ts";
@@ -108,6 +108,44 @@ describe("processes", () => {
     const dir = mkdtempSync(join(tmpdir(), "e2e-proc-"));
     const p = spawnProc({ name: "quitter", cmd: ["bun", "-e", "console.log('bye')"], log: join(dir, "q.log"), redact: (t) => t });
     await expect(p.waitFor(/never/, 10_000)).rejects.toThrow("quitter exited before printing");
+  });
+
+  test("waitFor names the exit code when the child exits before printing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2e-proc-"));
+    const p = spawnProc({ name: "failing", cmd: ["sh", "-c", "exit 3"], log: join(dir, "f.log"), redact: (t) => t });
+    await expect(p.waitFor(/never/, 10_000)).rejects.toThrow("(exit code 3, signal none)");
+  });
+
+  test("waitFor names the signal when the child kills itself before printing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2e-proc-"));
+    const p = spawnProc({ name: "killed", cmd: ["sh", "-c", "kill -9 $$"], log: join(dir, "k.log"), redact: (t) => t });
+    await expect(p.waitFor(/never/, 10_000)).rejects.toThrow("signal SIGKILL");
+  });
+});
+
+describe("mppx binary", () => {
+  function fake(root: string, ...files: string[]): void {
+    for (const file of files) {
+      mkdirSync(dirname(join(root, file)), { recursive: true });
+      writeFileSync(join(root, file), "");
+    }
+  }
+
+  test("finds the hoisted binary at the root", () => {
+    const root = mkdtempSync(join(tmpdir(), "e2e-mppx-"));
+    fake(root, "node_modules/.bin/mppx");
+    expect(mppxBin(root)).toBe(join(root, "node_modules/.bin/mppx"));
+  });
+
+  test("prefers the rail's pinned binary when both installs exist", () => {
+    const root = mkdtempSync(join(tmpdir(), "e2e-mppx-"));
+    fake(root, "packages/rail/node_modules/.bin/mppx", "node_modules/.bin/mppx");
+    expect(mppxBin(root)).toBe(join(root, "packages/rail/node_modules/.bin/mppx"));
+  });
+
+  test("names the root and the remedy when neither exists", () => {
+    const root = mkdtempSync(join(tmpdir(), "e2e-mppx-"));
+    expect(() => mppxBin(root)).toThrow(`the pinned mppx binary is not installed under ${root}: run bun install`);
   });
 });
 
