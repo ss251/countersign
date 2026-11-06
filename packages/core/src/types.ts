@@ -138,6 +138,13 @@ export interface CountersignTerms {
   deadline: number;
   /** Buyer-chosen uniqueness, decimal string of a uint256. */
   salt: string;
+  /**
+   * Escrow v2 only (docs/spec/escrow.md "Escrow v2", D16): the offer's bond, atomic decimal string, and its
+   * review window in seconds, both countersigned inside jobId. A v2 payload carries both, even when zero;
+   * a v1 payload carries neither, so its jobId is derived exactly as before.
+   */
+  bond?: string;
+  reviewWindow?: number;
 }
 
 /**
