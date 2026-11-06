@@ -108,6 +108,27 @@ Every payment below was settled in USDT `0xcedf…55a7` through the relay (`pack
 | 2026-11-06 09:49 | Buyer pays 0.30 USDT into the countersign escrow with x402 `countersign`. One `ReceiveWithAuthorization` signature binds offer, payee, amount and deadline. Job `0xd3247aa4…8e7e` | [`0x3e82355d…2447`](https://explorer.testnet.whitechain.io/tx/0x3e82355da37166f668d4bc1c428d8b03a262915ef2a856ebb10b1423b89e2447) |
 | 2026-11-06 09:50 | Merchant refunds the held order in one click. The merchant signs `Cancel(jobId)`, the relay submits `cancel`, and the escrow returns the full 0.30 USDT with no toll | [`0x1e99d1ac…c5d9`](https://explorer.testnet.whitechain.io/tx/0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9) |
 
+| 2026-11-06 10:09 | An AI agent buys a forecast from a separate shop app over x402, with no gas, no seed phrase and no chain choice. The shop adds a USDT price to one route with `whitechainPaywall` (`packages/relay/examples/shop.ts`, 23 lines). The agent pays with `createPayFetch` under a per-call limit (`packages/relay/examples/agent.ts`, 17 lines). 0.05 USDT | [`0x1c366946…5f07`](https://explorer.testnet.whitechain.io/tx/0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07) |
+
+### The drop-in, in about 20 lines each side
+
+A business that wants USDT on Whitechain for an API adds one middleware to a route:
+
+```ts
+app.get("/forecast",
+  whitechainPaywall({ price: "0.05", payTo: MERCHANT, facilitator: "http://127.0.0.1:8402" }),
+  (c) => c.json(forecast()));
+```
+
+The agent that pays wraps `fetch` once, with its own spend limits. Every call over the limit is refused before anything is signed:
+
+```ts
+const pay = createPayFetch({ account, maxPerCall: "0.10", budget: "5.00" });
+const res = await pay("https://shop.example/forecast");   // 402 -> signs one EIP-3009 authorisation -> 200
+```
+
+Verification and settlement go through the relay, the facilitator countersign runs. The relay pays the gas, so neither side ever holds WBT.
+
 To reproduce, run the relay, the merchant's server and the buyer, each with only its own key in its environment:
 
 ```
