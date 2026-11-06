@@ -4,6 +4,8 @@ import { cors } from "hono/cors";
 import {
   assertOffer,
   assertSchema,
+  checkEnsLock,
+  type EnsResolve,
   offerHash,
   publishMessage,
   RUNNER_PATH,
@@ -21,6 +23,7 @@ import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
 import { Ratings } from "./ratings.ts";
+import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
@@ -33,6 +36,8 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Sepolia ENS lookups. Without it, an offer that names an ENS seller is refused. */
+  ens?: EnsResolve;
   /** Bearer token the human's phone presents to decide an approval. */
   humanApprovalToken?: string;
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
@@ -56,6 +61,7 @@ export function createHub(deps: HubDeps) {
       isOnline: (offerHash) => runners.isOnline(offerHash),
     };
     if (deps.identity) view.identity = deps.identity;
+    if (deps.ens) view.ens = deps.ens;
     return view;
   };
 
@@ -63,6 +69,7 @@ export function createHub(deps: HubDeps) {
 
   registerBuyerPlumbing(app, deps);
   registerOrders(app, deps);
+  registerReview(app, deps);
 
   app.get("/healthz", (c) =>
     json({
@@ -107,6 +114,10 @@ export function createHub(deps: HubDeps) {
     if (signer.toLowerCase() !== request.offer.seller.toLowerCase()) {
       return fail(401, "bad-signature", "Refused. The offer signature is not the seller's.");
     }
+
+    // A named seller is listed only while its name resolves to it and locks its EVM payees.
+    const lock = await checkEnsLock(request.offer, deps.ens);
+    if (lock && !lock.ok) return fail(lock.code === "ens-unavailable" ? 503 : 422, lock.code, lock.message);
 
     const fresh = deps.store.putOffer(hash, request.offer.seller, request.offer, deps.now());
     return json({ offerHash: hash }, fresh ? 201 : 200);

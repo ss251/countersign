@@ -1,15 +1,20 @@
 #!/usr/bin/env bun
+import { randomBytes } from "node:crypto";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
-import { formatUnits, parseUnits, RAIL_IDS, type Envelope, type RailId } from "@countersign/core";
+import { formatUnits, parseUnits, RAIL_IDS, sepoliaEnsResolver, type Envelope, type RailId } from "@countersign/core";
 import { BuyError, buy } from "./buy.ts";
 import { CIRCLE_CATALOGUE, hubCallOf, payableVia, readCatalogue } from "./catalogue.ts";
 import { HubClient } from "./hub-client.ts";
 import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
+import { startOpenAIServer } from "./openai/server.ts";
 import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
 import { resume } from "./resume.ts";
+import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
 
 interface Parsed {
@@ -17,7 +22,7 @@ interface Parsed {
   flags: Map<string, string[]>;
 }
 
-const BOOLEAN = new Set(["approve", "revoke", "unrevoke"]);
+const BOOLEAN = new Set(["approve", "revoke", "unrevoke", "direct"]);
 
 function parse(argv: string[]): Parsed {
   const pos: string[] = [];
@@ -107,6 +112,7 @@ async function main(): Promise<void> {
       now: Math.floor(Date.now() / 1000),
       approve: flags.has("approve"),
       known,
+      ens: sepoliaEnsResolver(process.env.CS_ENS_RPC_URL ? { rpcUrl: process.env.CS_ENS_RPC_URL } : {}),
       account,
       mirror: flags.has("hub"),
       ...(rail !== undefined ? { rail } : {}),
@@ -138,6 +144,24 @@ async function main(): Promise<void> {
     if (flags.has("unrevoke")) env.revoked = false;
     state.saveEnvelope(env);
     console.log(`Envelope saved. Budget ${usd(env.cap)} USDC, ${usd(env.perMerchant)} per seller${env.revoked ? ", revoked" : ""}.`);
+  } else if ((cmd === "accept" || cmd === "dispute") && pos[1] !== undefined) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(pos[1])) throw new Error(`Usage: ${cmd} <jobId>`);
+    const account = agentAccount();
+    const args = { hub, journal, state, known, signer: account, jobId: pos[1] as Hex, now: Math.floor(Date.now() / 1000) };
+    if (cmd === "accept") {
+      const done = await acceptJob(args);
+      console.log(`Accepted ${done.jobId}. The hub relays it; the seller is paid when it lands.`);
+    } else {
+      const done = await disputeJob({
+        ...args,
+        ...(flags.has("direct") ? { direct: true, account } : {}),
+      });
+      console.log(
+        done.transaction
+          ? `Disputed ${done.jobId}. The hub did not relay it; sent ${done.transaction}.`
+          : `Disputed ${done.jobId}. The hub relays it; run resume to see the refund land.`,
+      );
+    }
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
   } else if (cmd === "publish-envelope") {
@@ -150,6 +174,26 @@ async function main(): Promise<void> {
       now: Math.floor(Date.now() / 1000),
     });
     console.log(ok ? "Envelope published." : "Envelope publish failed.");
+  } else if (cmd === "openai") {
+    const account = agentAccount();
+    const token = randomBytes(32).toString("hex");
+    mkdirSync(state.dir, { recursive: true });
+    const tokenPath = join(state.dir, "openai.token");
+    writeFileSync(tokenPath, token, { mode: 0o600 });
+    chmodSync(tokenPath, 0o600);
+    const server = startOpenAIServer({
+      hub,
+      account,
+      journal,
+      state,
+      port: parsePort(one("port")),
+      token,
+      now: () => Math.floor(Date.now() / 1000),
+      payers: [countersignPayer(account), gatewayPayer(account)],
+      known,
+    });
+    console.log(`${server.url}/v1`);
+    console.log(tokenPath);
   } else if (cmd === "resume") {
     const mirror = flags.has("hub")
       ? { account: agentAccount(), envelope: state.loadEnvelope() }
@@ -164,7 +208,7 @@ async function main(): Promise<void> {
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
-    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | envelope show|set | publish-envelope | journal | resume");
+    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> [--direct] | envelope show|set | publish-envelope | journal | resume | openai [--port <n>]");
     console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
   }
 }
@@ -173,6 +217,13 @@ function parseApprovals(raw: string | undefined): "local" | "hub" | undefined {
   if (raw === undefined) return undefined;
   if (raw === "local" || raw === "hub") return raw;
   throw new Error(`Unknown approvals mode ${raw}.`);
+}
+
+function parsePort(raw: string | undefined): number {
+  if (raw === undefined) return 8788;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Bad port ${raw}.`);
+  return port;
 }
 
 function parseRail(raw: string | undefined): RailId | undefined {

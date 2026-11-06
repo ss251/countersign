@@ -7,6 +7,8 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   slipCommitHash,
   toBase64Json,
+  isV2Terms,
+  type CountersignTerms,
   type Offer,
   type PaymentPayload,
   type PaymentRequired,
@@ -244,6 +246,7 @@ export async function paidCall(
     closeTx: null,
     slipHash: null,
     createdAt: now,
+    reviewWindow: termsReviewWindow(payment),
   });
   if (!claimed) return duplicatePayment(railId);
 
@@ -276,18 +279,19 @@ export async function paidCall(
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    const gate = await failOnGate(match.rail, jobId, deps.store);
+    const gate = await failOnGate(match.rail, jobId, deps.store, now);
     return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
   }
 
   let closeTx = settle.transaction;
   let closing: SettleResult = settle;
+  let review: ReviewRecord | null = null;
   const escrow = match.rail.escrow;
   const slipHash = delivered.slip.hash;
   if (escrow) {
     const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
     if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
-      const gate = await failOnGate(match.rail, jobId, deps.store);
+      const gate = await failOnGate(match.rail, jobId, deps.store, now);
       return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
     }
     const release = await escrow.release(
@@ -301,9 +305,21 @@ export async function paidCall(
     }
     closeTx = release.transaction;
     closing = release;
+    const window = termsReviewWindow(payment);
+    if (window !== null && window > 0 && escrow.reviewOf) {
+      // The release has landed, so the job is Delivered on chain whatever this read says. A failed read
+      // must not strand it as funded (cs-w1, review of ba868fa): fall back to the countersigned window
+      // from the hub's clock. The janitor's releaseAfterWindow retries if this runs ahead of the chain.
+      try {
+        const state = await escrow.reviewOf(jobId);
+        review = state.window > 0 ? state : { window, deliveredAt: now, endsAt: now + window };
+      } catch {
+        review = { window, deliveredAt: now, endsAt: now + window };
+      }
+    }
   }
 
-  const settlement: Slip["settlement"] = {
+  const settlement: Slip["settlement"] & { review?: ReviewRecord } = {
     transaction: closeTx,
     network: match.rail.declaration.network,
     route: {
@@ -315,6 +331,7 @@ export async function paidCall(
   if (match.rail.declaration.explorerTx !== "") {
     settlement.url = explorerUrl(match.rail.declaration, closeTx);
   }
+  if (review !== null) settlement.review = review;
   const slip: Slip = {
     body: delivered.slip.body,
     hash: slipHash,
@@ -323,11 +340,23 @@ export async function paidCall(
     settlement,
   };
   deps.store.putSlip(slip.hash, jobId, slip, now);
-  deps.store.updateJob(jobId, {
-    status: escrowRail ? "released" : "settled",
-    closeTx,
-    slipHash: slip.hash,
-  });
+  deps.store.updateJob(
+    jobId,
+    review === null
+      ? {
+          status: escrowRail ? "released" : "settled",
+          closeTx,
+          slipHash: slip.hash,
+        }
+      : {
+          status: "delivered",
+          closeTx,
+          slipHash: slip.hash,
+          reviewWindow: review.window,
+          deliveredAt: review.deliveredAt,
+          endsAt: review.endsAt,
+        },
+  );
 
   return {
     status: 200,
@@ -335,6 +364,23 @@ export async function paidCall(
     headers: { [PAYMENT_RESPONSE_HEADER]: toBase64Json(closing) },
     railId,
   };
+}
+
+/** The review a v2 escrow opens at delivery, stored on the slip outside the committed hash (D12). */
+interface ReviewRecord {
+  window: number;
+  deliveredAt: number;
+  endsAt: number;
+}
+
+/** The countersigned review window: null for v1 terms, 0 for a v2 offer without one. */
+function termsReviewWindow(payment: PaymentPayload): number | null {
+  const payload = payment.payload as { terms?: unknown };
+  const terms = payload.terms;
+  if (typeof terms !== "object" || terms === null) return null;
+  const signed = terms as CountersignTerms;
+  if (!isV2Terms(signed)) return null;
+  return signed.reviewWindow ?? 0;
 }
 
 /**

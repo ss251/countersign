@@ -2,7 +2,20 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { dirname } from "node:path";
 import { parseAtomic, type EnvelopeDecision, type EnvelopeSpend, type Network, type RailId } from "@countersign/core";
 
-export type JournalKind = "countersigned" | "signed" | "released" | "settled" | "refused" | "failed" | "refunded";
+/**
+ * `accepted` and `disputed` record a decision the agent signed and handed to the hub (escrow v2).
+ * Neither closes the job: `resume` closes it once the hub and the chain report the outcome.
+ */
+export type JournalKind =
+  | "countersigned"
+  | "signed"
+  | "released"
+  | "settled"
+  | "refused"
+  | "failed"
+  | "refunded"
+  | "accepted"
+  | "disputed";
 
 export interface JournalEntry {
   at: number;
@@ -15,6 +28,12 @@ export interface JournalEntry {
   /** Client-generated id for a reservation made before the jobId exists. */
   reservationId?: string;
   jobId?: string;
+  /** The escrow and chain the job was signed for, on escrow rails. */
+  escrow?: string;
+  chainId?: number;
+  /** Escrow v2 terms the buyer countersigned, kept so the jobId can be re-derived. */
+  bond?: string;
+  reviewWindow?: number;
   slipHash?: string;
   closeTx?: string;
   reason?: string;

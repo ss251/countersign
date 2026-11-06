@@ -12,7 +12,8 @@ import type { Address, Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
 /** Read in this order; the first file that defines a name wins. */
-export const ENV_FILES = ["e2e.env", "cs.env", "wc.env", "hd.env"] as const;
+/** approval.env holds the production approver token, placed for this suite by cs-ui. */
+export const ENV_FILES = ["e2e.env", "cs.env", "wc.env", "hd.env", "approval.env"] as const;
 
 /** Names whose values are public: addresses, EVM aliases and Hedera ids. */
 const PUBLIC_NAME = /(_ADDRESS|_EVM|_ID)$/;
