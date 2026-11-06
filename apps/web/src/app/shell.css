@@ -156,6 +156,46 @@
   }
 }
 
+/* The wallet: connect, who and which chain. */
+
+.wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-13);
+}
+
+.wallet__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  background: none;
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+.wallet__quiet {
+  background: none;
+  border: 0;
+  color: var(--slate);
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+}
+
+.wallet__who {
+  color: var(--ink);
+}
+
+.wallet__error {
+  color: var(--seal);
+  font-size: var(--t-12);
+}
+
 /* Plain messages: not found, a view that stopped. */
 
 .notice {

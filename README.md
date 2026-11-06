@@ -155,7 +155,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`, `CS_NETWORK` (`testnet` by default; `mainnet` refuses to boot while its profile is pending). The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
@@ -188,7 +188,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 
 ## Safety limits
 
-- **Testnet only.** Every deployment and payment above is on a testnet. There is no mainnet configuration.
+- **Testnet only.** Every deployment and payment above is on a testnet. The mainnet profile is pending, and a hub started with `CS_NETWORK=mainnet` refuses to boot ([docs/mainnet.md](docs/mainnet.md)).
 - **Keys stay on the device.** The buyer and seller read their keys from the environment, and the hub holds no buyer key. On escrow rails the hub can submit the buyer's countersignature, but the signature fixes the escrow, payee and amount.
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
