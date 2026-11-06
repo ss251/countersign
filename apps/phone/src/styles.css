@@ -245,8 +245,7 @@ a {
   padding: 16px 0;
 }
 
-.group > .row:last-of-type,
-.group > .older {
+.group > .row:last-of-type {
   border-bottom: 1px solid var(--line);
 }
 
@@ -536,7 +535,7 @@ a.money {
   align-items: baseline;
   gap: 12px;
   padding: 11px 0;
-  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   font-size: 0.875rem;
 }
 

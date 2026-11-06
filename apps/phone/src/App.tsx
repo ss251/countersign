@@ -75,7 +75,7 @@ export function App({ phone }: { phone: Phone }): ReactNode {
             <ol className="older">
               {older.map((job) => (
                 <li key={job.jobId}>
-                  <span className="when">{clock(job.at)}</span>
+                  <span className="when">{clockShort(job.at)}</span>
                   <span className="what">{SKILLS[job.skill].title}</span>
                   <Money atomic={job.amount} />
                   <Verdict job={job} small />
@@ -98,7 +98,7 @@ export function App({ phone }: { phone: Phone }): ReactNode {
         </footer>
       </main>
 
-      {ask ? <PhotoSheet ask={ask} more={state.asks.length - 1} phone={phone} /> : null}
+      {ask ? <PhotoSheet key={ask.jobId} ask={ask} more={state.asks.length - 1} phone={phone} /> : null}
     </div>
   );
 }
@@ -357,11 +357,12 @@ function PhotoSheet({ ask, more, phone }: { ask: PhotoAsk; more: number; phone: 
   const left = Math.max(0, ask.waitUntil - Math.floor(now / 1000));
   const preparing = ask.stage === "preparing";
 
+  // One sheet per request (keyed by job). Unmounting removes it from the top layer, so there is no
+  // close() here: a close event can then only come from the browser, like Android's back gesture.
   useEffect(() => {
     const element = dialog.current;
     if (element && !element.open) element.showModal();
-    return () => element?.close();
-  }, [ask.jobId]);
+  }, []);
 
   return (
     <dialog
@@ -369,6 +370,7 @@ function PhotoSheet({ ask, more, phone }: { ask: PhotoAsk; more: number; phone: 
       className="sheet"
       aria-labelledby="ask-title"
       onCancel={(event) => event.preventDefault()}
+      onClose={() => phone.decline(ask.jobId)}
     >
       <div className="sheet-body">
         <div className="head">
@@ -459,6 +461,10 @@ function short(hash: string): string {
 
 function clock(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function clockShort(unix: number): string {
+  return new Date(unix * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function day(unix: number): string {
