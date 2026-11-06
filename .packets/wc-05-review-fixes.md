@@ -154,7 +154,6 @@ Add a test.
 - Never log tokens, signatures or keys.
 - No floats for money.
 - Small present-tense commits, no emoji, no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

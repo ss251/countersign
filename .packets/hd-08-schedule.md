@@ -27,7 +27,7 @@ A second Hedera checkout built on scheduled transactions. Tracked by issue #41.
   - a small HBAR seed, about 0.3 HBAR, enough for its ScheduleSign fees and its USDC association.
 - `scripts/hedera/schedule.ts`: the live flow (below).
 - `docs/hedera.md`: one new section, "Scheduled checkout".
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-08-schedule.md`.
+- Report: `$M/reports/hd-08-schedule.md`.
 
 ## Context
 

@@ -1057,3 +1057,65 @@
   color: var(--slate);
   font-size: var(--t-13);
 }
+
+/* The right note: what happens on the phone, mirrored across it from the left note (DESIGN-LOG 12). */
+@media (min-width: 1000px) {
+  .phone-note--end {
+    right: auto;
+    left: calc(50% + var(--phone) / 2 + var(--sp-10));
+  }
+}
+
+.phone-steps {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.phone-steps li {
+  position: relative;
+  padding-left: var(--sp-8);
+  color: var(--slate);
+  font-size: var(--t-15);
+  counter-increment: step;
+}
+
+.phone-steps li::before {
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Locked: the approvals are private until the hub's token opens them. Never a dead end. */
+.locked {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-6) 0;
+}
+
+.locked__title {
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.locked__body,
+.locked__alt {
+  color: var(--slate);
+  font-size: var(--t-15);
+}
+
+.locked__alt {
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+}

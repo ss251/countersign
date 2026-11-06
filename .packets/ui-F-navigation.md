@@ -10,7 +10,7 @@ Two packets run beside you and must merge cleanly with yours:
 
 So keep your styles in a new `apps/web/src/app/nav.css`, and edit only the parts named below.
 
-## The captain's words
+## The project lead's words
 
 "The same top-level nav on every screen, a visible current-section marker, and a footer that says what this is in one sentence."
 

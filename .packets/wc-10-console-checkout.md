@@ -157,7 +157,6 @@ Touch nothing else. No view code under `apps/web/src`. Never commit `bun.lock`.
 - **Never run `git stash`.** Use a temporary commit or a second worktree.
 - **No network** in tests, except the live fixture behind `LIVE_WHITECHAIN=1`.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

@@ -98,10 +98,32 @@ export interface OfferDraft {
   deadline: number;
   rails: RailId[];
   upstream?: { url: string; licence: string };
+  /** Atomic. Absent is 0, which is all the runner publishes today. */
+  bond?: string;
+  /** Escrow v2 seconds, 0 to 86400. Absent is 0. */
+  reviewWindow?: number;
 }
 
-/** The offer the runner will build, with the seller left for the runner to fill in. */
+/** The captain's rule (23:25 IST), held by the contract, core and the hub as well: a bond implies a review window. */
+export const BOND_NEEDS_WINDOW = "A bond needs a review window, so set the window first.";
+export const WINDOW_RANGE = "A review window is 0 to 86,400 seconds.";
+
+/** Why these bond terms cannot be published, or null when they can. */
+export function bondTermsError(bond: string | undefined, reviewWindow: number | undefined): string | null {
+  const window = reviewWindow ?? 0;
+  if (!Number.isInteger(window) || window < 0 || window > 86_400) return WINDOW_RANGE;
+  const atomic = bond === undefined || bond === "" ? 0n : BigInt(bond);
+  if (atomic > 0n && window === 0) return BOND_NEEDS_WINDOW;
+  return null;
+}
+
+/**
+ * The offer the runner will build, with the seller left for the runner to fill in. It can never carry a
+ * bond without a review window: such a draft is refused here, so the wizard cannot express it.
+ */
 export function offerPreview(draft: OfferDraft): Record<string, unknown> {
+  const problem = bondTermsError(draft.bond, draft.reviewWindow);
+  if (problem) throw new Error(problem);
   const offer: Record<string, unknown> = {
     v: 1,
     seller: "<your address>",
@@ -111,7 +133,9 @@ export function offerPreview(draft: OfferDraft): Record<string, unknown> {
     price: draft.price,
     deadline: draft.deadline,
     rails: draft.rails,
+    bond: draft.bond || "0",
   };
+  if (draft.reviewWindow) offer.reviewWindow = draft.reviewWindow;
   if (draft.upstream) offer.upstream = draft.upstream;
   return offer;
 }

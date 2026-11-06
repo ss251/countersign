@@ -135,7 +135,6 @@ x402 v2 over HTTP, the "authorization" flow (verify → resource → settle → 
 - No floats for money.
 - Never log headers, signatures or keys.
 - Keep both example files short and readable. They are what judges read.
-- Small present-tense commits, no emoji, no `Co-authored-by`. Never write the name of any earlier project.
 
 ## Acceptance
 

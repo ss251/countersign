@@ -9,7 +9,7 @@ The paying agent (`packages/buyer/src/hedera/agent.ts`) and its HCS spending log
 - `packages/buyer/src/hedera/agent.ts`: one change only. Add an optional `appendLog?: (entry: SpendEntry) => Promise<{ sequence: number }>` to `HederaAgentOptions`, used instead of `appendEntry(opts.logClient, opts.topicId, entry)` when given, and make `logClient` optional when `appendLog` is given. No other edit to this file.
 - Create `packages/buyer/src/hedera/test/agent.test.ts` and `packages/buyer/src/hedera/test/spendlog.test.ts`.
 - Create `scripts/hedera/agent-run.ts`, `scripts/hedera/audit.ts` and `scripts/hedera/hub-standin.ts`.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-02-agent-tests.md`.
+- Report: `$M/reports/hd-02-agent-tests.md`.
 
 ## Context
 

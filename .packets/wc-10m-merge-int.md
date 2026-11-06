@@ -50,7 +50,6 @@ Resolve no other file by hand. If any other file conflicts, stop and report.
 - **Never run `git stash`.** Use a temporary commit or a second worktree.
 - **Never rebase,** and never rewrite a pushed commit.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Stop conditions
 

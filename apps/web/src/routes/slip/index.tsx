@@ -18,11 +18,18 @@ export default function SlipPage({ params }: PageProps) {
   const hash = params[0] ?? "";
   const view = useResource(() => api.slip(hash), [hash]);
   const children = view.data?.slip.body.children.length ?? 0;
-  // Only a slip with children has a tree; asking for one otherwise refetches the same slip.
+  // A slip has a tree when it signed children, or when the hub recorded purchases made inside its job, so a
+  // live slip always asks; fixtures ask only when the slip signed children.
+  const ask = view.data !== undefined && (children > 0 || view.source === "hub");
   const tree = useResource(
-    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
-    [hash, children > 0],
+    () => (ask ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
+    [hash, ask],
   );
+  const branches =
+    tree.data !== undefined &&
+    (Object.keys(tree.data.nodes).length > 1 ||
+      (tree.data.missing?.length ?? 0) > 0 ||
+      Object.values(tree.data.nodes).some((n) => (n.observed?.length ?? 0) > 0));
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [reading, setReading] = useState(false);
 
@@ -163,7 +170,7 @@ export default function SlipPage({ params }: PageProps) {
             />
           </section>
 
-          {children > 0 && tree.data ? (
+          {branches && tree.data ? (
             <section className="slip__section" aria-labelledby="sec-tree">
               <h2 id="sec-tree" className="slip__section-title">
                 Receipt tree

@@ -2,7 +2,7 @@
 
 ## Goal
 
-This is cs-w1's should-fix on 5a9c00b (`/Users/thescoho/Developer/countersign-mumbai/reports/review-5a9c00b.md`).
+This is cs-w1's should-fix on 5a9c00b (`$M/reports/review-5a9c00b.md`).
 
 The seller's countersigner checks the schedule against the amount, asset and payee that the hub's order states. A dishonest hub could send an order, with a matching schedule, for less than the offer's price, and the seller would deliver and countersign it.
 
@@ -17,7 +17,7 @@ Tracked by issue #41.
 - `packages/runner/src/daemon.ts`: the job handler only.
 - `scripts/hedera/mcp-seller.ts`: the `asset` passed to `prepareCountersign` only.
 - `packages/runner/test/countersign-terms.test.ts` (new).
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-13d-runner-terms.md`
+- Report: `$M/reports/hd-13d-runner-terms.md`
 
 ## The decided design
 

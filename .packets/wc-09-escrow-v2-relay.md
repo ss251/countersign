@@ -178,7 +178,7 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - The version 1 rail is unchanged.
 7b. **The fallback.** A v2 job's release, cancel and refund go to the v2 escrow, and a v1 job's go to v1, with both allowed. With `WC_ESCROW_V2` unset, the relay allows only v1 and every existing test passes as today. On the hub, `WC_ESCROW_VERSION=2` without `WC_ESCROW_V2` leaves the whitechain rail off with the log line.
 7c. **Option (d).** A bonded v2 settle funds through the relay. In the simulated chain, its account is the arbiter.
-8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (project lead's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
+8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (the project lead's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
 
 ## Constraints
 
@@ -186,7 +186,6 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
 - **Never run `git stash`.** Use a temporary commit or a second worktree. All worktrees of a clone share one stash stack, on both machines (COMMON, from cs-truth's 16:15Z hazard).
 - **No network** in tests.
 - **Commits:** small, present tense, ending `refs #98`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

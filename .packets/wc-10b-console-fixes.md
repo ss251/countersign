@@ -76,7 +76,6 @@ Touch nothing else. No view code. Never commit `bun.lock`.
 - **No network** in tests.
 - **Never run `deploy.sh` without `DRY_RUN=1`.** Never run `railway` and never set or print any secret.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
