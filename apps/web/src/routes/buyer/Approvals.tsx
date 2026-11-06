@@ -19,7 +19,7 @@ import type { Approval, EnvelopeView, Money } from "../../lib/types.ts";
 import { Absent } from "../../ui/Absent.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
-import { Amount, Button, CopyButton, cx, Empty, Hash, Tag } from "../../ui/primitives.tsx";
+import { Amount, Button, cx, Empty, Hash, Tag } from "../../ui/primitives.tsx";
 
 interface Props {
   approvals: Resource<Approval[] | null>;
@@ -118,8 +118,7 @@ function ApprovalFlow({
   const decision: EnvelopeDecision = real
     ? checkEnvelope(real.envelope, real.spent, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount }, nowUnix())
     : { ok: true };
-  const final =
-    job && (job.step === "released" || job.step === "refused" || job.step === "refunded" || job.step === "failed" || job.step === "disputed");
+  const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded" || job.step === "failed");
   const [token, setToken] = useState(approvalToken);
   const [sending, setSending] = useState<"countersign" | "decline" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -341,12 +340,7 @@ function ApprovalFlow({
             </p>
           ) : null}
           {job?.step === "review" ? (
-            <ReviewActions
-              control={control.current}
-              job={job}
-              money={money}
-              seller={listing.seller.named === false ? "the seller" : listing.seller.name}
-            />
+            <ReviewActions control={control.current} money={money} seller={listing.seller.named === false ? "the seller" : listing.seller.name} />
           ) : live && !token ? (
             <TokenForm
               onSave={(t) => {
@@ -449,31 +443,10 @@ function upstreamLabel(url: string): string {
  * Inside the review window: accepting is the one action, disputing the quieter second, behind a
  * sheet that says exactly what a dispute does to the money and to the seller's bond.
  */
-function ReviewActions({ control, job, money, seller }: { control: JobControl | null; job: JobView; money: Money; seller: string }) {
+function ReviewActions({ control, money, seller }: { control: JobControl | null; money: Money; seller: string }) {
   const sheet = useRef<HTMLDialogElement>(null);
   if (!control?.accept || !control.dispute) {
-    /*
-     * Live: accept and dispute take the buyer agent's own signature, which this phone does not hold. Until
-     * the approver relay exists (docs/spec/escrow.md, "Who does what"), the phone names the agent's command.
-     */
-    const id = job.jobId ?? "<jobId>";
-    const accept = `bun packages/buyer/src/cli.ts accept ${id}`;
-    const dispute = `bun packages/buyer/src/cli.ts dispute ${id}`;
-    return (
-      <div className="review review--agent">
-        <div className="command">
-          <div className="command__head">
-            <p className="label">Accept delivery, on your agent’s machine</p>
-            <CopyButton value={accept} label="accept command" />
-          </div>
-          <pre className="command__body mono">{accept}</pre>
-        </div>
-        <p className="review__note">
-          To dispute instead: <span className="mono">{dispute}</span>
-          <CopyButton value={dispute} label="dispute command" />
-        </p>
-      </div>
-    );
+    return <p className="review__note">Your agent accepts or disputes this delivery from its own machine.</p>;
   }
   return (
     <div className="review">
@@ -489,8 +462,8 @@ function ReviewActions({ control, job, money, seller }: { control: JobControl | 
             Dispute this delivery?
           </h2>
           <p className="sheet__text">
-            The escrow refunds <Amount money={money} size="sm" /> to your agent at once instead of paying {seller}. The seller’s bond
-            goes back to the seller: a dispute is not a failed delivery.
+            The escrow refunds <Amount money={money} size="sm" /> to your agent instead of paying {seller}. The seller’s bond is not
+            touched: a dispute is not a failed delivery.
           </p>
           <div className="sheet__buttons">
             <Button
@@ -529,7 +502,7 @@ function Countdown({ until }: { until: number }) {
 /* After the hold: what has happened, in order, to the second. */
 
 function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
-  if (job.step === "refused" || job.step === "refunded" || job.step === "failed" || job.step === "disputed") return null;
+  if (job.step === "refused" || job.step === "refunded" || job.step === "failed") return null;
   const escrow = ESCROW_RAILS.has(approval.rail);
   /** An escrow with buyer acceptance holds a delivered job in review until the buyer acts or the window passes. */
   const reviewing = job.reviewEndsAt !== undefined || job.ended !== undefined;
@@ -546,17 +519,21 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
             ? "review"
             : job.step === "accepted"
               ? "released"
-              : null;
-  // The escrow's own names (docs/spec/escrow.md): Funded, Delivered (in review), then Accepted or WindowElapsed, then Released.
-  const reviewLabel = job.ended === "accepted" ? "Accepted" : job.ended === "elapsed" ? "Window elapsed" : "In review";
+              : job.step === "disputed"
+                ? "refunded"
+                : null;
+  const reviewLabel =
+    job.ended === "accepted" ? "Accepted" : job.ended === "disputed" ? "Disputed" : job.ended === "elapsed" ? "Nobody disputed" : "In review";
   const STEPS: Array<{ id: JobStep; label: string }> = [
     { id: "countersigned", label: "Countersigned" },
-    { id: "held", label: escrow ? "Funded" : "Paid" },
+    { id: "held", label: escrow ? "In escrow" : "Paid" },
     { id: "delivered", label: "Delivered" },
     ...(reviewing ? [{ id: "review" as const, label: reviewLabel }] : []),
-    { id: "released", label: job.ended === "elapsed" ? "Released after the window" : escrow ? "Released" : "Settled" },
+    job.ended === "disputed"
+      ? { id: "refunded", label: "Refunding your agent" }
+      : { id: "released", label: job.ended === "elapsed" ? "Released after the window" : escrow ? "Released" : "Settled" },
   ];
-  const reviewAt = job.times.accepted ?? (job.ended === "elapsed" ? job.reviewEndsAt : undefined);
+  const reviewAt = job.times.accepted ?? job.times.disputed ?? (job.ended === "elapsed" ? job.reviewEndsAt : undefined);
 
   return (
     <ol className="ledger" aria-label="Progress" aria-live="polite">
@@ -572,13 +549,13 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
               `ledger__step--${s.id}`,
               isDone && "is-done",
               isActive && "is-active",
+              s.id === "review" && job.ended === "disputed" && "is-disputed",
             )}
           >
             <span className="ledger__marker" aria-hidden="true" />
             <span className="ledger__label">{s.label}</span>
             <span className="ledger__detail">
               {isDone && s.id === "held" ? <Amount money={usd(approval.amount, approval.rail)} size="sm" flight /> : null}
-              {isDone && s.id === "held" ? null : null}
               {isActive && s.id === "held"
                 ? job.slow
                   ? "No payment yet. Your agent may have stopped waiting."
@@ -589,6 +566,7 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
               {isActive && s.id === "delivered" ? "Waiting for delivery" : null}
               {isActive && s.id === "review" && job.reviewEndsAt !== undefined ? <Countdown until={job.reviewEndsAt} /> : null}
               {isActive && s.id === "released" ? (job.ended === "accepted" ? "Releasing" : "Checking the output") : null}
+              {isActive && s.id === "refunded" ? "Refunding" : null}
               {isDone && s.id !== "held" ? <span className="num">{formatClock(at)}</span> : null}
             </span>
             {isActive && s.id === "review" ? (
@@ -641,13 +619,13 @@ function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval;
       </div>
     );
   }
-  if (job.step === "disputed") {
+  if (job.step === "refunded" && job.ended === "disputed") {
     return (
       <div className="outcome outcome--refused" role="status">
-        <p className="outcome__title">Disputed. The payment is back.</p>
+        <p className="outcome__title">Disputed, so refunded.</p>
         <p className="outcome__body">
-          <Amount money={signed} size="sm" /> went back to your agent the moment the dispute landed. The seller’s bond goes back to
-          the seller: a dispute is not a failed delivery.
+          <Amount money={signed} size="sm" /> is back with your agent. The seller’s bond is not touched: a dispute is not a failed
+          delivery.
         </p>
         <Button variant="primary" block onClick={onClose}>
           Done

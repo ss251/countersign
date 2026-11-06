@@ -63,7 +63,7 @@ export interface Approval {
   requestedAt: number;
 }
 
-export type JobStatus = "countersigned" | "held" | "delivered" | "released" | "refused" | "refunded" | "disputed";
+export type JobStatus = "countersigned" | "held" | "delivered" | "released" | "refused" | "refunded";
 
 export interface Purchase {
   jobId: Hex;
