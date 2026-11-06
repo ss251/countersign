@@ -83,6 +83,8 @@ Reproduce it with the commands under [Setup](docs/hedera.md#setup): the hub with
 
 The same transaction on the mirror node: [`0.0.9185802-1793962668-996163078`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9185802-1793962668-996163078).
 
+The same beat runs against the public hub: the agent paid Circle's `use-usdc` offer for 0.01 USDC in [`0.0.9185802@1793966332.720364516`](https://hashscan.io/testnet/transaction/0.0.9185802@1793966332.720364516), and the hub lists the settlement and its seller-signed slip at [/settlements](https://hub-production-e85e.up.railway.app/settlements).
+
 ## Run it from a clean clone
 
 You need [bun](https://bun.sh) 1.3 and [foundry](https://getfoundry.sh). The gate:
