@@ -98,6 +98,7 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 4. **mirror confirms.** Read by the suite's own mirror client: the transaction is `SUCCESS`, the agent is debited and the seller credited exactly the price in USDC, and the memo names the offer hash.
 5. **spend log entry.** The HCS message at the reported sequence decodes to a `spend` entry for this offer, this amount and this transaction id, submitted by the agent.
 6. **envelope refuses past its cap.** The same agent with a cap below what it has spent refuses the call, pays nothing and logs a `refused` entry with reason `over-cap`.
+7. **the log is complete for the run.** Every USDC payment the agent made since the flow began has a spend entry naming its transaction and amount, and every spend entry in that window is backed by a payment.
 
 ### 7 · merchant
 
