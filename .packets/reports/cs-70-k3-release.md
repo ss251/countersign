@@ -217,3 +217,141 @@ The relay still needs its ledger off `bun:sqlite` (and the two server entry poin
 `Bun.serve`/`import.meta.main`) before those commands can pass end to end. `mcp` and
 `cli` are picked up automatically from their `bin` and `exports`; no edit to this
 tooling is needed.
+
+## cs-70b: publish only the Node-safe relay surface
+
+### The change
+
+`scripts/release/surface.ts` adds `PUBLISH_SURFACE`, a short package name to optional
+`exports` allowlist table. `relay` publishes `["./paywall", "./pay-fetch", "./browser"]`;
+`mcp` and `cli` have no entry and publish everything their own `exports` and `bin`
+declare. `manifest.ts` discovers bundle entries and builds the staged `exports` from the
+filtered surface, while `bin` is unaffected. `build.ts` prints one line for every
+manifest export left out and fails when an allowlisted key is absent from the manifest.
+`smoke.ts` adds the relay root check. No relay source, guard, root manifest,
+`bun.lock`, `tsconfig.json` or `.gitignore` changed.
+
+### Gate 1: install and typecheck
+
+```
+$ bun install --linker hoisted && bun run typecheck
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [2.31s]
+$ tsc -p tsconfig.json
+```
+
+### Gate 2: unit tests
+
+```
+$ bun test scripts/release
+bun test v1.3.14 (0d9b296a)
+
+ 43 pass
+ 0 fail
+ 78 expect() calls
+Ran 43 tests across 7 files. [90.00ms]
+```
+
+The original 38 tests are unchanged; five new tests cover the relay surface, a missing
+allowlisted key, a package with no table entry, and one not-published line per omitted
+key.
+
+### Gate 3: the relay, for real
+
+```
+$ node --version
+v26.7.0
+
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: /Users/sailesh/Developer/countersign-wt/cs-70/.release/countersign-hub-relay-0.1.0.tgz
+  size: 8795 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+Tarball `.release/countersign-hub-relay-0.1.0.tgz`: 8,795 bytes.
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+PASS countersign-hub-relay-0.1.0 install: added 221 packages in 12s ...
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+PASS relay export @countersign-hub/relay/paywall
+PASS relay export @countersign-hub/relay/pay-fetch
+PASS relay export @countersign-hub/relay/browser
+PASS relay root is not resolvable: Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: No "exports" main defined in .../@countersign-hub/relay/package.json
+```
+
+### Gate 4: `--require` still fails for the missing lanes
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+### Gate 5: the staged relay manifest
+
+```json
+{
+  "name": "@countersign-hub/relay",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@circle-fin/x402-batching": "4.0.0",
+    "@hashgraph/hedera-agent-kit": "4.2.0",
+    "@hashgraph/hedera-agent-kit-mcp": "1.2.0",
+    "@hiero-ledger/proto": "2.32.0",
+    "@hiero-ledger/sdk": "2.90.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@x402/core": "2.30.0",
+    "@x402/evm": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "ajv": "^8.20.0",
+    "hono": "^4.13.16",
+    "mppx": "0.17.1",
+    "stripe": "23.1.0",
+    "viem": "^2.57.16"
+  },
+  "exports": {
+    "./paywall": "./dist/paywall.js",
+    "./pay-fetch": "./dist/pay-fetch.js",
+    "./browser": "./dist/browser.js"
+  }
+}
+```
+
+`exports` has exactly three keys. No dependency name starts with `@countersign/`.
+
+```
+$ grep -c '@countersign/core' .release/stage/relay/dist/*.js
+.release/stage/relay/dist/browser.js:0
+.release/stage/relay/dist/pay-fetch.js:0
+.release/stage/relay/dist/paywall.js:0
+
+$ grep -c 'bun:' .release/stage/relay/dist/*.js
+.release/stage/relay/dist/browser.js:0
+.release/stage/relay/dist/pay-fetch.js:0
+.release/stage/relay/dist/paywall.js:0
+```
+
+A merchant imports `@countersign-hub/relay/paywall` (or `.../pay-fetch`, `.../browser`),
+not the bare root `@countersign-hub/relay`.
