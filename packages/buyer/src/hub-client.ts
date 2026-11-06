@@ -46,6 +46,10 @@ export class HubClient {
     this.base = baseUrl.replace(/\/+$/, "");
   }
 
+  get url(): string {
+    return this.base;
+  }
+
   private async getJson<T>(path: string): Promise<T> {
     const res = await this.fetchImpl(`${this.base}${path}`);
     if (!res.ok) {
