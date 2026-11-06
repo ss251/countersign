@@ -12,12 +12,48 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 |---|---|---|---|---|
 | Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
 | Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on the production hub: a paid call's [fund](https://explorer.testnet.whitechain.io/tx/0x1d45e70ff0ac33d9fee2b503f7acb22370a107232a98eb3d7afa7b7d4d321e73) and [release](https://explorer.testnet.whitechain.io/tx/0xd60dd634a1b326947ef855eee129cf7f994f0c6fdd5b58843f3d5310fdcc5971), the buyer holding no WBT; a [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The hub loads it with `WC_RELAY_URL`, and the relay submits and pays the gas ([docs/whitechain.md](docs/whitechain.md)). |
-| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | held (`hedera-scheduled`) on the production hub; direct x402 v2 `exact` through a hosted facilitator in a hub that turns it on | Live, held. Earlier, over plain x402: an [agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078). The production hub runs only the held rail (`hedera-scheduled`); plain x402 is off there because it pays before the seller runs. The held payment waits until the seller countersigns: the USDC moves only when the seller's key signs, and the hub submits that signature only after checking the delivery, but the seller's key can also release it alone, without delivering. A held purchase's transfer: [`0.0.11337064@1793978974.115868685`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.11337064-1793978974-115868685). See [Hedera payment flow](#hedera-payment-flow). |
+| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | held (`hedera-scheduled`) on the production hub; direct x402 v2 `exact` through a hosted facilitator in a hub that turns it on | Live, held. Earlier, over plain x402: an [agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078). The production hub runs only the held rail (`hedera-scheduled`); plain x402 is off there because it pays before the seller runs. The held payment moves only when the seller countersigns and the hub co-signs after checking the delivery; neither can release it alone (a held payment the seller signed but the hub did not expired unexecuted: [`0.0.11343208`](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.11343208)). A held purchase's transfer: [`0.0.11337064@1793978974.115868685`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.11337064-1793978974-115868685). See [Hedera payment flow](#hedera-payment-flow). |
 | MPP | Tempo testnet (Moderato), chain `42431`, `mpp:tempo` | pathUSD `0x20c0000000000000000000000000000000000000` | direct, MPP's Tempo charge (402 with `WWW-Authenticate: Payment`, `Payment-Receipt` on success) | `IN PROGRESS`: not on the hub yet. A real payment through the rail on Tempo testnet, from its own demo endpoint: [0.01 pathUSD settled](https://explore.testnet.tempo.xyz/tx/0x4866e130e21972d08eb7c52eab353bb6259b0f9866621979682cef2179e3a89f). Stripe's card method sits behind `MPP_STRIPE=1`. See [docs/mpp.md](docs/mpp.md). |
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub started with `GATEWAY_RAIL=1`. The production hub runs it off, because Gateway debits the buyer before the seller runs. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
-**On Whitechain: a merchant checkout.** A merchant sells to software buyers for USDT, sees every order as it settles, refunds an order in one click, and exports the ledger as CSV for the accountant. The escrow contract is the mechanism underneath, not the product: a payment refuses to settle at a price the buyer did not sign, and waits until the work is delivered. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT, and every payment and refund is a public record the customer can check without trusting us. Today the one-click refund runs from the desk with the merchant's own service ([refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5)); the public console shows orders but cannot refund yet. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain ([e2e/runs/LATEST.md](e2e/runs/LATEST.md)). Network facts, the gas relayer and verification: [docs/whitechain.md](docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
+**On Whitechain** countersign is a merchant checkout, not an escrow product: see [Whitechain: a merchant checkout](#whitechain-a-merchant-checkout).
+
+## Whitechain: a merchant checkout
+
+A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874). It sees every order as it settles, refunds an order, and exports the ledger as CSV for the accountant. The escrow contract and the gas relayer are the mechanism underneath, not the product. Network facts, the relayer and verification are in [docs/whitechain.md](docs/whitechain.md), and feedback for the Whitechain team in [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
+
+### Operate: the checkout, the refund and the export
+
+- **The drop-in.** It is two files:
+  - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
+  - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
+
+  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
+- **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
+- **The customer's view.** The customer holds USDT only and signs one EIP-3009 authorisation. The buyer above, `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298`, holds 0 WBT.
+- **The refund.** One function, `refundOrder`, refunds every order:
+  - a held escrow order is cancelled in full;
+  - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
+
+  Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
+- **The merchant's view.** The merchant refunds from the order's row: it reads the terms, then signs once in its own wallet, and the relayer pays the gas. That screen is not on the production console yet.
+- **The accountant's export.** The production relay serves [`orders.csv`](https://whitechain-relay-production.up.railway.app/orders.csv?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c). It has one row per order, with the amount, fee, refunded and net amounts, and links to each transaction. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain.
+
+### Scale: the payer holds zero WBT
+
+The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transaction above and pays the gas, so customers and merchants hold USDT only. Its guards are live at [`/status`](https://whitechain-relay-production.up.railway.app/status):
+
+| Guard | Value |
+|---|---|
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrow `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`; it pays gas for nobody else |
+| Fee cap | 50 gwei per gas, with 20% headroom |
+| Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
+| Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
+| Minimum payment | 0.01 USDT |
+| Simulation | every call is simulated before it is sent, so a refused call costs no gas (`packages/relay/src/relayer.ts`) |
+
+**How the business funds it:** the operator sends WBT to the relayer address. It held 1.42 WBT on 06 Nov. The floor and the ceiling bound what one hour can spend.
 
 ## Live links
 
@@ -60,7 +96,7 @@ Where this is going: the person's wallet on EVM, the agent's account on Hedera, 
 |---|---|---|---|
 | Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
 | Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
-| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub. By default the payment is held until the seller countersigns; the seller's key can also release it alone, without delivering |
+| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held: the payment moves only when the seller countersigns and the hub co-signs after a checked delivery |
 
 Privy has no Hedera, and none of these is one wallet for every rail.
 
@@ -159,7 +195,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 
 ## End-to-end tests
 
-`bun run e2e` runs the flows in [docs/e2e.md](docs/e2e.md) against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is cut ([D14](docs/decisions.md)) and reports `NOT RUN`; the screens are checked by hand. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md).
+`bun run e2e` runs the flows in [docs/e2e.md](docs/e2e.md) against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is cut ([D14](docs/decisions.md)) and reports `NOT RUN`; the screens are checked by hand. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md). A separate human end-to-end run drives the deployed console in a browser: [docs/e2e-human.md](docs/e2e-human.md).
 
 ## Repository map
 
@@ -192,7 +228,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **Keys stay on the device.** The buyer and seller read their keys from the environment, and the hub holds no buyer key. On escrow rails the hub can submit the buyer's countersignature, but the signature fixes the escrow, payee and amount.
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
-- **Direct rails pay before delivery.** On `hedera`, `eip3009`, `gateway` and `mpp` the payment settles before the seller runs, and nothing returns it if the delivery fails. The production hub offers none of them: its `/rails` lists only `escrow`, `whitechain` and `hedera-scheduled`. The escrow rails hold the money until the output checks out, and the held Hedera rail (`hedera-scheduled`) leaves it in the buyer's account until the seller's key signs. The hub signs only after checking the delivery, but the seller's key can also release it alone, without delivering, so this rail does not protect the buyer against the seller. Which rail returns what: [terms.md §4](docs/terms.md#4-delivery-release-and-refunds).
+- **Direct rails pay before delivery.** On `hedera`, `eip3009`, `gateway` and `mpp` the payment settles before the seller runs, and nothing returns it if the delivery fails. The production hub offers none of them: its `/rails` lists only `escrow`, `whitechain` and `hedera-scheduled`. The escrow rails hold the money until the output checks out, and the held Hedera rail (`hedera-scheduled`) leaves it in the buyer's account until both the seller and the hub have signed, and the hub signs only after checking the delivery, so neither can release it alone. The cost: every transfer out of the seller's payee account, earnings included, needs the hub's co-signature too, done by hand tonight. Which rail returns what: [terms.md §4](docs/terms.md#4-delivery-release-and-refunds).
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
 - **The bond is declared, not collected.** The bond code is in the contract on `main` ([#93](https://github.com/ss251/countersign/issues/93)), but the deployed escrows are v1, so nothing collects it until a new deployment.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
