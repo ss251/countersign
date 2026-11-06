@@ -2,7 +2,7 @@
 
 What countersign has built, what is still on a branch, and what is only a design. Every row was checked against the code, not against another page. If any other page in this repository disagrees with this one, the other page is wrong.
 
-Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `ee9bff8`. The two differ only in docs and one console fix, so every status holds for both. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
+Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `df9ee54`. A status describes `main`; where `cs/int` is ahead, the row says so. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
 
 | Status | Meaning |
 |---|---|
