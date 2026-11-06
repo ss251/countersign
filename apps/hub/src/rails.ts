@@ -161,9 +161,6 @@ export async function railsFromEnv(
   if (railRequested("gateway", env)) {
     await startOptional(rails, "gateway", makers.gateway ?? (() => gatewayRail({})), log);
   }
-  if (railRequested("hedera", env)) {
-    await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
-  }
   if (railRequested("hedera-scheduled", env)) {
     await startOptional(
       rails,
@@ -176,6 +173,9 @@ export async function railsFromEnv(
         }),
       log,
     );
+  }
+  if (railRequested("hedera", env)) {
+    await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
   }
   return rails;
 }

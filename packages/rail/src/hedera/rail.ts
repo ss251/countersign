@@ -135,7 +135,8 @@ function toX402Payload(p: PaymentPayload): X402Payload {
 
 export async function createHederaRail(opts: HederaRailOptions = {}): Promise<HederaRail> {
   const facilitators = opts.facilitators ?? FACILITATORS.map((f) => httpFacilitator(f.name, f.url));
-  const maxTimeoutSeconds = Math.min(Math.max(opts.maxTimeoutSeconds ?? 120, 30), 180);
+  // The transfer must stay valid through delivery plus settlement, so ask for Hedera's maximum, 180 s.
+  const maxTimeoutSeconds = Math.min(Math.max(opts.maxTimeoutSeconds ?? 180, 30), 180);
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   const verifySig = opts.verifyPayerSignature ?? createHederaVerifyPayerSignature();
   const clockSkewSeconds = opts.clockSkewSeconds ?? 5;

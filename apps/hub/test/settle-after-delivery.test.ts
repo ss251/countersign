@@ -55,6 +55,26 @@ class DeferredRail extends FakeRail {
   }
 }
 
+/** A rail that takes the money up front, like an escrow: no `settlesAfterDelivery`, no `pending`. */
+class EagerRail extends FakeRail {
+  readonly log: string[];
+
+  constructor(log: string[]) {
+    super("hedera", "hedera:testnet");
+    this.log = log;
+  }
+
+  override async verify(payment: PaymentPayload, requirements: PaymentRequirements) {
+    this.log.push("verify");
+    return super.verify(payment, requirements);
+  }
+
+  override async settle(payment: PaymentPayload, requirements: PaymentRequirements) {
+    this.log.push("settle");
+    return super.settle(payment, requirements);
+  }
+}
+
 const OFFER = makeOffer({ rails: ["hedera"] });
 
 describe("settle after delivery", () => {
@@ -75,22 +95,31 @@ describe("settle after delivery", () => {
     hub.close();
   });
 
-  async function connect(
+  async function connectOn(
+    target: TestHub,
     hash: Hex,
     respond: (order: JobOrder) => Promise<JobAnswer> = async () => {
       log.push("dispatch");
       return { output: { q: "hello" } };
     },
   ): Promise<void> {
-    const runner = startRunner({ url: wsUrl(hub), account: seller, offers: [hash], now: () => NOW, respond });
+    const runner = startRunner({ url: wsUrl(target), account: seller, offers: [hash], now: () => NOW, respond });
     await runner.ready;
     closes.push(() => runner.close());
   }
 
-  async function paid(hash: Hex): Promise<Response> {
-    const entry = (await requirementsFor(hub, hash)).accepts[0];
+  async function connect(hash: Hex, respond?: (order: JobOrder) => Promise<JobAnswer>): Promise<void> {
+    await connectOn(hub, hash, respond);
+  }
+
+  async function paidOn(target: TestHub, hash: Hex): Promise<Response> {
+    const entry = (await requirementsFor(target, hash)).accepts[0];
     if (!entry) throw new Error("missing accepts entry");
-    return call(hub, hash, { q: "hello" }, paymentFor(entry));
+    return call(target, hash, { q: "hello" }, paymentFor(entry));
+  }
+
+  async function paid(hash: Hex): Promise<Response> {
+    return paidOn(hub, hash);
   }
 
   test("a failed delivery never settles", async () => {
@@ -139,6 +168,29 @@ describe("settle after delivery", () => {
     expect(hub.store.getJob(NONCE)?.status).toBe("settled");
   });
 
+  test("a 120-second offer accepts a 180-second transfer signed 8 seconds ago", async () => {
+    const hash = await publishOk(hub, OFFER);
+    await connect(hash);
+    const validStart = NOW - 8;
+    const validDuration = 180;
+    rail.pendingResult = { transaction: rail.settleTx, validUntil: validStart + validDuration };
+    expect(validStart + validDuration).toBeGreaterThanOrEqual(NOW + OFFER.deadline + 30);
+    expect(validStart + 120).toBeLessThan(NOW + OFFER.deadline + 30);
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const payment: PaymentPayload = {
+      x402Version: 2,
+      accepted: entry,
+      payload: { authorization: { nonce: NONCE } },
+    };
+
+    const response = await call(hub, hash, { q: "hello" }, payment);
+    expect(response.status).toBe(200);
+    expect(log).toEqual(["verify", "dispatch", "settle"]);
+    expect(hub.store.getJob(NONCE)?.status).toBe("settled");
+  });
+
   test("a transfer that expires before the deadline is refused before dispatch", async () => {
     const hash = await publishOk(hub, OFFER);
     await connect(hash);
@@ -178,6 +230,22 @@ describe("settle after delivery", () => {
     expect(hub.store.getJob(NONCE)?.status).toBe("failed");
   });
 
+  test("a settle that throws after delivery stores no slip", async () => {
+    const hash = await publishOk(hub, OFFER);
+    rail.throwSettle = true;
+    await connect(hash);
+
+    const response = await paid(hash);
+    expect(response.status).toBe(502);
+
+    const body = (await response.json()) as ErrorBody & { output?: unknown };
+    expect(body.code).toBe("settle-failed");
+    expect("output" in body).toBe(false);
+    expect(hub.store.getJob(NONCE)?.status).toBe("failed");
+    const job = hub.store.ratingJobs().find((row) => row.jobId === NONCE);
+    expect(job?.slip).toBeNull();
+  });
+
   test("the same payment is refused as a duplicate and dispatches once", async () => {
     const hash = await publishOk(hub, OFFER);
     await connect(hash);
@@ -203,6 +271,39 @@ describe("settle after delivery", () => {
     const response = await paid(hash);
     expect(response.status).toBe(200);
     expect(log).toEqual(["verify", "settle", "dispatch"]);
+  });
+
+  test("a rail without settlesAfterDelivery keeps settle before dispatch", async () => {
+    const eager = new EagerRail(log);
+    const direct = startHub({ rails: [eager] });
+    closes.push(() => direct.close());
+    const hash = await publishOk(direct, OFFER);
+    await connectOn(direct, hash);
+
+    const response = await paidOn(direct, hash);
+    expect(response.status).toBe(200);
+    expect(log).toEqual(["verify", "settle", "dispatch"]);
+  });
+
+  test("the dispatch timeout stays inside the signed transfer's window", async () => {
+    const patient = startHub({ rails: [rail], jobTimeoutMs: 180_000 });
+    closes.push(() => patient.close());
+    const hash = await publishOk(patient, OFFER);
+    await connectOn(patient, hash);
+    const validUntil = NOW + 100;
+    rail.pendingResult = { transaction: rail.settleTx, validUntil };
+
+    const timeouts: number[] = [];
+    const original = patient.runners.dispatch.bind(patient.runners);
+    patient.runners.dispatch = async (order, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return original(order, timeoutMs);
+    };
+
+    const response = await paidOn(patient, hash);
+    expect(response.status).toBe(200);
+    expect(timeouts).toHaveLength(1);
+    expect(timeouts[0]).toBeLessThanOrEqual((validUntil - NOW - 30) * 1000);
   });
 
   /** A real runner whose slip carries a hash that does not match its body. */

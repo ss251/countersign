@@ -24,8 +24,9 @@ function fakeFacilitator(): Facilitator {
   };
 }
 
-async function makeRail() {
+async function makeRail(opts: { maxTimeoutSeconds?: number } = {}) {
   return createHederaRail({
+    ...opts,
     facilitators: [fakeFacilitator()],
     refreshEveryMs: 0,
     verifyPayerSignature: async () => ({ ok: true }),
@@ -47,6 +48,21 @@ describe("hedera exact pending", () => {
   test("declares that it settles after delivery", async () => {
     const rail = await makeRail();
     expect(rail.settlesAfterDelivery).toBe(true);
+  });
+
+  test("asks for Hedera's maximum 180 seconds by default", async () => {
+    const rail = await makeRail();
+    expect(rail.challenge(offer(), ctx).maxTimeoutSeconds).toBe(180);
+  });
+
+  test("honours an explicit maxTimeoutSeconds", async () => {
+    const rail = await makeRail({ maxTimeoutSeconds: 120 });
+    expect(rail.challenge(offer(), ctx).maxTimeoutSeconds).toBe(120);
+  });
+
+  test("clamps maxTimeoutSeconds to Hedera's maximum of 180 seconds", async () => {
+    const rail = await makeRail({ maxTimeoutSeconds: 999 });
+    expect(rail.challenge(offer(), ctx).maxTimeoutSeconds).toBe(180);
   });
 
   test("reads the transaction id settle will report and the expiry from the signed transfer", async () => {

@@ -310,7 +310,10 @@ export async function paidCall(
 
     const deadlineMs = (deadline - now - 5) * 1000;
     const hubLimitMs = deps.jobTimeoutMs ?? 120_000;
-    const timeoutMs = Math.max(0, Math.min(hubLimitMs, deadlineMs));
+    const timeoutMs = Math.max(
+      0,
+      Math.min(hubLimitMs, deadlineMs, (pending.validUntil - now - SETTLE_MARGIN_SECONDS) * 1000),
+    );
     const delivered = await deps.runners.dispatch(order, timeoutMs);
     if ("fail" in delivered) {
       return failedDelivery(
