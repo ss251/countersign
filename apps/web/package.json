@@ -12,9 +12,11 @@
     "@countersign/core": "workspace:*",
     "@countersign/rail": "workspace:*",
     "@countersign/verify": "workspace:*",
+    "@tanstack/react-query": "^5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "viem": "^2.57.16"
+    "viem": "^2.57.16",
+    "wagmi": "^2"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
