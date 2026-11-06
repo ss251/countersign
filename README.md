@@ -9,13 +9,13 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 | Rail | Network | Token | Kind | Status |
 |---|---|---|---|---|
 | Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
-| Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The rail and relay code are in review in [#17](https://github.com/ss251/countersign/pull/17). |
+| Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The hub loads it with `WC_RELAY_URL`, and the relay submits and pays the gas ([docs/whitechain.md](docs/whitechain.md)). |
 | Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631), see [Hedera payment flow](#hedera-payment-flow). |
 | Stripe MPP | `mpp:stripe` | | | In progress, built against a mock until test keys arrive ([#5](https://github.com/ss251/countersign/issues/5)). Not live. |
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
-**Why onchain, on Whitechain.** The buyer is software, so the payment has to enforce itself. A USDT payment on Whitechain refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, and goes back to the buyer when a deadline passes, through a refund anyone can call, with no dispute desk. It leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash or settle a five-cent call in a second. With the relayer paying gas, neither customer nor merchant ever holds WBT. Network facts, the gas relayer and verification: [docs/whitechain.md](https://github.com/ss251/countersign/blob/cs/wc/docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](https://github.com/ss251/countersign/blob/cs/wc/WHITECHAIN_FEEDBACK.md). Both land in this tree with [#17](https://github.com/ss251/countersign/pull/17).
+**Why onchain, on Whitechain.** The buyer is software, so the payment has to enforce itself. A USDT payment on Whitechain refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, and goes back to the buyer when a deadline passes, through a refund anyone can call, with no dispute desk. It leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash or settle a five-cent call in a second. With the relayer paying gas, neither customer nor merchant ever holds WBT. Network facts, the gas relayer and verification: [docs/whitechain.md](docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
 ## Live links
 
@@ -26,7 +26,7 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behi
 - Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
 - Whitechain escrow: [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4)
 - Hedera spend log: HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070)
-- More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/hedera.md](docs/hedera.md) for Hedera.
+- More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/whitechain.md](docs/whitechain.md) for Whitechain, [docs/hedera.md](docs/hedera.md) for Hedera.
 
 ## How it works
 
@@ -130,7 +130,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## Repository map
 
@@ -143,9 +143,9 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `packages/buyer` | The buyer agent and its CLI. |
 | `packages/runner` | The seller's runner and its CLI. |
 | `packages/verify` | The standalone slip verifier. |
-| `packages/relay` | The Whitechain gas relay (lands with [#17](https://github.com/ss251/countersign/pull/17)). |
+| `packages/relay` | The Whitechain relay: x402 facilitator and gas payer for the whitechain rail. |
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments. |
-| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `terms.md`. |
+| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `terms.md`. |
 | `examples/catalogue` | The sponsor skills the demo sellers serve, unmodified, with upstream and licence. |
 | `scripts/` | Hedera setup, agent run and audit; Gateway deposit and balance. |
 | `marks/` | The mark and wordmark. |
