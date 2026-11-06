@@ -99,6 +99,31 @@ describe("the landing's evidence field", () => {
     }
   });
 
+  test("with five rails no two marks touch, at 1440 or at 390, grouped or stepped back", () => {
+    // Tonight the hub can declare five rails: no group may run into its neighbour as they multiply.
+    const five: Array<[RailId, number]> = [["escrow", 9], ["gateway", 4], ["hedera", 8], ["whitechain", 6], ["eip3009", 7]];
+    const rows = five.flatMap(([rail, n], r) =>
+      Array.from({ length: n }, (_, j) => row(r * 100 + j, rail, rail === "escrow" ? "released" : "settled", 1_793_960_000 + r * 1000 + j * 60)),
+    );
+    const order = railOrder(five.map(([id]) => ({ id }) as RailDeclaration), rows);
+    expect(order).toHaveLength(5);
+    for (const [narrow, width, height, g] of [[false, 1180, 464, WIDE], [true, 358, 528, NARROW]] as const) {
+      for (const beat of [2, 3]) {
+        const seen = [...markSpots(rows, order, beat, narrow).values()]
+          .filter((p) => p.o > 0)
+          .map((p) => ({ x: (p.x / 100) * width + p.dx, y: (p.y / 100) * height + p.dy, size: g.mark * p.s }));
+        for (let a = 0; a < seen.length; a++) {
+          for (let b = a + 1; b < seen.length; b++) {
+            const [p, q] = [seen[a]!, seen[b]!];
+            const reach = (p.size + q.size) / 2;
+            const apart = Math.abs(p.x - q.x) >= reach || Math.abs(p.y - q.y) >= reach;
+            if (!apart) throw new Error(`beat ${beat} ${narrow ? "390" : "1440"}: marks at ${p.x.toFixed(0)},${p.y.toFixed(0)} and ${q.x.toFixed(0)},${q.y.toFixed(0)} touch`);
+          }
+        }
+      }
+    }
+  });
+
   test("the escrow beat only ever shows an escrow release, never a newer direct-rail payment", () => {
     const later = [...ROWS, row(99, "hedera", "settled", 1_799_999_999)];
     expect(newestOf(later)!.rail).toBe("hedera");

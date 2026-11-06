@@ -5,7 +5,7 @@ import { useNow } from "../../lib/now.ts";
 import type { HubStats, Listing, RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
 import { exampleNeeds } from "../assistant/palette.ts";
-import { asideAt, byTime, EXIT, keyOf, labelSpots, markSpots, NARROW, newestOf, railOrder, WIDE, type Spot } from "./field.ts";
+import { asideAt, byTime, EXIT, keyOf, labelSpots, markSpots, NARROW, newestOf, railOrder, ROOMY, WIDE, type Spot } from "./field.ts";
 import { span, toBeat, useBeat } from "./stage.ts";
 
 /*
@@ -234,6 +234,7 @@ function Field({
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
   const line = beat === 1 || beat === 2 ? 1 : beat === 3 ? (narrow ? 0.22 : 0.3) : 0;
+  const crowded = order.length > ROOMY;
   return (
     <div className="story__field" aria-hidden="true" style={{ "--base": g.base } as CSSProperties}>
       <span className="story__baseline" style={{ opacity: line }} />
@@ -256,13 +257,29 @@ function Field({
         const decl = rails?.find((r) => r.id === rail);
         const count = stats?.byRail[rail]?.delivered ?? rows.filter((s) => s.rail === rail).length;
         const p = labels[i];
+        const name = RAIL_LABEL[rail] ?? rail;
+        // Crowded, a label is the chain over the rail, short enough for a fifth of a phone's width.
+        const [chain, kind] = name.includes(" · ") ? name.split(" · ", 2) : [name, ""];
         return (
-          <span key={rail} className="story__group" style={p ? ({ "--x": p.x, "--dy": p.dy, "--o": p.o } as CSSProperties) : undefined}>
-            <span className="story__group-name">
-              <span className="live-dot" />
-              {RAIL_LABEL[rail] ?? rail}
-            </span>
-            {decl ? <span className="story__group-chain">{networkName(decl.network)}</span> : null}
+          <span
+            key={rail}
+            className={cx("story__group", crowded && "is-crowded")}
+            style={p ? ({ "--x": p.x, "--dy": p.dy, "--o": p.o } as CSSProperties) : undefined}
+          >
+            {crowded ? (
+              <>
+                <span className="story__group-name">{chain}</span>
+                {kind ? <span className="story__group-chain">{kind}</span> : null}
+              </>
+            ) : (
+              <>
+                <span className="story__group-name">
+                  <span className="live-dot" />
+                  {name}
+                </span>
+                {decl ? <span className="story__group-chain">{networkName(decl.network)}</span> : null}
+              </>
+            )}
             <span className="story__group-n mono">{count} settled</span>
           </span>
         );
