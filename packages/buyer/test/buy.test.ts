@@ -22,6 +22,7 @@ import {
   type Slip,
 } from "@countersign/core";
 import { BuyError, HubClient, Journal, State, buy, countersignPayer, resume } from "../src/index.ts";
+import type { KnownRail } from "../src/index.ts";
 
 const seller = privateKeyToAccount(generatePrivateKey());
 const otherKey = privateKeyToAccount(generatePrivateKey());
@@ -29,6 +30,16 @@ const buyerAcct = privateKeyToAccount(generatePrivateKey());
 const TOKEN: Address = "0x3600000000000000000000000000000000000000";
 const ESCROW: Address = "0x4444444444444444444444444444444444444444";
 const PRICE = "250000";
+const TEST_RAIL: KnownRail = {
+  network: "eip155:5042002",
+  scheme: "countersign",
+  chainId: 5042002,
+  escrow: ESCROW,
+  token: TOKEN,
+  tokenName: "USDC",
+  tokenVersion: "2",
+  rpcUrl: "https://rpc.testnet.arc.network",
+};
 
 const offer: Offer = {
   v: 1,
@@ -178,6 +189,7 @@ const run = (f: ReturnType<typeof fresh>, over: { envelope?: Envelope; input?: u
     state: f.state,
     now: Math.floor(Date.now() / 1000),
     approve: over.approve,
+    known: [TEST_RAIL],
   });
 
 beforeAll(() => {
@@ -190,7 +202,7 @@ describe("buy", () => {
     const f = fresh();
     const res = await run(f);
     expect(res.output).toEqual({ a: "hi" });
-    expect(f.journal.entries().map((e) => e.kind)).toEqual(["countersigned", "released"]);
+    expect(f.journal.entries().map((e) => e.kind)).toEqual(["countersigned", "signed", "released"]);
     expect(existsSync(f.state.slipPath(res.slip.hash))).toBe(true);
     expect(f.journal.spend().total).toBe(PRICE);
   });
@@ -227,15 +239,15 @@ describe("buy", () => {
     const f = fresh();
     await expect(run(f)).rejects.toThrow("does not verify");
     const kinds = f.journal.entries().map((e) => e.kind);
-    expect(kinds).toEqual(["countersigned", "failed"]);
-    expect(f.journal.entries()[1]?.reason).toBe("bad-slip");
+    expect(kinds).toEqual(["countersigned", "signed", "failed"]);
+    expect(f.journal.entries()[2]?.reason).toBe("bad-slip");
   });
 
   test("a 402 with error on the paid call carries its message", async () => {
     mode = "moved";
     const f = fresh();
     await expect(run(f)).rejects.toThrow("Refused. The price moved after you signed.");
-    expect(f.journal.entries().map((e) => e.kind)).toEqual(["countersigned", "failed"]);
+    expect(f.journal.entries().map((e) => e.kind)).toEqual(["countersigned", "signed", "failed"]);
   });
 });
 

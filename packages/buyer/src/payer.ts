@@ -11,10 +11,14 @@ import {
   type PaymentRequirements,
 } from "@countersign/core";
 import type { Address } from "viem";
+import type { KnownRail } from "./known-rails.ts";
 
 export interface Payer {
   canPay(req: PaymentRequirements): boolean;
-  pay(req: PaymentRequirements, ctx: { now: number }): Promise<{ payment: PaymentPayload; jobId: Hex }>;
+  pay(
+    req: PaymentRequirements,
+    ctx: { now: number; rail: KnownRail },
+  ): Promise<{ payment: PaymentPayload; jobId: Hex }>;
 }
 
 function randomSalt(): string {
@@ -42,18 +46,18 @@ export function countersignPayer(account: LocalAccount): Payer {
       };
       const input: AuthorizationInput = {
         terms,
-        chainId: extra.chainId,
-        escrow: extra.escrow,
-        token: req.asset as Address,
-        tokenName: extra.tokenName,
-        tokenVersion: extra.tokenVersion,
+        chainId: ctx.rail.chainId,
+        escrow: ctx.rail.escrow,
+        token: ctx.rail.token,
+        tokenName: ctx.rail.tokenName,
+        tokenVersion: ctx.rail.tokenVersion,
         validAfter: 0,
         validBefore: ctx.now + 600,
       };
       const sig = await account.signTypedData(authorizationTypedData(input));
       return {
         payment: { x402Version: 2, accepted: req, payload: countersignPayload(input, sig) as unknown as Record<string, unknown> },
-        jobId: jobIdOf(terms, extra.chainId, extra.escrow),
+        jobId: jobIdOf(terms, ctx.rail.chainId, ctx.rail.escrow),
       };
     },
   };

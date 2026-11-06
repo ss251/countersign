@@ -7,13 +7,17 @@ import {
   slipHash,
   slipSigner,
   type CallResult,
+  type CountersignExtra,
   type Envelope,
+  type PaymentPayload,
   type PaymentRequirements,
 } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
 import type { Journal } from "./journal.ts";
+import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
 import type { Payer } from "./payer.ts";
 import type { State } from "./state.ts";
+import { checkTerms } from "./terms.ts";
 
 export class BuyError extends Error {
   constructor(message: string) {
@@ -33,6 +37,7 @@ export interface BuyArgs {
   now: number;
   approve?: boolean;
   lineage?: Hex[];
+  known?: KnownRail[];
 }
 
 export async function buy(a: BuyArgs): Promise<CallResult> {
@@ -61,25 +66,43 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
   }
   if (!entry || !payer) throw new BuyError("Refused. No rail here that this agent can pay.");
 
-  const base = { offerHash, seller: offer.seller, amount: entry.amount };
-  const decision = checkEnvelope(envelope, journal.spend(), { seller: offer.seller, offerHash, amount: entry.amount }, a.now);
-  if (!decision.ok) {
-    journal.append({ at: a.now, kind: "refused", ...base, reason: decision.reason });
-    throw new BuyError(decision.message);
+  const terms = checkTerms(offer, offerHash, entry, a.known ?? KNOWN_RAILS);
+  if (!terms.ok) {
+    journal.append({ at: a.now, kind: "refused", offerHash, seller: offer.seller, amount: entry.amount, reason: "terms" });
+    throw new BuyError(terms.message);
   }
+  const rail = terms.rail;
+  const extra = entry.extra as unknown as CountersignExtra;
+  const base = { at: a.now, offerHash, seller: offer.seller, amount: entry.amount, network: rail.network, rail: extra.rail };
+
   if (needsHuman(envelope, entry.amount) && !a.approve) {
-    journal.append({ at: a.now, kind: "refused", ...base, reason: "held" });
+    journal.append({ ...base, kind: "refused", reason: "held" });
     throw new BuyError("Held. This call is above your ask-above limit; approve it to countersign.");
   }
 
-  const { payment, jobId } = await payer.pay(entry, { now: a.now });
-  const extraRail = (entry.extra as { rail?: import("@countersign/core").RailId } | undefined)?.rail;
-  journal.append({ at: a.now, kind: "countersigned", ...base, rail: extraRail, jobId });
+  const reservationId = crypto.randomUUID();
+  const decision = journal.reserve({ ...base, kind: "countersigned", reservationId }, (spend) =>
+    checkEnvelope(envelope, spend, { seller: offer.seller, offerHash, amount: entry.amount }, a.now),
+  );
+  if (!decision.ok) {
+    journal.append({ ...base, kind: "refused", reason: decision.reason });
+    throw new BuyError(decision.message);
+  }
+
+  let signed: { payment: PaymentPayload; jobId: Hex };
+  try {
+    signed = await payer.pay(entry, { now: a.now, rail });
+  } catch (e) {
+    journal.append({ ...base, kind: "failed", reservationId, reason: "signing" });
+    throw e;
+  }
+  const { payment, jobId } = signed;
+  journal.append({ ...base, kind: "signed", reservationId, jobId });
 
   const paid = await hub.call(offerHash, input, payment, a.lineage);
   if (paid.kind !== "paid") {
     const message = paid.kind === "error" ? paid.message : "Refused. The hub asked for payment again.";
-    journal.append({ at: a.now, kind: "failed", ...base, jobId, reason: message });
+    journal.append({ ...base, kind: "failed", jobId, reason: message });
     throw new BuyError(message);
   }
   const { result } = paid;
@@ -102,15 +125,14 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     }
   };
   if (await bad()) {
-    journal.append({ at: a.now, kind: "failed", ...base, jobId, reason: "bad-slip" });
+    journal.append({ ...base, kind: "failed", jobId, reason: "bad-slip" });
     throw new BuyError("Refused. The slip does not verify; the escrow refunds at the deadline.");
   }
 
   a.state.saveSlip(slip);
   journal.append({
-    at: a.now,
-    kind: slip.body.escrow ? "released" : "settled",
     ...base,
+    kind: slip.body.escrow ? "released" : "settled",
     rail: slip.body.rail,
     jobId,
     slipHash: slip.hash,

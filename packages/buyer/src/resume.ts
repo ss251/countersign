@@ -1,5 +1,8 @@
+import { createPublicClient, http, type Hex } from "viem";
+import type { Network } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
-import type { Journal, JournalKind } from "./journal.ts";
+import type { Journal, JournalEntry, JournalKind } from "./journal.ts";
+import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
 import type { State } from "./state.ts";
 
 export interface ResumeSummary {
@@ -8,13 +11,76 @@ export interface ResumeSummary {
   appended?: JournalKind;
 }
 
-export async function resume(args: { hub: HubClient; journal: Journal; state: State; now?: number }): Promise<ResumeSummary[]> {
+export type JobStatusReader = (rail: KnownRail, jobId: Hex) => Promise<number>;
+
+/** Minimal escrow view: status 3 is Refunded. */
+export const JOB_OF_ABI = [
+  {
+    type: "function",
+    name: "jobOf",
+    stateMutability: "view",
+    inputs: [{ name: "jobId", type: "bytes32" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "buyer", type: "address" },
+          { name: "deadline", type: "uint64" },
+          { name: "status", type: "uint8" },
+          { name: "payee", type: "address" },
+          { name: "amount", type: "uint256" },
+          { name: "offerHash", type: "bytes32" },
+          { name: "slipHash", type: "bytes32" },
+        ],
+      },
+    ],
+  },
+] as const;
+
+export async function readJobStatus(rail: KnownRail, jobId: Hex): Promise<number> {
+  const client = createPublicClient({ transport: http(rail.rpcUrl) });
+  const job = await client.readContract({
+    address: rail.escrow,
+    abi: JOB_OF_ABI,
+    functionName: "jobOf",
+    args: [jobId],
+  });
+  return Number(job.status);
+}
+
+function railFor(entry: JournalEntry, known: KnownRail[]): KnownRail | undefined {
+  const network: Network | undefined = entry.network;
+  if (network) return known.find((rail) => rail.network === network);
+  if (entry.rail === "whitechain") return known.find((rail) => rail.network === "eip155:1874");
+  if (entry.rail) return known.find((rail) => rail.network === "eip155:5042002");
+  return undefined;
+}
+
+export async function resume(args: {
+  hub: HubClient;
+  journal: Journal;
+  state: State;
+  now?: number;
+  known?: KnownRail[];
+  readJobStatus?: JobStatusReader;
+}): Promise<ResumeSummary[]> {
   const { hub, journal, state } = args;
+  const known = args.known ?? KNOWN_RAILS;
+  const read = args.readJobStatus ?? readJobStatus;
   const at = args.now ?? Math.floor(Date.now() / 1000);
   const out: ResumeSummary[] = [];
   for (const open of journal.open()) {
     const jobId = open.jobId as string;
-    const base = { at, offerHash: open.offerHash, seller: open.seller, amount: open.amount, rail: open.rail, jobId };
+    const base = {
+      at,
+      offerHash: open.offerHash,
+      seller: open.seller,
+      amount: open.amount,
+      network: open.network,
+      rail: open.rail,
+      jobId,
+    };
     let job;
     try {
       job = await hub.job(jobId);
@@ -32,9 +98,23 @@ export async function resume(args: { hub: HubClient; journal: Journal; state: St
       }
       journal.append({ ...base, kind, slipHash, closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: job.status, appended: kind });
-    } else if (job.status === "refunded" || job.status === "failed") {
-      journal.append({ ...base, kind: job.status, closeTx: job.closeTx ?? undefined });
-      out.push({ jobId, status: job.status, appended: job.status });
+    } else if (job.status === "refunded") {
+      const rail = railFor(open, known);
+      let status = 0;
+      try {
+        if (rail) status = await read(rail, jobId as Hex);
+      } catch {
+        status = 0;
+      }
+      if (status !== 3) {
+        out.push({ jobId, status: "hub says refunded; chain does not" });
+        continue;
+      }
+      journal.append({ ...base, kind: "refunded", closeTx: job.closeTx ?? undefined });
+      out.push({ jobId, status: "refunded", appended: "refunded" });
+    } else if (job.status === "failed") {
+      journal.append({ ...base, kind: "failed", closeTx: job.closeTx ?? undefined });
+      out.push({ jobId, status: job.status, appended: "failed" });
     } else {
       out.push({ jobId, status: job.status });
     }
