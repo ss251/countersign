@@ -28,13 +28,18 @@ const group = (over: Partial<SellerGroup> = {}, l: Listing = listing()): SellerG
 // 48 released settlements for this offer, as the console's own ledger reads them.
 const rows = Array.from({ length: 48 }, (_, i) => ({ jobId: `0x${i.toString(16).padStart(64, "0")}`, offerHash: HASH, seller: SELLER, kind: "released", rail: "escrow", at: 1_793_990_000 - i, amount: "10000", title: "use-arc" })) as unknown as Settlement[];
 const plain = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
-const card = (props: { g: SellerGroup; reading?: boolean; ledgerComplete?: boolean }) =>
+const card = (props: { g: SellerGroup; reading?: boolean; unread?: boolean; ledgerComplete?: boolean }) =>
   plain(renderToString(createElement(SellerCard, { ledger: settlementIndex(rows), now: 1_793_990_100, ...props })));
 
 describe("a seller card says what is known about its record", () => {
   test("while the hub's records are still loading it reads 'Reading…', never 'Not counted yet'", () => {
     const text = card({ g: group(), reading: true });
     expect(text).toContain("Reading…");
+    expect(text).not.toContain("Not counted yet");
+  });
+  test("if the hub's records could not be read at all, it says 'Not read', never 'Not counted yet' (cs-w1)", () => {
+    const text = card({ g: group(), reading: false, unread: true });
+    expect(text).toContain("Not read");
     expect(text).not.toContain("Not counted yet");
   });
   test("once they have answered with no record, it says 'Not counted yet'", () => {

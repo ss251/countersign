@@ -287,6 +287,7 @@ export default function RegistryPage(_props: PageProps) {
                   ledger={ledger}
                   now={now}
                   reading={sellers.loading && sellers.data === undefined}
+                  unread={sellers.error !== undefined && sellers.data === undefined}
                   ledgerComplete={Array.isArray(settlements.data) && settlements.data.length < SETTLEMENT_PAGE}
                 />
               ))}
@@ -303,6 +304,7 @@ export function SellerCard({
   ledger,
   now,
   reading = false,
+  unread = false,
   ledgerComplete = true,
 }: {
   g: SellerGroup;
@@ -310,6 +312,8 @@ export function SellerCard({
   now: number;
   /** The hub's seller records have not answered yet: a missing count is still loading, not absent. */
   reading?: boolean;
+  /** The hub's seller records could not be read: say so, never "Not counted yet", which claims something about them. */
+  unread?: boolean;
   /** The console's own settlements ledger holds every payment (fewer rows than it asked for), so its per-offer counts are whole. */
   ledgerComplete?: boolean;
 }) {
@@ -342,7 +346,7 @@ export function SellerCard({
       <dl className="scard__strip">
         <div>
           <dt className="label">Record</dt>
-          <dd className="num">{!g.counted ? (reading ? "Reading…" : "Not counted yet") : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
+          <dd className="num">{!g.counted ? (reading ? "Reading…" : unread ? "Not read" : "Not counted yet") : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
         </div>
         <div>
           <dt className="label">Delivered</dt>
