@@ -19,6 +19,7 @@ import {
 import { parseAbiItem, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
+import { sessionEnvelopeProblems, type SessionEnvelope } from "../lib/envelope.ts";
 import { raiseIfFailed } from "../lib/failure.ts";
 import {
   approveIfPrompted,
@@ -119,6 +120,18 @@ function testId(page: Page, testid: string): Locator {
 
 function missingAttribute(testid: string, name: string): Error {
   return new Error(`the console does not expose ${testid}[${name}] (cs-ui)`);
+}
+
+/** The hub's answer as status and code only; never a request header. */
+async function hubFailure(response: Response): Promise<string> {
+  let code = "no code";
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    if (typeof body.code === "string" && body.code !== "") code = body.code;
+  } catch {
+    // a body that is not JSON has no code
+  }
+  return `${response.status} (${code})`;
 }
 
 async function waitAttr(
@@ -616,6 +629,89 @@ const runHuman = async (
         await transfer(client, injected, funder.address, amount, RPC);
       }
     });
+
+    if (project === "privy") {
+      await step(rec, page, "09", "buyer", "Buyer offers to create an envelope", async () => {
+        await page.goto("/#/buyer");
+        const locked = testId(page, "buyer-locked");
+        await expect(locked).toBeVisible({ timeout: 30_000 });
+        const create = locked.getByRole("button", { name: /create an envelope/i });
+        await expect(create).toBeVisible({ timeout: 30_000 });
+        await expect(create).toBeEnabled({ timeout: 30_000 });
+      });
+
+      const session = await step(rec, page, "10", "envelope", "Create an envelope, shown in place", async () => {
+        const before = page.url();
+        await testId(page, "buyer-locked")
+          .getByRole("button", { name: /create an envelope/i })
+          .click();
+
+        await expect(testId(page, "buyer-locked")).toBeHidden({ timeout: 30_000 });
+        await expect(page.locator('[role="alert"]:visible')).toHaveCount(0);
+        await expect(
+          page
+            .getByText("Nothing is waiting for you.", { exact: true })
+            .or(page.locator('article[aria-labelledby="approval-title"]'))
+            .first(),
+        ).toBeVisible({ timeout: 30_000 });
+        if (!new URL(page.url()).hash.startsWith("#/buyer")) {
+          throw new Error(`the page left the buyer route: ${before} -> ${page.url()}`);
+        }
+
+        const token = await page.evaluate(() => window.localStorage.getItem("countersign.approval-token"));
+        if (token === null || !/^cse_[0-9a-f]{64}$/.test(token)) {
+          throw new Error("the console stored no session token");
+        }
+        keys.hide(token);
+
+        const storedAgent = await page.evaluate(() => window.localStorage.getItem("countersign.agent"));
+        if (storedAgent === null || storedAgent.toLowerCase() !== wallet.toLowerCase()) {
+          throw new Error("the console stored another agent, not the embedded wallet");
+        }
+
+        const hub = hubUrl().replace(/\/$/, "");
+        const response = await fetch(`${hub}/envelopes/${wallet}`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (response.status !== 200) {
+          throw new Error(`the hub answered ${await hubFailure(response)} for the envelope`);
+        }
+        const answer = (await response.json()) as { envelope?: SessionEnvelope };
+        if (typeof answer.envelope !== "object" || answer.envelope === null) {
+          throw new Error("the hub's envelope answer has no envelope");
+        }
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const problems = sessionEnvelopeProblems(answer.envelope, wallet, nowSeconds);
+        if (problems.length > 0) throw new Error(problems.join("; "));
+
+        const scope = await fetch(
+          `${hub}/envelopes/0x000000000000000000000000000000000000dEaD`,
+          { headers: { authorization: `Bearer ${token}` } },
+        );
+        if (scope.status !== 401) {
+          throw new Error(
+            `a session token reads only its own agent's envelope: the hub answered ${await hubFailure(scope)}`,
+          );
+        }
+
+        const expiresAt = answer.envelope.expiresAt;
+        if (typeof expiresAt !== "number") throw new Error("the envelope has no expiresAt");
+        return { expiresAt };
+      });
+
+      await step(rec, page, "11", "envelope-tab", "The envelope tab shows the envelope", async () => {
+        await page
+          .getByRole("navigation", { name: "Buyer" })
+          .getByRole("link", { name: /envelope/i })
+          .click();
+        await expect(page.getByRole("region", { name: "Budget" })).toBeVisible({ timeout: 30_000 });
+        if (!new URL(page.url()).hash.startsWith("#/buyer")) {
+          throw new Error("the page left the buyer route on the envelope tab");
+        }
+        const hours = Math.round((session.expiresAt - Math.floor(Date.now() / 1000)) / 3600);
+        rec.note(`envelope: cap 1 USDC, per seller 0.5, ask above 0.05, expires in ${hours} h`);
+      });
+    }
 
     status = "PASS";
   } catch (error) {
