@@ -3,8 +3,11 @@ import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
 import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
 import { Wordmark } from "../ui/Mark.tsx";
+import { SiteFooter } from "./SiteFooter.tsx";
+import { SiteLinks } from "./SiteLinks.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
+import "./nav.css";
 
 export function App() {
   const location = useLocation();
@@ -42,6 +45,7 @@ export function App() {
           {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}
         </PageBoundary>
       </main>
+      <SiteFooter />
       {palette ? <PaletteDialog onClose={() => setPalette(false)} /> : null}
     </div>
   );
@@ -85,6 +89,7 @@ function TopBar({ active }: { active: string }) {
         </Link>
         <nav className="topbar__nav" aria-label="Views">
           {links("topbar__link")}
+          <SiteLinks.GitHub className="topbar__link" />
         </nav>
         <button
           type="button"

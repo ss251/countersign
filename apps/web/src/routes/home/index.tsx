@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
+import { SiteLinks } from "../../app/SiteLinks.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { shortHex } from "../../lib/format.ts";
 import type { HubStats, RailDeclaration, Settlement } from "../../lib/types.ts";
@@ -17,6 +18,45 @@ export const surface = "bare";
 
 const REPO = "https://github.com/ss251/countersign";
 const POLL_MS = 10_000;
+
+/** The landing's own chrome: the wordmark, the views, and on a phone one sheet under the bar. */
+function LandingBar() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <header className="landing__bar">
+        <Link to="/" className="landing__brand" aria-label="countersign, home">
+          <Wordmark size={22} />
+        </Link>
+        <nav className="landing__links" aria-label="Views">
+          <SiteLinks className="landing__link" />
+        </nav>
+        <button
+          type="button"
+          className="landing__menu"
+          aria-expanded={open}
+          aria-controls="landing-views"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Close" : "Views"}
+        </button>
+      </header>
+      {open ? (
+        <nav id="landing-views" className="landing__sheet" aria-label="Views">
+          <SiteLinks className="landing__link" onNavigate={() => setOpen(false)} />
+        </nav>
+      ) : null}
+    </>
+  );
+}
 
 /**
  * The front door, told as a story with its evidence (DESIGN-NOTE "The landing, v2"). Two pinned
@@ -52,19 +92,7 @@ export default function Landing(_props: PageProps) {
 
   return (
     <div className="landing">
-      <header className="landing__bar">
-        <Link to="/" className="landing__brand" aria-label="countersign, home">
-          <Wordmark size={22} />
-        </Link>
-        <nav className="landing__links" aria-label="Views">
-          <Link to="/buyer">Buyer</Link>
-          <Link to="/registry">Registry</Link>
-          <Link to="/verify">Verify</Link>
-          <a href={REPO} target="_blank" rel="noreferrer">
-            GitHub
-          </a>
-        </nav>
-      </header>
+      <LandingBar />
 
       <EvidenceStage
         stats={goodStats.current}
