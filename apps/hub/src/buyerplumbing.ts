@@ -1,3 +1,4 @@
+import { reviewFields } from "./orders.ts";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { recoverMessageAddress, type Hex } from "viem";
@@ -89,6 +90,7 @@ function listJobs(c: Context, deps: BuyerPlumbingDeps): Response {
       closeTx: job.closeTx,
       slipHash: job.slipHash,
       explorer,
+      ...reviewFields(rails.get(job.rail)?.declaration.kind === "escrow"),
     };
   });
   return json({ jobs });

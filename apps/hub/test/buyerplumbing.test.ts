@@ -428,6 +428,12 @@ describe("jobs by buyer", () => {
     expect(body.jobs[0]?.buyer).toBe(BUYER_A);
     expect(body.jobs[0]?.seller).toBe(seller.address);
     expect(body.jobs[0]?.title).toBe("Sold by the seller");
+    const row = body.jobs[0] as unknown as Record<string, unknown>;
+    for (const key of ["deliveredAt", "reviewEndsAt", "acceptedAt", "acceptTx", "disputedAt", "disputeTx"]) {
+      expect(row[key]).toBeNull();
+    }
+    expect(row.releasedAfterWindow).toBe(false);
+    expect("reviewWindow" in row).toBe(true);
   });
 
   test("/jobs with both a buyer and a seller is a 400", async () => {
