@@ -532,6 +532,10 @@
   align-items: center;
 }
 
+.limit__input-row .input {
+  padding-right: 64px;
+}
+
 .limit__asset {
   position: absolute;
   right: var(--sp-3);
