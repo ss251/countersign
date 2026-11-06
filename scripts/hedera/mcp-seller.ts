@@ -13,6 +13,7 @@ import {
   type JsonSchema,
   type Offer,
 } from "../../packages/core/src/index.ts";
+import { offerInputSchema } from "../../packages/rail/src/hedera/mcp-schema.ts";
 import type { Hex, RunnerAccount } from "../../packages/runner/src/account.ts";
 import { startRunner } from "../../packages/runner/src/daemon.ts";
 import type { McpSpec } from "../../packages/runner/src/mcp.ts";
@@ -140,7 +141,7 @@ async function inputSchema(): Promise<JsonSchema> {
     const { tools } = await client.listTools();
     const tool = tools.find((candidate) => candidate.name === TOOL);
     if (tool === undefined) throw new Error(`the kit did not list ${TOOL}`);
-    const schema = stripSchema(tool.inputSchema);
+    const schema = offerInputSchema(tool.inputSchema);
     try {
       const check = checkSchema(schema, SAMPLE_INPUT);
       if (!check.ok) throw new Error(check.errors.join("; "));
@@ -153,29 +154,13 @@ async function inputSchema(): Promise<JsonSchema> {
   }
 }
 
-function stripSchema(value: unknown): JsonSchema {
-  const stripped = stripDollarSchema(value);
-  if (!isRecord(stripped)) throw new Error("the tool input schema is not an object");
-  return stripped;
-}
-
-function stripDollarSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripDollarSchema);
-  if (!isRecord(value)) return value;
-  const out: Record<string, unknown> = {};
-  for (const [name, entry] of Object.entries(value)) {
-    if (name !== "$schema") out[name] = stripDollarSchema(entry);
-  }
-  return out;
-}
-
 function makeOffer(seller: Offer["seller"], price: string, input: JsonSchema): Offer {
   return {
     v: 1,
     seller,
     title: "Hedera Agent Kit: an HBAR transfer, built for you to sign",
     summary:
-      "The Hedera Agent Kit's transfer_hbar_tool in RETURN_BYTES mode: the result is unsigned transaction bytes built for the paying account to sign and submit. The seller holds no key.",
+      "The Hedera Agent Kit's transfer_hbar_tool in RETURN_BYTES mode: the result is unsigned transaction bytes built for the paying account to sign and submit. The seller holds no key. Amounts are whole HBAR.",
     adapter: "mcp",
     input,
     output: { type: "object", required: ["tool", "server", "inputHash", "result"] },
@@ -236,10 +221,6 @@ async function main(): Promise<void> {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 if (import.meta.main) {
