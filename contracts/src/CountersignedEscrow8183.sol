@@ -150,7 +150,8 @@ contract CountersignedEscrow8183 is EIP712, ReentrancyGuard {
 
         token.forceApprove(address(core), cs.amount);
         uint256 minExpiry = block.timestamp + 6 minutes;
-        uint256 expiredAt = cs.deadline > minExpiry ? cs.deadline : minExpiry;
+        uint256 afterDeadline = uint256(cs.deadline) + 1;
+        uint256 expiredAt = afterDeadline > minExpiry ? afterDeadline : minExpiry;
         uint256 id = core.createJob(
             address(this),
             address(this),
@@ -272,15 +273,23 @@ contract CountersignedEscrow8183 is EIP712, ReentrancyGuard {
         uint256 id = job8183Of[jobId];
         uint256 amount = job.amount;
         uint256 before = token.balanceOf(address(this));
-        if (byPayee) {
-            core.reject(id, bytes32("cancel"), "");
-        } else {
-            try core.reject(id, bytes32("deadline"), "") {} catch {
-                core.claimRefund(id);
+        IAgenticCommerce.JobStatus coreStatus = core.getJob(id).status;
+        if (coreStatus == IAgenticCommerce.JobStatus.Funded || coreStatus == IAgenticCommerce.JobStatus.Submitted) {
+            if (byPayee) {
+                core.reject(id, bytes32("cancel"), "");
+            } else {
+                try core.reject(id, bytes32("deadline"), "") {} catch {
+                    core.claimRefund(id);
+                }
             }
+            uint256 received = token.balanceOf(address(this)) - before;
+            if (received != amount) revert CoreFeeTaken(received, amount);
+        } else if (coreStatus == IAgenticCommerce.JobStatus.Expired || coreStatus == IAgenticCommerce.JobStatus.Rejected) {
+            // The core already returned the budget to this contract: someone called claimRefund directly.
+            if (before < amount) revert CoreFeeTaken(before, amount);
+        } else {
+            revert NotFunded(jobId);
         }
-        uint256 received = token.balanceOf(address(this)) - before;
-        if (received != amount) revert CoreFeeTaken(received, amount);
 
         job.status = Status.Refunded;
         address buyer = job.buyer;
