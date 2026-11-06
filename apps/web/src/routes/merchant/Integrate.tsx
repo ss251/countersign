@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CUSTOMER_SNIPPET, MERCHANT_SNIPPET, SNIPPET_PATHS } from "./snippet.generated.ts";
 
 /**
- * The one install line for the published package, @countersign-hub/relay: the captain chose npm, and
- * that scope is the project's own (created 06 Nov 19:17Z). Never an @countersign/* name, which on npm
- * is another project's. Null until the package is actually published (STEER-2210, reality rule).
+ * The one install line for the published package. @countersign-hub/relay 0.1.0 is on npm (the
+ * captain published it 06 Nov 20:51Z; npm view read it 20:52:27Z). Its exports are ./paywall,
+ * ./pay-fetch and ./browser: whitechainPaywall from ./paywall, createPayFetch from ./browser, which
+ * are the names the snippets show. Never an @countersign/* name, which on npm is another project's.
  */
-export const INSTALL_LINE: string | null = null;
+export const INSTALL_LINE: string | null = "npm i @countersign-hub/relay";
 
 /** Lines of code, as a reader counts them: the file's lines without its final newline. */
 export function lineCount(code: string): number {
@@ -66,7 +67,7 @@ export function Integrate(): ReactNode {
       <Snippet title="In your customer’s browser" path={SNIPPET_PATHS.customer} code={CUSTOMER_SNIPPET} />
       <p className="mx-quiet mx-integrate__note">
         {INSTALL_LINE
-          ? `Install with ${INSTALL_LINE}`
+          ? `Install with ${INSTALL_LINE}. It is the same code this console runs from its own workspace, under its published name. On npm, @countersign/* belongs to another project: never install it.`
           : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package, so install nothing under that name until the release is out. On npm, @countersign/* belongs to another project: never install it."}
       </p>
     </section>

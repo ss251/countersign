@@ -10,14 +10,17 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { lineCount, SNIPPET_LINES } from "../src/routes/merchant/Integrate.tsx";
+import { INSTALL_LINE, lineCount, SNIPPET_LINES } from "../src/routes/merchant/Integrate.tsx";
 import { CUSTOMER_SNIPPET, MERCHANT_SNIPPET, SNIPPET_PATHS } from "../src/routes/merchant/snippet.generated.ts";
 import { displayedSource, PUBLISHED_SPECIFIERS, SNIPPET_FILES, snippetModule, workspaceSource } from "./merchant-snippet-gen.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const source = (file: string) => readFileSync(join(root, file), "utf8");
 
-/** What K3's release publishes of the relay (scripts/release/surface.ts on PR #253). */
+/**
+ * What @countersign-hub/relay 0.1.0 publishes (npm view exports, 06 Nov 20:52Z: ./browser, ./paywall,
+ * ./pay-fetch, no root; scripts/release/surface.ts on main).
+ */
 const PUBLISHED_RELAY = ["@countersign-hub/relay/paywall", "@countersign-hub/relay/pay-fetch", "@countersign-hub/relay/browser"];
 
 describe("the integration block is the code the checkout runs", () => {
@@ -43,6 +46,11 @@ describe("the integration block is the code the checkout runs", () => {
       for (const specifier of specifiers) expect(PUBLISHED_RELAY).toContain(specifier);
     }
     for (const published of Object.values(PUBLISHED_SPECIFIERS)) expect(PUBLISHED_RELAY).toContain(published);
+  });
+
+  test("the install line names the published package and nothing under another project's scope", () => {
+    expect(INSTALL_LINE).toBe("npm i @countersign-hub/relay");
+    expect(INSTALL_LINE).not.toMatch(/@countersign\//);
   });
 
   test("an import with no published name stops the generator instead of being shown as it is", () => {
