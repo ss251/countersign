@@ -421,7 +421,10 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
       })
     : null;
-  useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
+  // A block body on purpose: scrollIntoView returns a Promise in current Chrome, and React would take it for a cleanup.
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
     <section ref={ref} className="pcard" aria-labelledby="pcard-title">
       <header className="pcard__head">

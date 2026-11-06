@@ -18,55 +18,6 @@
   max-width: 420px;
 }
 
-/* Rows 12px apart so two toggles' 44px targets never overlap when the row wraps. */
-.toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3) var(--sp-5);
-}
-
-.toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--slate);
-  font-size: var(--t-14);
-  font-weight: 500;
-  box-shadow: inset 0 -2px 0 transparent;
-  transition:
-    color var(--d-1) var(--ease-out),
-    box-shadow var(--d-1) var(--ease-out);
-}
-
-/* 32px to the eye, 44px to the thumb. */
-.toggle::after {
-  content: "";
-  position: absolute;
-  inset: -6px -8px;
-}
-
-.toggle__n {
-  color: var(--slate);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-}
-
-.toggle.is-on {
-  color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--ink);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .toggle:hover {
-    color: var(--ink);
-  }
-}
-
 .registry__count {
   margin-bottom: var(--sp-3);
   color: var(--slate);
@@ -93,18 +44,18 @@
   gap: var(--sp-6);
 }
 
-.seller {
+.scard {
   display: grid;
   min-width: 0;
   border: var(--hair) solid var(--line);
   border-radius: var(--r-1);
 }
 
-.seller--skeleton {
+.scard--skeleton {
   min-height: 248px;
 }
 
-.seller__head {
+.scard__head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
@@ -112,14 +63,14 @@
   padding: var(--sp-4);
 }
 
-.seller__who {
+.scard__who {
   display: grid;
   justify-items: start;
   gap: 2px;
   min-width: 0;
 }
 
-.seller__name {
+.scard__name {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -129,48 +80,48 @@
   overflow-wrap: anywhere;
 }
 
-.seller__name.is-unnamed {
+.scard__name.is-unnamed {
   color: var(--slate);
   font-weight: 500;
 }
 
-.seller__tick {
+.scard__tick {
   flex: none;
   color: var(--ink);
 }
 
-.seller__id {
+.scard__id {
   color: var(--slate);
   font-size: var(--t-13);
 }
 
 /* The reputation strip: small caps over tabular figures, ruled above and below, four across. */
-.seller__strip {
+.scard__strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: var(--hair) solid var(--line);
   border-bottom: var(--hair) solid var(--line);
 }
 
-.seller__strip > div {
+.scard__strip > div {
   display: grid;
   gap: 2px;
   min-width: 0;
   padding: var(--sp-3) var(--sp-4);
 }
 
-.seller__strip > div + div {
+.scard__strip > div + div {
   border-left: var(--hair) solid var(--line);
 }
 
-.seller__strip dd {
+.scard__strip dd {
   font-family: var(--mono);
   font-size: var(--t-14);
 }
 
 /* The offers: one compact row each, the price at the right. */
 
-.seller__offers {
+.scard__offers {
   display: grid;
 }
 
@@ -253,13 +204,13 @@
 /* Narrow: the strip goes two by two, an offer row folds into two lines with the price on the first. */
 
 @media (max-width: 760px) {
-  .seller__strip {
+  .scard__strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .seller__strip > div:nth-child(3) {
+  .scard__strip > div:nth-child(3) {
     border-left: 0;
   }
-  .seller__strip > div:nth-child(n + 3) {
+  .scard__strip > div:nth-child(n + 3) {
     border-top: var(--hair) solid var(--line);
   }
   .orow {
