@@ -130,6 +130,18 @@ describe("whitechainPaywall", () => {
     expect(handled).toBe(false);
   });
 
+  test("a decodable but shapeless header is refused as unparseable", async () => {
+    const relay = createTestRelay();
+    const { fetch } = stub();
+    const res = await appFor(relay, { fetch }).request("/forecast", {
+      headers: { [PAYMENT_SIGNATURE_HEADER]: toBase64Json("not a payment") },
+    });
+    expect(res.status).toBe(402);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "Refused. The payment header does not parse.",
+    );
+  });
+
   test("an invalid verify gives 402 and the handler never runs", async () => {
     const relay = createTestRelay();
     let handled = false;

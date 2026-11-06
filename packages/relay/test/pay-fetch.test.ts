@@ -121,6 +121,37 @@ describe("createPayFetch", () => {
     expect(new Headers(seen.init?.headers).get("x-test")).toBe("yes");
   });
 
+  test("a 402 with the challenge only in the body is still paid", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+    );
+    let calls = 0;
+    const fetch: FetchLike = async (_input, init) => {
+      calls += 1;
+      if (calls === 1) {
+        const body = {
+          x402Version: 2,
+          error: "Payment required.",
+          resource: { url: RESOURCE, description: "forecast", mimeType: "application/json" },
+          accepts: [requirements],
+        };
+        return new Response(JSON.stringify(body), {
+          status: 402,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(signatureOf(init).accepted).toEqual(requirements);
+      return settled();
+    };
+    const pay = createPayFetch({ account: relay.buyer, fetch, now: () => NOW });
+    const res = await pay(RESOURCE);
+    expect(res.status).toBe(200);
+    expect(res.payment?.transaction).toBe("0xabc");
+    expect(pay.spent()).toBe("0.05");
+  });
+
   test("maxPerCall refuses and never signs", async () => {
     const relay = createTestRelay();
     const requirements = makeRequirements(
