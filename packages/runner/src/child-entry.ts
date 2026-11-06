@@ -1,19 +1,24 @@
 /**
- * The child entry: read one {spec, input} request on stdin, run the skill and
- * write {output} on stdout. Errors become {error} with a non-zero exit.
+ * The child entry: read one {spec, input} request on stdin, run the skill or
+ * MCP adapter and write {output} on stdout. Errors become {error} with a
+ * non-zero exit.
  */
 
+import type { ChildSpec, SkillSpec } from "./child.ts";
+import { runMcp, type McpSpec, type McpServerRef } from "./mcp.ts";
 import { readSkill, runSkill, type SkillInput } from "./skill.ts";
 
 interface ChildRequest {
-  spec: { adapter: "skill"; skillPath: string };
+  spec: ChildSpec;
   input: unknown;
 }
 
 async function main(): Promise<void> {
   const request = parseRequest(await Bun.stdin.text());
-  const skill = await readSkill(request.spec.skillPath);
-  const output = runSkill(skill, asSkillInput(request.input));
+  const output =
+    request.spec.adapter === "skill"
+      ? runSkill(await readSkill(request.spec.skillPath), asSkillInput(request.input))
+      : await runMcp(request.spec, request.input);
   console.log(JSON.stringify({ output }));
 }
 
@@ -23,11 +28,41 @@ function parseRequest(raw: string): ChildRequest {
     throw new Error("The child request is malformed.");
   }
   const adapter = value.spec.adapter;
-  const skillPath = value.spec.skillPath;
-  if (adapter !== "skill" || typeof skillPath !== "string") {
+  if (adapter === "skill") return { spec: parseSkill(value.spec), input: value.input };
+  if (adapter === "mcp") return { spec: parseMcp(value.spec), input: value.input };
+  throw new Error("Refused. Unknown adapter.");
+}
+
+function parseSkill(spec: Record<string, unknown>): SkillSpec {
+  const skillPath = spec.skillPath;
+  if (typeof skillPath !== "string") throw new Error("The child request is malformed.");
+  return { adapter: "skill", skillPath };
+}
+
+function parseMcp(spec: Record<string, unknown>): McpSpec {
+  const command = spec.command;
+  const args = spec.args;
+  const tool = spec.tool;
+  if (
+    typeof command !== "string" ||
+    !Array.isArray(args) ||
+    !args.every((arg): arg is string => typeof arg === "string") ||
+    typeof tool !== "string"
+  ) {
     throw new Error("The child request is malformed.");
   }
-  return { spec: { adapter, skillPath }, input: value.input };
+  const parsed: McpSpec = { adapter: "mcp", command, args, tool };
+  const server = parseServer(spec.server);
+  if (server !== undefined) parsed.server = server;
+  return parsed;
+}
+
+function parseServer(value: unknown): McpServerRef | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || typeof value.package !== "string" || typeof value.version !== "string") {
+    throw new Error("The child request is malformed.");
+  }
+  return { package: value.package, version: value.version };
 }
 
 function asSkillInput(value: unknown): SkillInput {

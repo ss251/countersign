@@ -19,6 +19,7 @@ import {
 } from "@countersign/core";
 import type { RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
+import { substituteBuyer } from "./mcp.ts";
 
 export interface ServedOffer {
   offer: Offer;
@@ -104,7 +105,11 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
 
     let output: unknown;
     try {
-      output = await runInChild(entry.spec, order.input, { timeMs, maxOutputBytes });
+      output = await runInChild(
+        substituteBuyer(entry.spec, order.buyer),
+        order.input,
+        { timeMs, maxOutputBytes },
+      );
     } catch (error) {
       const reason = messageOf(error);
       notify(order, entry.offer.title, false, reason);

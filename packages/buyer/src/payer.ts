@@ -11,9 +11,18 @@ import {
   type PaymentRequired,
   type PaymentRequirements,
 } from "@countersign/core";
-import { gatewayPayment } from "@countersign/rail";
-import type { Address } from "viem";
-import { KNOWN_GATEWAYS, knownGatewayFor, type KnownGateway, type KnownRail } from "./known-rails.ts";
+import { gatewayPayment, TRANSFER_WITH_AUTHORIZATION_TYPES } from "@countersign/rail";
+import { type Address, getAddress } from "viem";
+import {
+  KNOWN_DIRECTS,
+  KNOWN_GATEWAYS,
+  knownDirectFor,
+  knownGatewayFor,
+  pinnedDirectFor,
+  type KnownDirect,
+  type KnownGateway,
+  type KnownRail,
+} from "./known-rails.ts";
 
 export interface PayContext {
   now: number;
@@ -97,6 +106,65 @@ export function gatewayPayer(account: LocalAccount, known: KnownGateway[] = KNOW
       return { payment, jobId: authorization.nonce as Hex };
     },
   };
+}
+
+/** Signs a direct EIP-3009 transfer, but only under a pinned token's own domain. */
+export function eip3009Payer(account: LocalAccount, known: KnownDirect[] = KNOWN_DIRECTS): Payer {
+  return {
+    account,
+    canPay(req) {
+      return knownDirectFor(req, known) !== undefined;
+    },
+    async pay(req, ctx) {
+      // The domain comes from the pinned token, never from the hub's entry.
+      const direct = pinnedDirectFor(req, known);
+      if (!direct) throw new Error("Refused. This rail is not one this agent knows.");
+      const nonce = randomNonce();
+      const validAfter = ctx.now - 5;
+      const validBefore = ctx.now + Math.min(req.maxTimeoutSeconds, 300);
+      const to = getAddress(req.payTo as Address);
+      const signature = await account.signTypedData({
+        domain: {
+          name: direct.name,
+          version: direct.version,
+          chainId: direct.chainId,
+          verifyingContract: getAddress(direct.asset),
+        },
+        types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+        primaryType: "TransferWithAuthorization",
+        message: {
+          from: getAddress(account.address),
+          to,
+          value: BigInt(req.amount),
+          validAfter: BigInt(validAfter),
+          validBefore: BigInt(validBefore),
+          nonce,
+        },
+      });
+      const payment: PaymentPayload = {
+        x402Version: 2,
+        accepted: req,
+        payload: {
+          signature,
+          authorization: {
+            from: getAddress(account.address),
+            to,
+            value: req.amount,
+            validAfter: String(validAfter),
+            validBefore: String(validBefore),
+            nonce,
+          },
+        },
+        ...(ctx.resource !== undefined ? { resource: ctx.resource } : {}),
+      };
+      return { payment, jobId: nonce };
+    },
+  };
+}
+
+function randomNonce(): Hex {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
