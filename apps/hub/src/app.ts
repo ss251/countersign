@@ -313,6 +313,7 @@ function fail(status: number, code: string, message: string): Response {
 
 const TREE_MAX_DEPTH = 8;
 const TREE_MAX_NODES = 256;
+const TREE_MAX_MISSING = 256;
 
 interface TreeNode {
   slip: Slip;
@@ -341,14 +342,20 @@ function observedFor(store: Store, jobId: Hex): Hex[] {
 
 /**
  * Breadth-first receipt tree. Each slip hash is visited once. The root is depth 0;
- * nothing below depth 8 is walked, and the walk stops at 256 nodes. A child hash
- * this hub does not hold is listed in `missing` instead of `nodes`.
+ * nothing below depth 8 is walked, and the walk stops at 256 nodes. The queue never
+ * holds more hashes than that walk could still visit, and `missing` stops at 256.
+ * A child hash this hub does not hold is listed in `missing` instead of `nodes`.
+ * `truncated` is true when a child was dropped for the queue, node, missing, or depth limit.
  */
-function receiptTree(store: Store, root: string): { root: string; nodes: Record<string, TreeNode>; missing: string[] } {
+function receiptTree(
+  store: Store,
+  root: string,
+): { root: string; nodes: Record<string, TreeNode>; missing: string[]; truncated: boolean } {
   const nodes: Record<string, TreeNode> = {};
   const missing: string[] = [];
   const seen = new Set<string>();
   const queue: Array<{ hash: string; depth: number }> = [{ hash: root, depth: 0 }];
+  let truncated = false;
 
   while (queue.length > 0 && Object.keys(nodes).length < TREE_MAX_NODES) {
     const item = queue.shift();
@@ -359,7 +366,8 @@ function receiptTree(store: Store, root: string): { root: string; nodes: Record<
 
     const slip = store.getSlip(item.hash);
     if (slip === null) {
-      missing.push(item.hash);
+      if (missing.length < TREE_MAX_MISSING) missing.push(item.hash);
+      else truncated = true;
       continue;
     }
 
@@ -370,12 +378,22 @@ function receiptTree(store: Store, root: string): { root: string; nodes: Record<
       observed: observedFor(store, slip.body.jobId),
     };
 
-    if (item.depth >= TREE_MAX_DEPTH) continue;
-    if (Object.keys(nodes).length >= TREE_MAX_NODES) continue;
+    if (item.depth >= TREE_MAX_DEPTH) {
+      if (slip.body.children.length > 0) truncated = true;
+      continue;
+    }
+    if (Object.keys(nodes).length >= TREE_MAX_NODES) {
+      if (slip.body.children.length > 0) truncated = true;
+      continue;
+    }
     for (const child of slip.body.children) {
+      if (queue.length + Object.keys(nodes).length >= TREE_MAX_NODES) {
+        truncated = true;
+        break;
+      }
       queue.push({ hash: child, depth: item.depth + 1 });
     }
   }
 
-  return { root, nodes, missing };
+  return { root, nodes, missing, truncated };
 }

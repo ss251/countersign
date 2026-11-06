@@ -263,6 +263,48 @@ describe("GET /trees/:root", () => {
     expect(body.nodes[root.hash]?.observed).toEqual([earlier.hash, later.hash]);
     expect(body.missing).toEqual([]);
   });
+
+  test("a root naming 300 children the hub does not hold answers 200, caps missing, and sets truncated", async () => {
+    const offer = rememberOffer(hub, "Wide");
+    const children: Hex[] = [];
+    for (let i = 1; i <= 300; i += 1) {
+      children.push(job(i.toString(16)));
+    }
+    const root = keep(hub, await signedSlip({ jobId: job("a1"), offerHash: offer, children }));
+
+    const response = await fetch(`${hub.url}/trees/${root.hash}`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as TreeBody;
+    expect(body.missing.length).toBeLessThanOrEqual(256);
+    expect(body.truncated).toBe(true);
+  });
+
+  test("a small tree answers with truncated false and the same nodes", async () => {
+    const rootOffer = rememberOffer(hub, "Root title");
+    const alphaOffer = rememberOffer(hub, "Alpha");
+    const betaOffer = rememberOffer(hub, "Beta");
+    const grandOffer = job("cd");
+
+    const grand = keep(hub, await signedSlip({ jobId: job("11"), offerHash: grandOffer }));
+    const alpha = keep(
+      hub,
+      await signedSlip({ jobId: job("12"), offerHash: alphaOffer, children: [grand.hash] }),
+    );
+    const beta = keep(hub, await signedSlip({ jobId: job("13"), offerHash: betaOffer }));
+    const root = keep(
+      hub,
+      await signedSlip({ jobId: job("10"), offerHash: rootOffer, children: [alpha.hash, beta.hash] }),
+    );
+
+    const body = await tree(hub, root.hash);
+    expect(body.truncated).toBe(false);
+    expect(body.missing).toEqual([]);
+    expect(Object.keys(body.nodes).sort()).toEqual([root.hash, alpha.hash, beta.hash, grand.hash].sort());
+    expect(body.nodes[root.hash]?.title).toBe("Root title");
+    expect(body.nodes[alpha.hash]?.title).toBe("Alpha");
+    expect(body.nodes[beta.hash]?.title).toBe("Beta");
+    expect(body.nodes[grand.hash]?.title).toBe(`offer ${short(grandOffer)}`);
+  });
 });
 
 interface ChildrenBody {
@@ -281,6 +323,7 @@ interface TreeBody {
   root: string;
   nodes: Record<string, TreeNode>;
   missing: string[];
+  truncated: boolean;
 }
 
 function job(hex: string): Hex {
