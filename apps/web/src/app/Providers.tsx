@@ -1,14 +1,101 @@
-import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider } from "wagmi";
-import { walletConfig } from "../lib/wallet.ts";
+import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
+import {
+  WagmiProvider as PrivyWagmiProvider,
+  createConfig as createPrivyWagmiConfig,
+} from "@privy-io/wagmi";
+import { WagmiProvider, http } from "wagmi";
+import {
+  PRIVY_APP_ID,
+  arcTestnet,
+  walletConfig,
+  walletModeFor,
+  whitechainTestnet,
+  type WalletMode,
+} from "../lib/wallet.ts";
 
 const queryClient = new QueryClient();
 
+const privyWagmiConfig = createPrivyWagmiConfig({
+  chains: [arcTestnet, whitechainTestnet],
+  transports: {
+    [arcTestnet.id]: http(),
+    [whitechainTestnet.id]: http(),
+  },
+});
+
+const failureKey = "countersign.privy-failed";
+const watchdogAfter = 8_000;
+const watchdogReason = "Email sign-in did not start on this page, so connect a browser wallet.";
+
+export const WalletModeContext = createContext<WalletMode>({ privy: false, reason: null });
+
+export function useWalletMode(): WalletMode {
+  return useContext(WalletModeContext);
+}
+
+function rememberedFailure(): string | null {
+  try {
+    return sessionStorage.getItem(failureKey);
+  } catch {
+    return null;
+  }
+}
+
+function rememberFailure(reason: string): void {
+  try {
+    sessionStorage.setItem(failureKey, reason);
+  } catch {
+  }
+}
+
+function PrivyWatchdog({ onFail }: { onFail: (reason: string) => void }) {
+  const { ready } = usePrivy();
+
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => onFail(watchdogReason), watchdogAfter);
+    return () => clearTimeout(timer);
+  }, [onFail, ready]);
+
+  return null;
+}
+
 export function Providers({ children }: { children: ReactNode }) {
+  const [failed, setFailed] = useState<string | null>(rememberedFailure);
+  const fail = useCallback((reason: string) => {
+    rememberFailure(reason);
+    setFailed(reason);
+  }, []);
+  const mode = walletModeFor(PRIVY_APP_ID, failed);
+
+  if (!mode.privy || !PRIVY_APP_ID) {
+    return (
+      <WalletModeContext.Provider value={mode}>
+        <WagmiProvider config={walletConfig}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </WagmiProvider>
+      </WalletModeContext.Provider>
+    );
+  }
+
   return (
-    <WagmiProvider config={walletConfig}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </WagmiProvider>
+    <PrivyProvider
+      appId={PRIVY_APP_ID}
+      config={{
+        loginMethods: ["email", "passkey", "wallet"],
+        embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
+        defaultChain: arcTestnet,
+        supportedChains: [arcTestnet, whitechainTestnet],
+      }}
+    >
+      <PrivyWatchdog onFail={fail} />
+      <QueryClientProvider client={queryClient}>
+        <PrivyWagmiProvider config={privyWagmiConfig}>
+          <WalletModeContext.Provider value={mode}>{children}</WalletModeContext.Provider>
+        </PrivyWagmiProvider>
+      </QueryClientProvider>
+    </PrivyProvider>
   );
 }
