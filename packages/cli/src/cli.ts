@@ -19,7 +19,7 @@ Buy. The key comes from CS_BUYER_KEY.
 Verify a slip offline:
   countersign verify <slip.json> [--rpc <url>]
 
-The buyer MCP server over stdio, from @countersign-hub/mcp:
+The buyer MCP server over stdio:
   countersign mcp [--hub <url>] [--state <dir>] [--rpc <url>]
 `;
 
@@ -32,27 +32,12 @@ export interface CliDeps {
   loadMcp: () => Promise<unknown>;
 }
 
-// Built at run time, so neither the bundler nor the typecheck needs the MCP package present.
-// The published name comes first; the workspace name is the fallback.
-const MCP_PACKAGES = [["@countersign-hub", "mcp"].join("/"), ["@countersign", "mcp"].join("/")];
-
-async function loadMcpPackage(): Promise<unknown> {
-  let lastError: unknown = new Error("No MCP package name to try.");
-  for (const name of MCP_PACKAGES) {
-    try {
-      return await import(name);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
-
 export const DEFAULT_DEPS: CliDeps = {
   runner: (argv) => runnerMain(argv),
   loadBuyer: () => import("../../buyer/src/cli.ts"),
   loadVerify: () => import("../../verify/src/cli.ts"),
-  loadMcp: () => loadMcpPackage(),
+  // A literal path into this repository: the bundle carries the server, and no package name is resolved.
+  loadMcp: () => import("../../mcp/src/main.ts"),
 };
 
 export type RunnerArgs = { ok: true; args: string[] } | { ok: false; error: string };
@@ -119,10 +104,10 @@ export async function run(argv: string[], deps: CliDeps = DEFAULT_DEPS): Promise
     try {
       loaded = await deps.loadMcp();
     } catch {
-      return refuse("countersign mcp needs @countersign-hub/mcp installed beside countersign.");
+      return refuse("countersign mcp could not load its MCP server.");
     }
     const main = isRecord(loaded) ? loaded.main : undefined;
-    if (typeof main !== "function") return refuse("@countersign/mcp has no main(argv) export.");
+    if (typeof main !== "function") return refuse("The MCP server has no main(argv) export.");
     await (main as (argv: string[]) => Promise<void>)(rest);
     return;
   }

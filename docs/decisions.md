@@ -328,7 +328,7 @@ cs-phone found this on the live canary. When iOS puts the phone page in the back
 `countersign` (`packages/cli`) holds no logic of its own.
 
 - `sell skill <SKILL.md>` and `sell openapi --spec <file> --operation <id>` run the runner's `serve`, which lists the offer and dials out to the hub, so the seller opens no port. With `--publish-only` they run its `publish`. `--spec` is the runner's `--openapi`. Every other flag passes through unchanged.
-- `buy`, `discover`, `envelope` and `journal` run the buyer CLI, `verify` runs the verifier CLI, and `mcp` runs `@countersign/mcp`'s `main(argv)`.
+- `buy`, `discover`, `envelope` and `journal` run the buyer CLI, `verify` runs the verifier CLI, and `mcp` runs the buyer MCP server's `main(argv)` from `packages/mcp`, bundled into `countersign`. Nothing is looked up by package name, because the `@countersign` scope on npm is not ours.
 - `sell mcp` says plainly that the runner CLI cannot sell an MCP tool yet.
 
 **Node.** It runs on Node 22 or later. The runner dials the hub with the global `WebSocket`, which Node has had by default since 22, and Node 20 has been end-of-life since April 2026.
