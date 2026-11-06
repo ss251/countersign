@@ -39,7 +39,19 @@ Stripe into every install. The right tool is an explicit, reasoned table.
    - `mcp` gets one entry: `{ package: "@x402/evm", needsBy: "@circle-fin/x402-batching", reason:
      "its server entry imports @x402/evm but lists it only as an optional peer, which npm does not install" }`.
    - `relay` and `cli` get none. (The CLI inlines every third-party package, so it has no external peers.)
-2. **Tests** (pure, offline): the completion is added with the union range; sorted keys; a package missing from
+2. **Smoke installs siblings together.** Found with the real CLI: `smoke.ts` runs `npm i <one tarball>`, but the
+   staged CLI depends on `@countersign-hub/mcp`, which is not on npm until the captain publishes, so a lone
+   install fails with `E404` for a reason that has nothing to do with the tarball. Change the install step:
+   for each tarball, install it **together with every other tarball in the same directory whose package name
+   it lists in its staged `dependencies`** (read from the tarball's own `package.json`), in one
+   `npm i ./a.tgz ./b.tgz` command, and then check the first one as before.
+   - Print which siblings were installed with it (`install: cli + mcp`).
+   - If a staged `@countersign-hub/*` dependency has **no** tarball in the directory, fail with
+     `FAIL install: <name> depends on <dep>, which has no tarball in <dir> and is not published` and exit 1.
+     Never skip it silently.
+   - Add a pure function for "which siblings does this tarball need" and test it: a dependency with a sibling,
+     one without, and a tarball with no `@countersign-hub/*` dependency.
+3. **Tests** (pure, offline): the completion is added with the union range; sorted keys; a package missing from
    the union throws naming it; a stale completion is an error naming it; an empty reason throws; the printed
    line; `relay` and `cli` have none. All existing tests stay unchanged.
 
@@ -67,7 +79,7 @@ Stripe into every install. The right tool is an explicit, reasoned table.
    every `packed files clean`, every tarball size and file list). Then
    `bun scripts/release/smoke.ts --dir .release` must pass **every check for all three on the installed Node
    and the package's floor Node** (`mcp` and `relay` Node 20, `cli` Node 22). Paste every PASS line and the
-   number of packages each install added. Remove the worktree afterwards (`git worktree remove --force` and
+   number of packages each install added, and show the `install: cli + mcp` line. Remove the worktree afterwards (`git worktree remove --force` and
    `git worktree prune`).
    **If anything fails because of another lane's code, paste the failure and stop; do not edit it.**
 4. `bun scripts/release/build.ts --require mcp,cli,relay --out .release-req` in the **main** `cs-70`
