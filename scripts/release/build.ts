@@ -13,6 +13,11 @@ import { fileURLToPath } from "node:url";
 import { parseBuildArgs, planBuild } from "./args.ts";
 import { externalPatterns } from "./external.ts";
 import { findNodeGuardViolations, findSourceWithText } from "./guard.ts";
+import {
+  scanImportPackages,
+  selectDependencies,
+  type ImportedPackage,
+} from "./imports.ts";
 import { isRecord, type JsonObject } from "./json.ts";
 import {
   dependencyUnion,
@@ -344,10 +349,22 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
     targets,
   });
 
+  const imported: ImportedPackage[] = [];
+  for (const file of emitted) {
+    for (const name of scanImportPackages(readFileSync(file.path, "utf8"))) {
+      imported.push({ package: name, file: file.file });
+    }
+  }
+  const selection = selectDependencies(imported, dependencies);
+  console.log(
+    `${short}: dependencies ${selection.imported.length} of ${Object.keys(dependencies).length} ` +
+      `declared: ${selection.imported.join(", ")}`,
+  );
+
   const staged = stagedManifest({
     short,
     manifest,
-    dependencies,
+    dependencies: selection.dependencies,
     targets,
     surface: PUBLISH_SURFACE,
   });

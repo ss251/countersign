@@ -13,6 +13,11 @@ type Run = {
   stderr: string;
 };
 
+type Runtime = {
+  version: string;
+  command: string[];
+};
+
 let failed = false;
 
 function run(cmd: string[], cwd: string): Run {
@@ -38,6 +43,11 @@ function check(label: string, ok: boolean, detail = ""): void {
 
 function output(result: Run): string {
   return `${result.stdout}\n${result.stderr}`.trim();
+}
+
+function parseVersion(text: string): string | null {
+  const match = /\bv(\d+\.\d+\.\d+)\b/.exec(text);
+  return match?.[1] === undefined ? null : `v${match[1]}`;
 }
 
 function binEntries(manifestName: string, bin: unknown): [string, string][] {
@@ -83,15 +93,25 @@ function installedPackage(root: string): { name: string; manifest: Record<string
   return null;
 }
 
-function nodeMajor(): number | null {
-  const version = run(["node", "--version"], ROOT);
-  const text = `${version.stdout}${version.stderr}`.trim();
+function installedNodeVersion(): string | null {
+  const result = run(["node", "--version"], ROOT);
+  const text = output(result);
   console.log(`node --version: ${text}`);
-  const major = /^v(\d+)\./.exec(text)?.[1];
-  return major === undefined ? null : Number(major);
+  return parseVersion(text);
 }
 
-function smokeTarball(tarball: string): void {
+function node20Runtime(cwd: string): Runtime {
+  const result = run(["npx", "-y", "node@20", "--version"], cwd);
+  const fetched = parseVersion(output(result));
+  if (result.code !== 0 || fetched === null || !fetched.startsWith("v20.")) {
+    check("node 20", false, "could not obtain node@20");
+    process.exit(1);
+  }
+  console.log(`node 20 --version: ${fetched}`);
+  return { version: fetched, command: ["npx", "-y", "node@20"] };
+}
+
+function smokeTarball(tarball: string, current: string, useNode20: boolean): void {
   const fallback = basename(tarball, ".tgz");
   const work = mkdtempSync(join(tmpdir(), "countersign-smoke-"));
   try {
@@ -101,6 +121,10 @@ function smokeTarball(tarball: string): void {
     const install = run(["npm", "i", "--no-audit", "--no-fund", tarball], work);
     check(`${fallback} install`, install.code === 0, output(install));
     if (install.code !== 0) return;
+
+    const runtimes: Runtime[] = [{ version: current, command: ["node"] }];
+    if (useNode20) runtimes.push(node20Runtime(work));
+    else console.log("SKIP node 20 (--no-node20)");
 
     const installed = installedPackage(work);
     if (installed === null) {
@@ -115,9 +139,17 @@ function smokeTarball(tarball: string): void {
       `${installed.name} (expected ${expectedName})`,
     );
 
-    for (const [name] of binEntries(installed.name, installed.manifest.bin)) {
-      const result = run(["npx", name, "--help"], work);
-      check(`${short} bin ${name} --help`, result.code === 0 && output(result).length > 0, output(result));
+    const packageDir = join(work, "node_modules", ...installed.name.split("/"));
+    for (const [name, relativeBin] of binEntries(installed.name, installed.manifest.bin)) {
+      const binFile = join(packageDir, relativeBin.replace(/^\.\//, ""));
+      for (const runtime of runtimes) {
+        const result = run([...runtime.command, binFile, "--help"], work);
+        check(
+          `${short} bin ${name} --help [node ${runtime.version}]`,
+          result.code === 0 && output(result).length > 0,
+          output(result),
+        );
+      }
     }
 
     for (const subpath of exportSubpaths(installed.manifest.exports)) {
@@ -126,29 +158,37 @@ function smokeTarball(tarball: string): void {
         check(`${short} export ${spec}`, false, "wildcard export needs a concrete subpath");
         continue;
       }
-      const result = run(
-        ["node", "--input-type=module", "-e", `await import(${JSON.stringify(spec)});`],
-        work,
-      );
-      check(`${short} export ${spec}`, result.code === 0, output(result));
+      for (const runtime of runtimes) {
+        const result = run(
+          [...runtime.command, "--input-type=module", "-e", `await import(${JSON.stringify(spec)});`],
+          work,
+        );
+        check(
+          `${short} export ${spec} [node ${runtime.version}]`,
+          result.code === 0,
+          output(result),
+        );
+      }
     }
 
     if (short === "relay") {
-      const result = run(
-        [
-          "node",
-          "--input-type=module",
-          "-e",
-          `await import(${JSON.stringify(installed.name)});`,
-        ],
-        work,
-      );
-      const detail = output(result);
-      check(
-        `${short} root is not resolvable`,
-        result.code !== 0 && detail.includes("ERR_PACKAGE_PATH_NOT_EXPORTED"),
-        detail,
-      );
+      for (const runtime of runtimes) {
+        const result = run(
+          [
+            ...runtime.command,
+            "--input-type=module",
+            "-e",
+            `await import(${JSON.stringify(installed.name)});`,
+          ],
+          work,
+        );
+        const detail = output(result);
+        check(
+          `${short} root is not resolvable [node ${runtime.version}]`,
+          result.code !== 0 && detail.includes("ERR_PACKAGE_PATH_NOT_EXPORTED"),
+          detail,
+        );
+      }
     }
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -156,8 +196,9 @@ function smokeTarball(tarball: string): void {
 }
 
 function main(): void {
-  const major = nodeMajor();
-  if (major === null || major < 20) {
+  const current = installedNodeVersion();
+  const major = current === null ? null : Number(current.slice(1).split(".")[0]);
+  if (current === null || major === null || major < 20) {
     console.error("smoke requires Node 20 or newer on PATH");
     process.exit(1);
   }
@@ -177,7 +218,7 @@ function main(): void {
     process.exit(1);
   }
 
-  for (const tarball of tarballs) smokeTarball(tarball);
+  for (const tarball of tarballs) smokeTarball(tarball, current, args.node20 !== false);
   if (failed) process.exit(1);
 }
 

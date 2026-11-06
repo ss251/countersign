@@ -8,6 +8,8 @@ export type BuildArgs = {
 
 export type SmokeArgs = {
   dir: string;
+  /** Only present when --no-node20 turns the second runtime off. */
+  node20?: false;
 };
 
 function splitList(value: string, flag: string): Publishable[] {
@@ -64,10 +66,15 @@ export function parseBuildArgs(argv: readonly string[]): BuildArgs {
 
 export function parseSmokeArgs(argv: readonly string[]): SmokeArgs {
   let dir = ".release";
+  let node20: false | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
     if (!arg.startsWith("--")) throw new Error(`unknown argument: ${arg}`);
+    if (arg === "--no-node20") {
+      node20 = false;
+      continue;
+    }
     const { flag, value } = splitFlag(arg);
     if (flag !== "--dir") throw new Error(`unknown argument: ${flag}`);
     const resolved = value ?? takeValue(argv, i, flag);
@@ -75,7 +82,7 @@ export function parseSmokeArgs(argv: readonly string[]): SmokeArgs {
     if (resolved.length === 0) throw new Error("--dir requires a value");
     dir = resolved;
   }
-  return { dir };
+  return node20 === undefined ? { dir } : { dir, node20 };
 }
 
 export type BuildPlan = {
