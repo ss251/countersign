@@ -8,7 +8,7 @@ import type { PaymentPayload, PaymentRequirements } from "@countersign/core";
 import type { Hex } from "viem";
 import { USDC_TESTNET } from "../constants.ts";
 import { createHederaHeldRail, heldJobId, type HeldRail } from "../held.ts";
-import { NODE, PAYEE, PAYER, offer, payerKey } from "./fixtures.ts";
+import { NODE, PAYEE, PAYER, hubGatedPayeeKey, hubKey, offer, payerKey } from "./fixtures.ts";
 
 const NOW = 1_000_000;
 const SCHEDULE_ID = "0.0.500";
@@ -97,6 +97,7 @@ function executedState(): MirrorState {
 
 async function railFor(state: MirrorState): Promise<HeldRail> {
   return createHederaHeldRail({
+    hubKey,
     mirror: mirrorBox(state),
     now: () => NOW,
     waitScheduleMs: 0,
