@@ -116,10 +116,12 @@ No production offer carries a seller bond yet, because the escrows on production
 ## What signing in allows
 
 The agent wallet is a Privy server wallet that the countersign app controls, and you hold no key to it. That makes the hub a delegated signer:
-- it signs only for a signed-in CLI session, and only a payment into a known escrow, your offers and slips, or a runner's own messages;
-- each payment stays inside your envelope.
+- it signs only for a signed-in CLI session;
+- it signs only a payment into a known escrow, your offers and slips, or a runner's own messages.
 
-`logout` ends your session, and the hub stops signing for it. Keep only small testnet amounts in the wallet.
+`logout` ends your session, and the hub stops signing for it. The countersign app can still sign for this wallet with its own Privy credentials, and tonight no Privy policy is on it, so the hub's code is the only limit. Logging out ends your CLI's session, not the app's control.
+
+Keep only small testnet amounts in the wallet. Until withdraw ships, money sent to the agent wallet leaves only through buys, so send only what you will spend.
 
 Not yet: a Hedera wallet under the same login, a balance command, and withdrawing back to your own wallet.
 

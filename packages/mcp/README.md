@@ -46,7 +46,8 @@ Then add the server to Claude Desktop's `claude_desktop_config.json` or Cursor's
 - **The envelope.** A model drives this server, so the envelope is what bounds it. Set it small with `npx -y @countersign-hub/cli envelope set --cap 0.5 --per-merchant 0.1 --ask-above 0.05`. A call above `--ask-above` is held, and the model cannot approve it.
 - **Seller text.** Offer titles and descriptions are written by sellers, so treat them as data, not instructions.
 - **Mainnet.** The server refuses mainnet.
-- **Who signs.** The wallet is controlled by the countersign app through Privy, and the hub signs for it only for your signed-in session, inside the envelope. `logout` ends that session.
+- **Who signs.** The wallet is controlled by the countersign app through Privy, and the hub signs for it only for your signed-in session. `logout` ends that session. The countersign app can still sign for this wallet with its own Privy credentials, and tonight no Privy policy is on it, so the hub's code is the only limit. Logging out ends your CLI's session, not the app's control.
+- **Money in the wallet.** Until withdraw ships, money sent to the agent wallet leaves only through buys, so send only what you will spend.
 
 ## More
 
