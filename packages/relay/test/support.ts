@@ -47,6 +47,8 @@ export class FakeChain implements ChainReader, ChainWriter {
   timeoutReceipt = false;
   writeDelayMs = 0;
   writes: WriteCall[] = [];
+  /** Throws to fail a simulation selectively. */
+  simulateHook: ((call: SimulationCall) => void) | null = null;
   activeWrites = 0;
   maxConcurrentWrites = 0;
 
@@ -85,6 +87,7 @@ export class FakeChain implements ChainReader, ChainWriter {
 
   async simulateContract(call: SimulationCall): Promise<unknown> {
     if (this.failSimulation) throw new Error("execution reverted");
+    this.simulateHook?.(call);
     return { request: call };
   }
 
