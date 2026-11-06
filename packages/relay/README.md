@@ -63,8 +63,6 @@ console.log(await res.json(), res.payment?.transaction);
 - **The receipt:** `res.payment.transaction` is the settlement transaction on chain 1874.
 - **`walletAccount` signs typed data only.**
 
-**Advanced, CI only:** `createPayFetch` takes any viem account, so a CI job can build one with `privateKeyToAccount` from a secret. That key signs locally and is never sent anywhere. It must be a fresh testnet key made only for the job, holding only what the job spends, never a main wallet's.
-
 ## Refund an order (the merchant)
 
 ```ts
@@ -104,3 +102,10 @@ The relay pays gas from its own key, so it guards that key. Its live state is at
 - **Getting testnet USDT, and the network details:** `docs/whitechain.md` in the repository.
 - **Repository:** https://github.com/ss251/countersign, in `packages/relay`.
 - **License:** MIT.
+- **Names on npm:** only `@countersign-hub` is this project's. `countersign`, `countersign-mcp` and the `@countersign` scope belong to other projects.
+
+## Advanced: CI
+
+`createPayFetch` takes any viem account, so a CI job can build one with `privateKeyToAccount` from a secret.
+- That key signs locally and is never sent anywhere.
+- It must be a fresh testnet key made only for the job, holding only what the job spends, never a main wallet's.
