@@ -1,6 +1,6 @@
 import type { RailId } from "@countersign/core";
 import type { RailDeclaration } from "@countersign/rail";
-import type { Approval, EnvelopeView, Hex, Listing, Purchase, SlipView, TreeView } from "../lib/types.ts";
+import type { Approval, EnvelopeView, Hex, Listing, Purchase, SlipView } from "../lib/types.ts";
 import catalogue from "./catalogue.json";
 
 /**
@@ -146,8 +146,6 @@ export const slips: SlipView[] = (catalogue.slips as unknown as Array<Omit<SlipV
 }));
 
 export const slipByHash = (hash: string) => slips.find((s) => s.slip.hash === hash);
-
-export const tree = catalogue.tree as unknown as TreeView;
 
 /** The slip a fixture release in the buyer flow points to: a signed use-arc on the escrow rail. */
 export const demoSlipHash = slips.find((s) => s.title === "use-usdc" && s.slip.body.rail === "escrow")?.slip.hash;

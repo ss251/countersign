@@ -144,17 +144,19 @@ async function slipView(hash: string): Promise<SlipView | undefined> {
   };
 }
 
+interface HubTree {
+  root: TreeView["root"];
+  nodes: Record<string, { slip: Slip; title: string; seller: string }>;
+}
+
+/** The hub's receipt tree. The slip view asks for this only when a slip names children. */
 async function treeView(root: string): Promise<TreeView> {
+  const tree = await hubGet<HubTree>(`/trees/${encodeURIComponent(root)}`);
   const nodes: TreeView["nodes"] = {};
-  const visit = async (hash: string, depth: number): Promise<void> => {
-    if (depth > 8 || nodes[hash]) return;
-    const v = await slipView(hash);
-    if (!v) return;
-    nodes[hash] = { slip: v.slip, title: v.title, sellerName: v.sellerName };
-    await Promise.all(v.slip.body.children.map((c) => visit(c, depth + 1)));
-  };
-  await visit(root, 0);
-  return { root: root as TreeView["root"], nodes };
+  for (const [hash, node] of Object.entries(tree.nodes)) {
+    nodes[hash] = { slip: node.slip, title: node.title, sellerName: shortHex(node.seller) };
+  }
+  return { root: tree.root, nodes };
 }
 
 export const api = {
@@ -172,7 +174,15 @@ export const api = {
     hubBase() ? live(await hubRails()) : settle(Object.values((await fixtures()).rails)),
   slip: async (hash: string): Promise<Loaded<SlipView | undefined>> =>
     hubBase() ? live(await slipView(hash)) : settle((await fixtures()).slipByHash(hash)),
-  tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle((await fixtures()).tree)),
+  tree: async (root: string): Promise<Loaded<TreeView | null>> => {
+    if (!hubBase()) return absent("No hub is connected, so this receipt tree cannot be read.");
+    try {
+      return live(await treeView(root));
+    } catch (e) {
+      if (e instanceof HubError && e.status === 404) return { data: null, source: "hub" };
+      return absence(e, "receipt trees", "This hub has no receipt tree for that slip.");
+    }
+  },
   /**
    * Recent releases and refunds, newest first. null means the hub does not serve them yet,
    * which the overview says plainly instead of inventing rows.

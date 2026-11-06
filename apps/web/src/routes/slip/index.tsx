@@ -18,9 +18,9 @@ export default function SlipPage({ params }: PageProps) {
   const hash = params[0] ?? "";
   const view = useResource(() => api.slip(hash), [hash]);
   const children = view.data?.slip.body.children.length ?? 0;
-  // Only a slip with children has a tree; asking for one otherwise refetches the same slip.
+  // Only a slip with children has a tree, and that tree is the hub's /trees/:root.
   const tree = useResource(
-    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
+    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "hub" as const })),
     [hash, children > 0],
   );
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
