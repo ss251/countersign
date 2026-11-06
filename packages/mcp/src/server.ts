@@ -30,7 +30,6 @@ export interface McpDeps {
   state: State;
   journal: Journal;
   account?: LocalAccount;
-  /** Why the session could not be loaded, shown beside NOT_SIGNED_IN. */
   problem?: string;
   /** Unix seconds. Defaults to the wall clock. */
   now?: () => number;

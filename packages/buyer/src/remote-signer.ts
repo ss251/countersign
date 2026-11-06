@@ -27,7 +27,6 @@ interface TypedDataShape {
   message: Record<string, unknown>;
 }
 
-/** JSON-safe copy: every bigint becomes a decimal string, at any depth. */
 function decimalStrings(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString(10);
   if (Array.isArray(value)) return value.map((entry) => decimalStrings(entry));
