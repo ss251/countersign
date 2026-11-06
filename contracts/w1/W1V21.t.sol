@@ -240,21 +240,21 @@ contract W1V21Test is Test {
         bytes memory releaseSig = _releaseSig(jobId);
         bytes memory cancelSig = _cancelSig(jobId);
         vm.warp(uint256(escrow.jobOf(jobId).deadline) + 1);
-        vm.prank(relayer);
+        vm.prank(arbiter); // past the deadline only the arbiter (the hub, after its check) may release
         escrow.release(jobId, SLIP, releaseSig); // still inside settleBy
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotOpen.selector, jobId));
         escrow.cancel(jobId, cancelSig);
         assertEq(escrow.bondOfJob(jobId), BOND, "the late seller took its bond back");
     }
 
-    function test_W1_H2_an_honest_late_release_keeps_the_bond_once_the_window_passes() public {
+    function test_W1_H2_an_honest_late_release_by_the_hub_keeps_the_bond_once_the_window_passes() public {
         // H1's property under "bond implies window": a release that lands after the deadline but by
         // settleBy is Delivered, and with no dispute the seller gets the payment and its whole bond back.
         bytes32 jobId = _fundBonded(12, WINDOW);
         uint256 settleBy = uint256(escrow.jobOf(jobId).deadline) + 600;
         bytes memory releaseSig = _releaseSig(jobId);
         vm.warp(settleBy);
-        vm.prank(relayer);
+        vm.prank(arbiter); // the hub's honest late settlement (B: only the arbiter past the deadline)
         escrow.release(jobId, SLIP, releaseSig);
         assertEq(_status(jobId), DELIVERED);
         uint256 sellerBefore = token.balanceOf(seller);
@@ -285,6 +285,46 @@ contract W1V21Test is Test {
         escrow.setTerms(OFFER, PRICE, BOND, WINDOW, floor);
         (,,, uint64 minDuration) = escrow.termsOf(seller, OFFER);
         assertEq(minDuration, floor);
+    }
+
+    // ------------------------------------------------------------------ B (Grok's re-audit of 53eed70)
+
+    function test_W1_B_a_late_junk_release_by_anyone_but_the_arbiter_reverts_and_the_default_forfeits() public {
+        bytes32 jobId = _fundBonded(13, WINDOW);
+        bytes32 junk = keccak256("w1: nothing delivered");
+        bytes memory junkSig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, junk)));
+        uint256 deadline = uint256(escrow.jobOf(jobId).deadline);
+        uint256 settleBy = deadline + 600;
+        bytes4 late = bytes4(keccak256("LateReleaseNeedsArbiter(bytes32)"));
+
+        // At the deadline itself (inclusive) the payee's release is still anyone's to submit.
+        // Past it, the seller, the job's funder and a stranger are all refused, at deadline+1 and at settleBy.
+        address[3] memory callers = [seller, relayer, makeAddr("w1 late stranger")];
+        uint256[2] memory times = [deadline + 1, settleBy];
+        for (uint256 t; t < times.length; ++t) {
+            vm.warp(times[t]);
+            for (uint256 i; i < callers.length; ++i) {
+                vm.prank(callers[i]);
+                vm.expectRevert(abi.encodeWithSelector(late, jobId));
+                escrow.release(jobId, junk, junkSig);
+            }
+        }
+        assertEq(_status(jobId), FUNDED, "a late junk release opened a review window");
+
+        uint256 buyerBefore = token.balanceOf(buyer);
+        vm.warp(settleBy + 1);
+        escrow.refund(jobId);
+        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND, "the default did not pay the amount and the bond");
+        assertEq(escrow.bondOf(seller), 0, "the late seller kept its bond");
+    }
+
+    function test_W1_B_a_release_at_the_deadline_itself_is_still_anyones_to_submit() public {
+        bytes32 jobId = _fundBonded(14, WINDOW);
+        bytes memory releaseSig = _releaseSig(jobId);
+        vm.warp(uint256(escrow.jobOf(jobId).deadline)); // "until T" is inclusive (L3)
+        vm.prank(makeAddr("w1 on-time stranger"));
+        escrow.release(jobId, SLIP, releaseSig);
+        assertEq(_status(jobId), DELIVERED);
     }
 
     // ------------------------------------------------------------------ Medium: one dispute signature, one outcome
