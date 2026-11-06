@@ -29,5 +29,10 @@ try {
 const verdict = await verifySlip(slip, rpcUrl ? { rpcUrl } : {});
 for (const f of verdict.findings) console.log(`${f.ok ? "ok  " : "FAIL"} ${f.check.padEnd(17)} ${f.detail}`);
 for (const s of verdict.skipped) console.log(`skip ${s}`);
-console.log(verdict.valid ? "VALID" : "INVALID");
+const verdictLine = verdict.valid
+  ? verdict.skipped.length > 0
+    ? "VALID (offline: the chain was not read)"
+    : "VALID"
+  : "INVALID";
+console.log(verdictLine);
 process.exit(verdict.valid ? 0 : 1);
