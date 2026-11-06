@@ -6,7 +6,7 @@ import "./hold.css";
  * The countersignature, as a gesture. A signature line on the page: the left
  * stroke is already there in ink (the offer, signed by the seller). Holding
  * draws the right stroke in seal across the seam. Let go early and it retracts.
- * The geometry is the mark's, stretched along the line.
+ * The geometry is the mark’s, stretched along the line.
  */
 
 const VIEW_W = 300;
@@ -86,8 +86,9 @@ export function HoldToSign({
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const tick = (now: number) => {
+    // Linear on purpose: the stroke shows exactly how much of the hold is done.
     const t = Math.min(1, (now - startedAt.current) / duration);
-    paint(penEase(t));
+    paint(t);
     if (t >= 1) {
       setPhase("done");
       navigator.vibrate?.(12);
@@ -101,7 +102,7 @@ export function HoldToSign({
     if (disabled || phaseRef.current !== "idle") return;
     cancelAnimationFrame(frame.current);
     // Resume from wherever a retraction left the stroke.
-    startedAt.current = performance.now() - penEaseInverse(progress.current) * duration;
+    startedAt.current = performance.now() - progress.current * duration;
     setPhase("holding");
     frame.current = requestAnimationFrame(tick);
   };
@@ -113,7 +114,8 @@ export function HoldToSign({
     const from = progress.current;
     const t0 = performance.now();
     const back = (now: number) => {
-      const k = Math.min(1, (now - t0) / 240);
+      // Letting go early snaps back fast: the system answers, the user is not kept waiting.
+      const k = Math.min(1, (now - t0) / 150);
       paint(from * (1 - (1 - (1 - k) ** 3)));
       if (k < 1 && phaseRef.current === "idle") frame.current = requestAnimationFrame(back);
     };
@@ -167,17 +169,9 @@ export function HoldToSign({
       <span id={hintId} className="sr-only">
         Press and hold for about a second. Letting go early cancels.
       </span>
+      <span className="sr-only" aria-live="polite">
+        {phase === "holding" ? "Keep holding." : phase === "done" ? `${doneLabel}.` : ""}
+      </span>
     </button>
   );
-}
-
-/* A pen starts slow, runs, then settles. */
-function penEase(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-}
-
-function penEaseInverse(p: number): number {
-  if (p <= 0) return 0;
-  if (p >= 1) return 1;
-  return p < 0.5 ? Math.sqrt(p / 2) : 1 - Math.sqrt((1 - p) * 2) / 2;
 }
