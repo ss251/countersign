@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { checkEnvelope, type EnvelopeDecision } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
-import { api, followJob, playJob, type JobControl, type JobStep, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
-import { useNow } from "../../lib/now.ts";
+import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
 import {
   ESCROW_RAILS,
   formatClock,
@@ -15,7 +14,7 @@ import {
 } from "../../lib/format.ts";
 import { approvalToken, HubError, rememberApprovalToken } from "../../lib/hub.ts";
 import { envelopeChecklist, type Check } from "../../lib/checklist.ts";
-import type { Approval, EnvelopeView, Money } from "../../lib/types.ts";
+import type { Approval, EnvelopeView } from "../../lib/types.ts";
 import { Absent } from "../../ui/Absent.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
@@ -95,8 +94,7 @@ function ApprovalFlow({
   onClose: () => void;
 }) {
   const [job, setJob] = useState<JobView | null>(null);
-  /** The running job: stop it on unmount, and, inside the review window, accept or dispute it. */
-  const control = useRef<JobControl | null>(null);
+  const stop = useRef<(() => void) | null>(null);
   // The envelope the human saw when signing. Checks must not re-run against the spend this call adds.
   const [seen] = useState(view);
   const { listing } = approval;
@@ -149,7 +147,7 @@ function ApprovalFlow({
   const countersign = async () => {
     if (!live) {
       onSigned();
-      control.current = playJob(approval, scenario, setJob);
+      stop.current = playJob(approval, scenario, setJob);
       return;
     }
     setSending("countersign");
@@ -158,7 +156,7 @@ function ApprovalFlow({
       const known = await api.jobIds(approval.agent!);
       await api.decide(approval.id, "countersign");
       onSigned();
-      control.current = { stop: followJob(approval, known, setJob) };
+      stop.current = followJob(approval, known, setJob);
     } catch (e) {
       fail(e);
       setAttempt((n) => n + 1);
@@ -183,7 +181,7 @@ function ApprovalFlow({
   const onSettledRef = useRef(onSettled);
   onSettledRef.current = onSettled;
 
-  useEffect(() => () => control.current?.stop(), []);
+  useEffect(() => () => stop.current?.(), []);
   useEffect(() => {
     if (final && job) onSettledRef.current(job);
     // Report each final step once.
@@ -339,9 +337,7 @@ function ApprovalFlow({
               {problem}
             </p>
           ) : null}
-          {job?.step === "review" ? (
-            <ReviewActions control={control.current} money={money} seller={listing.seller.named === false ? "the seller" : listing.seller.name} />
-          ) : live && !token ? (
+          {live && !token ? (
             <TokenForm
               onSave={(t) => {
                 rememberApprovalToken(t);
@@ -439,119 +435,27 @@ function upstreamLabel(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
-/*
- * Inside the review window: accepting is the one action, disputing the quieter second, behind a
- * sheet that says exactly what a dispute does to the money and to the seller's bond.
- */
-function ReviewActions({ control, money, seller }: { control: JobControl | null; money: Money; seller: string }) {
-  const sheet = useRef<HTMLDialogElement>(null);
-  if (!control?.accept || !control.dispute) {
-    return <p className="review__note">Your agent accepts or disputes this delivery from its own machine.</p>;
-  }
-  return (
-    <div className="review">
-      <Button variant="money" block onClick={control.accept}>
-        Accept delivery
-      </Button>
-      <button type="button" className="review__dispute" onClick={() => sheet.current?.showModal()}>
-        Dispute
-      </button>
-      <dialog ref={sheet} className="sheet" aria-labelledby="dispute-title">
-        <form method="dialog" className="sheet__body">
-          <h2 id="dispute-title" className="sheet__title">
-            Dispute this delivery?
-          </h2>
-          <p className="sheet__text">
-            The escrow refunds <Amount money={money} size="sm" /> to your agent instead of paying {seller}. The seller’s bond is not
-            touched: a dispute is not a failed delivery.
-          </p>
-          <div className="sheet__buttons">
-            <Button
-              variant="seal"
-              block
-              onClick={() => {
-                sheet.current?.close();
-                control.dispute?.();
-              }}
-            >
-              Dispute
-            </Button>
-            <Button variant="secondary" block type="submit">
-              Keep it
-            </Button>
-          </div>
-        </form>
-      </dialog>
-    </div>
-  );
-}
-
-/** The review window, counting down in mono: fixed-width digits, so nothing shifts as it ticks. */
-function Countdown({ until }: { until: number }) {
-  const now = useNow(1000);
-  const left = Math.max(0, until - now);
-  const text = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-  // A timer is not a live region: a reader hears its end time once, not every second.
-  return (
-    <span className="countdown num" role="timer" aria-label={`Review window closes at ${formatClock(until)}`}>
-      {text} left
-    </span>
-  );
-}
-
 /* After the hold: what has happened, in order, to the second. */
 
 function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
   if (job.step === "refused" || job.step === "refunded" || job.step === "failed") return null;
+  const active = job.step === "funding" ? "held" : job.step === "held" ? "delivered" : job.step === "delivered" ? "released" : null;
   const escrow = ESCROW_RAILS.has(approval.rail);
-  /** An escrow with buyer acceptance holds a delivered job in review until the buyer acts or the window passes. */
-  const reviewing = job.reviewEndsAt !== undefined || job.ended !== undefined;
-  const active: JobStep | null =
-    job.step === "funding"
-      ? "held"
-      : job.step === "held"
-        ? "delivered"
-        : job.step === "delivered"
-          ? reviewing
-            ? "review"
-            : "released"
-          : job.step === "review"
-            ? "review"
-            : job.step === "accepted"
-              ? "released"
-              : job.step === "disputed"
-                ? "refunded"
-                : null;
-  const reviewLabel =
-    job.ended === "accepted" ? "Accepted" : job.ended === "disputed" ? "Disputed" : job.ended === "elapsed" ? "Nobody disputed" : "In review";
-  const STEPS: Array<{ id: JobStep; label: string }> = [
+  const STEPS = [
     { id: "countersigned", label: "Countersigned" },
     { id: "held", label: escrow ? "In escrow" : "Paid" },
     { id: "delivered", label: "Delivered" },
-    ...(reviewing ? [{ id: "review" as const, label: reviewLabel }] : []),
-    job.ended === "disputed"
-      ? { id: "refunded", label: "Refunding your agent" }
-      : { id: "released", label: job.ended === "elapsed" ? "Released after the window" : escrow ? "Released" : "Settled" },
-  ];
-  const reviewAt = job.times.accepted ?? job.times.disputed ?? (job.ended === "elapsed" ? job.reviewEndsAt : undefined);
+    { id: "released", label: escrow ? "Released" : "Settled" },
+  ] as const;
 
   return (
     <ol className="ledger" aria-label="Progress" aria-live="polite">
       {STEPS.map((s) => {
-        const at = s.id === "review" ? reviewAt : job.times[s.id];
+        const at = job.times[s.id];
         const isDone = at !== undefined;
         const isActive = active === s.id;
         return (
-          <li
-            key={s.id}
-            className={cx(
-              "ledger__step",
-              `ledger__step--${s.id}`,
-              isDone && "is-done",
-              isActive && "is-active",
-              s.id === "review" && job.ended === "disputed" && "is-disputed",
-            )}
-          >
+          <li key={s.id} className={cx("ledger__step", `ledger__step--${s.id}`, isDone && "is-done", isActive && "is-active")}>
             <span className="ledger__marker" aria-hidden="true" />
             <span className="ledger__label">{s.label}</span>
             <span className="ledger__detail">
@@ -564,14 +468,9 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
                     : "Paying"
                 : null}
               {isActive && s.id === "delivered" ? "Waiting for delivery" : null}
-              {isActive && s.id === "review" && job.reviewEndsAt !== undefined ? <Countdown until={job.reviewEndsAt} /> : null}
-              {isActive && s.id === "released" ? (job.ended === "accepted" ? "Releasing" : "Checking the output") : null}
-              {isActive && s.id === "refunded" ? "Refunding" : null}
+              {isActive && s.id === "released" ? "Checking the output" : null}
               {isDone && s.id !== "held" ? <span className="num">{formatClock(at)}</span> : null}
             </span>
-            {isActive && s.id === "review" ? (
-              <span className="ledger__sub ledger__note">Releases to the seller on its own when the window closes, unless you dispute.</span>
-            ) : null}
             {isDone && s.id === "held" && job.fundTx ? (
               <span className="ledger__sub">
                 <Hash value={job.fundTx} label="funding transaction" />
@@ -619,20 +518,6 @@ function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval;
       </div>
     );
   }
-  if (job.step === "refunded" && job.ended === "disputed") {
-    return (
-      <div className="outcome outcome--refused" role="status">
-        <p className="outcome__title">Disputed, so refunded.</p>
-        <p className="outcome__body">
-          <Amount money={signed} size="sm" /> is back with your agent. The seller’s bond is not touched: a dispute is not a failed
-          delivery.
-        </p>
-        <Button variant="primary" block onClick={onClose}>
-          Done
-        </Button>
-      </div>
-    );
-  }
   if (job.step === "refunded") {
     return (
       <div className="outcome outcome--neutral" role="status">
@@ -649,23 +534,11 @@ function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval;
   }
   return (
     <div className="outcome outcome--settled" role="status">
-      <p className="outcome__title">
-        {job.ended === "accepted"
-          ? "Accepted and released. Slip minted."
-          : job.ended === "elapsed"
-            ? "Released after the window. Slip minted."
-            : escrow
-              ? "Released. Slip minted."
-              : "Settled. Slip minted."}
-      </p>
+      <p className="outcome__title">{escrow ? "Released. Slip minted." : "Settled. Slip minted."}</p>
       <p className="outcome__body">
-        {job.ended === "accepted"
-          ? "You accepted the delivery, so the escrow paid the seller. The slip proves it without the hub."
-          : job.ended === "elapsed"
-            ? "Nobody disputed inside the window, so the escrow paid the seller. The slip proves it without the hub."
-            : escrow
-              ? "The seller was paid once the output matched the schema. The slip proves it without the hub."
-              : "Paid, and the output matched the schema. The slip proves it without the hub."}
+        {escrow
+          ? "The seller was paid once the output matched the schema. The slip proves it without the hub."
+          : "Paid, and the output matched the schema. The slip proves it without the hub."}
       </p>
       <div className="outcome__buttons">
         {job.slipHash ? (
