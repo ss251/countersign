@@ -43,6 +43,8 @@ function relayMissing(): string | null {
 const SALE = 10_000n; // 0.01 USDT, the relay's minimum
 const MERCHANT_SALE = 20_000n; // 0.02 USDT
 const PARTIAL = 5_000n; // 0.005 USDT
+/** One of the relay's refund reasons; the export must carry it back. */
+const REFUND_REASON = "requested_by_customer";
 
 function spends(env: Parameters<NonNullable<Flow["spends"]>>[0], buyerSpend: bigint, merchantSpend: bigint): Spend[] {
   const w = wallets(env.secrets);
@@ -131,11 +133,11 @@ async function noGas(ctx: FlowCtx, buyer: Address, when: string): Promise<void> 
   });
 }
 
-async function refund(ctx: FlowCtx, stack: WhitechainStack, order: Order, amount: bigint | null, label: string) {
+async function refund(ctx: FlowCtx, stack: WhitechainStack, order: Order, amount: bigint | null, label: string, reason?: string) {
   const res = await ctx.http(label, `${stack.merchant.url}/orders/${order.id}/refund`, {
     method: "POST",
     headers: { "content-type": "application/json", ...bearer(stack.merchant.token) },
-    body: amount === null ? "" : JSON.stringify({ amount: amount.toString() }),
+    body: amount === null ? "" : JSON.stringify({ amount: amount.toString(), ...(reason ? { reason } : {}) }),
     timeoutMs: 120_000,
   });
   equal(res.status, 200, `${label} status (${res.text.slice(0, 200)})`);
@@ -230,7 +232,7 @@ export const merchant: Flow = {
     });
 
     const partial = await ctx.step(`partial refund of ${usdt(PARTIAL)} USDT`, async () => {
-      const { body, rcpt } = await refund(ctx, stack, order, PARTIAL, "partial refund");
+      const { body, rcpt } = await refund(ctx, stack, order, PARTIAL, "partial refund", REFUND_REASON);
       equal(body.refunded, PARTIAL.toString(), "refunded so far");
       equal(body.remaining, (MERCHANT_SALE - PARTIAL).toString(), "remaining");
       check(
@@ -259,7 +261,7 @@ export const merchant: Flow = {
       const rows = parseCsv(res.text);
       equal(
         (rows[0] ?? []).join(","),
-        "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls",
+        "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls,refund_reasons",
         "export header",
       );
       equal(rows.length, 2, "export rows (header plus one order)");
@@ -274,6 +276,7 @@ export const merchant: Flow = {
       equal(row.settle_tx_url, explorerTx("whitechain", sale.fundTx), "export settle link");
       equal(row.close_tx_url, explorerTx("whitechain", sale.releaseTx), "export close link");
       check((row.refund_tx_urls ?? "").includes(explorerTx("whitechain", partial)), "export lists the refund link");
+      check((row.refund_reasons ?? "").includes(REFUND_REASON), `export lists the refund's reason (got "${row.refund_reasons}")`);
     });
 
     await ctx.step("no token, no refund", async () => {
