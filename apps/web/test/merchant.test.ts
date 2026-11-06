@@ -176,8 +176,25 @@ describe("itemLabel", () => {
       "Mumbai weather forecast",
     );
     expect(itemLabel({ id, description: null, resource: "https://x" }, "whitechain-dev")).toBe("whitechain-dev");
-    expect(itemLabel({ id, description: " ", resource: "https://x/y" }, null)).toBe("https://x/y");
+    expect(itemLabel({ id, description: " ", resource: "https://x/y" }, null)).toBe("Y");
     expect(itemLabel({ id }, null)).toBe("Order 0x4dc4…42bc");
+  });
+
+  test("never shows a raw URL: the last path segment becomes the label", () => {
+    expect(itemLabel({ id, resource: "http://127.0.0.1:8404/forecast" }, null)).toBe("Forecast");
+    expect(itemLabel({ id, resource: "https://countersign.local/whitechain/checkout" }, null)).toBe("Checkout");
+    expect(itemLabel({ id, resource: "https://shop.example/reports/weekly-report.json?x=1" }, null)).toBe("Weekly report");
+    expect(itemLabel({ id, resource: "http://127.0.0.1:8402/" }, null)).toBe("Order 0x4dc4…42bc");
+    expect(itemLabel({ id, resource: "https://x/orders/0x4dc4" }, null)).toBe("Order 0x4dc4…42bc");
+  });
+});
+
+describe("timestamps from the relay", () => {
+  test("an escrow deadline in seconds is read as seconds", () => {
+    const order = fromHubOrder({ ...fixtureOrders[2]!, createdAt: 1_793_958_584_000, deadline: 1_793_962_184 })!;
+    expect(order.deadline).toBe(1_793_962_184_000);
+    expect(order.createdAt).toBe(1_793_958_584_000);
+    expect(new Date(order.deadline!).getUTCFullYear()).toBe(2026);
   });
 });
 
@@ -518,10 +535,10 @@ describe("hub records (wc/orders-contract.md)", () => {
     const full = fromHubRecord({
       ...record,
       status: "partially_refunded",
-      refunds: [{ amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 5 }, { bad: true }],
+      refunds: [{ amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 1_793_960_500_000 }, { bad: true }],
     })!;
     expect(full.refunds).toEqual([
-      { amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 5 },
+      { amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 1_793_960_500_000 },
     ]);
   });
 

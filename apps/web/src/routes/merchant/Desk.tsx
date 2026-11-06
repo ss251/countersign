@@ -503,8 +503,20 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   const counts = useMemo(() => filterCounts(book), [book]);
   const lines = useMemo(() => ledger(book), [book]);
   const visible = useMemo(() => lines.filter((entry) => matchesFilter(entry.order, filter)), [lines, filter]);
-  const amountPlaces = useMemo(() => decimalsFor(book.map((order) => BigInt(order.amount))), [book]);
-  const balancePlaces = useMemo(() => decimalsFor(lines.map((entry) => entry.balance)), [lines]);
+  // One precision for the whole desk, so the band, the amounts and the balances line up as one statement.
+  const places = useMemo(
+    () =>
+      decimalsFor([
+        ...book.map((order) => BigInt(order.amount)),
+        ...lines.map((entry) => entry.balance),
+        sums.released,
+        sums.refunded,
+        sums.toll,
+        sums.net,
+        sums.held,
+      ]),
+    [book, lines, sums],
+  );
   const networks = useMemo(() => [...new Set(book.map(networkNameOf))], [book]);
   const explorer = book[0] ? explorerOf(book[0]) : undefined;
   const showsGas = relayStatus !== null && (book.length === 0 || book.some(isWhitechain));
@@ -537,6 +549,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
       row={rows[selected.id]}
       refusals={refusals[selected.id] ?? []}
       access={access}
+      places={places}
       view={view}
       receiptTo={`/merchant/receipt/${selected.id}${receiptQuery}`}
       headingRef={headingRef}
@@ -659,7 +672,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
                   </td>
                   <td className="mx-col-amount mx-num">
                     <span className={`mono mx-amount${inFlight ? " mx-money" : ""}`}>
-                      {formatFixed(BigInt(order.amount), amountPlaces)}
+                      {formatFixed(BigInt(order.amount), places)}
                       <Unit symbol={active} />
                     </span>
                     <Adjustments order={order} />
@@ -671,7 +684,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
                       </span>
                     ) : (
                       <span className="mono">
-                        {formatFixed(balance, balancePlaces)}
+                        {formatFixed(balance, places)}
                         <Unit symbol={active} />
                       </span>
                     )}
@@ -757,7 +770,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
         </div>
       ) : null}
 
-      {merchant === "" ? null : <EquationBand sums={sums} ready={loaded} unit={active} />}
+      {merchant === "" ? null : <EquationBand sums={sums} ready={loaded} unit={active} places={places} />}
 
       <div className={`mx-desk${panelOpen && split ? " mx-desk--split" : ""}`}>
         <section className="mx-orders" aria-labelledby="mx-orders-heading">
@@ -861,8 +874,7 @@ function SourceLine({ offline, source }: { offline: boolean; source: OrdersSourc
  * sum as pending, because it is not the merchant's until delivery releases it. Until the ledger
  * loads, the figures hold their place with dashes rather than flash a row of zeros.
  */
-function EquationBand({ sums, ready, unit }: { sums: Equation; ready: boolean; unit: string }) {
-  const places = decimalsFor([sums.released, sums.refunded, sums.toll, sums.net, sums.held]);
+function EquationBand({ sums, ready, unit, places }: { sums: Equation; ready: boolean; unit: string; places: number }) {
   const show = (value: bigint) => (ready ? formatFixed(value, places) : "—");
   const terms = [
     { label: "Released", value: sums.released, op: null },

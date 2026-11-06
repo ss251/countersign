@@ -249,10 +249,36 @@ export function totals(orders: readonly Order[]): Totals {
   };
 }
 
-/** What the merchant sold, in words: the payment's description, the hub's offer title, the URL, or the id. */
+/**
+ * What the merchant sold, in words: the payment's description, the hub's offer title, a label made
+ * from the paid URL's last path segment, or the id. Never a raw URL: a host such as 127.0.0.1 means
+ * nothing to the merchant and leaks the setup.
+ */
 export function itemLabel(order: Pick<Order, "id" | "description" | "resource">, hubTitle?: string | null): string {
-  const text = order.description?.trim() || hubTitle?.trim() || order.resource?.trim();
-  return text || `Order ${shortHash(order.id)}`;
+  const text = order.description?.trim() || hubTitle?.trim();
+  return text || pathLabel(order.resource) || `Order ${shortHash(order.id)}`;
+}
+
+/** "http://127.0.0.1:8404/forecast" -> "Forecast"; "https://shop.example/whitechain/check-out" -> "Check out". */
+export function pathLabel(resource: string | null | undefined): string | null {
+  const raw = resource?.trim();
+  if (!raw) return null;
+  let path = raw;
+  try {
+    path = new URL(raw).pathname;
+  } catch {
+    // Not a URL: read it as a path.
+  }
+  const last = path.split(/[/?#]/).filter(Boolean).pop();
+  if (!last || /^\d+$/.test(last) || /^0x[0-9a-f]+$/i.test(last)) return null;
+  let words = last;
+  try {
+    words = decodeURIComponent(last);
+  } catch {
+    // Keep the segment as written.
+  }
+  words = words.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_+.]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : null;
 }
 
 /** "6 Nov 2026, 14:32 IST": the viewer's own clock, with its zone named. */
@@ -710,8 +736,13 @@ function atomic(value: unknown, fallback = "0"): string {
   return fallback;
 }
 
+/**
+ * A time in ms. The escrow keeps its deadline in seconds, as the chain does, and the relay passes it
+ * on as it is; a value too small to be ms after 2001 is read as seconds.
+ */
 function millis(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return value < 1e12 ? value * 1000 : value;
 }
 
 function statusOf(value: unknown): OrderStatus | null {

@@ -83,6 +83,8 @@ interface OrderPanelProps {
   row: RowState | undefined;
   refusals: readonly Refusal[];
   access: RefundAccess;
+  /** The desk's precision, so the panel's figures match the ledger's. */
+  places?: number;
   view: PanelView;
   receiptTo: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -125,6 +127,7 @@ function OrderDetail({
   row,
   refusals,
   access,
+  places: deskPlaces,
   receiptTo,
   headingRef,
   onView,
@@ -143,7 +146,7 @@ function OrderDetail({
   const lines = adjustments(order);
   const net = contribution(order);
   const money = [amount, net, ...lines.map((line) => ("amount" in line ? line.amount : 0n))];
-  const places = decimalsFor(money);
+  const places = Math.max(deskPlaces ?? 2, decimalsFor(money));
   const events = timeline(detail ?? { ...order }, "merchant", refusals);
 
   return (
