@@ -16,4 +16,8 @@ export const KNOWN_ESCROWS: Array<{ chainId: number; escrow: Address; name: stri
   { chainId: 5042002, escrow: "0x19c27d770969291e6a0a305dc1be1a845e7c1b76", name: "Arc testnet, deployed through Arc Studio" },
   { chainId: 5042002, escrow: "0x44d11b8909485e3f575F6628b689383E4420f54a", name: "Arc testnet, forge deployment" },
   { chainId: 1874, escrow: "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4", name: "Whitechain Sepolia" },
+  // Escrow v2 beside v1, whose open jobs still verify. Deploy tx 0xf15e1c98…49ae1 (status 1, creates
+  // this address), Blockscout-verified CountersignedEscrow with failDelivery and releaseAfterWindow,
+  // and the same Funded and Released events the verifier reads (checked 06 Nov 20:2xZ).
+  { chainId: 1874, escrow: "0x55b3d98C17Ba0878DC93fB1521c76c9a10778391", name: "Whitechain Sepolia, escrow v2" },
 ];
