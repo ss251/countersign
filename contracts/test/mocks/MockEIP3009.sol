@@ -22,6 +22,7 @@ contract MockEIP3009 is ERC20, EIP712 {
 
     mapping(address authorizer => mapping(bytes32 nonce => bool used)) public authorizationState;
     mapping(address account => bool on) public hooks;
+    mapping(address account => bool on) public blocked;
 
     constructor() ERC20("USDC", "USDC") EIP712("USDC", "2") {}
 
@@ -86,7 +87,13 @@ contract MockEIP3009 is ERC20, EIP712 {
         _transfer(from, to, value);
     }
 
+    /// @dev A blocklisted account can neither send nor receive, as USDC's and USDT's blocklists do.
+    function setBlocked(address account, bool on) external {
+        blocked[account] = on;
+    }
+
     function _update(address from, address to, uint256 value) internal override {
+        require(!blocked[from] && !blocked[to], "blocklisted");
         super._update(from, to, value);
         if (hooks[to]) ITransferHook(to).onTokenTransfer(from, value);
     }

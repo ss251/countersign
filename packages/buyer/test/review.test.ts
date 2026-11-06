@@ -219,7 +219,7 @@ describe("dispute", () => {
     paid(f, jobId, { escrow: ESCROW_A });
     const done = await disputeJob({ hub, ...f, signer: buyer, jobId, now: 5, known: [RAIL_A, RAIL_B] });
     expect(posts).toEqual([{ path: `/jobs/${jobId}/dispute`, sig: done.signature }]);
-    const td = disputeTypedData(5042002, ESCROW_A, jobId);
+    const td = disputeTypedData(5042002, ESCROW_A, jobId, 1);
     expect(await recoverTypedDataAddress({ ...td, signature: done.signature })).toBe(buyer.address);
     expect(f.journal.entries().at(-1)?.kind).toBe("disputed");
   });
