@@ -41,7 +41,7 @@ app.get(
 
 ## Pay for a route (the customer)
 
-In a browser, pay from the person's connected wallet. Nobody pastes a key:
+In a browser, pay from the person's own connected wallet; the page only asks it to sign:
 
 ```ts
 import { createPayFetch, walletAccount } from "@countersign-hub/relay/browser";
@@ -87,7 +87,7 @@ The relay submits either one.
 
 ## What the relay guards
 
-The relay pays gas from its own key, so it guards that key. Its live state is at `GET /status` on the relay.
+The relay pays gas from its own wallet, so it guards that wallet. Its live state is at `GET /status` on the relay.
 
 | Guard | What it does |
 |---|---|
@@ -103,9 +103,3 @@ The relay pays gas from its own key, so it guards that key. Its live state is at
 - **Repository:** https://github.com/ss251/countersign, in `packages/relay`.
 - **License:** MIT.
 - **Names on npm:** only `@countersign-hub` is this project's. `countersign`, `countersign-mcp` and the `@countersign` scope belong to other projects.
-
-## Advanced: CI
-
-`createPayFetch` takes any viem account, so a CI job can build one with `privateKeyToAccount` from a secret.
-- That key signs locally and is never sent anywhere.
-- It must be a fresh testnet key made only for the job, holding only what the job spends, never a main wallet's.
