@@ -1,6 +1,7 @@
 /**
- * The seller CLI. The key comes only from CS_SELLER_KEY; it is never printed
- * and never accepted as an argument.
+ * The seller CLI. A signed-in session signs through the hub (CS_SESSION and
+ * CS_HUB); CS_SELLER_KEY is the Advanced: CI override and wins when it is set.
+ * No key or session token is ever printed or accepted as an argument.
  *
  *   bun packages/runner/src/cli.ts publish --hub <url> --skill <path> --price <atomic> ...
  *   bun packages/runner/src/cli.ts publish --hub <url> --openapi <spec.json> --operation <id>
@@ -41,6 +42,11 @@ import {
   type OpenApiSpec,
 } from "./openapi.ts";
 import { publishOffer, type PublishedOffer } from "./publish.ts";
+import {
+  assertRemoteCanServe,
+  NOT_SIGNED_IN,
+  remoteAccountFromSession,
+} from "./remote-signer.ts";
 import { readSkill, skillOffer, type Skill } from "./skill.ts";
 
 const DEFAULT_DEADLINE = 120;
@@ -120,7 +126,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 }
 
 async function publishCommand(options: Options): Promise<void> {
-  const account = await sellerAccount();
+  const account = await sellerAccount(options.hub);
   const path = options.skills[0];
   if (path !== undefined) {
     const skill = await readSkill(path);
@@ -147,6 +153,7 @@ function publishWithState(
   offer: Offer,
   skillSha256: string,
 ): Promise<PublishedOffer> {
+  assertRemoteCanServe(account, offer);
   return publishOffer(options.hub, account, offer, {
     ...(options.state !== undefined ? { stateDir: options.state } : {}),
     skillSha256,
@@ -230,7 +237,7 @@ function prepareOpenApi(
 }
 
 async function serveCommand(options: Options): Promise<void> {
-  const account = await sellerAccount();
+  const account = await sellerAccount(options.hub);
   const { served } = await prepareServed(options, account);
 
   const handle = startRunner({
@@ -278,12 +285,21 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
   });
 }
 
-async function sellerAccount(): Promise<RunnerAccount> {
+async function sellerAccount(hub: string): Promise<RunnerAccount> {
   const key = process.env.CS_SELLER_KEY;
-  if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+  if (key) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+      throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+    }
+    return privateKeyToAccount(key as Hex);
   }
-  return privateKeyToAccount(key as Hex);
+
+  const session = process.env.CS_SESSION;
+  if (session) {
+    return remoteAccountFromSession({ hubUrl: process.env.CS_HUB ?? hub, session });
+  }
+
+  throw new Error(NOT_SIGNED_IN);
 }
 
 export function parseOptions(args: string[]): Options {

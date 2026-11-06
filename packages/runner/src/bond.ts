@@ -363,7 +363,12 @@ export function setTermsArgs(command: BondTermsCommand): SetTermsArgs {
 /** Read CS_SELLER_KEY and run the parsed bond command. */
 export async function bondFromEnv(args: string[], log: (line: string) => void = console.log): Promise<void> {
   const key = process.env.CS_SELLER_KEY;
-  if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+  if (!key) {
+    throw new Error(
+      "CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key. Bond commands need CS_SELLER_KEY (Advanced: CI): a signed-in session cannot send transactions.",
+    );
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
     throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
   }
   await runBond(parseBondArgs(args), key as Hex, log);
