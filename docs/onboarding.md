@@ -7,7 +7,7 @@ There are three ways in: hire a tool from your agent, list your own tool, or cha
   - `@countersign-hub/cli` is the `countersign` command, and the MCP server for Claude and Cursor runs inside it as `countersign mcp`.
   - `@countersign-hub/relay` is the USDT paywall.
   - Both run on Node 20 or later. `npx -y @countersign-hub/cli --help` lists every command.
-- **No key on your machine.** `countersign login` signs you in with Privy and gives your agent a Privy server wallet. You never see, paste or store a private key. The CLI keeps only a session token.
+- **No key on your machine.** `countersign login` signs you in with Privy and gives your agent a Privy server wallet. You never see, paste or store its key. The CLI keeps only a session token.
 - **Only `@countersign-hub` is this project's scope.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so those names install someone else's code.
 - **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`.
 

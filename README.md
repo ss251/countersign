@@ -113,7 +113,7 @@ Where this is going: the person's wallet on EVM, the agent's account on Hedera, 
 Privy has no Hedera, and none of these is one wallet for every rail.
 
 Two things are true today and differ from the table's end state:
-- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM rails are paid by the buyer agent's own wallet.
 - The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
 
 Each status, with its evidence: [docs/status.md](docs/status.md).
@@ -175,24 +175,7 @@ bun run hub
 curl -s http://127.0.0.1:8787/rails
 ```
 
-A seller serving a catalogue skill, in a second terminal. The runner reads its key from `CS_SELLER_KEY`; this makes a throwaway one:
-
-```sh
-export CS_SELLER_KEY=$(cast wallet new --json | jq -r '.[0].private_key')
-bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8787 \
-  --skill examples/catalogue/circle/use-arc/SKILL.md --price 10000
-```
-
-A buyer agent, in a third terminal. Its key comes from `CS_BUYER_KEY`, and its envelope and journal live in `~/.countersign`:
-
-```sh
-export CS_BUYER_KEY=<a testnet key>
-bun packages/buyer/src/cli.ts discover --hub http://127.0.0.1:8787
-bun packages/buyer/src/cli.ts envelope set --cap 1 --per-merchant 0.5
-bun packages/buyer/src/cli.ts buy <offerHash> --input '{}' --hub http://127.0.0.1:8787
-```
-
-With an unfunded key the buy stops before payment: "Refused. The buyer cannot cover this amount." A paid run needs Arc testnet USDC on the buyer key and a `CS_RELAYER_KEY` on the hub, which submits the escrow transactions and pays their gas in USDC.
+To buy and sell, sign in with `countersign login` against the production hub, as [docs/onboarding.md](docs/onboarding.md) shows. The end-to-end suite below runs sellers and buyers against a local hub with its own test wallets.
 
 Verify any slip, from a hub or from `~/.countersign/slips/`. This one is the hosted purchase above:
 

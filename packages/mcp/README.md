@@ -14,7 +14,7 @@ npx -y @countersign-hub/cli login
 
 - **The page.** `login` opens a page on the countersign console. Sign in with Privy, by email or a passkey.
 - **The code.** Check that the code matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself.
-- **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store a private key.
+- **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store its key.
 - **Funding.** Send test USDC to that address: from https://faucet.circle.com (choose Arc Testnet), or from your own wallet.
 
 Then add the server to Claude Desktop's `claude_desktop_config.json` or Cursor's `.cursor/mcp.json`. It needs no key and no environment:

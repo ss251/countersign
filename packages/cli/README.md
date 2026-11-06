@@ -20,7 +20,7 @@ npx -y @countersign-hub/cli login
 
 - **The page.** `login` opens a page on the countersign console. Sign in with Privy, by email or a passkey.
 - **The code.** Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
-- **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store a private key, and the CLI keeps only a session token.
+- **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store its key, and the CLI keeps only a session token.
 - **The session.** `whoami` prints the address, and `logout` ends the session. A session lasts at most 7 days.
 
 ## Fund it
