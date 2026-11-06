@@ -17,6 +17,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { join } from "node:path";
 import { FLOWS, NUMBERS } from "./flows/index.ts";
 import { formatAmount, planBudget } from "./lib/budget.ts";
+import { ARC } from "./lib/chains.ts";
 import { acquireRunLock } from "./lib/lock.ts";
 import { runFlow, secs, type Flow, type FlowResult, type RunEnv } from "./lib/flow.ts";
 import { ARTIFACTS_DIR, repoPath, ROOT } from "./lib/paths.ts";
@@ -186,7 +187,18 @@ async function main(): Promise<void> {
 
   const c = counts(results);
   const full = args.flows.length === 0;
-  const meta = { runId, startedAt, ms: Date.now() - startedAt.getTime(), commit, branch, full, numbers: NUMBERS, budgetRequests: plan.requests };
+  const meta = {
+    runId,
+    startedAt,
+    ms: Date.now() - startedAt.getTime(),
+    commit,
+    branch,
+    escrowVersion: ARC.escrowVersion,
+    escrow: ARC.escrow,
+    full,
+    numbers: NUMBERS,
+    budgetRequests: plan.requests,
+  };
   const written = writeRun(results, meta);
   writeFileSync(
     join(dir, "run.json"),

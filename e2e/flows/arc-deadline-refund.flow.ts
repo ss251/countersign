@@ -6,10 +6,10 @@
 
 import { join } from "node:path";
 import type { Hex } from "viem";
-import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
+import { buyerCli, readJournal, startHub, startSkillSeller, submitterAddress, USE_ARC } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
-import { ARC, escrowEvents, JOB, jobOf, reader, receipt, revertOf, sameAddress, tokenTransfers, waitChainTimePast, writer } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
+import { arcArbiter, arbiterReason, ARC, disputeWindowOf, escrowEvents, JOB, jobOf, reader, receipt, revertOf, sameAddress, tokenTransfers, waitChainTimePast, writer } from "../lib/chains.ts";
+import { check, equal, NotRun, sameHex, type Flow } from "../lib/flow.ts";
 import { portClosed } from "../lib/http.ts";
 import { escrowAbi } from "@countersign/rail";
 import { PRICE } from "./arc-spine.flow.ts";
@@ -22,6 +22,11 @@ export const arcDeadlineRefund: Flow = {
   title: "Arc deadline refund by a stranger",
   owner: "orch-cs",
   network: "arc",
+  onDemand:
+    ARC.escrowVersion === 2
+      ? "on escrow v2 it waits the 600 s settle window; run it with --with arc-deadline-refund"
+      : undefined,
+  timeoutMs: ARC.escrowVersion === 2 ? 15 * 60_000 : undefined,
   spends(env) {
     const w = wallets(env.secrets);
     return [
@@ -32,6 +37,8 @@ export const arcDeadlineRefund: Flow = {
     ];
   },
   async run(ctx) {
+    const blocked = arbiterReason(ARC.escrowVersion, await arcArbiter(), submitterAddress(ctx));
+    if (blocked) throw new NotRun(blocked);
     const s = ctx.env.secrets;
     const buyer = s.address("CS_BUYER_ADDRESS");
     const stranger = s.account("E2E_STRANGER_KEY");
@@ -84,6 +91,9 @@ export const arcDeadlineRefund: Flow = {
       equal(job.deadline, BigInt(j.deadline), "on-chain deadline equals the hub's");
       return job.deadline;
     });
+    // v2 opens the refund only after the settle window: deadline + DISPUTE_WINDOW (600 s).
+    const settleBy = ARC.escrowVersion === 2 ? deadline + (await disputeWindowOf(ARC)) : deadline;
+    const settleWindow = settleBy - deadline;
 
     await ctx.step("hub stopped", async () => {
       await hub.proc.stop();
@@ -92,16 +102,18 @@ export const arcDeadlineRefund: Flow = {
 
     await ctx.step("a refund before the deadline is refused", async () => {
       const now = (await reader(ARC).getBlock({ blockTag: "latest" })).timestamp;
-      if (now >= deadline - 2n) {
-        ctx.note("the deadline was already near when this step ran, so the early-refund call was not made");
+      if (now >= settleBy - 2n) {
+        ctx.note("the refund window was already near when this step ran, so the early-refund call was not made");
         return;
       }
       const why = await revertOf(ARC, stranger.address, "refund", [jobId]);
       check(why, "an early refund would succeed");
-      equal(why.errorName, "DeadlineNotReached", "early refund revert reason");
+      equal(why.errorName, ARC.escrowVersion === 2 ? "SettleWindowOpen" : "DeadlineNotReached", "early refund revert reason");
     });
 
-    await ctx.step("chain passes the deadline", () => waitChainTimePast(ARC, deadline, (DEADLINE_SECONDS + 120) * 1000));
+    await ctx.step("chain passes the deadline", () =>
+      waitChainTimePast(ARC, settleBy, (DEADLINE_SECONDS + Number(settleWindow) + 120) * 1000),
+    );
 
     await ctx.step("a stranger refunds", async () => {
       const hash = await writer(ARC, stranger).writeContract({ address: ARC.escrow, abi: escrowAbi, functionName: "refund", args: [jobId] });

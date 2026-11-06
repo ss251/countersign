@@ -10,7 +10,7 @@ import { explorerTx, type NetworkKey } from "./chains.ts";
 import { httpRecorder, type HttpRecorder } from "./http.ts";
 import type { Secrets } from "./secrets.ts";
 
-export type Owner = "orch-cs" | "cs-wc" | "cs-hd" | "cs-ui";
+export type Owner = "orch-cs" | "cs-wc" | "cs-hd" | "cs-ui" | "cs-truth";
 export type Status = "PASS" | "FAIL" | "SKIPPED (funds)" | `NOT RUN (${string})`;
 
 export interface TxRef {

@@ -15,6 +15,10 @@ export interface RunMeta {
   ms: number;
   commit: string;
   branch: string;
+  /** The Arc escrow version this run exercised. */
+  escrowVersion: 1 | 2;
+  /** The Arc escrow address the run read and settled through. */
+  escrow: string;
   /** True when every flow was selected. */
   full: boolean;
   /** Flow numbers in the coverage matrix, by name. */
@@ -45,6 +49,7 @@ export function renderRun(results: FlowResult[], meta: RunMeta): string {
   lines.push(`# e2e run ${meta.runId}`, "");
   lines.push("| | |", "|---|---|");
   lines.push(`| commit | \`${meta.commit}\` on \`${meta.branch}\` |`);
+  lines.push(`| escrow | v${meta.escrowVersion} · \`${meta.escrow}\` |`);
   lines.push(`| started | ${meta.startedAt.toISOString().replace("T", " ").slice(0, 19)} UTC (${ist} IST) |`);
   lines.push(`| duration | ${secs(meta.ms)} |`);
   lines.push(`| scope | ${meta.full ? "full run, every flow" : `selected: ${results.map((r) => `\`${r.name}\``).join(", ")}`} |`);

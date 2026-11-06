@@ -37,6 +37,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 20 | `hedera-schedule` | on demand: a scheduled Hedera payment executes only on the seller's signature, with exactly the price moved and a `schedule` entry on HCS | Hedera testnet | cs-hd |
 | 21 | `hedera-held` | on demand: the agent pays the Agent Kit offer held, its default since #157; the seller's signature executes the schedule, exactly the price moves to the seller's signing account, the slip names the held rail | Hedera testnet | cs-hd |
 | 21b | `hedera-held-undelivered` | on demand: the same offer with an input its tool cannot serve; the call fails, the schedule expires unexecuted, the agent releases its hold, and its USDC never moves | Hedera testnet | cs-hd |
+| 22 | `npm-published` | on demand: the published npm packages from a clean directory: discover, buy on Arc, verify VALID, and the MCP server through the SDK client | Arc testnet | cs-truth |
 | 19 | `mpp` | the MPP rail's Tempo method pays for real on Tempo testnet: the challenge is checked before paying, the receipt, the transfer on chain, a replay refused | Tempo Moderato | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
@@ -44,6 +45,25 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser, and a browser driver for it is cut ([decisions.md](decisions.md), D14): the firstmate's screenshot rounds check the screens by hand in a real browser at 390 and 1440 px, light and dark. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`: the seven routes, each at 390 and 1440 px, light and dark.
+
+## Escrow version
+
+Arc runs escrow v1 by default. Two variables switch the suite to v2, the same one-env change production Arc uses with v1 kept as the fallback (STEER-1950):
+
+- `E2E_ESCROW_VERSION=2` selects escrow v2 for Arc. Anything else, unset included, is v1.
+- `E2E_ARC_ESCROW_V2` is the v2 escrow address. It is required when the version is 2: importing `e2e/lib/chains.ts` without it throws `E2E_ESCROW_VERSION=2 needs E2E_ARC_ESCROW_V2`.
+
+With the switch on, `ARC.escrow` is the v2 address and `ARC.escrowVersion` is 2, so the hub, the seller's runner, the buyer pin and every chain read follow it. On v2:
+
+- the toll accrues in `tollAccrued()` and is paid to the treasury only by `sweepToll()`, instead of moving in the release transaction; `arc-spine` checks the accrual and the absence of a treasury transfer;
+- `refund` reverts `SettleWindowOpen` until `deadline + DISPUTE_WINDOW` (600 s); `arc-deadline-refund` waits that window and its early-refund check expects `SettleWindowOpen`;
+- for the same reason flows 3 (`arc-deadline-refund`) and 13 (`ratings`) are on demand on v2: run them with `--with arc-deadline-refund` or `--with ratings`;
+- every buyer state directory gets a `rails.json` pinning the Arc entry of `KNOWN_RAILS` at this suite's escrow with `version: 2`, before the first buyer call;
+- the standalone verifier has no pin flag, so it refuses the v2 escrow until `KNOWN_ESCROWS` names it. That red is expected until the address is promoted.
+
+The run summary's header records the escrow version and the Arc escrow address. Whitechain stays on v1 in this packet: its relay handles v1 only here, and cs-wc's wc-09 builds v2 there.
+
+v2 releases only from its arbiter, and the Arc v2 escrow's arbiter is the production hub. A run with a local hub therefore reports `arc-spine`, `arc-deadline-refund` and `ratings` as NOT RUN, naming both addresses. They run once the suite's hub is the arbiter, through an e2e deployment, or once production serves v2.
 
 ## What each flow asserts
 
@@ -245,6 +265,19 @@ Both first check the same three things:
 5. **mirror, schedule**: never executed, created by the agent, and past its expiry.
 6. **mirror, transfer**: no scheduled transaction exists for the create.
 7. **HCS**: the `schedule` entry and the `expired` entry name the same schedule and create, both written by the agent.
+
+### 22 · npm-published (on demand)
+
+Runs the packages a stranger gets from npm, in a fresh temporary directory outside the repository. Every child runs there with only `PATH`, a temporary `HOME`, an npm cache inside that directory and `NO_COLOR=1`; the buyer key reaches a child by environment, never in argv.
+
+1. **the published versions**: `npm view @countersign-hub/cli@V version` (and the same for `@countersign-hub/mcp`) names what npm would install.
+2. **help answers**: `npx -y @countersign-hub/cli@V --help` and `... buy --help` both exit 0. Version 0.1.0 has no per-command help, so this flow is expected red at this step there.
+3. **discover with the default hub**: `... discover --state <dir>` passes no `--hub` and no `CS_HUB`; its `use-arc` line starts with the offer hash the public hub lists.
+4. **buy on Arc**: `envelope set` and `buy` through `npx`, with the arguments flow 12 uses; the journal names the slip and the release transaction, whose receipt carries `Released` from the escrow the hub's `/rails` names.
+5. **verify VALID**: `... verify <state>/slips/<slipHash>.json --rpc <Arc RPC>` exits 0 and ends in `VALID`.
+6. **the MCP server through the SDK client**: `... mcp --state <dir>` is spawned by `StdioClientTransport`; the client lists all six tools, searches for `use-arc`, buys it, checks the release on chain, and verifies the slip. The server's stderr goes to a redacted log.
+
+`E2E_NPM_VERSION` selects the version to install, `latest` by default. The flow is on demand because it installs the published packages from npm, and it spends the Arc buyer's 0.02 USDC on two buys. Run it with `bun run e2e -- --flow npm-published`.
 
 ### 19 · mpp
 

@@ -17,6 +17,45 @@ export interface Review {
   job: string;
 }
 
+export interface Settlement {
+  payee: string;
+  amount: bigint;
+  job: string;
+}
+
+export interface ReviewComparison {
+  note?: string;
+}
+
+function short(job: string): string {
+  return job.length > 10 ? `${job.slice(0, 10)}…` : job;
+}
+
+/**
+ * Compare what settled against the review the signer saw.
+ *
+ * The payee and the amount must always match. The console rebuilds the terms at every Sign, so the
+ * job id may differ whatever the delay; the returned note names the job the review showed and the
+ * one that settled.
+ */
+export function compareSettlement(
+  review: Review,
+  settlement: Settlement,
+  signDelayS: number,
+): ReviewComparison {
+  void signDelayS;
+  if (settlement.payee.toLowerCase() !== review.payee.toLowerCase()) {
+    throw new Error(`the review showed ${review.payee}, but the Funded payee was ${settlement.payee}`);
+  }
+  if (settlement.amount !== review.amount) {
+    throw new Error(`the review showed ${review.amount}, but the slip's amount was ${settlement.amount}`);
+  }
+  if (settlement.job.toLowerCase() === review.job.toLowerCase()) return {};
+  return {
+    note: `the console rebuilt the terms at Sign: job ${short(review.job)} -> ${short(settlement.job)}`,
+  };
+}
+
 type ReviewInput = Partial<Record<ReviewField, string | null | undefined>>;
 
 function read(values: ReviewInput, id: ReviewField): string {
