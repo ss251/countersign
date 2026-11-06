@@ -972,6 +972,7 @@ export function fromHubOrder(raw: unknown): Order | null {
     disputeTx: text(r.disputeTx),
     releasedAfterWindow: r.releasedAfterWindow === true,
     bondSlashed: atomic(r.bondSlashed),
+    closeReason: REFUND_REASONS.some((entry) => entry.value === r.closeReason) ? (r.closeReason as RefundReason) : null,
   };
 }
 
@@ -1008,7 +1009,10 @@ function csvField(value: string): string {
 export const ORDERS_CSV_HEADER =
   "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
 
-/** The accountant's export: the relay's orders.csv columns, built from whatever the desk is showing. */
+/**
+ * The accountant's export, built from whatever the desk is showing: the relay's orders.csv columns
+ * up to refund_tx_urls. Refund reasons stay in the relay's own export, which reads every refund.
+ */
 export function ordersCsv(orders: readonly Order[]): string {
   const rows = [ORDERS_CSV_HEADER];
   for (const order of orders) {

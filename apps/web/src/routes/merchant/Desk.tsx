@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { navigate } from "../../app/router.tsx";
-import type { Equation, Order, OrderFilter, ReceiptOrder, RefundRecord, Refusal, RelayStatus } from "./model.ts";
+import type { Equation, Order, OrderFilter, ReceiptOrder, RefundReason, RefundRecord, Refusal, RelayStatus } from "./model.ts";
 import {
   ORDER_FILTERS,
   addressUrl,
@@ -371,7 +371,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   };
 
   /** The sample ledger's stand-in for the chain: the changes a relay would report, and nothing more. */
-  const simulateRefund = (order: Order, amount: bigint, txHash: string) => {
+  const simulateRefund = (order: Order, amount: bigint, txHash: string, reason: RefundReason | null = null) => {
     const cancelled = isEscrowOpen(order.status);
     setOrders((current) =>
       current.map((candidate) => {
@@ -402,7 +402,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
         ...current,
         [order.id]: [
           ...(current[order.id] ?? []),
-          { amount: amount.toString(), txHash, status: "confirmed", at: Date.now() },
+          { amount: amount.toString(), txHash, status: "confirmed", reason, at: Date.now() },
         ],
       }));
     }
@@ -468,7 +468,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   };
 
   /** A partial refund from the panel. Deliberate already (two steps), so it sends at once. */
-  const refundPart = async (order: Order, amount: bigint): Promise<PartOutcome> => {
+  const refundPart = async (order: Order, amount: bigint, reason: RefundReason): Promise<PartOutcome> => {
     if (!canAct(access)) return { ok: false, reason: "Refunds cannot be signed from this page." };
     const current = rows[order.id];
     if (undoTimersRef.current.has(order.id) || current?.kind === "undo" || current?.kind === "sending") {
@@ -479,12 +479,12 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
       if (!sample) return { ok: false, reason: "The sample ledger is still loading." };
       await wait(700);
       const txHash = sample.fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
-      simulateRefund(order, amount, txHash);
+      simulateRefund(order, amount, txHash, reason);
       setRow(order.id, { kind: "done", txHash, amount: amount.toString(), cancelled: false, before: order.refundable });
       return { ok: true };
     }
     try {
-      const result = await refundOrder(order.id, { amount });
+      const result = await refundOrder(order.id, { amount, reason });
       if (!mountedRef.current) return { ok: true };
       if (result.ok === "unknown") {
         setRow(order.id, { kind: "unknown", message: result.reason, before: order.refundable });
@@ -578,7 +578,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
       onClose={closePanel}
       onRefundAll={() => startRefund(selected)}
       onUndo={() => undoRefund(selected.id)}
-      onRefundPart={(amount) => refundPart(selected, amount)}
+      onRefundPart={(amount, reason) => refundPart(selected, amount, reason)}
       onUnlock={openUnlock}
     />
   ) : null;

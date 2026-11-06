@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { Link } from "../../app/router.tsx";
-import type { Order, ReceiptOrder, Refusal } from "./model.ts";
+import type { Order, ReceiptOrder, Refusal, RefundReason } from "./model.ts";
 import {
+  REFUND_REASONS,
   addressUrl,
   adjustments,
   assetOf,
@@ -100,7 +101,7 @@ interface OrderPanelProps {
   onClose: () => void;
   onRefundAll: () => void;
   onUndo: () => void;
-  onRefundPart: (amount: bigint) => Promise<PartOutcome>;
+  onRefundPart: (amount: bigint, reason: RefundReason) => Promise<PartOutcome>;
   onUnlock: () => void;
 }
 
@@ -400,8 +401,10 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
   const headingId = useId();
   const amountId = useId();
   const errorId = useId();
+  const reasonId = useId();
   const remainder = BigInt(order.refundable);
   const [amount, setAmount] = useState(() => formatUsdt(order.refundable));
+  const [reason, setReason] = useState<RefundReason>("requested_by_customer");
   const [touched, setTouched] = useState(false);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
@@ -422,7 +425,7 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
     if (!check.ok || sending) return;
     setSending(true);
     setRefused(null);
-    const outcome = await onRefundPart(check.atomic);
+    const outcome = await onRefundPart(check.atomic, reason);
     setSending(false);
     // Done or unknown, the form closes: an unconfirmed refund must not be one click from a second one.
     if (outcome.ok === false) setRefused(outcome.reason);
@@ -490,6 +493,24 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
             {error}
           </p>
         ) : null}
+      </div>
+
+      <div className="mx-field">
+        <label className="mx-field__label" htmlFor={reasonId}>
+          Reason
+        </label>
+        <select
+          id={reasonId}
+          className="mx-select"
+          value={reason}
+          onChange={(event) => setReason(event.target.value as RefundReason)}
+        >
+          {REFUND_REASONS.map((entry) => (
+            <option key={entry.value} value={entry.value}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <p className="mx-final">

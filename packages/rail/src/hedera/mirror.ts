@@ -16,6 +16,8 @@ export class MirrorError extends Error {
 export interface MirrorOptions {
   base?: string;
   fetch?: typeof fetch;
+  /** One delay per retry after a transient failure; `[]` means one attempt. */
+  retryDelaysMs?: readonly number[];
 }
 
 export interface GetTransactionOptions extends MirrorOptions {
@@ -23,9 +25,42 @@ export interface GetTransactionOptions extends MirrorOptions {
   scheduled?: boolean;
 }
 
-async function get<T>(path: string, opts: MirrorOptions = {}): Promise<T | null> {
+export const MIRROR_RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000];
+
+function isTransient(r: Response): boolean {
+  return r.status === 429 || r.status >= 500;
+}
+
+/** A mirror read that retries a thrown fetch, a 429, or a 5xx before giving up. */
+export async function mirrorFetch(url: string, opts: MirrorOptions = {}): Promise<Response> {
   const f = opts.fetch ?? fetch;
-  const r = await f((opts.base ?? MIRROR_TESTNET) + path);
+  const delays = opts.retryDelaysMs ?? MIRROR_RETRY_DELAYS_MS;
+  let lastError: unknown;
+  for (let retry = 0; ; retry++) {
+    let response: Response | undefined;
+    try {
+      response = await f(url);
+    } catch (error) {
+      lastError = error;
+    }
+    if (response && !isTransient(response)) return response;
+    if (retry >= delays.length) {
+      if (response) return response;
+      throw lastError;
+    }
+    if (response) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // A failed body cancel does not change the retry.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, delays[retry]!));
+  }
+}
+
+async function get<T>(path: string, opts: MirrorOptions = {}): Promise<T | null> {
+  const r = await mirrorFetch((opts.base ?? MIRROR_TESTNET) + path, opts);
   if (r.status === 404) return null;
   if (!r.ok) throw new MirrorError(path, r.status);
   return (await r.json()) as T;

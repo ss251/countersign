@@ -328,4 +328,128 @@ describe("whitechainPaywall", () => {
     expect(settledBeforeHandler).toBe(true);
     expect(res.headers.get(PAYMENT_RESPONSE_HEADER)).not.toBeNull();
   });
+
+  test("a pending settle keeps the claim and refuses the next presentation", async () => {
+    const relay = createTestRelay();
+    let clock = NOW;
+    const { fetch, calls } = stub({
+      settle: () => ({
+        success: false,
+        errorReason: "settlement_pending",
+        transaction: "0xpending",
+        network: NETWORK,
+        amount: "50000",
+      }),
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => clock }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    const first = await call();
+    expect(first.status).toBe(402);
+    expect(((await first.json()) as { error: string }).error).toBe(
+      "Refused. settlement_pending",
+    );
+    expect(
+      fromBase64Json<Record<string, unknown>>(first.headers.get(PAYMENT_RESPONSE_HEADER)!),
+    ).toEqual({
+      success: false,
+      errorReason: "settlement_pending",
+      transaction: "0xpending",
+      network: NETWORK,
+      amount: "50000",
+    });
+    expect(served).toBe(1);
+
+    const second = await call();
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({
+      error: "Refused. This payment is still settling.",
+    });
+    expect(served).toBe(1);
+    expect(calls.filter((entry) => entry.path === "/settle")).toHaveLength(1);
+  });
+
+  test("a pending claim is released once the authorisation has expired", async () => {
+    const relay = createTestRelay();
+    let clock = NOW;
+    let pending = true;
+    const { fetch } = stub({
+      settle: () =>
+        pending
+          ? {
+              success: false,
+              errorReason: "settlement_pending",
+              transaction: "0xpending",
+              network: NETWORK,
+            }
+          : {
+              success: true,
+              transaction: "0xabc",
+              network: NETWORK,
+              amount: "50000",
+            },
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => clock }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    expect((await call()).status).toBe(402);
+    pending = false;
+    clock = NOW + 600 + 61;
+    expect((await call()).status).toBe(200);
+    expect(served).toBe(2);
+
+    const third = await call();
+    expect(third.status).toBe(409);
+    expect(await third.json()).toEqual({ error: "Refused. This payment was already used." });
+    expect(served).toBe(2);
+  });
+
+  test("a settle failure that is not pending releases the claim at once", async () => {
+    const relay = createTestRelay();
+    let failure = true;
+    const { fetch } = stub({
+      settle: () =>
+        failure
+          ? {
+              success: false,
+              errorReason: "invalid_transaction_state",
+              transaction: "",
+              network: NETWORK,
+            }
+          : {
+              success: true,
+              transaction: "0xabc",
+              network: NETWORK,
+              amount: "50000",
+            },
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => NOW, settle: "before" }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    const refused = await call();
+    expect(refused.status).toBe(402);
+    expect(((await refused.json()) as { error: string }).error).toBe(
+      "Refused. invalid_transaction_state",
+    );
+    expect(served).toBe(0);
+
+    failure = false;
+    expect((await call()).status).toBe(200);
+    expect(served).toBe(1);
+  });
 });

@@ -10,6 +10,7 @@ import { offerHashFromMemo } from "./memo.ts";
 import {
   getTransaction,
   MirrorError,
+  mirrorFetch,
   type MirrorOptions,
   type MirrorTransaction,
 } from "./mirror.ts";
@@ -63,16 +64,15 @@ function normalizeSchedule(raw: RawSchedule): MirrorSchedule {
 
 /** A schedule from the mirror node, or null when it is not there yet. */
 export async function getSchedule(scheduleId: string, opts: MirrorOptions = {}): Promise<MirrorSchedule | null> {
-  const f = opts.fetch ?? fetch;
   const path = `/api/v1/schedules/${scheduleId}`;
-  const r = await f((opts.base ?? MIRROR_TESTNET) + path);
+  const r = await mirrorFetch((opts.base ?? MIRROR_TESTNET) + path, opts);
   if (r.status === 404) return null;
   if (!r.ok) throw new MirrorError(path, r.status);
   return normalizeSchedule((await r.json()) as RawSchedule);
 }
 
 /** Unix seconds from either a mirror timestamp ("seconds.nanos") or an ISO date-time. */
-function secondsOf(value: string | null | undefined): number | null {
+export function secondsOf(value: string | null | undefined): number | null {
   if (!value) return null;
   if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value.split(".")[0]);
   const ms = Date.parse(value.replace(/(\.\d{3})\d+/, "$1"));
