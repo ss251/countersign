@@ -58,4 +58,4 @@ As `contracts/src/CountersignedEscrow.sol` has them. Each job closes once: relea
 
 ## 7. Seller names
 
-Offers name the seller by its address. How seller names are shown will be described in `docs/ens.md`, once the name-resolver code exists.
+Offers name the seller by its address.
