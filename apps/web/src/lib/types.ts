@@ -4,7 +4,7 @@
  * a purchase is a job as the buyer's phone lists it.
  */
 
-import type { AdapterKind, Envelope, EnvelopeSpend, Offer, RailId, Slip } from "@countersign/core";
+import type { AdapterKind, ApprovalRequest, Envelope, EnvelopeSpend, Offer, RailId, Slip } from "@countersign/core";
 import type { RailDeclaration } from "@countersign/rail";
 
 export type {
@@ -61,6 +61,11 @@ export interface Approval {
   discoveredVia: DiscoverySource;
   /** Unix seconds. */
   requestedAt: number;
+  /**
+   * What a version 2 decision is signed over, as the hub holds it: the agent's signed request and
+   * its terms. The phone checks the agent's signature before it signs. Fixture approvals have none.
+   */
+  signing?: { offerHash: string; terms: unknown; request: ApprovalRequest | null; requestSig: string | null };
 }
 
 export type JobStatus = "countersigned" | "held" | "delivered" | "released" | "refused" | "refunded";

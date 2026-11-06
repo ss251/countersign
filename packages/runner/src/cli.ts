@@ -3,20 +3,38 @@
  * and never accepted as an argument.
  *
  *   bun packages/runner/src/cli.ts publish --hub <url> --skill <path> --price <atomic> ...
- *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...] ...
+ *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...]
+ *     [--known-escrow <chainId>=<address> ...] [--rpc <chainId>=<url> ...] ...
  *   bun packages/runner/src/cli.ts bond deposit|withdraw|show ... --escrow <address>
+ *
+ * `serve` checks every escrow job on chain before it runs: KNOWN_ESCROWS plus any extra pins,
+ * over Arc's default RPC, ARC_RPC_URL or WC_RPC_URL, plus any --rpc overrides.
  */
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { isEnsName, parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
+import { KNOWN_ESCROWS } from "@countersign/verify";
+import { isAddress } from "viem";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
 import { bondFromEnv } from "./bond.ts";
 import { startRunner, type ServedOffer } from "./daemon.ts";
+import {
+  ARC_RPC_URL,
+  ARC_TESTNET,
+  WHITECHAIN_TESTNET,
+  type FundingConfig,
+  type PinnedEscrow,
+} from "./funding.ts";
 import { publishOffer, type PublishedOffer } from "./publish.ts";
 import { readSkill, skillOffer, type Skill } from "./skill.ts";
 
 const DEFAULT_DEADLINE = 120;
+
+interface RpcEndpoint {
+  chainId: number;
+  url: string;
+}
 
 export interface Options {
   hub: string;
@@ -27,8 +45,37 @@ export interface Options {
   payTo?: Partial<Record<RailId, string>>;
   state?: string;
   upstream?: { url: string; licence: string };
+  /** Extra escrow pins on top of KNOWN_ESCROWS. */
+  knownEscrows?: PinnedEscrow[];
+  /** Extra RPC endpoints on top of the environment and Arc's default. */
+  rpcs?: RpcEndpoint[];
   /** The seller's ENS name on Sepolia. */
   ens?: string;
+}
+
+export interface FundingEnv {
+  [key: string]: string | undefined;
+  ARC_RPC_URL?: string | undefined;
+  WC_RPC_URL?: string | undefined;
+}
+
+/** The CLI's funding check: KNOWN_ESCROWS plus pins, and the per-chain RPCs. */
+export function fundingFor(options: Options, env: FundingEnv = process.env): FundingConfig {
+  // Both pinned chains get a default, so the check never refuses a pinned escrow for want of an RPC.
+  // Whitechain's is the one the rail and relay use (packages/rail/src/whitechain WHITECHAIN_RPC_URL).
+  const rpc: Record<number, string> = {
+    [ARC_TESTNET]: env.ARC_RPC_URL || ARC_RPC_URL,
+    [WHITECHAIN_TESTNET]: env.WC_RPC_URL || "https://rpc.ankr.com/whitechain_testnet",
+  };
+  for (const entry of options.rpcs ?? []) rpc[entry.chainId] = entry.url;
+
+  return {
+    known: [
+      ...KNOWN_ESCROWS.map((entry) => ({ chainId: entry.chainId, escrow: entry.escrow })),
+      ...(options.knownEscrows ?? []),
+    ],
+    rpc,
+  };
 }
 
 async function main(): Promise<void> {
@@ -103,6 +150,7 @@ async function serveCommand(options: Options): Promise<void> {
     hubUrl: options.hub,
     account,
     served,
+    funding: fundingFor(options),
     onJob: (event) => {
       const jobId = event.jobId.length > 10 ? `${event.jobId.slice(0, 10)}…` : event.jobId;
       console.log(`${jobId} ${event.title} ${event.ok ? "ok" : event.reason ?? "refused"}`);
@@ -173,6 +221,8 @@ export function parseOptions(args: string[]): Options {
   let licence: string | undefined;
   let ens: string | undefined;
   const payTo: Partial<Record<RailId, string>> = {};
+  const knownEscrows: PinnedEscrow[] = [];
+  const rpcs: RpcEndpoint[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
     const flag = args[i] ?? "";
@@ -216,6 +266,44 @@ export function parseOptions(args: string[]): Options {
         payTo[rail as RailId] = id;
         break;
       }
+      case "--known-escrow": {
+        const pair = value();
+        const equals = pair.indexOf("=");
+        if (equals <= 0 || equals === pair.length - 1) {
+          throw new Error("--known-escrow needs <chainId>=<address>.");
+        }
+        const chainId = Number(pair.slice(0, equals));
+        const escrow = pair.slice(equals + 1);
+        if (!Number.isSafeInteger(chainId) || chainId <= 0) {
+          throw new Error("--known-escrow needs a positive chain id.");
+        }
+        if (!isAddress(escrow)) throw new Error("--known-escrow needs an address.");
+        knownEscrows.push({ chainId, escrow });
+        break;
+      }
+      case "--rpc": {
+        const pair = value();
+        const equals = pair.indexOf("=");
+        if (equals <= 0 || equals === pair.length - 1) {
+          throw new Error("--rpc needs <chainId>=<url>.");
+        }
+        const chainId = Number(pair.slice(0, equals));
+        if (!Number.isSafeInteger(chainId) || chainId <= 0) {
+          throw new Error("--rpc needs a positive chain id.");
+        }
+        const url = pair.slice(equals + 1).trim();
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          throw new Error("--rpc needs a URL.");
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("--rpc needs an http or https URL.");
+        }
+        rpcs.push({ chainId, url });
+        break;
+      }
       case "--state":
         state = value();
         break;
@@ -253,6 +341,8 @@ export function parseOptions(args: string[]): Options {
   if (upstreamUrl !== undefined && licence !== undefined) {
     options.upstream = { url: upstreamUrl, licence };
   }
+  if (knownEscrows.length > 0) options.knownEscrows = knownEscrows;
+  if (rpcs.length > 0) options.rpcs = rpcs;
   return options;
 }
 

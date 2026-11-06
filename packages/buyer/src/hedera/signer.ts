@@ -46,14 +46,15 @@ export function assertSignable(payer: HederaPayer, req: PaymentRequirements, opt
 }
 
 /**
- * Build and sign the transfer. Returns the base64 transaction and its id, which is fixed from
- * here on: whoever settles it, the payment lands under this id or not at all.
+ * Build and sign the transfer. Returns the base64 transaction, its id, which is fixed from here
+ * on: whoever settles it, the payment lands under this id or not at all, and the unix second
+ * after which the network no longer accepts it.
  */
 export async function signHederaTransfer(
   payer: HederaPayer,
   req: PaymentRequirements,
   opts: SignOptions = {},
-): Promise<{ transaction: string; transactionId: string }> {
+): Promise<{ transaction: string; transactionId: string; validUntil: number }> {
   const amount = assertSignable(payer, req, opts);
   const token = TokenId.fromString(req.asset);
   const tx = new TransferTransaction()
@@ -76,7 +77,8 @@ export async function signHederaTransfer(
   }
   await tx.sign(payer.key);
   const id = tx.transactionId!.toString();
-  return { transaction: Buffer.from(tx.toBytes()).toString("base64"), transactionId: id };
+  const validUntil = Number(tx.transactionId!.validStart!.seconds.toString()) + tx.transactionValidDuration;
+  return { transaction: Buffer.from(tx.toBytes()).toString("base64"), transactionId: id, validUntil };
 }
 
 /** The x402 v2 payment the buyer sends back in PAYMENT-SIGNATURE. */
@@ -85,13 +87,13 @@ export async function hederaPayment(
   req: PaymentRequirements,
   resourceUrl?: string,
   opts: SignOptions = {},
-): Promise<{ payment: PaymentPayload; transactionId: string }> {
-  const { transaction, transactionId } = await signHederaTransfer(payer, req, opts);
+): Promise<{ payment: PaymentPayload; transactionId: string; validUntil: number }> {
+  const { transaction, transactionId, validUntil } = await signHederaTransfer(payer, req, opts);
   const payment: PaymentPayload = {
     x402Version: 2,
     accepted: req,
     payload: { transaction },
     ...(resourceUrl ? { resource: { url: resourceUrl } } : {}),
   };
-  return { payment, transactionId };
+  return { payment, transactionId, validUntil };
 }

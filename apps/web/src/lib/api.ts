@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ApprovalRequest } from "@countersign/core";
 import { ESCROW_RAILS, explorerTemplate, nowUnix, shortHex, symbolFor } from "./format.ts";
 import {
   approvalToken,
@@ -253,6 +254,7 @@ export const api = {
             rail: a.rail,
             discoveredVia: "registry",
             requestedAt: toUnix(a.requestedAt ?? a.createdAt ?? nowUnix()),
+            signing: { offerHash: a.offerHash, terms: a.terms, request: a.request ?? null, requestSig: a.requestSig ?? null },
           },
         ];
       }),
@@ -293,11 +295,17 @@ export const api = {
     const listings = await hubOffers().catch(() => [] as HubListing[]);
     return live(r.jobs.map((j) => toPurchase(j, listings, [])));
   },
-  /** The human's decision on a held call. The token stays on this device and goes only to this hub. */
-  decide: async (id: string, decision: "countersign" | "decline"): Promise<void> => {
+  /**
+   * The human's decision on a held call, signed on this phone as a version 2 decision: bound to the
+   * agent's own request, checked against the agent's signature first. The token and the key stay on
+   * this device; the token goes only to this hub, and the key goes nowhere.
+   */
+  decide: async (approval: Approval, decision: "countersign" | "decline"): Promise<void> => {
     const token = approvalToken();
     if (!token) throw new HubError(401, "This phone has no approval token yet.", "no-token");
-    await hubPost(`/approvals/${id}/decision`, { decision }, { authorization: `Bearer ${token}` });
+    const { signDecision } = await import("./approver.ts");
+    const { decidedAt, sig } = await signDecision(approval, decision);
+    await hubPost(`/approvals/${approval.id}/decision`, { decision, decidedAt, sig }, { authorization: `Bearer ${token}` });
   },
   /** The agent's jobs right now, so a countersigned call is matched to the job it starts and not an older one. */
   jobIds: async (agent: string): Promise<Set<string>> => {
@@ -327,6 +335,10 @@ interface HubApproval {
   requestedAt?: number;
   createdAt?: number;
   decidedAt?: number | null;
+  /** The terms the agent asked under, and its signed request: what a version 2 decision binds to. */
+  terms?: unknown;
+  request?: ApprovalRequest | null;
+  requestSig?: string | null;
 }
 
 interface HubBuyerJob {
