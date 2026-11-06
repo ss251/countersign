@@ -377,6 +377,8 @@ class HumanReporter {
 
   onEnd(): void {
     const runId = this.runId || currentRunId();
+    const projects = readProjectStates(runId);
+    if (projects.length === 0) return;
     const keys = new Keyring();
     for (const name of SECRET_NAMES) keys.secret(name);
     const meta: RunMeta = {
@@ -387,8 +389,6 @@ class HumanReporter {
       startedAt: this.startedAt.toISOString(),
       ms: Date.now() - this.startedAt.getTime(),
     };
-    const projects = readProjectStates(runId);
-    if (projects.length === 0) return;
     const result = finalizeReport({
       meta,
       projects,
