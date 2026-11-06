@@ -14,6 +14,8 @@ For the README, in one line:
 - **Merchant:** sees every order at `#/merchant` as it settles. Refunds an order in one click: a held escrow order is cancelled, and a paid order is sent back as a gasless USDT transfer. Exports a CSV for the accountant. Never holds WBT.
 - **Business side of gas:** the relayer holds the WBT. Half of every escrow toll flows back to it through `FeeSplit`. The guards in [What stops the relayer being drained](#what-stops-the-relayer-being-drained) bound what anyone can make it spend.
 
+The merchant desk reads the merchant's own service (`packages/relay/src/merchant-server.ts`). That service runs on the merchant's machine and is not deployed publicly, so the public console's `#/merchant` shows no live orders yet ([#83](https://github.com/ss251/countersign/pull/83)). The payments, refunds and export below ran against it on the build machine.
+
 ## Network
 
 | | |
@@ -29,7 +31,7 @@ For the README, in one line:
 | Gas token | WBT, 18 decimals |
 | Block time | 1 s |
 | Base fee seen | 5 gwei; block gas limit 40,000,000 |
-| Highest EVM target | `prague`. Our contracts compile for `paris` (see `docs/decisions.md` D3) |
+| Highest EVM target | `prague`. Our contracts compile for `cancun` (see `docs/decisions.md` D3) |
 
 ## Settlement token: USDT
 
@@ -210,7 +212,7 @@ forge verify-contract <address> contracts/src/CountersignedEscrow.sol:Countersig
   --constructor-args <abi-encoded args>
 ```
 
-The REST API also accepts `standard-input`, `multi-part` and `flattened-code` at `POST /api/v2/smart-contracts/{address}/verification/via/<method>`; `contract_name` is required there. `v0.8.28+commit.7893614a` and the `paris` EVM target are both on the explorer's list. Poll `GET /api/v2/smart-contracts/{address}` until `is_verified` is true.
+The REST API also accepts `standard-input`, `multi-part` and `flattened-code` at `POST /api/v2/smart-contracts/{address}/verification/via/<method>`; `contract_name` is required there. `v0.8.28+commit.7893614a` and the `cancun` EVM target are both on the explorer's list. Poll `GET /api/v2/smart-contracts/{address}` until `is_verified` is true.
 
 ## Deployments
 

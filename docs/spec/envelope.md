@@ -8,7 +8,7 @@ The human's limits on what the agent may spend. Code: `packages/core/src/envelop
 | `cap` | Total budget, atomic 6-decimal USD. |
 | `perMerchant` | Default limit per seller. `merchantLimits` overrides it per seller address. |
 | `allowlist` | Seller addresses or offer hashes that may be paid. Empty means any. |
-| `askAbove` | Above this amount the agent holds the call for the human's countersignature. |
+| `askAbove` | Above this amount the agent holds the call until a human approves it: on the agent's machine with `buy --approve`, or from another device with the `approver` key (below). |
 | `approver` | The key whose signature countersigns a held call from another device. Absent: a held call can be approved only on the agent's machine. |
 | `revoked`, `expiresAt` | A revoked or expired envelope approves nothing. |
 
