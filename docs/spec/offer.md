@@ -12,7 +12,7 @@ What a seller publishes. Type `Offer` in `packages/core/src/types.ts`; checks in
 | `input`, `output` | JSON Schema 2020-12. A call whose input fails is refused before payment. An output that fails is a failed delivery and is never released. |
 | `price` | Atomic units of a 6-decimal USD stablecoin, as a digit string. |
 | `deadline` | Seconds the seller has to deliver once the escrow is funded, from 10 s to 7 days. |
-| `bond` | Atomic amount the seller declares. Declared only: no contract collects it. |
+| `bond` | Atomic amount the seller puts up. It is collected and locked when the escrow supports it: returned to the seller on release, refund or cancel, and paid to the buyer when the hub's gate fails the delivery. |
 | `rails` | Accepted rails, most preferred first. |
 | `payTo` | Payee per rail where it is not `seller`, for example a Hedera account id. |
 | `issuedAt` | Unix seconds. |

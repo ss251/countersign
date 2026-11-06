@@ -1,6 +1,6 @@
 # Escrow
 
-`contracts/src/CountersignedEscrow.sol`. One file, no owner, no pause, no proxy. The token, treasury and toll are fixed at deployment.
+`contracts/src/CountersignedEscrow.sol`. One file, no owner, no pause, no proxy. The token, treasury, toll and arbiter are fixed at deployment.
 
 | Deployment | Chain | Escrow | Token |
 |---|---|---|---|
@@ -12,17 +12,25 @@
 
 ```solidity
 fund(bytes32 offerHash, Countersignature cs) returns (bytes32 jobId)
+fundBonded(bytes32 offerHash, Countersignature cs, uint256 bond) returns (bytes32 jobId)
+depositBond(address payee, uint256 amount, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)
+withdrawBond(uint256 amount)
 release(bytes32 jobId, bytes32 slipHash, bytes sellerSig)
 refund(bytes32 jobId)
 cancel(bytes32 jobId, bytes sellerSig)
+failDelivery(bytes32 jobId)
 ```
 
-- **fund**: derives `jobId` from the terms, checks the buyer's signature, then pulls `amount` from the buyer with the token's EIP-3009 `receiveWithAuthorization`. Anyone may submit it: the hub, a relayer, or the buyer. The buyer pays no gas.
-- **release**: allowed until the deadline, inclusive. It needs the payee's EIP-712 `Release(jobId, slipHash)` signature, through ECDSA or ERC-1271, and anyone may submit it. It pays `amount - toll` to the payee and `toll` to the treasury.
-- **refund**: allowed only after the deadline, and anyone may call it. It returns the full amount to the buyer.
-- **cancel**: the payee's early refund. The payee calls it directly, or anyone submits it with the payee's `Cancel(jobId)` signature. It returns the full amount to the buyer.
+- **fund**: derives `jobId` from the terms, checks the buyer's signature, then pulls `amount` from the buyer with the token's EIP-3009 `receiveWithAuthorization`. Anyone may submit it: the hub, a relayer, or the buyer. The buyer pays no gas. It locks no bond.
+- **fundBonded**: the same path as `fund`, plus it moves `bond` from the payee's free bond into the job. It reverts `BondMissing(payee, bond, available)` when the free bond is short.
+- **depositBond**: credits a payee's free bond from an EIP-3009 authorisation signed by that payee. Anyone may submit it; the escrow checks the exact balance delta. A zero amount reverts `ZeroAmount`.
+- **withdrawBond**: the caller takes back from its own free bond, and only that. Asking for more reverts `BondMissing(payee, amount, available)`.
+- **release**: allowed until the deadline, inclusive. It needs the payee's EIP-712 `Release(jobId, slipHash)` signature, through ECDSA or ERC-1271, and anyone may submit it. It pays `amount - toll` to the payee and `toll` to the treasury, and returns the job's bond to the payee's free bond.
+- **refund**: allowed only after the deadline, and anyone may call it. It returns the full amount to the buyer and the job's bond to the payee's free bond.
+- **cancel**: the payee's early refund. The payee calls it directly, or anyone submits it with the payee's `Cancel(jobId)` signature. It returns the full amount to the buyer and the job's bond to the payee's free bond.
+- **failDelivery**: only the `arbiter` may call it, and only on a funded job before the deadline. It sets status `Failed` and pays the buyer `amount + bond` with no toll. The seller's free bond is not credited.
 
-Each job closes once: release, refund and cancel all require status `Funded`.
+Each job closes once: release, refund, cancel and failDelivery all require status `Funded`.
 
 ## The countersignature
 
@@ -42,17 +50,37 @@ with `to = escrow`, `value = amount` and `nonce = jobId`. Changing the offer, pa
 
 `receiveWithAuthorization` is used rather than `transferWithAuthorization` because only the escrow can submit it. With `transferWithAuthorization`, a front-runner could move the buyer's funds into the escrow without opening a job.
 
+## The seller bond
+
+An offer's `bond` becomes real on a rail whose escrow supports it. The payee deposits it as a free bond, and funding a bonded job locks that much of it on the job. The job's bond is separate from the `Job` struct, so `jobOf` decodes the same way on old and new deployments.
+
+| Case | Payment | Bond |
+|---|---|---|
+| **Delivering seller**: release by the deadline | to the seller, minus the toll | back to the seller's free bond |
+| **Failing seller**: delivery is made by the deadline but fails the hub's delivery gate, so the hub's arbiter calls `failDelivery` | back to the buyer, no toll | **to the buyer** |
+| **Silent seller**: nothing is delivered; anyone calls `refund` after the deadline | back to the buyer | back to the seller's free bond |
+| **Payee cancels early** (`cancel`) | back to the buyer | back to the seller's free bond |
+
+## Trust and limits
+
+The hub's delivery gate decides whether a delivery failed, and only the escrow's `arbiter` — the hub's relayer — may call `failDelivery`. A dishonest hub could therefore slash a bond by failing an honest delivery; the bond is only as strong as that gate. The seller keeps the stronger protection for silence: when no delivery is made, `refund` after the deadline is permissionless and returns the bond to the seller, so a failing seller is worse off than a silent one by exactly the bond. The escrow never pays a toll on `failDelivery`, and a bond is locked at funding, not at the buyer's word.
+
 ## Events
 
 ```solidity
 event Funded(bytes32 indexed jobId, bytes32 indexed offerHash, address indexed buyer, address payee, uint256 amount, uint64 deadline);
 event Released(bytes32 indexed jobId, bytes32 indexed slipHash, address indexed payee, uint256 paid, uint256 toll);
 event Refunded(bytes32 indexed jobId, address indexed buyer, uint256 amount, bool byPayee);
+event BondDeposited(address indexed payee, uint256 amount);
+event BondWithdrawn(address indexed payee, uint256 amount);
+event BondLocked(bytes32 indexed jobId, address indexed payee, uint256 bond);
+event BondReturned(bytes32 indexed jobId, address indexed payee, uint256 bond);
+event DeliveryFailed(bytes32 indexed jobId, address indexed buyer, uint256 amount, uint256 bond);
 ```
 
 ## Errors
 
-`ZeroAddress`, `ZeroAmount`, `TollTooHigh`, `DeadlineInPast`, `JobExists`, `CountersignatureMismatch`, `TransferShortfall`, `NotFunded`, `DeadlinePassed`, `DeadlineNotReached`, `NotPayee`.
+`ZeroAddress`, `ZeroAmount`, `TollTooHigh`, `DeadlineInPast`, `JobExists`, `CountersignatureMismatch`, `TransferShortfall`, `NotFunded`, `DeadlinePassed`, `DeadlineNotReached`, `NotPayee`, `NotArbiter`, `BondMissing`.
 
 ## Toll
 
@@ -66,4 +94,4 @@ event Refunded(bytes32 indexed jobId, address indexed buyer, uint256 amount, boo
 
 ## Tests
 
-`forge test` runs 29 tests: the eight refusals PLAN §6 requires, plus payee-swap, offer-swap, deadline-extension, expired authorisation, cancel paths, the constructor guards, a toll fuzz, and a vector shared with `packages/core/test/countersign.test.ts` that proves the TypeScript and Solidity `jobId` agree.
+`forge test` runs the escrow and bond suites: the eight refusals PLAN §6 requires, plus payee-swap, offer-swap, deadline-extension, expired authorisation, cancel paths, the constructor guards, a toll fuzz, and a vector shared with `packages/core/test/countersign.test.ts` that proves the TypeScript and Solidity `jobId` agree. `contracts/test/Bond.t.sol` covers the four bond paths, the deposit and withdrawal rules, the `failDelivery` refusals, and the comparison that proves a failing seller ends exactly one bond worse off than a silent one.
