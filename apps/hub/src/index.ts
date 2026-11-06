@@ -94,13 +94,15 @@ setInterval(() => {
   void runJanitor({ store, rails, now });
 }, 30_000);
 
-if (process.env.CANARY === "1") {
+const canaryMode = process.env.CANARY === "1" ? "delist" : process.env.CANARY === "report" ? "report" : "off";
+console.log(`[hub] canary: ${canaryMode}`);
+if (canaryMode !== "off") {
   const everyMs = Number(process.env.CANARY_INTERVAL_S ?? 300) * 1000;
   let running = false;
   setInterval(() => {
     if (running) return;
     running = true;
-    void runCanary({ store, runners, now, log: (line) => console.log(line) }).finally(() => {
+    void runCanary({ store, runners, now, report: canaryMode === "report", log: (line) => console.log(line) }).finally(() => {
       running = false;
     });
   }, everyMs);

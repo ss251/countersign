@@ -306,3 +306,11 @@ The envelope lives on the agent's machine, and the agent signs its mirror, so th
 **What the canary proves, and what it does not.** It proves that the runner holding the offer still serves it, and that the seller's key still signs for it. It does not run the offer's work or check its output; a paid delivery still goes through the delivery gate.
 
 **Rollout.** A runner that predates the canary ignores it, so its offers would be delisted. `CANARY=1` goes on in production only after every live runner answers canaries: `packages/runner` with this change, and the phone page separately.
+
+## D18, amended — the canary has a report mode, so production watches a round before anything is delisted (06 Nov; refs #26)
+
+A delisted offer cannot come back under the same hash (D18). So on the first round of `CANARY=1`, a live runner that was not restarted on a build that answers the canary would lose its offer for good.
+
+- `CANARY=report` runs the same rounds, with the same three attempts, and delists nothing. For an offer whose attempts all fail, it logs `[canary] would delist <offerHash>: <reason>`.
+- In both modes, an offer that passes logs `[canary] ok <offerHash>`, and the hub logs its canary mode once at start: `[hub] canary: off`, `[hub] canary: report` or `[hub] canary: delist`.
+- **Rollout.** Each live runner's owner restarts it on a build that answers the canary and posts the commit it runs. Production then runs `CANARY=report` until one round logs `ok` for every online offer, and only then switches to `CANARY=1`.
