@@ -105,7 +105,7 @@ describe("hedera rail", () => {
       amount: "10000",
       asset: "0.0.429274",
       payTo: PAYEE,
-      maxTimeoutSeconds: 120,
+      maxTimeoutSeconds: 180,
       extra: { feePayer: FEE_PAYER, offerHash: offerHash(offer()) },
     });
     expect(() => r.challenge(offer({ payTo: {} }), ctx)).toThrow();

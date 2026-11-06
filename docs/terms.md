@@ -29,7 +29,7 @@ The buyer's agent signs only inside its envelope: not revoked, not expired, on t
 
 ## 4. Delivery, release and refunds
 
-As the escrows production uses have them. Each is v1 ([spec/escrow.md](spec/escrow.md)). The bond and review changes described there as Escrow v2 are deployed on Arc at [`0x10A3…F3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) and on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production does not use either contract yet. Each job closes once: release, refund and cancel each require the job to be `Funded`.
+As the escrows production uses have them: v2 on both chains, for unbonded jobs only ([spec/escrow.md](spec/escrow.md)). The bond and review changes described there as Escrow v2 are deployed on Arc at [`0x10A3…F3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) and on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production's Whitechain rail now runs on the Whitechain one for unbonded jobs. Each job closes once: release, refund and cancel each require the job to be `Funded`.
 
 | Action | Who | When | Money goes to |
 |---|---|---|---|
@@ -63,7 +63,7 @@ As the escrows production uses have them. Each is v1 ([spec/escrow.md](spec/escr
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against.** Release needs only the payee's signature, so the escrow pays a funded job whenever the payee signs a release before the deadline. It cannot judge the output. The hub's output check is the delivery gate, and it runs off chain.
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not collected.** No contract production uses holds it ([spec/offer.md](spec/offer.md)). The escrows production uses are v1. Escrow v2, which collects the bond, is deployed on Arc at [`0x10A3…F3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) and on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production does not use either yet.
+- **The bond is declared, not collected.** No contract production uses holds it ([spec/offer.md](spec/offer.md)). Production uses v2 on both chains, for unbonded jobs only, so no bond is collected yet. Escrow v2, which collects the bond, is deployed on Arc at [`0x10A3…F3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) and on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production's Whitechain rail now runs on it for unbonded jobs.
 - **Token blocklists.** If the token blocklists the treasury, every release reverts until the deadline and buyers recover by refund. If it blocklists a buyer, refund and cancel to that buyer revert ([spec/escrow.md](spec/escrow.md)).
 
 ## 7. Seller names

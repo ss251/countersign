@@ -127,13 +127,14 @@ async function orderFor(job: JobRecord, deps: OrdersDeps, rails: Map<string, Rai
   const declaration = rail?.declaration;
   const offer = deps.store.getOffer(job.offerHash);
   const escrow = declaration?.kind === "escrow";
-  const view = statusView(job.status, escrow);
+  const charged = job.settleTx !== null;
+  const view = statusView(job.status, escrow, charged);
   const createdMs = job.createdAt * 1000;
   const closedMs = job.closedAt === null || job.closedAt === undefined ? null : job.closedAt * 1000;
   const receivedAt =
     job.status === "released" && escrow
       ? closedMs
-      : view.status === "paid" && !escrow
+      : view.status === "paid" && !escrow && charged
         ? createdMs
         : null;
   const order: Order = {
@@ -218,8 +219,11 @@ async function feeFor(job: JobRecord, rail: Rail | undefined, escrow: boolean): 
 function statusView(
   status: JobStatus,
   escrow: boolean,
+  charged: boolean,
 ): { status: string; closeKind: string | null } {
   switch (status) {
+    case "verified":
+      return { status: "pending", closeKind: null };
     case "funded":
       return { status: "held", closeKind: null };
     case "paid":
@@ -233,9 +237,10 @@ function statusView(
     case "disputed":
       return { status: "refunded", closeKind: "dispute_refund" };
     case "failed":
-      return escrow
-        ? { status: "refund_pending", closeKind: null }
-        : { status: "paid", closeKind: null };
+      if (escrow) return { status: "refund_pending", closeKind: null };
+      return charged
+        ? { status: "paid", closeKind: null }
+        : { status: "cancelled", closeKind: null };
     default:
       return { status: "pending", closeKind: null };
   }
