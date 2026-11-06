@@ -1,0 +1,793 @@
+/*
+ * countersign phone. The clearing desk on a phone: paper and ink, hairline rules, no floating cards.
+ *
+ * Colour is meaning only. Red for refusal. Green for settled. Blue only where money moves: an
+ * amount held in escrow, a release link. Everything else is ink.
+ *
+ * Tokens: the PLAN §3 colours in OKLCH, the same values as apps/web/src/styles/tokens.css.
+ */
+
+:root {
+  color-scheme: light;
+  --paper: oklch(0.956 0.010 87.5); /* #f3f0e9 */
+  --ink: oklch(0.202 0.015 107.7); /* #17170f */
+  --slate: oklch(0.513 0.017 94.4); /* #6a675c */
+  --seal: oklch(0.495 0.156 33.4); /* #a8341c, refusal */
+  --settle: oklch(0.471 0.097 157.6); /* #1d6b45, settled */
+  --usdc: oklch(0.429 0.119 255.7); /* #1b4f8f, money moving */
+  --line: oklch(0.874 0.017 88.0); /* #dad5c9, the hairline */
+  --sunk: oklch(0.928 0.014 88.7);
+  --scrim: oklch(0.2 0.015 108 / 0.42);
+  --sheet-shadow: 0 0 0 1px oklch(0.2 0.015 108 / 0.08), 0 -16px 40px -12px oklch(0.2 0.015 108 / 0.28);
+
+  --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --gutter: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: oklch(0.181 0.004 106.8); /* #121210 */
+    --ink: oklch(0.946 0.010 93.6); /* #efede6 */
+    --slate: oklch(0.709 0.015 88.7); /* #a5a197 */
+    --seal: oklch(0.621 0.169 33.8); /* #d9573b */
+    --settle: oklch(0.649 0.121 159.2); /* #3fa574 */
+    --usdc: oklch(0.661 0.105 249.7); /* #5e97d0 */
+    --line: oklch(0.296 0.009 97.6); /* #2e2d28 */
+    --sunk: oklch(0.149 0.002 106.7);
+    --scrim: oklch(0 0 0 / 0.6);
+    --sheet-shadow: 0 0 0 1px oklch(1 0 0 / 0.1), 0 -16px 40px -12px oklch(0 0 0 / 0.7);
+  }
+}
+
+/* ---------------------------------------------------------------- base, phone first */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1rem/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+ol {
+  margin: 0;
+}
+
+button,
+a,
+input,
+label {
+  touch-action: manipulation;
+}
+
+button,
+label.primary,
+[role="switch"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+}
+
+.num,
+.money-figure,
+.when {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- frame */
+
+.shell {
+  min-height: 100dvh;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + var(--gutter)) 12px
+    calc(env(safe-area-inset-left, 0px) + var(--gutter));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  line-height: 20px;
+}
+
+.brand img {
+  display: block;
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.surface {
+  color: var(--slate);
+}
+
+.page {
+  flex: 1;
+  padding: 0 calc(env(safe-area-inset-right, 0px) + var(--gutter)) calc(env(safe-area-inset-bottom, 0px) + 32px)
+    calc(env(safe-area-inset-left, 0px) + var(--gutter));
+}
+
+.group {
+  margin-top: 28px;
+}
+
+/* Small caps over a value: the field voice of a receipt, as on the console. */
+.label {
+  color: var(--slate);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------- the one state line */
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  min-height: 19px;
+}
+
+.state .words {
+  min-width: 0;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.state[data-tone="idle"] {
+  color: var(--slate);
+}
+
+.state[data-tone="work"] .dot {
+  color: var(--ink);
+}
+
+.state[data-tone="live"] .dot {
+  background: var(--ink);
+  box-shadow: none;
+}
+
+.state[data-tone="refused"] {
+  color: var(--seal);
+}
+
+.state[data-tone="refused"] .dot {
+  background: var(--seal);
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------- ruled rows */
+
+.row {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+
+.group > .row:last-of-type,
+.group > .older {
+  border-bottom: 1px solid var(--line);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.money-figure {
+  white-space: nowrap;
+  font-size: 0.9375rem;
+}
+
+.unit {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.04em;
+  color: var(--slate);
+}
+
+.line {
+  margin-top: 4px;
+  color: var(--slate);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.control {
+  margin-top: 12px;
+}
+
+.note,
+.refusal,
+.quiet {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.note {
+  margin-top: 6px;
+  color: var(--slate);
+}
+
+.refusal {
+  margin-top: 8px;
+  color: var(--seal);
+}
+
+.refusal.block {
+  margin-top: 20px;
+}
+
+.quiet {
+  color: var(--slate);
+  text-wrap: pretty;
+}
+
+.empty {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+}
+
+.fact {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 0.875rem;
+}
+
+.fact .k,
+.fact .v,
+.v {
+  color: var(--slate);
+}
+
+.fact .v {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------- the switch */
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.switch:focus-visible {
+  outline: none;
+}
+
+.switch:focus-visible .track {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.track {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background-color 180ms var(--ease-out);
+}
+
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 2px oklch(0.2 0.015 108 / 0.18);
+  transition: transform 200ms var(--ease-out);
+}
+
+.switch[aria-checked="true"] .track {
+  background: var(--ink);
+  box-shadow: none;
+}
+
+.switch[aria-checked="true"] .thumb {
+  transform: translateX(18px);
+  box-shadow: none;
+}
+
+.switch:active .thumb {
+  transform: scale(0.94);
+}
+
+.switch[aria-checked="true"]:active .thumb {
+  transform: translateX(18px) scale(0.94);
+}
+
+.switch:disabled {
+  cursor: default;
+}
+
+.switch:disabled .switch-label {
+  color: var(--slate);
+}
+
+.switch:disabled .track {
+  opacity: 0.6;
+}
+
+/* ---------------------------------------------------------------- jobs */
+
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  font-size: 0.875rem;
+}
+
+.verdict .dot {
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  box-shadow: none;
+}
+
+.verdict[data-tone="plain"] .dot {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.verdict[data-tone="settled"] {
+  color: var(--settle);
+}
+
+.verdict[data-tone="refused"] {
+  color: var(--seal);
+}
+
+.verdict.small {
+  margin-top: 0;
+  justify-self: end;
+}
+
+.quote {
+  margin-top: 10px;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.quote.big {
+  margin-top: 14px;
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+.output {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 12px;
+  font-size: 0.875rem;
+}
+
+.output .mono {
+  font-size: 0.9375rem;
+}
+
+.output.photo {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.output.photo img {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  outline: 1px solid oklch(0 0 0 / 0.1);
+  outline-offset: -1px;
+}
+
+.output .hash {
+  margin-top: 2px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin-top: 14px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.facts > div {
+  display: contents;
+}
+
+.facts dt {
+  color: var(--slate);
+}
+
+.facts dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+a.money {
+  color: var(--usdc);
+}
+
+.older {
+  list-style: none;
+  padding: 0;
+}
+
+.older li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+
+.older .when {
+  color: var(--slate);
+}
+
+.older .what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- the key */
+
+.key .facts {
+  margin-top: 0;
+}
+
+.address {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.address .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.text-button {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  cursor: pointer;
+}
+
+/* 44 px to a finger, the same 20 px to the eye. */
+.text-button::before {
+  content: "";
+  position: absolute;
+  inset: -12px -10px;
+}
+
+.key .quiet {
+  margin-top: 14px;
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  margin-top: 28px;
+  font-size: 0.875rem;
+}
+
+.foot a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+}
+
+.foot a:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------- the photo request sheet */
+
+.sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: min(560px, 100%);
+  max-height: 92dvh;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--sheet-shadow);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform: translateY(0);
+  transition:
+    transform 320ms var(--ease-drawer),
+    overlay 320ms allow-discrete,
+    display 320ms allow-discrete;
+}
+
+.sheet::backdrop {
+  background: var(--scrim);
+  transition:
+    opacity 320ms var(--ease-out),
+    overlay 320ms allow-discrete,
+    display 320ms allow-discrete;
+}
+
+@starting-style {
+  .sheet[open] {
+    transform: translateY(100%);
+  }
+
+  .sheet[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.sheet-body {
+  padding: 20px var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.sheet .head h2 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.held {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.held .money-figure,
+.held .unit {
+  color: var(--usdc);
+}
+
+.held-word {
+  color: var(--slate);
+  font-size: 0.875rem;
+}
+
+.wait {
+  margin-top: 14px;
+  color: var(--slate);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.wait .num {
+  color: var(--ink);
+}
+
+.primary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin-top: 20px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+
+.primary:active {
+  transform: scale(0.97);
+}
+
+.primary:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.primary.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.secondary {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+
+.secondary:active {
+  transform: scale(0.97);
+}
+
+.secondary:disabled {
+  color: var(--slate);
+}
+
+.quiet.small {
+  margin-top: 10px;
+  font-size: 0.8125rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover {
+    background: color-mix(in oklab, var(--ink) 88%, var(--paper));
+  }
+
+  .foot a:hover,
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet::backdrop {
+    transition:
+      opacity 200ms ease,
+      overlay 200ms allow-discrete,
+      display 200ms allow-discrete;
+  }
+
+  @starting-style {
+    .sheet[open] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+
+  .track,
+  .thumb,
+  .primary,
+  .secondary {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------- wider screens */
+
+@media (min-width: 720px) {
+  .shell {
+    border-inline: 1px solid var(--line);
+  }
+}
