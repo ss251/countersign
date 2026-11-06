@@ -7,6 +7,7 @@ import type { EnvelopeView, Listing, RailDeclaration, Settlement } from "../../l
 import { verifySlip, type Verdict } from "../../lib/verify.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
 import { heldBy } from "./field.ts";
+import { useVisible } from "./Hero.tsx";
 import {
   BEATS,
   dotAt,
@@ -54,6 +55,8 @@ export function JourneyStage(props: JourneyProps) {
   const { pinned, narrow } = props;
   const stage = useRef<HTMLElement>(null);
   const svg = useRef<SVGSVGElement>(null);
+  // Off screen or on a hidden tab, the diagram's endless ring rests (data-still pauses it in CSS).
+  const onView = useVisible(svg);
   const layout = narrow ? NARROW_LAYOUT : WIDE_LAYOUT;
   const record = useRecord(props.release, props.hubDown);
 
@@ -93,7 +96,7 @@ export function JourneyStage(props: JourneyProps) {
       <div className="journey__frame" data-beat={beat}>
         <div className="journey__grid">
           <Copy beat={beat} only={false} {...props} record={record} go={go} />
-          <Diagram layout={layout} svgRef={svg} />
+          <Diagram layout={layout} svgRef={svg} resting={!onView} />
         </div>
         <Progress beat={beat} go={go} />
       </div>
@@ -106,10 +109,13 @@ export function JourneyStage(props: JourneyProps) {
 function Diagram({
   layout,
   svgRef,
+  resting = false,
   still,
 }: {
   layout: Layout;
   svgRef?: React.RefObject<SVGSVGElement | null>;
+  /** Off screen or on a hidden tab: the endless ring rests. */
+  resting?: boolean;
   /** Unpinned: the state to draw, inline, with no frame loop. */
   still?: { beat: number; t: number };
 }) {
@@ -122,6 +128,7 @@ function Diagram({
         ref={svgRef}
         className="diagram"
         data-settled={still && settledAt(still.beat, still.t) ? "" : undefined}
+        data-still={resting ? "" : undefined}
         viewBox={`0 0 ${layout.w} ${layout.h}`}
         preserveAspectRatio="xMidYMid meet"
       >

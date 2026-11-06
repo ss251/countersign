@@ -98,7 +98,7 @@
 
 .hero__title {
   max-width: 15ch;
-  font-family: var(--display);
+  font-family: var(--display-face);
   font-size: clamp(2.25rem, 1.1rem + 3.6vw, 4.5rem);
   font-weight: 700;
   line-height: 1.06;
@@ -903,6 +903,12 @@
 }
 
 /* Less motion: nothing pulses or drifts; fades stay. */
+/* Off screen or on a hidden tab, the two endless animations rest (the hero and the diagram set data-still). */
+.hero[data-still] .hero__down svg,
+.diagram[data-still] .diagram__dot-ring {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero__down svg,
   .diagram__dot-ring {

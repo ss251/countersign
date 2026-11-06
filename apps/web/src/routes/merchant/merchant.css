@@ -1559,8 +1559,9 @@
   font-weight: 600;
 }
 
-/* "Copy" and "Copied" take the same width, so the path beside it never jumps. */
+/* "Copy" and "Copied" take the same width, so the path beside it never jumps. In the header row, never over the line count. */
 .mx-snippet__copy {
+  position: static;
   min-width: 10ch;
 }
 

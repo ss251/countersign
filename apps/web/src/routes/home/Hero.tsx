@@ -33,7 +33,7 @@ export function Hero({ stats, missing, railsLive, reduced, onDown }: HeroProps) 
   }, []);
 
   return (
-    <section ref={box} className="hero" aria-labelledby="hero-title">
+    <section ref={box} className="hero" aria-labelledby="hero-title" data-still={visible && !reduced ? undefined : ""}>
       <div className="hero__bg" aria-hidden="true">
         <div className="hero__poster" />
         {ready ? <GlyphField running={!reduced && visible} theme={current} target={box} /> : null}
@@ -73,6 +73,11 @@ export function Hero({ stats, missing, railsLive, reduced, onDown }: HeroProps) 
   );
 }
 
+/** The total's honest name: USDT settles on Whitechain, so a total with any of it is not "USDC". */
+export function settledLabel(stats: HubStats): string {
+  return Number(stats.byRail?.whitechain?.volume ?? "0") > 0 ? "Settled (USDC + USDT)" : "USDC settled";
+}
+
 /** The hub's own figures, read while you look. Never a fixture: with no read, it says so. */
 export function Figures({ stats, missing, railsLive }: { stats: HubStats | null; missing: string | undefined; railsLive: number | undefined }) {
   if (!stats) {
@@ -89,7 +94,7 @@ export function Figures({ stats, missing, railsLive }: { stats: HubStats | null;
         <dd className="num">{stats.delivered}</dd>
       </div>
       <div className="hero__fig">
-        <dt>USDC settled</dt>
+        <dt>{settledLabel(stats)}</dt>
         <dd className="num">{formatAmount(usd(stats.volume))}</dd>
       </div>
       <div className="hero__fig">
@@ -107,7 +112,7 @@ export function Figures({ stats, missing, railsLive }: { stats: HubStats | null;
 }
 
 /** Whether the element is on screen and the tab is visible: the glyphs draw only then. */
-function useVisible(el: React.RefObject<HTMLElement | null>): boolean {
+export function useVisible(el: React.RefObject<Element | null>): boolean {
   const [onScreen, setOnScreen] = useState(true);
   const [tab, setTab] = useState(true);
   useEffect(() => {
