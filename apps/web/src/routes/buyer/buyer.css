@@ -30,7 +30,7 @@
   min-height: 52px;
   padding: env(safe-area-inset-top) var(--sp-4) 0;
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .phone__brand {
@@ -52,6 +52,7 @@
 }
 
 .phone__budget {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -63,6 +64,13 @@
   font-size: var(--t-13);
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* 32px to the eye, 44px to the thumb. */
+.phone__budget::after {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
 }
 
 .phone__budget-amount {
@@ -89,7 +97,7 @@
   grid-template-columns: repeat(3, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--paper);
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .tabbar__tab {
@@ -186,8 +194,8 @@
   display: grid;
   gap: var(--sp-1);
   padding: var(--sp-4) 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .approval__to {
@@ -205,6 +213,11 @@
 }
 
 /* The hold and Decline stay above the tab bar while the terms scroll beneath them. */
+/* Keyboard focus must never land under the dock. */
+.approval :focus-visible {
+  scroll-margin-bottom: 240px;
+}
+
 .approval__dock {
   position: sticky;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
@@ -214,7 +227,7 @@
   margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-8));
   padding: var(--sp-3) var(--sp-4) var(--sp-1);
   background: var(--paper);
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .approval__dock .hold {
@@ -280,7 +293,7 @@
 
 .ledger {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .ledger__step {
@@ -290,7 +303,7 @@
   column-gap: var(--sp-3);
   row-gap: 2px;
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .ledger__marker {
@@ -443,7 +456,7 @@
 
 .env__rows {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .env__muted {
@@ -486,7 +499,7 @@
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .limit__text {
@@ -504,7 +517,7 @@
 }
 
 .limit__change {
-  min-height: 36px;
+  min-height: 44px;
   font-size: var(--t-14);
 }
 
@@ -517,6 +530,10 @@
   position: relative;
   display: flex;
   align-items: center;
+}
+
+.limit__input-row .input {
+  padding-right: 64px;
 }
 
 .limit__asset {
@@ -539,7 +556,7 @@
 
 .allow {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .allow__row {
@@ -548,7 +565,7 @@
   align-items: center;
   gap: var(--sp-3);
   min-height: 48px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .allow__name {
@@ -564,7 +581,7 @@
 }
 
 .allow__remove {
-  min-height: 36px;
+  min-height: 44px;
   font-size: var(--t-14);
 }
 
@@ -598,7 +615,7 @@
 
 .history__list {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .hrow {
@@ -606,7 +623,7 @@
   justify-content: space-between;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
   color: var(--ink);
   text-decoration: none;
 }

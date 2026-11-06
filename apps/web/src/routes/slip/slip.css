@@ -2,9 +2,9 @@
   display: grid;
   gap: var(--sp-6);
   padding: var(--sp-6) var(--sp-8) var(--sp-8);
-  border: 1px solid var(--line);
   border-radius: var(--r-3);
   background: var(--raised);
+  box-shadow: var(--elev-1);
 }
 
 @media (max-width: 640px) {

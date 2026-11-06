@@ -42,7 +42,7 @@ export function Verdict({ verdict, chain }: { verdict: VerdictData | null; chain
               <p className="vcheck__detail">{c.detail}</p>
               {c.value ? (
                 <p className="vcheck__value">
-                  <Hash value={c.value} head={10} tail={8} label={c.title.toLowerCase()} />
+                  <Hash value={c.value} head={10} tail={8} href={c.href} label={c.title.toLowerCase()} />
                 </p>
               ) : null}
             </div>
