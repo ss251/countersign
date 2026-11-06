@@ -7,7 +7,7 @@ const MERCHANT = "0x2222222222222222222222222222222222222222";
 const OTHER = "0x5555555555555555555555555555555555555555";
 const CUSTOMER = "0x1111111111111111111111111111111111111111";
 const HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
 
 let counter = 0;
 function jobId(): string {
@@ -155,6 +155,7 @@ describe("orders", () => {
         CUSTOMER,
         MERCHANT,
         "1.5",
+        "0",
         "0.5",
         "1",
         "partially_refunded",
@@ -164,7 +165,54 @@ describe("orders", () => {
       ].join(","),
     );
     const held = lines.find((l) => l.includes(s.held))!;
-    expect(held.split(",")[10]).toBe("");
+    expect(held.split(",")[11]).toBe("");
+  });
+
+  test("a released order shows the escrow toll as its fee", () => {
+    const ledger = new Ledger(":memory:", { tollBps: 100 });
+    const id = jobId();
+    ledger.recordJob(newJob(id, 1000));
+    ledger.closeJob(id, "released", fakeHash(), "0xslip");
+    const order = ledger.getOrder(id)!;
+    expect(order.fee).toBe(15_000n);
+    expect(order.refundable).toBe(1_500_000n);
+    const row = ledger.ordersCsv(MERCHANT).trimEnd().split("\n")[1]!;
+    expect(row.split(",").slice(5, 10)).toEqual(["1.5", "0.015", "0", "1.485", "paid"]);
+  });
+
+  test("the CSV net accounts for the fee", () => {
+    const ledger = new Ledger(":memory:", { tollBps: 100 });
+    const id = jobId();
+    ledger.recordJob(newJob(id, 1000));
+    ledger.closeJob(id, "released", fakeHash(), "0xslip");
+    ledger.recordRefund({
+      paymentId: id,
+      amount: 1_500_000n,
+      txHash: fakeHash(),
+      blockNumber: 4n,
+      nonce: fakeNonce(),
+    });
+    const row = ledger.ordersCsv(MERCHANT).trimEnd().split("\n")[1]!;
+    expect(row.split(",").slice(5, 10)).toEqual(["1.5", "0.015", "1.5", "-0.015", "refunded"]);
+  });
+
+  test("a pending refund is shown as refund_pending and does not count as refunded", () => {
+    const s = seeded();
+    const id = s.paid;
+    s.ledger.recordPendingRefund(
+      { paymentId: id, amount: 2_000_000n, txHash: fakeHash(), nonce: fakeNonce() },
+      1_760_000_600,
+    );
+    const order = s.ledger.getOrder(id)!;
+    expect([order.status, order.refunded, order.refundable]).toEqual([
+      "refund_pending",
+      0n,
+      0n,
+    ]);
+    const csv = s.ledger.toCsv(MERCHANT);
+    const row = csv.trimEnd().split("\n").find((line) => line.includes(id))!;
+    expect(row.split(",")[7]).toBe("refund_pending");
+    expect(s.ledger.ordersCsv(MERCHANT)).toContain("refund_pending");
   });
 
   test("toCsv still writes the payments-only export", () => {

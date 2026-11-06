@@ -15,6 +15,15 @@ export type RelayerPolicy = {
   receiptTimeoutMs: number;
   allowedTokens: Address[];
   allowedEscrows: Address[];
+  allowedPayees: Address[];
+  minAmount: bigint;
+};
+
+export type SpendEvent = {
+  txHash: Hash;
+  payer: Address;
+  costWei: bigint;
+  at: number;
 };
 
 export type TransferCall = {
@@ -99,6 +108,7 @@ export class Relayer {
     private readonly account: LocalAccount,
     private readonly policy: RelayerPolicy,
     private readonly ceiling: SpendCeiling,
+    private readonly onSpend?: (spend: SpendEvent) => void,
   ) {}
 
   get address(): Address {
@@ -107,6 +117,14 @@ export class Relayer {
 
   get allowedEscrows(): Address[] {
     return this.policy.allowedEscrows;
+  }
+
+  get minAmount(): bigint {
+    return this.policy.minAmount;
+  }
+
+  isAllowedPayee(payee: string): boolean {
+    return this.policy.allowedPayees.some((allowed) => sameAddress(allowed, payee));
   }
 
   private allowed(call: RelayCall): boolean {
@@ -159,7 +177,10 @@ export class Relayer {
     } catch (error) {
       return { status: "refused", reason: "fee_too_high", detail: describeError(error) };
     }
-    const maxFeePerGas = fees.maxFeePerGas ?? 0n;
+    const maxFeePerGas = fees.maxFeePerGas;
+    if (maxFeePerGas === undefined || maxFeePerGas === 0n) {
+      return { status: "refused", reason: "fee_too_high", detail: "no fee estimate" };
+    }
     const maxPriorityFeePerGas = fees.maxPriorityFeePerGas ?? maxFeePerGas;
     if (maxFeePerGas > this.policy.maxFeePerGasWei) {
       return { status: "refused", reason: "fee_too_high" };
@@ -209,6 +230,7 @@ export class Relayer {
       const effectiveGasPrice = receipt.effectiveGasPrice ?? maxFeePerGas;
       const costWei = receipt.gasUsed * effectiveGasPrice;
       this.ceiling.settle(ticket, costWei);
+      this.onSpend?.({ txHash, payer, costWei, at: Date.now() });
       return {
         status: receipt.status === "success" ? "confirmed" : "reverted",
         txHash,
@@ -217,6 +239,7 @@ export class Relayer {
         costWei,
       };
     } catch {
+      this.onSpend?.({ txHash, payer, costWei: worstCaseWei, at: Date.now() });
       return { status: "pending", txHash };
     }
   }

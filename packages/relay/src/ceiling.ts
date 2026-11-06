@@ -37,6 +37,17 @@ export class SpendCeiling {
     private readonly now: () => number = Date.now,
   ) {}
 
+  seed(entries: readonly { payer: string; costWei: bigint; at: number }[]): void {
+    for (const entry of entries) {
+      this.entries.push({
+        id: this.nextId++,
+        payer: entry.payer,
+        at: entry.at,
+        wei: entry.costWei,
+      });
+    }
+  }
+
   reserve(input: { payer: string; worstCaseWei: bigint }): ReserveResult {
     const at = this.now();
     this.prune(at);

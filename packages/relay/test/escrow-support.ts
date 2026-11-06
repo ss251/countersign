@@ -10,7 +10,13 @@ import { NOW, createTestRelay } from "./support.ts";
 export type TestRelay = ReturnType<typeof createTestRelay>;
 
 export function csContext(relay: TestRelay): CountersignContext {
-  return { chainClient: relay.chain, relayer: relay.relayer, ledger: relay.ledger, now: () => NOW };
+  return {
+    chainClient: relay.chain,
+    reader: relay.chain,
+    relayer: relay.relayer,
+    ledger: relay.ledger,
+    now: () => NOW,
+  };
 }
 
 export function makeOffer(seller: Address): Offer {
