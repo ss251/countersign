@@ -75,8 +75,8 @@ A pull request that changes a row's status changes it here too.
 |---|---|---|---|
 | `skill` adapter: serves a real `SKILL.md` | `SHIPPED` | `packages/runner/test/skill.test.ts`; e2e `arc-spine` | README, [spec/offer.md](spec/offer.md) |
 | The runner dials out to the hub, and a restart republishes the same offer | `SHIPPED` | `packages/runner/test/daemon.test.ts`, `restart.test.ts`; e2e `runner-restart` | README, `docs/architecture.svg` |
-| `mcp` adapter | `IN PROGRESS` | `cs/hd-09`, not on `main`. A runner built from that branch serves the production hub's MCP offer (next row) | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` in `packages/core/src/types.ts` |
-| Hedera Agent Kit MCP server as a metered listing, paid per call on Hedera | `IN PROGRESS` | [#42](https://github.com/ss251/countersign/issues/42). Live on the production hub as offer `0xa594…d04f`, served from `cs/hd-09`: paid with no human in [`0.0.9185802@1793969029.758994311`](https://hashscan.io/testnet/transaction/0.0.9185802@1793969029.758994311). The code is not on `main` | |
+| `mcp` adapter | `IN PROGRESS` | Merged into `cs/int` via [#107](https://github.com/ss251/countersign/pull/107) (`4cc957c`), not on `main` until promoted. A runner built from it serves the production hub's MCP offer (next row) | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` in `packages/core/src/types.ts` |
+| Hedera Agent Kit MCP server as a metered listing, paid per call on Hedera | `IN PROGRESS` | [#42](https://github.com/ss251/countersign/issues/42). Merged into `cs/int` via [#107](https://github.com/ss251/countersign/pull/107) (`4cc957c`), not on `main` until promoted. Live on the production hub as offer `0xa594…d04f`: paid with no human in [`0.0.9185802@1793969029.758994311`](https://hashscan.io/testnet/transaction/0.0.9185802@1793969029.758994311) | |
 | `openapi` adapter | `NOT BUILT` | No branch | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` |
 | Phone runner: a phone serves location and photo jobs | `IN PROGRESS` | `cs/phone` ([#96](https://github.com/ss251/countersign/issues/96)), run on the bench only | |
 
