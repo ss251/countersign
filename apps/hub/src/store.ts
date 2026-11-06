@@ -100,6 +100,14 @@ export interface RevocationRecord {
   recordedAt: number;
 }
 
+/** A Buyer-page token, stored only as its SHA-256 (D23). */
+export interface EnvelopeTokenRecord {
+  tokenHash: string;
+  agent: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
 export type ApprovalStatus = "pending" | "countersign" | "decline";
 
 /** A call the buyer agent held for a human decision. */
@@ -345,6 +353,7 @@ export class Store {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
     `);
+    this.db.run("CREATE TABLE IF NOT EXISTS envelope_tokens (token_hash TEXT PRIMARY KEY, agent TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
     this.db.run(`
       CREATE TABLE IF NOT EXISTS erc8004_identities (
         seller TEXT PRIMARY KEY,
@@ -682,6 +691,33 @@ export class Store {
       revokedAt: row.revoked_at,
       sig: row.sig as Hex,
       recordedAt: row.recorded_at,
+    };
+  }
+
+  /** Replace an agent's Buyer-page token, keeping only its hash. */
+  replaceEnvelopeToken(record: EnvelopeTokenRecord): void {
+    const agent = record.agent.toLowerCase();
+    this.db.query("DELETE FROM envelope_tokens WHERE agent = ?").run(agent);
+    this.db
+      .query(
+        "INSERT INTO envelope_tokens (token_hash, agent, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(record.tokenHash, agent, record.issuedAt, record.expiresAt);
+  }
+
+  getEnvelopeToken(tokenHash: string): EnvelopeTokenRecord | null {
+    const row = this.db
+      .query<
+        { token_hash: string; agent: string; issued_at: number; expires_at: number },
+        [string]
+      >("SELECT * FROM envelope_tokens WHERE token_hash = ?")
+      .get(tokenHash);
+    if (!row) return null;
+    return {
+      tokenHash: row.token_hash,
+      agent: row.agent,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
     };
   }
 

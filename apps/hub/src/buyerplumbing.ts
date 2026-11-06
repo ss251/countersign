@@ -1,5 +1,5 @@
 import { reviewFields } from "./orders.ts";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { recoverMessageAddress, type Hex } from "viem";
 import {
@@ -37,9 +37,14 @@ const APPROVAL_TTL = 15 * 60;
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_PENDING_APPROVALS = 20;
 
+/** D23: a session envelope and its token live 24 hours. */
+const SESSION_TTL = 86_400;
+const SESSION_DEFAULTS = { cap: "1000000", perMerchant: "500000", askAbove: "50000" } as const;
+
 export function registerBuyerPlumbing(app: Hono, deps: BuyerPlumbingDeps): void {
   app.get("/jobs", (c) => listJobs(c, deps));
 
+  app.post("/envelopes/session", async (c) => sessionEnvelope(c, deps));
   app.put("/envelopes/:agent", async (c) => putEnvelope(c, deps));
   app.get("/envelopes/:agent", (c) => getEnvelope(c, deps));
   app.post("/envelopes/:agent/revoke", async (c) => revokeEnvelope(c, deps));
@@ -108,6 +113,65 @@ function parseLimit(raw: string | undefined): number {
   return Math.min(MAX_LIMIT, Math.max(1, value));
 }
 
+async function sessionEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "none") {
+    return fail(401, "sign-in-required", "Refused. Sign in to create an envelope. Nothing was issued.");
+  }
+  const person = privyCheck.person;
+
+  const parsed = await readJsonLimited(c);
+  if (parsed.kind === "too-large") return fail(413, "too-large", "Refused. The request body is too large.");
+  if (parsed.kind === "malformed") return fail(400, "bad-request", "Refused. Name your wallet as {agent}.");
+  const named = isRecord(parsed.value) ? parsed.value.agent : undefined;
+  if (typeof named !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(named)) {
+    return fail(400, "bad-request", "Refused. Name your wallet as {agent}.");
+  }
+  if (!owns(person, named)) {
+    return fail(403, "not-your-wallet", "Refused. That wallet is not one of yours. Nothing was issued.");
+  }
+  const agent = named.toLowerCase();
+  const now = deps.now();
+
+  const existing = deps.store.getEnvelopeMirror(agent);
+  if (existing !== null && !owns(person, existing.envelope.approver)) {
+    return fail(
+      403,
+      "not-your-agent",
+      "Refused. This agent's approver key is not one of your wallets. Nothing was issued.",
+    );
+  }
+  if (existing === null) {
+    const envelope: Envelope = {
+      v: 1,
+      agent: agent as Envelope["agent"],
+      cap: SESSION_DEFAULTS.cap,
+      perMerchant: SESSION_DEFAULTS.perMerchant,
+      allowlist: [],
+      revoked: false,
+      expiresAt: now + SESSION_TTL,
+      askAbove: SESSION_DEFAULTS.askAbove,
+      approver: agent as Envelope["agent"],
+    };
+    deps.store.putEnvelopeMirror({
+      agent,
+      envelope,
+      spent: { total: "0", bySeller: {} },
+      signedAt: now,
+      sig: "0x",
+    });
+  }
+  const stored = deps.store.getEnvelopeMirror(agent);
+  if (stored === null) return fail(500, "store", "Refused. The envelope could not be stored.");
+
+  const token = `cse_${randomBytes(32).toString("hex")}`;
+  const tokenExpiresAt = now + SESSION_TTL;
+  deps.store.replaceEnvelopeToken({ tokenHash: tokenHash(token), agent, issuedAt: now, expiresAt: tokenExpiresAt });
+  // D23: the token is returned once, here, and never logged.
+  return json({ agent, envelope: stored.envelope, issued: existing === null, token, tokenExpiresAt });
+}
+
 async function putEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
   const agentParam = c.req.param("agent");
   if (agentParam === undefined || agentParam === "") {
@@ -169,7 +233,7 @@ async function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Respons
   const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
   if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
   if (privyCheck.kind === "none") {
-    const refused = requireToken(c, deps);
+    const refused = requireToken(c, deps, c.req.param("agent"));
     if (refused) return refused;
   }
   const agent = c.req.param("agent");
@@ -190,7 +254,7 @@ async function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Respons
     spent: stored.spent,
     signedAt: stored.signedAt,
     sig: stored.sig,
-    verified: true,
+    verified: stored.sig !== "0x",
     revocation: rev === null ? null : { revokedAt: rev.revokedAt },
   });
 }
@@ -337,7 +401,7 @@ async function listApprovals(c: Context, deps: BuyerPlumbingDeps): Promise<Respo
   const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
   if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
   if (privyCheck.kind === "none") {
-    const refused = requireToken(c, deps);
+    const refused = requireToken(c, deps, c.req.query("agent"));
     if (refused) return refused;
   }
   const agent = c.req.query("agent");
@@ -374,7 +438,7 @@ async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
   if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
   if (privyCheck.kind === "none") {
-    const refused = requireToken(c, deps);
+    const refused = requireToken(c, deps, approvalAgent(deps, c.req.param("id")));
     if (refused) return refused;
   }
 
@@ -490,17 +554,35 @@ async function recover(message: string, sig: string): Promise<string | null> {
 }
 
 /** Null when the caller may read or decide; otherwise the refusal response. */
-function requireToken(c: Context, deps: BuyerPlumbingDeps): Response | null {
+function requireToken(c: Context, deps: BuyerPlumbingDeps, agent?: string): Response | null {
+  const header = c.req.header("authorization") ?? "";
+  const match = /^Bearer (.+)$/i.exec(header);
+  const provided = match?.[1] ?? "";
+  if (provided !== "" && agent !== undefined && agent !== "" && scopedTokenAllows(deps, provided, agent)) {
+    return null;
+  }
   const expected = deps.humanApprovalToken;
   if (expected === undefined || expected === "") {
     return fail(503, "no-approver", "Refused. No human approver is configured.");
   }
-  const header = c.req.header("authorization") ?? "";
-  const match = /^Bearer (.+)$/i.exec(header);
-  if (match === null || !sameToken(match[1] ?? "", expected)) {
+  if (match === null || !sameToken(provided, expected)) {
     return fail(401, "unauthorized", "Refused. The approver token is not valid.");
   }
   return null;
+}
+
+/** D23: a session token opens only its own agent's envelope and approvals, until it expires. */
+function scopedTokenAllows(deps: BuyerPlumbingDeps, token: string, agent: string): boolean {
+  const record = deps.store.getEnvelopeToken(tokenHash(token));
+  return record !== null && record.agent === agent.toLowerCase() && record.expiresAt > deps.now();
+}
+
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function approvalAgent(deps: BuyerPlumbingDeps, id: string | undefined): string | undefined {
+  return id === undefined ? undefined : deps.store.getApproval(id)?.agent;
 }
 
 function sameToken(provided: string, expected: string): boolean {

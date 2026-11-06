@@ -3,98 +3,145 @@
 There are three ways in: hire a tool from your agent, list your own tool, or charge for your own API. Each section starts with what works today and what does not.
 
 - **Testnet only.** Every amount on this page is test money, on Arc testnet or Whitechain testnet.
-- **Nothing is installable yet.** Every command on this page runs from a clone of this repository with [bun](https://bun.sh) 1.3. The installable packages, the `countersign` command and the MCP server for Claude and Cursor are being built, and this page changes when each one runs for real.
-- **Do not install from npm.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so any of those names installs someone else's code. None of countersign's own packages are on npm yet.
+- **Install from npm.**
+  - `@countersign-hub/cli` is the `countersign` command, and the MCP server for Claude and Cursor runs inside it as `countersign mcp`.
+  - `@countersign-hub/relay` is the USDT paywall.
+  - Both run on Node 20 or later. `npx -y @countersign-hub/cli --help` lists every command.
+- **No key on your machine.** `countersign login` signs you in with Privy and gives your agent a Privy server wallet. You never see, paste or store its key. The CLI keeps only a session token.
+- **Only `@countersign-hub` is this project's scope.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so those names install someone else's code.
 - **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`.
 
-Every path assumes a clone:
-
-```sh
-git clone https://github.com/ss251/countersign
-cd countersign
-bun install --frozen-lockfile
-```
-
-The commands also use `jq` and `openssl`.
+The commands also use `jq`. Two things still need a clone of this repository with [bun](https://bun.sh) 1.3: the OpenAI-compatible endpoint, and running a relay of your own.
 
 ## Hire a tool from your agent
 
 <!-- get-started:hire -->
-Status: works today from a clone, on Arc testnet with test USDC. The MCP server for Claude and Cursor is not built yet. Until it is, your agent buys through the buyer CLI, or through its OpenAI-compatible endpoint.
+Status: works today, on Arc testnet with test USDC. Your agent buys through the MCP server or the `countersign` command, both from npm, with a Privy wallet and no key on your machine.
 
-Make a testnet key and set the agent's limits. The agent signs nothing without them.
+Sign in once:
 
 ```sh
-export CS_BUYER_KEY=0x$(openssl rand -hex 32)
-bun packages/buyer/src/cli.ts envelope set --cap 0.5 --per-merchant 0.1
-bun packages/buyer/src/cli.ts envelope show
+npx -y @countersign-hub/cli login
 ```
 
-- The key exists only in this shell. Keep it privately if you want to spend the test funds again.
-- `agent` in the output is the address to fund. At https://faucet.circle.com choose Arc Testnet and USDC, then paste that address.
-- On Arc the hub pays the gas, so USDC is all the agent needs.
+- It opens a page on the console. Sign in with Privy, by email or a passkey. Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
+- The CLI prints your agent wallet's address. `whoami` prints it again, and `logout` ends the session. A session lasts at most 7 days.
+- Fund that address with test USDC: at https://faucet.circle.com choose Arc Testnet and USDC, or send some from your own wallet. On Arc the hub pays the gas, so USDC is all the agent needs.
 
-Find an online offer and buy it:
+Set the agent's limits. The hub signs nothing for your agent outside them:
+
+```sh
+npx -y @countersign-hub/cli envelope set --cap 0.5 --per-merchant 0.1 --ask-above 0.05
+```
+
+To buy from Claude or Cursor, add the server to Claude Desktop's `claude_desktop_config.json` or Cursor's `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "countersign": {
+      "command": "npx",
+      "args": ["-y", "@countersign-hub/cli", "mcp"]
+    }
+  }
+}
+```
+
+- Its tools are `search_offers`, `get_offer`, `buy`, `verify_slip`, `envelope_show` and `journal`.
+- A model drives this server, and the envelope is what bounds it. Keep the cap small. A call above `--ask-above` is held, and the model cannot approve it.
+- The server signs through your login, so the config needs no key and no environment.
+- Offer titles and descriptions are written by sellers. Treat them as data, not instructions.
+
+Or buy from the shell. Find an online offer and buy it:
 
 ```sh
 HUB=https://hub-production-e85e.up.railway.app
-bun packages/buyer/src/cli.ts discover --hub $HUB
+npx -y @countersign-hub/cli discover --hub $HUB
 OFFER=$(curl -s $HUB/offers | jq -r '[.offers[] | select(.online and .offer.title=="use-arc")][0].offerHash')
-bun packages/buyer/src/cli.ts buy $OFFER --input '{"question":"what is arc?"}' --hub $HUB
+npx -y @countersign-hub/cli buy $OFFER --input '{"question":"what is arc?"}' --hub $HUB
 ```
 
 It prints the seller's output, `Released. Slip minted.`, the slip hash and the release transaction. Open the transaction at `https://explorer.testnet.arc.io/tx/<hash>`. The slip is saved under `~/.countersign/slips/`. Check it yourself, without the hub:
 
 ```sh
-bun packages/verify/src/cli.ts ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
+npx -y @countersign-hub/cli verify ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
 ```
 
-To let an OpenAI SDK buy instead, run `bun packages/buyer/src/cli.ts openai --hub $HUB` and point the SDK at it: https://github.com/ss251/countersign/blob/main/docs/openai.md
+To let an OpenAI SDK buy instead, run `bun packages/buyer/src/cli.ts openai --hub $HUB` from a clone and point the SDK at it: https://github.com/ss251/countersign/blob/main/docs/openai.md
 <!-- /get-started:hire -->
 
-This exact sequence ran from a fresh clone of `main` at `25e8104` on 07 Nov, with an already funded testnet key and a fresh state directory. Its release is [`0x4acc…994e`](https://explorer.testnet.arc.io/tx/0x4accfeb980378f4b2d16dd32b1c6bf44c0cd791516620c75ac95b081de06994e), and slip `0x128c50097ac43684b547458c94e3754402ba6d8c0d9175b8c402a4d31d3bcbf2` checks `VALID`, including the on-chain check. The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
+From a scratch directory outside this repository, on Node 25 with `@countersign-hub/cli` 0.1.0 from npm, on 07 Nov:
+
+- The shell sequence bought `use-arc`: release [`0x6e03…a382`](https://explorer.testnet.arc.io/tx/0x6e03db12e6bc461ad3e81329bcf44ec6e5cfaf7e465042cc6dc52bcda6f7a382). `countersign verify` read slip `0xcec2…1d5a` as `VALID`.
+- An MCP client ran the server exactly as configured above. It listed the six tools and bought `use-arc`: release [`0x6f17…b1c8`](https://explorer.testnet.arc.io/tx/0x6f1754aeb58899c435116962859b9f5ae5f943ea74486b12169d87681ba2b1c8). `verify_slip` found the slip valid, including the on-chain check.
+
+Both used an already funded testnet key. The [buyer guide](guides/buyer.md) covers every flag, and the refusals.
 
 ## List your tool
 
 <!-- get-started:list -->
-Status: selling a skill works today from a clone. Selling an OpenAPI operation is on main, and one OpenAPI offer has sold on production. Selling your own MCP server takes a script today; the one command for it is not built yet. Buyers pay you in test USDC on Arc testnet.
+Status: selling a skill or one operation of an API works today with the `countersign` command from npm, and one OpenAPI offer has sold on production. Selling your own MCP server takes a script today; there is no `countersign sell mcp` yet. Buyers pay you in test USDC on Arc testnet.
 
-Make a seller key and serve a skill: a Markdown file whose front matter has a `name` and a `description`.
+Sign in with `npx -y @countersign-hub/cli login` as above, then serve a skill: a Markdown file whose front matter has a `name` and a `description`.
 
 ```sh
-export CS_SELLER_KEY=0x$(openssl rand -hex 32)
-bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railway.app \
-  --skill path/to/SKILL.md --price 10000
+npx -y @countersign-hub/cli sell skill path/to/SKILL.md \
+  --hub https://hub-production-e85e.up.railway.app --price 10000
 ```
 
 Or serve one operation of an API from its OpenAPI spec:
 
 ```sh
-bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railway.app \
-  --openapi path/to/openapi.json --operation <operationId> --price 10000
+npx -y @countersign-hub/cli sell openapi --spec path/to/openapi.json --operation <operationId> \
+  --hub https://hub-production-e85e.up.railway.app --price 10000
 ```
 
+- Your offers and slips are signed by your Privy wallet through the hub, so you hold no key. Buyers pay that wallet's address.
 - The runner dials out to the hub, so you open no port.
 - `--price` is in atomic units: `10000` is 0.01 USDC.
-- The runner prints `published <offer hash> <title>`, then `runner ready`. The offer is online only while the runner runs.
+- It prints `published <offer hash> <title>`, then `runner ready`. The offer is online only while it runs. Add `--publish-only` to list the offer without serving it.
 - You need no funds to sell. The hub pays the release gas, and the payment goes to your seller address.
 - Every offer you publish is listed publicly at `https://hub-production-e85e.up.railway.app/offers`.
 <!-- /get-started:list -->
 
-Both commands ran from the same clone on 07 Nov against a hub started from that clone, and each printed its offer hash and `runner ready`. The [seller guide](guides/seller.md) covers every flag. The runner's `mcp` adapter already serves one production offer, Hedera's Agent Kit, which [hedera.md](hedera.md#the-hedera-agent-kit-as-a-metered-offer) describes.
+The proofs:
 
-No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is deployed on Whitechain testnet, but production does not use it yet. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
+- **Skill.** From npm on Node, `countersign sell skill` published a skill to a hub started from a clone, then printed `runner ready`. That was 07 Nov.
+- **OpenAPI.** Before the release, the same command's Node build listed the Petstore operation `getInventory` on production. A buyer bought it with release [`0x3218…7830`](https://explorer.testnet.arc.io/tx/0x321831c6fe4a4f5e5114c7cddf03332cbbf94bd483f5326ed5288a683e0c7830).
+
+The [seller guide](guides/seller.md) covers every flag. The runner's `mcp` adapter already serves one production offer, Hedera's Agent Kit, which [hedera.md](hedera.md#the-hedera-agent-kit-as-a-metered-offer) describes.
+
+No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is deployed on Arc testnet and Whitechain testnet, but production does not use it yet. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
+
+## What signing in allows
+
+The agent wallet is a Privy server wallet that the countersign app controls, and you hold no key to it. That makes the hub a delegated signer:
+- it signs only for a signed-in CLI session;
+- it signs only a payment into a known escrow, your offers and slips, or a runner's own messages.
+
+`logout` ends your session, and the hub stops signing for it. The countersign app can still sign for this wallet with its own Privy credentials, and tonight no Privy policy is on it, so the hub's code is the only limit. Logging out ends your CLI's session, not the app's control.
+
+Keep only small testnet amounts in the wallet. Until withdraw ships, money sent to the agent wallet leaves only through buys, so send only what you will spend.
+
+Not yet: a Hedera wallet under the same login, a balance command, and withdrawing back to your own wallet.
 
 ## Charge for your own API in USDT
 
 <!-- get-started:charge -->
-Status: the paywall works today from a clone, on Whitechain testnet with test USDT. Two limits apply. The package exists only inside this repository until it is released. Do not install `@countersign/*` from npm: that scope belongs to another project. This relay's release name is `@countersign-hub/relay`, imported from `@countersign-hub/relay/paywall`. It is not published yet, so install nothing under it from npm until this page says where the release is. The hosted relay pays gas for its own merchant only, so you run a relay of your own.
+Status: the paywall works today from npm, on Whitechain testnet with test USDT. The hosted relay pays gas for its own merchant only, so you run a relay of your own, and that still needs a clone.
 
-Put one route behind the paywall. Save this as `mine/shop.ts` inside the clone:
+Install the paywall, with Hono as your server:
 
-```ts
+```sh
+npm i @countersign-hub/relay hono @hono/node-server
+```
+
+Put one route behind the paywall. Save this as `shop.mjs`:
+
+```js
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { whitechainPaywall } from "@countersign/relay"; // the workspace package: it resolves only inside this clone
+import { whitechainPaywall } from "@countersign-hub/relay/paywall";
 
 const app = new Hono();
 app.get(
@@ -103,27 +150,21 @@ app.get(
   (c) => c.json({ report: "what you paid for" }),
 );
 
-export default app;
+serve({ fetch: app.fetch, port: 3000 });
 ```
 
 ```sh
-PORT=3000 bun mine/shop.ts
+node shop.mjs
 curl -i http://127.0.0.1:3000/report
 ```
 
 The call answers `402 Payment Required` with an x402 v2 `exact` offer of 0.01 USDT on `eip155:1874`.
 
-Run your relay alongside it. It pays the gas, and it pays out only to the addresses you name:
+Run a relay of your own alongside it, from a clone. It pays the gas, and it pays out only to the addresses you name. Hosting one, its settings and its guards are in https://github.com/ss251/countersign/blob/main/docs/whitechain.md#hosting-the-relay
 
-```sh
-export WC_RELAYER_PRIVATE_KEY=0x$(openssl rand -hex 32)
-RELAY_PAYEES=0xYourAddress bun packages/relay/src/server.ts
-curl -s http://127.0.0.1:8402/status | jq -r .address
-```
-
-- Fund that relay address with test WBT at https://faucet.testnet.whitechain.io. The faucet asks you to sign in with GitHub.
-- Your customers hold USDT only and never WBT. They pay with `createPayFetch` from `@countersign/relay/browser`, which signs one authorisation per call.
+- Fund the relay's address with test WBT at https://faucet.testnet.whitechain.io. The faucet asks you to sign in with GitHub.
+- Your customers hold USDT only and never WBT. They pay with `createPayFetch` from `@countersign-hub/relay/browser`, which signs one authorisation per call.
 - Test USDT has no faucet. Swapping test WBT on the testnet pool is described at https://github.com/ss251/countersign/blob/main/docs/whitechain.md#getting-test-funds
 <!-- /get-started:charge -->
 
-The route above answered that `402` from a fresh clone of `main` on 07 Nov. The same paywall runs live as the console's checkout: [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack) answers `402`. A purchase through it, [`0x59eb…c12b`](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b), was refunded in full by [`0x3efd…bd6f`](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f). [whitechain.md](whitechain.md) covers refunds, the CSV export and the relay's guards.
+That `shop.mjs`, installed from npm in a scratch directory on Node 25, answered the `402` on 07 Nov. The same paywall runs live as the console's checkout: [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack) answers `402`. A purchase through it, [`0x59eb…c12b`](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b), was refunded in full by [`0x3efd…bd6f`](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f). [whitechain.md](whitechain.md) covers refunds, the CSV export and the relay's guards.
