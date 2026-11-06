@@ -121,7 +121,7 @@ Retired since the sweep: held Hedera on production (`/rails` lists `hedera-sched
 | The spend is reserved under a journal lock, and a refund gives it back only after `jobOf` reads refunded | `SHIPPED` | `packages/buyer/src/journal.ts`, `packages/buyer/src/resume.ts` | [spec/envelope.md](spec/envelope.md) |
 | The 402 is checked against the fetched offer and a pinned rail table before signing | `SHIPPED` | `packages/buyer/test/terms.test.ts`, `packages/buyer/test/w1-attacks.test.ts` | [spec/countersignature.md](spec/countersignature.md), [terms.md](terms.md) §3 |
 | The buyer reads Circle's discovery catalogue, and the Circle CLI reads the hub | `SHIPPED` | `packages/buyer/test/catalogue.test.ts`, `scripts/circle/interop.ts` ([#25](https://github.com/ss251/countersign/issues/25)) | [spec/discovery.md](spec/discovery.md) |
-| The hub listed in Circle's own catalogue | `NOT BUILT` | Circle's catalogue adds services through the facilitator that settles them, and it held no testnet services on 06 Nov | [spec/discovery.md](spec/discovery.md), which says so |
+| The hub listed in Circle's own catalogue | `NOT BUILT` | Not blocked: at 16:41Z on 06 Nov Circle's catalogue (`api.circle.com/v2/x402/discovery/resources`, 2,780 resources) listed 134 Arc testnet (`eip155:5042002`) entries, all `exact` with `GatewayWalletBatched` (`x402.quicknode.com` and `api.botpay.network`), the scheme the hub's Gateway rail settles. The hub has no entry. Services enter the catalogue through the facilitator that settles them, so the path is Gateway-settled offers | [spec/discovery.md](spec/discovery.md), which says so |
 
 ## Slip and verifier
 
