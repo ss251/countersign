@@ -220,6 +220,16 @@
 
 .match__why {
   font-size: var(--t-14);
+  overflow-wrap: anywhere;
+}
+
+.match__hint {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.ask__steps li {
+  overflow-wrap: anywhere;
 }
 
 .match__verdict {

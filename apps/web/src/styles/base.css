@@ -158,3 +158,22 @@ a {
     transform: none !important;
   }
 }
+
+/*
+ * Nothing may widen the page. Grid and flex children default to their content's width, so one
+ * long URL, hash or command pushes a phone layout sideways. Long text wraps anywhere; code
+ * scrolls inside its own box.
+ */
+.page,
+.page > *,
+.section,
+.command,
+.code,
+pre {
+  min-width: 0;
+  max-width: 100%;
+}
+
+a {
+  overflow-wrap: anywhere;
+}

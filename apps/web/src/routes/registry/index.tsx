@@ -29,6 +29,10 @@ export interface SellerGroup {
   /** Calls that failed before any money moved. */
   failed: number;
   online: number;
+  /** Whether anything has counted this seller's calls yet: slips in fixtures, or the hub's /sellers. */
+  counted: boolean;
+  /** False when the hub has no name for this seller. */
+  named: boolean;
 }
 
 /** Take the hub's own counts and identity where it reports them; they come from slips and jobs. */
@@ -46,6 +50,8 @@ export function withRecords(groups: SellerGroup[], records: SellerRecord[] | nul
         released: r.released + r.settled,
         refunded: r.refunded,
         failed: r.failed,
+        counted: true,
+        named: r.name !== null || g.named,
       };
     })
     .sort((a, b) => b.released - a.released || a.name.localeCompare(b.name));
@@ -58,8 +64,20 @@ export function groupBySeller(listings: Listing[]): SellerGroup[] {
     const address = l.offer.seller.toLowerCase();
     const g =
       groups.get(address) ??
-      ({ address, name: l.seller.name, agentId: l.seller.agentId, offers: [], released: 0, refunded: 0, failed: 0, online: 0 } satisfies SellerGroup);
+      ({
+        address,
+        name: l.seller.name,
+        agentId: l.seller.agentId,
+        offers: [],
+        released: 0,
+        refunded: 0,
+        failed: 0,
+        online: 0,
+        counted: false,
+        named: l.seller.named !== false,
+      } satisfies SellerGroup);
     g.offers.push(l);
+    if (l.stats) g.counted = true;
     g.released += l.stats?.released ?? 0;
     g.refunded += l.stats?.refunded ?? 0;
     if (l.online) g.online += 1;
@@ -211,7 +229,7 @@ function SellerBlock({ g }: { g: SellerGroup }) {
     <section className="seller-block" aria-label={`Seller ${g.name}`}>
       <header className="seller-block__head">
         <div className="seller-block__who">
-          <p className="seller-block__name">{g.name}</p>
+          <p className={cx("seller-block__name", !g.named && "is-unnamed")}>{g.named ? g.name : "Unnamed seller"}</p>
           <p className="seller-block__id">
             {g.agentId ? (
               <span className="seller-block__verified">
@@ -227,8 +245,10 @@ function SellerBlock({ g }: { g: SellerGroup }) {
           </p>
         </div>
         <p className="seller-block__record num">
-          {g.released + g.refunded + g.failed === 0
-            ? "No record yet"
+          {!g.counted
+            ? "Calls not counted yet"
+            : g.released + g.refunded + g.failed === 0
+              ? "No calls yet"
             : `${g.released} paid · ${g.refunded} refunded${g.failed ? ` · ${g.failed} failed` : ""} · ${deliveryRate(g.released, g.refunded + g.failed)} delivered`}
         </p>
       </header>
@@ -244,9 +264,11 @@ function SellerBlock({ g }: { g: SellerGroup }) {
               <p className="offer-line__meta num">
                 {l.status === "delisted"
                   ? `Delisted${l.reason ? `: ${l.reason}` : ""}`
-                  : l.stats && l.stats.released + l.stats.refunded > 0
-                    ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
-                    : "No record yet"}
+                  : !l.stats
+                    ? "Calls not counted yet"
+                    : l.stats.released + l.stats.refunded > 0
+                      ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
+                      : "No calls yet"}
                 {" · "}
                 {l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}
                 {l.online === undefined ? "" : l.online ? " · runner online" : " · runner offline"}

@@ -7,8 +7,15 @@
 
 .offer__head {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-2);
   max-width: 860px;
+}
+
+.offer__head > *,
+.offer__title-row > *,
+.offer__by > * {
+  min-width: 0;
 }
 
 .offer__crumbs {
@@ -66,7 +73,25 @@
   margin-top: var(--sp-2);
 }
 
+/* Long descriptions show three lines until asked. */
+.offer__summary.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.offer__more {
+  justify-self: start;
+}
+
+.offer__source a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .offer__call {
+  grid-template-columns: minmax(0, 1fr);
   max-width: 860px;
 }
 

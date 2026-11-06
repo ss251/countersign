@@ -179,7 +179,25 @@ export function Assistant({ envelope, layout }: { envelope: Resource<EnvelopeVie
       </p>
       <ul className="matches">
         {answer.matches.map((m) => (
-          <MatchCard key={m.listing.hash} m={m} verdict={verdicts.get(m.listing.hash) ?? null} picked={picked === m.listing.hash} onPick={() => setPicked(m.listing.hash)} />
+          <MatchCard
+            key={m.listing.hash}
+            m={m}
+            verdict={verdicts.get(m.listing.hash) ?? null}
+            picked={picked === m.listing.hash}
+            onPick={() => setPicked(m.listing.hash)}
+            onAllow={
+              view
+                ? () => {
+                    const seller = m.listing.offer.seller.toLowerCase();
+                    envelope.set({
+                      ...view,
+                      envelope: { ...view.envelope, allowlist: [...new Set([...view.envelope.allowlist, seller])] },
+                      names: { ...view.names, [seller]: view.names[seller] ?? m.listing.seller.name },
+                    });
+                  }
+                : undefined
+            }
+          />
         ))}
       </ul>
       {chosen && view ? <CountersignCard key={chosen.listing.hash} listing={chosen.listing} view={view} /> : null}
@@ -231,11 +249,14 @@ function MatchCard({
   verdict,
   picked,
   onPick,
+  onAllow,
 }: {
   m: Match;
   verdict: ReturnType<typeof verdictFor>;
   picked: boolean;
   onPick: () => void;
+  /** The way forward when the envelope refuses only because the seller is not on the allowlist. */
+  onAllow?: () => void;
 }) {
   const { offer } = m.listing;
   return (
@@ -264,6 +285,13 @@ function MatchCard({
         <Button variant="secondary" block onClick={onPick} aria-pressed={picked}>
           {picked ? "Chosen" : `Choose ${offer.title}`}
         </Button>
+      ) : verdict && !verdict.decision.ok && verdict.decision.reason === "not-allowlisted" && onAllow ? (
+        <>
+          <Button variant="secondary" block onClick={onAllow}>
+            Allow this seller
+          </Button>
+          <p className="match__hint">Adds the seller to your envelope’s allowlist and checks again. Nothing is bought.</p>
+        </>
       ) : null}
     </li>
   );

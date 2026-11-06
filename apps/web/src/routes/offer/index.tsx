@@ -19,6 +19,7 @@ export default function OfferPage({ params }: PageProps) {
   const rails = useResource(() => api.rails(), []);
   const sellers = useResource(() => api.sellers(), []);
   const [via, setVia] = useState<"cli" | "curl">("cli");
+  const [more, setMore] = useState(false);
 
   if (listing.loading && !listing.data) return <div className="page" aria-busy="true" />;
   if (listing.error) {
@@ -59,7 +60,7 @@ export default function OfferPage({ params }: PageProps) {
           <Tag>{offer.adapter}</Tag>
         </div>
         <p className="offer__by">
-          By <span className="offer__seller">{l.seller.name}</span>
+          By <span className="offer__seller">{l.seller.named === false ? "an unnamed seller" : l.seller.name}</span>
           {agentId ? (
             <span className="offer__verified">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -74,12 +75,21 @@ export default function OfferPage({ params }: PageProps) {
           <Amount money={usd(offer.price, offer.rails[0])} size="xl" />
           <p className="offer__per num">
             per call ·{" "}
-            {l.stats && l.stats.released + l.stats.refunded > 0 ? `${l.stats.released} paid · ${l.stats.refunded} refunded` : "No record yet"}
+            {!l.stats
+              ? "calls not counted yet"
+              : l.stats.released + l.stats.refunded > 0
+                ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
+                : "no calls yet"}
             {l.online === undefined ? "" : l.online ? " · runner online" : " · runner offline"}
           </p>
         </div>
         <p className="offer__rails">Settles on {offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
-        <p className="page__lede offer__summary">{offer.summary}</p>
+        <p className={cx("page__lede offer__summary", !more && offer.summary.length > 220 && "is-clamped")}>{offer.summary}</p>
+        {offer.summary.length > 220 ? (
+          <button type="button" className="link-button offer__more" aria-expanded={more} onClick={() => setMore((m) => !m)}>
+            {more ? "Show less" : "Read more"}
+          </button>
+        ) : null}
         {offer.upstream ? (
           <p className="offer__source">
             From{" "}

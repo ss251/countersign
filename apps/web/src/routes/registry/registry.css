@@ -113,6 +113,10 @@
   letter-spacing: -0.01em;
 }
 
+.seller-block__name.is-unnamed {
+  color: var(--slate);
+}
+
 .seller-block__id {
   display: flex;
   flex-wrap: wrap;
