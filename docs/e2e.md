@@ -22,16 +22,16 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 4a | `slip-onchain-arc` | the `Released` event carries the slip's hash; a tampered slip whose own hash still matches fails | Arc testnet | orch-cs |
 | 4b | `slip-onchain-whitechain` | the same check on the escrow on chain 1874 | Whitechain Sepolia | cs-wc |
 | 5 | `whitechain` | a buyer holding zero WBT pays in USDT through the relayer; the merchant refunds in one click | Whitechain Sepolia | cs-wc |
-| 6 | `hedera` | an agent pays a hub offer over x402 with no human step; the payment is on the mirror node and in the HCS spend log | Hedera testnet | cs-hd |
+| 6 | `hedera` | retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed | Hedera testnet | cs-hd |
 | 7 | `merchant` | totals, a partial refund and the accountant export agree with the chain | Whitechain Sepolia | cs-wc |
 | 8 | `discovery` | the A2A card, skills index, OpenAPI document and offer list resolve from a clean client, locally and on the public hub | none | orch-cs |
-| 10 | `arc-gateway` | the buyer pays from its Circle Gateway balance: debited at once, slip names the gateway rail | Arc testnet | orch-cs |
+| 10 | `arc-gateway` | retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed | Arc testnet | orch-cs |
 | 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
 | 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
 | 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
-| 15 | `public-hedera` | the Hedera agent pays a live offer on the public hub with no human step; mirror, HCS entry, the hub's settlement and the slip | Hedera testnet | cs-hd |
-| 16 | `public-gateway` | a Gateway nanopayment on a live offer of the public hub; balance debited at once, the hub serves the same slip | Arc testnet | orch-cs |
-| 17 | `hedera-mcp` | the Hedera agent pays a call to Hedera's own Agent Kit MCP server on the public hub; the slip binds the call, and the returned bytes decode to an unsigned transfer naming the buyer | Hedera testnet | cs-hd |
+| 15 | `public-hedera` | retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed | Hedera testnet | cs-hd |
+| 16 | `public-gateway` | retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed | Arc testnet | orch-cs |
+| 17 | `hedera-mcp` | retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21 | Hedera testnet | cs-hd |
 | 18 | `erc8004-identity` | the Hedera seller's ERC-8004 identity: owner, registration file, the hub card and live offers it names, and the wallet it declares | Hedera testnet | cs-hd |
 | 18b | `erc8004-arc` | every seller the public hub names with an ERC-8004 agent id owns it on Arc, its registration names this hub and its own offers, and earned feedback exists | Arc testnet | orch-cs |
 | 20 | `hedera-schedule` | on demand: a scheduled Hedera payment executes only on the seller's signature, with exactly the price moved and a `schedule` entry on HCS | Hedera testnet | cs-hd |
@@ -104,7 +104,7 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 
 ### 6 · hedera
 
-Flows 6, 15 and 17 pay the exact Hedera rail. Since #157 a plain agent run pays held wherever the hub offers it, at about 0.16 HBAR a purchase, so these flows pass `--exact` and check the 402's `exact` accept by scheme: a held accept may come first, and it pays another account. Until the agent in the branch takes `--exact`, the flag is left out. The held rail has its own flows, 21 and 21b, run on demand.
+Flows 6, 15 and 17 are retired: production removed the plain x402 Hedera rail by flag (captain, 23:40 IST) because it debits before the seller runs and cannot be reversed. Production declares exactly escrow, Whitechain and held Hedera (`hedera-scheduled`), the rails that return money; held Hedera is paid on demand by flows 21 and 21b. The retired flows keep their code and assertions, so deleting the one `notRun` line restores them. Since #157 a plain agent run pays held wherever the hub offers it, at about 0.16 HBAR a purchase, so their code passes `--exact` and checks the 402's `exact` accept by scheme: a held accept may come first, and it pays another account.
 
 1. **hub up** with the Hedera rail, and a seller whose offer pays a Hedera account (`runner serve --pay-to hedera=<account>`).
 2. **402 names the rail.** The challenge asks for USDC on `hedera:testnet`, paid to the seller's account, with the facilitator's fee payer.
@@ -260,7 +260,7 @@ The demo server (`scripts/mpp/server.ts`) runs the countersign `mpp` rail on Tem
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
 
 1. **console**: the index and every module script it loads are fetched as text. The default bundle must contain the production hub's URL. It must also contain none of the fixture-only values: addresses and hashes found in the fixture files and nowhere else in the repository, collected fresh on each run.
-2. **hub**: production declares escrow, Gateway, Hedera, held Hedera (`hedera-scheduled`, since #168) and Whitechain. Every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin. One failure message lists every endpoint that fails.
+2. **hub**: production declares exactly escrow, Whitechain and held Hedera (`hedera-scheduled`), the rails that return money; `E2E_PUBLIC_RAILS` defaults to those three and the flow fails on any other rail. The Gateway and plain x402 Hedera rails were removed by flag (captain, 23:40 IST) because they debit before the seller runs and cannot be reversed. Every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin. One failure message lists every endpoint that fails.
 3. **approvals (14c)**: the approval routes, `/envelopes` and `/approvals`, depend on production's approver configuration. While production answers 503 `no-approver`, the flow reports `NOT RUN (in progress)`. With an approver configured:
    - without the human's token every route answers 401;
    - with the token, as the console sends it, `/approvals` answers 200 and a published envelope mirror answers 200;
