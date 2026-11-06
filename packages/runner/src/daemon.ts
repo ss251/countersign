@@ -25,6 +25,7 @@ import type { Hex, RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
 import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
 import { substituteBuyer } from "./mcp.ts";
+import { assertRemoteCanServe } from "./remote-signer.ts";
 
 export type { FundingConfig, JobReader, PinnedEscrow } from "./funding.ts";
 
@@ -103,6 +104,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const clock = cfg.now ?? (() => Math.floor(Date.now() / 1000));
   const timeMs = cfg.limits?.timeMs ?? 30_000;
   const maxOutputBytes = cfg.limits?.maxOutputBytes ?? 1_000_000;
+  for (const entry of cfg.served) assertRemoteCanServe(cfg.account, entry.offer);
   const served = cfg.served.map((entry) => ({ ...entry, hash: offerHash(entry.offer) }));
   const url = connectUrl(cfg.hubUrl);
   const funding =
@@ -229,11 +231,9 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
     }
 
     try {
-      // The account signs any EIP-712 payload; its type names the slip because that was its only use.
-      const typed = lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder) as unknown as Parameters<
-        RunnerAccount["signTypedData"]
-      >[0];
-      const sig = await cfg.account.signTypedData(typed);
+      const sig = await cfg.account.signTypedData(
+        lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder),
+      );
       send(target, { t: "locked", jobId: frame.jobId, sig });
     } catch {
       send(target, {
