@@ -27,3 +27,4 @@ subgraph/build/
 data/
 *.sqlite
 *.sqlite-*
+!docs/build/
