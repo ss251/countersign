@@ -113,7 +113,7 @@ export default function SlipPage({ params }: PageProps) {
             <h2 id="sec-settlement" className="slip__section-title">
               Settlement
             </h2>
-            <RailCard declaration={declaration} tx={slip.settlement.transaction} />
+            <RailCard declaration={declaration} tx={slip.settlement.transaction} link={view.source !== "fixtures"} />
           </section>
 
           <section className="slip__section" aria-labelledby="sec-seal">

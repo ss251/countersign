@@ -1,4 +1,4 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from "react";
+import type { ComponentType } from "react";
 
 /**
  * Routes are folders. "/offer/abc" loads routes/offer/index.tsx with params ["abc"];
@@ -12,10 +12,10 @@ export interface PageProps {
 }
 
 type PageModule = { default: ComponentType<PageProps> };
-type Page = LazyExoticComponent<ComponentType<PageProps>>;
+type Page = ComponentType<PageProps>;
 
-const modules = import.meta.glob<PageModule>("../routes/*/index.tsx");
-const cache = new Map<string, Page>();
+// Eager on purpose: one bundle, one stylesheet, nothing to wait for on a cold load.
+const modules = import.meta.glob<PageModule>("../routes/*/index.tsx", { eager: true });
 
 /** Screens designed for a phone at 390 px. Everything else is a desktop surface. */
 const PHONE = new Set(["buyer"]);
@@ -31,14 +31,9 @@ export function resolve(segments: string[]): Resolved | null {
   const name = segments[0] ?? "home";
   if (!/^[a-z][a-z0-9-]*$/.test(name)) return null;
   const key = `../routes/${name}/index.tsx`;
-  const load = modules[key];
-  if (!load) return null;
-  let Page = cache.get(key);
-  if (!Page) {
-    Page = lazy(load);
-    cache.set(key, Page);
-  }
-  return { name, Page, params: segments.slice(1), surface: PHONE.has(name) ? "phone" : "desk" };
+  const mod = modules[key];
+  if (!mod) return null;
+  return { name, Page: mod.default, params: segments.slice(1), surface: PHONE.has(name) ? "phone" : "desk" };
 }
 
 export function hasRoute(name: string): boolean {

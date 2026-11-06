@@ -1,4 +1,4 @@
-import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
 import { Wordmark } from "../ui/Mark.tsx";
@@ -24,13 +24,7 @@ export function App() {
       {surface === "desk" ? <TopBar active={match?.name ?? ""} /> : null}
       <main id="main" className="shell__main" tabIndex={-1}>
         <PageBoundary key={location.path}>
-          <Suspense fallback={<div className="shell__loading" aria-hidden="true" />}>
-            {match ? (
-              <match.Page params={match.params} query={location.query} />
-            ) : (
-              <NotFound path={location.path} />
-            )}
-          </Suspense>
+          {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}
         </PageBoundary>
       </main>
     </div>

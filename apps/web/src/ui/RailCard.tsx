@@ -16,8 +16,9 @@ const GAS: Record<RailDeclaration["gasPaidBy"], string> = {
 };
 
 /** A rail, declared in data: what moved the money and when it counts as settled. */
-export function RailCard({ declaration: d, tx }: { declaration: RailDeclaration; tx?: string }) {
-  const explorer = tx ? d.explorerTx.replace("{tx}", encodeURIComponent(tx)) : undefined;
+export function RailCard({ declaration: d, tx, link = true }: { declaration: RailDeclaration; tx?: string; link?: boolean }) {
+  // Stand-in transactions are not on any chain, so they are never linked.
+  const explorer = tx && link ? d.explorerTx.replace("{tx}", encodeURIComponent(tx)) : undefined;
   return (
     <KV
       className="rail-card"
