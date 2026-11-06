@@ -20,7 +20,7 @@ import { keccak256, toBytes, type Hex } from "viem";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, challengeOptions, firstLine, resourceFor } from "./discovery.ts";
 import type { RunnerLink } from "./runners.ts";
-import type { Store } from "./store.ts";
+import type { Fault, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
@@ -194,17 +194,16 @@ export async function paidCall(
     lineage: hexList(call.lineage),
   });
 
-  const timeoutMs = Math.max(
-    0,
-    Math.min(deps.jobTimeoutMs ?? 120_000, (deadline - now - 5) * 1000),
-  );
+  const deadlineMs = (deadline - now - 5) * 1000;
+  const hubLimitMs = deps.jobTimeoutMs ?? 120_000;
+  const timeoutMs = Math.max(0, Math.min(hubLimitMs, deadlineMs));
   const delivered = await deps.runners.dispatch(order, timeoutMs);
   if ("fail" in delivered) {
-    return failedDelivery(deps, jobId, railId);
+    return failedDelivery(deps, jobId, railId, dispatchFault(delivered, hubLimitMs < deadlineMs), escrowRail);
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    return failedDelivery(deps, jobId, railId);
+    return failedDelivery(deps, jobId, railId, "seller", escrowRail);
   }
 
   let closeTx = settle.transaction;
@@ -214,7 +213,7 @@ export async function paidCall(
   if (escrow) {
     const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
     if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
-      return failedDelivery(deps, jobId, railId);
+      return failedDelivery(deps, jobId, railId, "seller", escrowRail);
     }
     const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
@@ -253,14 +252,29 @@ export async function paidCall(
   };
 }
 
-function failedDelivery(deps: CallDeps, jobId: Hex, railId: string): CallOutcome {
-  deps.store.updateJob(jobId, { status: "failed" });
-  return failure(
-    502,
-    "failed-delivery",
-    "Refused. The seller's output does not match the offer. Your money returns at the deadline.",
-    railId,
-  );
+/**
+ * Who a dispatch failure is on. The runner refusing the job, or running past the offer's own
+ * deadline, is the seller's. A missing runner, a dropped connection, or a cut-off the hub
+ * imposed before the offer's deadline is the hub's.
+ */
+function dispatchFault(result: { fail: string; byRunner?: true }, hubCutShort: boolean): Fault {
+  if (result.byRunner) return "seller";
+  if (result.fail === "timeout" && !hubCutShort) return "seller";
+  return "hub";
+}
+
+function failedDelivery(
+  deps: CallDeps,
+  jobId: Hex,
+  railId: string,
+  fault: Fault,
+  escrow: boolean,
+): CallOutcome {
+  deps.store.updateJob(jobId, { status: "failed", fault });
+  const message = escrow
+    ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
+    : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.";
+  return failure(502, "failed-delivery", message, railId);
 }
 
 function duplicatePayment(railId: string): CallOutcome {

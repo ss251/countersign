@@ -14,10 +14,12 @@ import {
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
+import { registerBuyerPlumbing } from "./buyerplumbing.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
+import { Ratings } from "./ratings.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
 import type { Listing } from "./types.ts";
@@ -29,6 +31,10 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Bearer token the human's phone presents to decide an approval. */
+  humanApprovalToken?: string;
+  /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
+  ratingsCacheSeconds?: number;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -37,6 +43,7 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
+  const ratings = new Ratings(deps.store, { now: deps.now, cacheSeconds: deps.ratingsCacheSeconds ?? 5 });
   const frontdoor = (): FrontdoorDeps => {
     const view: FrontdoorDeps = {
       store: deps.store,
@@ -48,6 +55,8 @@ export function createHub(deps: HubDeps) {
   };
 
   app.use("*", cors({ origin: "*", exposeHeaders: PAYMENT_HEADERS }));
+
+  registerBuyerPlumbing(app, deps);
 
   app.get("/healthz", (c) =>
     json({
@@ -147,6 +156,16 @@ export function createHub(deps: HubDeps) {
     if (!slip) return fail(404, "unknown-slip", "Refused. That slip is not known.");
     return json(slip);
   });
+
+  app.get("/ratings", async () => json({ ratings: await ratings.all() }));
+
+  app.get("/ratings/:seller", async (c) => {
+    const rating = await ratings.seller(c.req.param("seller"));
+    if (!rating) return fail(404, "unknown-seller", "Refused. That seller has no offers here.");
+    return json(rating);
+  });
+
+  app.get("/stats", async () => json(await ratings.stats(runners.count)));
 
   app.get("/jobs/:jobId", (c) => {
     const job = deps.store.getJob(c.req.param("jobId"));
