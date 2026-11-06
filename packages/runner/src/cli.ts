@@ -13,7 +13,7 @@
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
+import { isEnsName, parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
 import { KNOWN_ESCROWS } from "@countersign/verify";
 import { isAddress } from "viem";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
@@ -49,6 +49,8 @@ export interface Options {
   knownEscrows?: PinnedEscrow[];
   /** Extra RPC endpoints on top of the environment and Arc's default. */
   rpcs?: RpcEndpoint[];
+  /** The seller's ENS name on Sepolia. */
+  ens?: string;
 }
 
 export interface FundingEnv {
@@ -183,6 +185,7 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
     rails: options.rails,
     payTo: options.payTo,
     upstream: options.upstream,
+    ens: options.ens,
     now: Math.floor(Date.now() / 1000),
   });
 }
@@ -216,6 +219,7 @@ export function parseOptions(args: string[]): Options {
   let state: string | undefined;
   let upstreamUrl: string | undefined;
   let licence: string | undefined;
+  let ens: string | undefined;
   const payTo: Partial<Record<RailId, string>> = {};
   const knownEscrows: PinnedEscrow[] = [];
   const rpcs: RpcEndpoint[] = [];
@@ -309,6 +313,10 @@ export function parseOptions(args: string[]): Options {
       case "--licence":
         licence = value();
         break;
+      case "--ens":
+        ens = value();
+        if (!isEnsName(ens)) throw new Error("--ens must be an ENS name in normal form, e.g. alice.eth.");
+        break;
       default:
         throw new Error(`Unknown argument ${flag}.`);
     }
@@ -329,6 +337,7 @@ export function parseOptions(args: string[]): Options {
   const options: Options = { hub, skills, price, deadline, rails };
   if (Object.keys(payTo).length > 0) options.payTo = payTo;
   if (state !== undefined) options.state = state;
+  if (ens !== undefined) options.ens = ens;
   if (upstreamUrl !== undefined && licence !== undefined) {
     options.upstream = { url: upstreamUrl, licence };
   }

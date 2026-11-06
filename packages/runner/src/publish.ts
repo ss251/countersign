@@ -85,6 +85,7 @@ function stableKey(seller: string, offer: Offer, skillSha256: string | undefined
     deadline: offer.deadline,
     rails: offer.rails,
     payTo: Object.fromEntries(Object.entries(offer.payTo ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+    ...(offer.ens !== undefined ? { ens: offer.ens } : {}),
   });
 }
 
