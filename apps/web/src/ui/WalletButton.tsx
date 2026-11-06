@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { retryPrivy, useWalletMode, watchdogReason } from "../app/Providers.tsx";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
@@ -26,9 +26,13 @@ type WalletBodyProps = {
   reason: string | null;
   /** Options after the browser wallet, e.g. another try at email sign-in. */
   more?: MenuOption[];
+  /** The closed button's words: a sign-in where email works, else a connect. */
+  cta: string;
+  /** Which kind of wallet holds this address, for e2e/human's data-kind. */
+  kindOf?: (address: string | undefined) => "privy" | "injected";
 };
 
-function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [] }: WalletBodyProps) {
+function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [], cta, kindOf = () => "injected" }: WalletBodyProps) {
   const account = useAccount();
   const connect = useConnect();
   const disconnect = useDisconnect();
@@ -96,11 +100,18 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
     <div className="wallet" aria-live="polite" ref={root}>
       {account.status === "connected" ? (
         <>
-          <span className="wallet__who mono" data-testid="wallet-address">
+          <span
+            className="wallet__who mono"
+            data-testid="wallet-address"
+            data-value={account.address}
+            data-kind={kindOf(account.address)}
+          >
             {shortAddress(account.address)}
           </span>
           <span aria-hidden="true"> · </span>
-          <span data-testid="wallet-chain">{chainName(account.chainId)}</span>
+          <span data-testid="wallet-chain" data-value={account.chainId}>
+            {chainName(account.chainId)}
+          </span>
           {account.chainId !== arcTestnet.id && account.chainId !== whitechainTestnet.id ? (
             <button type="button" className="wallet__go" onClick={startSwitch}>
               Switch to Arc testnet
@@ -130,7 +141,7 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
             }}
             disabled={connecting}
           >
-            {connecting ? "Connecting" : "Connect"}
+            {connecting ? "Connecting" : cta}
           </button>
           {open ? (
             <div className="wallet__menu" role="menu">
@@ -183,6 +194,10 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [
 
 function PrivyWalletButton() {
   const { login, connectWallet, logout } = usePrivy();
+  const { wallets } = useWallets();
+  // Privy's embedded wallet reports walletClientType "privy"; anything else came from the browser.
+  const kindOf = (address: string | undefined) =>
+    wallets.find((w) => w.address.toLowerCase() === address?.toLowerCase())?.walletClientType === "privy" ? "privy" : "injected";
 
   return (
     <WalletBody
@@ -190,6 +205,8 @@ function PrivyWalletButton() {
       connectBrowser={() => connectWallet()}
       beforeDisconnect={() => logout()}
       reason={null}
+      cta="Sign in"
+      kindOf={kindOf}
     />
   );
 }
@@ -208,7 +225,7 @@ function InjectedWalletButton({ reason }: { reason: string | null }) {
       ? [{ testId: "wallet-privy-retry", label: "Try email sign-in again", onSelect: retryPrivy }]
       : [];
 
-  return <WalletBody connectBrowser={connectBrowser} reason={reason} more={more} />;
+  return <WalletBody connectBrowser={connectBrowser} reason={reason} more={more} cta="Connect" />;
 }
 
 export function WalletButton() {
