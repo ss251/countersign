@@ -145,7 +145,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `packages/verify` | The standalone slip verifier. |
 | `packages/relay` | The Whitechain gas relay (lands with [#17](https://github.com/ss251/countersign/pull/17)). |
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments. |
-| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`. |
+| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `terms.md`. |
 | `examples/catalogue` | The sponsor skills the demo sellers serve, unmodified, with upstream and licence. |
 | `scripts/` | Hedera setup, agent run and audit; Gateway deposit and balance. |
 | `marks/` | The mark and wordmark. |
@@ -165,6 +165,10 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
 - **The bond is declared, not held.** No contract collects it.
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
+
+## Terms
+
+What listing an offer means, what the hub does and does not do, what a countersignature binds, release and refund windows, the toll, and the limits: [docs/terms.md](docs/terms.md).
 
 ## Contributing
 
