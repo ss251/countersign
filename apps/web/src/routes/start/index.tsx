@@ -6,8 +6,10 @@ import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { usd } from "../../lib/format.ts";
 import { usePurchase } from "../../lib/purchase.ts";
 import type { Listing } from "../../lib/types.ts";
+import { chainName } from "../../lib/wallet.ts";
 import { Amount, Button, FixtureNote } from "../../ui/primitives.tsx";
 import { PurchaseResult } from "../../ui/PurchaseResult.tsx";
+import { SignReview } from "../../ui/SignReview.tsx";
 import { WalletButton } from "../../ui/WalletButton.tsx";
 import "../../ui/page.css";
 import "./start.css";
@@ -32,7 +34,7 @@ export default function StartPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
   const account = useAccount();
   const { switchChain } = useSwitchChain();
-  const { phase, signature, outcome, note, buy } = usePurchase();
+  const { phase, pending, signature, outcome, note, buy, confirm, cancel } = usePurchase();
 
   const listing = pickListing(listings.data ?? []);
   const onArc = account.status === "connected" && account.chainId === ARC_CHAIN_ID;
@@ -101,9 +103,15 @@ export default function StartPage(_props: PageProps) {
             ) : (
               <div className="start__actions">
                 {account.chainId !== ARC_CHAIN_ID ? (
-                  <Button variant="secondary" onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}>
-                    Switch to Arc testnet
-                  </Button>
+                  <>
+                    {/* A switch happens only on this click, and the line says why (STEER-2225). */}
+                    <p className="start__text" data-testid="start-switch-why">
+                      Your wallet is on {chainName(account.chainId)}. This purchase settles on Arc testnet, so switch there first.
+                    </p>
+                    <Button variant="secondary" data-testid="start-switch" onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}>
+                      Switch to Arc testnet
+                    </Button>
+                  </>
                 ) : null}
                 <Button
                   data-testid="start-countersign"
@@ -111,11 +119,28 @@ export default function StartPage(_props: PageProps) {
                   disabled={!onArc || phase !== "idle"}
                   onClick={() => void buy(listing, { question: QUESTION })}
                 >
-                  {phase === "signing" ? "Signing" : phase === "sending" ? "Sending to the hub" : "Countersign and buy"}
+                  {phase === "asking"
+                    ? "Asking the hub for its terms"
+                    : phase === "review"
+                      ? "Terms below"
+                      : phase === "signing"
+                        ? "Signing"
+                        : phase === "sending"
+                          ? "Sending to the hub"
+                          : "Countersign and buy"}
                 </Button>
               </div>
             )}
 
+            {pending && (phase === "review" || phase === "signing") ? (
+              <SignReview
+                pending={pending}
+                busy={phase === "signing"}
+                onConfirm={() => void confirm()}
+                onCancel={cancel}
+                testIdPrefix="start"
+              />
+            ) : null}
             <PurchaseResult signature={signature} note={note} outcome={outcome} testIdPrefix="start" />
           </>
         )}

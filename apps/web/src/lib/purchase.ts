@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   authorizationTypedData,
+  jobIdOf,
   offerHash as hashOf,
   countersignPayload,
   fromBase64Json,
@@ -104,25 +105,56 @@ export function buildAuthorization(
   };
 }
 
-export type PurchasePhase = "idle" | "signing" | "sending";
+/**
+ * idle, then asking (the first call, for the hub's 402), then review (the terms on screen, the wallet still
+ * closed), then signing (the wallet open for exactly the job shown), then sending (the signed call).
+ */
+export type PurchasePhase = "idle" | "asking" | "review" | "signing" | "sending";
 
 export type PurchaseOutcome =
   | { kind: "paid"; transaction: string | null; slipHash: Hex | null }
   /** nothingMoved: the refusal came before any payment, or the hub says nothing was charged. */
   | { kind: "refused"; message: string; faucet: boolean; nothingMoved: boolean };
 
-/** One purchase, from the first 402 to the hub's final answer. */
+/** Everything one signature commits to, shown in plain words before the wallet opens (STEER-2225). */
+export interface PendingPurchase {
+  listing: Listing;
+  input: unknown;
+  req: PaymentRequirements;
+  authorization: AuthorizationInput;
+  /** The one job this signature can fund: the authorization's nonce, so it can never be reused for another. */
+  jobId: Hex;
+  base: string;
+}
+
+export function pendingOf(
+  listing: Listing,
+  input: unknown,
+  req: PaymentRequirements,
+  authorization: AuthorizationInput,
+  base: string,
+): PendingPurchase {
+  return { listing, input, req, authorization, jobId: jobIdOf(authorization.terms, authorization.chainId, authorization.escrow), base };
+}
+
+/** One purchase: ask the hub for its terms, show them, and only then open the wallet for that one job. */
 export function usePurchase(): {
   phase: PurchasePhase;
+  pending: PendingPurchase | null;
   signature: Hex | null;
   outcome: PurchaseOutcome | null;
   note: string | null;
+  /** Asks the hub for its 402 and checks the terms. It never opens the wallet; confirm() does. */
   buy: (listing: Listing, input: unknown) => Promise<void>;
+  /** Opens the wallet for exactly the pending job, then sends the signed call. */
+  confirm: () => Promise<void>;
+  cancel: () => void;
   reset: () => void;
 } {
   const account = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const [phase, setPhase] = useState<PurchasePhase>("idle");
+  const [pending, setPending] = useState<PendingPurchase | null>(null);
   const [signature, setSignature] = useState<Hex | null>(null);
   const [outcome, setOutcome] = useState<PurchaseOutcome | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -131,7 +163,9 @@ export function usePurchase(): {
     const offerHash = listing.hash;
     if (!offerHash || !account.address || account.chainId !== ARC_CHAIN_ID || phase !== "idle") return;
     const base = hubBase();
-    setPhase("signing");
+    let next: PurchasePhase = "idle";
+    setPhase("asking");
+    setPending(null);
     setSignature(null);
     setOutcome(null);
     setNote(null);
@@ -165,17 +199,34 @@ export function usePurchase(): {
         return;
       }
 
-      let authorization: AuthorizationInput;
       try {
-        authorization = buildAuthorization(choice.req, account.address, now, randomSalt());
+        setPending(pendingOf(listing, input, choice.req, buildAuthorization(choice.req, account.address, now, randomSalt()), base));
+        next = "review";
       } catch (error) {
         setNote(messageOf(error));
-        return;
       }
+    } catch {
+      setNote("The hub did not answer, so nothing was signed.");
+    } finally {
+      setPhase(next);
+    }
+  };
 
+  const confirm = async () => {
+    const p = pending;
+    if (!p || phase !== "review") return;
+    // The terms on screen name one buyer; a wallet that changed since would sign for someone else.
+    if (!account.address || account.address.toLowerCase() !== p.authorization.terms.buyer.toLowerCase() || account.chainId !== ARC_CHAIN_ID) {
+      setPending(null);
+      setPhase("idle");
+      setNote("The wallet or its chain changed since these terms were shown, so nothing was signed. Ask again.");
+      return;
+    }
+    setPhase("signing");
+    try {
       let sig: Hex;
       try {
-        sig = await signTypedDataAsync(authorizationTypedData(authorization));
+        sig = await signTypedDataAsync(authorizationTypedData(p.authorization));
       } catch {
         setNote("The wallet did not sign, so nothing was sent.");
         return;
@@ -185,13 +236,13 @@ export function usePurchase(): {
 
       const payment: PaymentPayload = {
         x402Version: 2,
-        accepted: choice.req,
-        payload: countersignPayload(authorization, sig) as unknown as Record<string, unknown>,
+        accepted: p.req,
+        payload: countersignPayload(p.authorization, sig) as unknown as Record<string, unknown>,
       };
 
       let second: Response;
       try {
-        second = await postCall(base, offerHash, input, payment);
+        second = await postCall(p.base, p.listing.hash, p.input, payment);
       } catch {
         setNote("The hub did not answer, so this page cannot say whether the payment reached it.");
         return;
@@ -221,18 +272,27 @@ export function usePurchase(): {
     } catch {
       setNote("The hub did not answer, so nothing here can say what happened.");
     } finally {
+      setPending(null);
       setPhase("idle");
     }
   };
 
+  const cancel = () => {
+    if (phase !== "review") return;
+    setPending(null);
+    setPhase("idle");
+    setNote("Nothing was signed.");
+  };
+
   const reset = () => {
     setPhase("idle");
+    setPending(null);
     setSignature(null);
     setOutcome(null);
     setNote(null);
   };
 
-  return { phase, signature, outcome, note, buy, reset };
+  return { phase, pending, signature, outcome, note, buy, confirm, cancel, reset };
 }
 
 function randomSalt(): Hex {

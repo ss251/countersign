@@ -15,6 +15,7 @@ import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { NeedsSignature } from "../../ui/NeedsSignature.tsx";
 import { PurchaseResult } from "../../ui/PurchaseResult.tsx";
+import { SignReview } from "../../ui/SignReview.tsx";
 import { Amount, Button, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
 import { rank, type Match } from "../buyer/assistant.ts";
 import { buyCommand, exampleInput } from "../offer/index.tsx";
@@ -515,19 +516,27 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
       </div>
       {wallet ? (
         <>
-          <HoldToSign
-            key={attempt}
-            ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`}
-            left={listing.seller.name}
-            right="you"
-            label="Hold to countersign with your wallet"
-            holdingLabel="Keep holding"
-            doneLabel="Your wallet takes it from here"
-            onSigned={() => void purchase.buy(listing, exampleInput(offer.input))}
-          />
+          {/* The wallet never opens from here: this asks the hub for its terms, and the review below opens it. */}
+          <Button
+            data-testid="pcard-ask"
+            variant="primary"
+            disabled={purchase.phase !== "idle" || purchase.outcome?.kind === "paid"}
+            onClick={() => void purchase.buy(listing, exampleInput(offer.input))}
+          >
+            {purchase.phase === "asking" ? "Asking the hub for its terms" : "Review what your wallet would sign"}
+          </Button>
           <p className="pcard__input">
             Input <span className="mono">{JSON.stringify(input)}</span>
           </p>
+          {purchase.pending && (purchase.phase === "review" || purchase.phase === "signing") ? (
+            <SignReview
+              pending={purchase.pending}
+              busy={purchase.phase === "signing"}
+              onConfirm={() => void purchase.confirm()}
+              onCancel={purchase.cancel}
+              testIdPrefix="pcard"
+            />
+          ) : null}
           {purchase.phase === "signing" ? (
             <p className="pcard__phase" role="status">
               Signing in your wallet
@@ -547,7 +556,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
                 setAttempt((n) => n + 1);
               }}
             >
-              Hold again
+              Try again
             </Button>
           ) : null}
         </>

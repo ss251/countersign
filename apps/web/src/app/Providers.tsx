@@ -83,7 +83,8 @@ export function Providers({ children }: { children: ReactNode }) {
   if (!mode.privy || !PRIVY_APP_ID) {
     return (
       <WalletModeContext.Provider value={mode}>
-        <WagmiProvider config={walletConfig}>
+        {/* Nothing touches a wallet on load: it connects only when the person clicks Connect (STEER-2225). */}
+        <WagmiProvider config={walletConfig} reconnectOnMount={false}>
           <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
         </WagmiProvider>
       </WalletModeContext.Provider>
@@ -104,7 +105,7 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <PrivyWatchdog onFail={fail} />
       <QueryClientProvider client={queryClient}>
-        <PrivyWagmiProvider config={privyWagmiConfig}>
+        <PrivyWagmiProvider config={privyWagmiConfig} reconnectOnMount={false}>
           <WalletModeContext.Provider value={mode}>{children}</WalletModeContext.Provider>
         </PrivyWagmiProvider>
       </QueryClientProvider>

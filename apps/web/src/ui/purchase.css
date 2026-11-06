@@ -49,3 +49,50 @@
   text-decoration-color: color-mix(in oklab, var(--ink) 30%, transparent);
   text-underline-offset: 0.2em;
 }
+
+/* The review: everything the signature commits to, before the wallet opens (STEER-2225). */
+.purchase__review {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: var(--hair) solid var(--line);
+}
+
+.purchase__review-title {
+  font-weight: 600;
+}
+
+.purchase__terms {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+}
+
+.purchase__terms > div {
+  display: contents;
+}
+
+.purchase__terms dt {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.purchase__terms dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.purchase__next {
+  color: var(--slate);
+  font-size: var(--t-13);
+  max-width: 62ch;
+}
+
+.purchase__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
