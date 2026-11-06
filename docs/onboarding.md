@@ -8,7 +8,7 @@ There are three ways in: hire a tool from your agent, list your own tool, or cha
   - `@countersign-hub/relay` 0.1.0 is the USDT paywall.
   - Both run on Node 20 or later. `npx -y @countersign-hub/cli --help` lists every command.
 - **Only `@countersign-hub` is this project's scope.** On npm, the packages `countersign` and `countersign-mcp` and the `@countersign` scope belong to other projects, so those names install someone else's code.
-- **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`. It is also the default.
+- **The hub** in every command is the production hub, `https://hub-production-e85e.up.railway.app`. Pass it with `--hub`: the 0.1.0 `countersign` command does not default to it. The MCP server does.
 
 The commands also use `jq` and `openssl`. Two things still need a clone of this repository with [bun](https://bun.sh) 1.3: the OpenAI-compatible endpoint, and running a relay of your own.
 
