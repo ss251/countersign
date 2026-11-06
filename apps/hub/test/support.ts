@@ -6,6 +6,7 @@ import {
   publishMessage,
   RUNNER_PATH,
   toBase64Json,
+  type EnsResolve,
   type Offer,
   type PaymentPayload,
   type PaymentRequired,
@@ -36,7 +37,7 @@ export interface TestHub {
   close(): void;
 }
 
-export function startHub(options: { rails?: FakeRail[]; jobTimeoutMs?: number } = {}): TestHub {
+export function startHub(options: { rails?: FakeRail[]; jobTimeoutMs?: number; ens?: EnsResolve } = {}): TestHub {
   const store = new Store(":memory:");
   const fallback = new FakeRail();
   const rails = options.rails ?? [fallback];
@@ -50,6 +51,7 @@ export function startHub(options: { rails?: FakeRail[]; jobTimeoutMs?: number } 
     publicUrl: "http://hub.test",
     jobTimeoutMs: options.jobTimeoutMs ?? 2_000,
   };
+  if (options.ens) deps.ens = options.ens;
   const { app, websocket, runners } = createHub(deps);
   const server = Bun.serve({
     port: 0,

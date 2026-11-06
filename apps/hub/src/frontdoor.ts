@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { explorerUrl, type Network, type Offer, type Rail, type RailId } from "./deps.ts";
+import { checkEnsLock, explorerUrl, type EnsResolve, type Network, type Offer, type Rail, type RailId } from "./deps.ts";
 import type { IdentityLookup } from "./identity.ts";
 import type { JobRecord, StoredOffer, Store } from "./store.ts";
 import { isRecord } from "./util.ts";
@@ -9,6 +9,8 @@ export interface FrontdoorDeps {
   rails: Rail[];
   isOnline(offerHash: string): boolean;
   identity?: IdentityLookup;
+  /** Sepolia ENS lookups. Without it no seller is shown by name. */
+  ens?: EnsResolve;
 }
 
 export interface SearchParams {
@@ -47,7 +49,8 @@ export interface SellerErc8004 {
 
 export interface SellerSummary {
   address: string;
-  name: null;
+  /** The seller's ENS name, only while it resolves to this seller and locks its payees. */
+  name: string | null;
   payees: Record<string, string>;
   offers: SellerOffer[];
   calls: number;
@@ -210,7 +213,7 @@ export async function listSellers(deps: FrontdoorDeps): Promise<SellersResponse>
       };
       return {
         address: group.address,
-        name: null,
+        name: await nameFor(deps, group.offers),
         payees: payeesOf(group.offers),
         offers: group.offers.map((stored) => ({
           offerHash: stored.offerHash,
@@ -398,6 +401,19 @@ function payeesOf(offers: StoredOffer[]): Record<string, string> {
     }
   }
   return payees;
+}
+
+/**
+ * The ENS name from the seller's newest offer that names one, if it still resolves to the
+ * seller and holds the payee lock for that offer. A failed lookup shows no name.
+ */
+async function nameFor(deps: FrontdoorDeps, offers: StoredOffer[]): Promise<string | null> {
+  const named = offers
+    .filter((stored) => stored.offer.ens !== undefined)
+    .sort((a, b) => b.offer.issuedAt - a.offer.issuedAt)[0];
+  if (!named || !deps.ens) return null;
+  const lock = await checkEnsLock(named.offer, deps.ens);
+  return lock?.ok ? named.offer.ens ?? null : null;
 }
 
 async function identityFor(
