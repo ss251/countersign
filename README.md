@@ -33,6 +33,13 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub starte
 
 A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874). It sees every order as it settles, refunds an order, and exports the ledger as CSV for the accountant. The escrow contract and the gas relayer are the mechanism underneath, not the product. Network facts, the relayer and verification are in [docs/whitechain.md](docs/whitechain.md), and feedback for the Whitechain team in [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
+**Why this needs onchain stablecoin settlement on Whitechain.** The buyer is software, so the payment has to enforce itself:
+- A USDT payment on Whitechain will not settle for a payee or an amount the buyer did not sign.
+- On the hub's `whitechain` rail, it waits in escrow until the seller's delivery passes the hub's gate, and anyone can refund it once its deadline passes.
+- Every payment and every refund leaves a public record that the customer can check without trusting us.
+
+A card network cannot bind a payment to an offer hash, or release it on a signed delivery receipt. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT.
+
 ### Operate: the checkout, the refund and the export
 
 - **The drop-in.** It is two files:
