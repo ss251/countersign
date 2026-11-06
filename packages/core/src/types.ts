@@ -219,6 +219,8 @@ export interface Envelope {
   revoked: boolean;
   /** Unix seconds after which nothing may be approved. */
   expiresAt?: number;
+  /** Atomic amount above which the agent holds the call for the human's countersignature. Absent: never holds. */
+  askAbove?: string;
 }
 
 /** What has been spent so far under an envelope. */
