@@ -61,7 +61,7 @@ const ALL_VIEWS = [
   { name: "buyer", label: "Buyer", ready: true },
   { name: "seller", label: "Seller", ready: true },
   { name: "merchant", label: "Merchant", ready: true },
-  { name: "registry", label: "Registry", ready: false },
+  { name: "registry", label: "Registry", ready: true },
   { name: "verify", label: "Verify", ready: true },
 ] as const;
 
