@@ -588,6 +588,36 @@ contract AuditFixesTest is EscrowSigning {
         vm.stopPrank();
     }
 
+    // ------------------------------------------------------------------ B (Grok's re-audit of 53eed70)
+
+    /// Grok's exact attack: the seller misses the deadline, releases a junk slip inside (deadline, settleBy],
+    /// and lets the review window lapse, so releaseAfterWindow would pay it and return the whole bond with
+    /// nothing delivered. Past the deadline only the arbiter, which settles after the hub checked the
+    /// delivery, may release: the job stays Funded and the default pays the buyer the amount plus the bond.
+    function test_B_a_late_seller_cannot_release_junk_and_keep_the_bond() public {
+        bytes32 jobId = _fundJob(7, BOND, WINDOW);
+        uint256 settleBy = _settleBy(jobId);
+        bytes32 junk = keccak256("no delivery");
+        bytes memory junkSig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, junk)));
+        bytes4 late = bytes4(keccak256("LateReleaseNeedsArbiter(bytes32)"));
+
+        vm.warp(uint256(escrow.jobOf(jobId).deadline) + 1);
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(late, jobId));
+        escrow.release(jobId, junk, junkSig);
+        vm.warp(settleBy);
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(late, jobId));
+        escrow.release(jobId, junk, junkSig);
+        assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Funded), "a late junk release opens no window");
+
+        uint256 buyerBefore = token.balanceOf(buyer);
+        vm.warp(settleBy + 1);
+        escrow.refund(jobId);
+        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND, "the default pays the amount and the bond");
+        assertEq(escrow.bondOf(seller), 0, "the late seller keeps no bond");
+    }
+
     function test_H1_refund_waits_for_settleBy() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
