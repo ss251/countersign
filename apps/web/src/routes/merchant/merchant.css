@@ -233,8 +233,9 @@
   text-align: end;
 }
 
+/* The facts stay on one line where they fit, and wrap where they do not: never wider than the page. */
 .mx-gas__facts {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* --------------------------------------------------- the balance equation */
@@ -1559,8 +1560,9 @@
   font-weight: 600;
 }
 
-/* "Copy" and "Copied" take the same width, so the path beside it never jumps. */
+/* "Copy" and "Copied" take the same width, so the path beside it never jumps. In the header row, never over the line count. */
 .mx-snippet__copy {
+  position: static;
   min-width: 10ch;
 }
 
@@ -1592,4 +1594,6 @@
 .mx-integrate__note {
   margin: 0;
   font-size: var(--t-13);
+  /* A sentence, not a label: it wraps (.mx-quiet would hold it on one line, wider than a phone). */
+  white-space: normal;
 }

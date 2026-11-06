@@ -22,6 +22,8 @@
 
 .shell__main {
   flex: 1;
+  /* A flex child may shrink below its content's width, so no long line can widen the page. */
+  min-width: 0;
   outline: none;
 }
 
