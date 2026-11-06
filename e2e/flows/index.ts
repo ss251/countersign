@@ -5,6 +5,7 @@ import { arcSpine } from "./arc-spine.flow.ts";
 import { arcWrongAmount } from "./arc-wrong-amount.flow.ts";
 import { discovery } from "./discovery.flow.ts";
 import { hedera } from "./hedera.flow.ts";
+import { publicSpine } from "./public-spine.flow.ts";
 import { refusals } from "./refusals.flow.ts";
 import { runnerRestart } from "./runner-restart.flow.ts";
 import { slipOnchainArc, slipOnchainWhitechain } from "./slip-onchain.flow.ts";
@@ -25,6 +26,7 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "6", flow: hedera },
   { n: "7", flow: merchant },
   { n: "8", flow: discovery },
+  { n: "12", flow: publicSpine },
   { n: "9", flow: web },
 ];
 

@@ -27,6 +27,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 8 | `discovery` | the A2A card, skills index, OpenAPI document and offer list resolve from a clean client, locally and on the public hub | none | orch-cs |
 | 10 | `arc-gateway` | the buyer pays from its Circle Gateway balance: debited at once, slip names the gateway rail | Arc testnet | orch-cs |
 | 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
+| 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
@@ -133,6 +134,13 @@ Each case uses a fresh buyer state and must end with a refusal in the journal an
 1. The hub's input gate answers 422 `Refused. The input does not match the offer's schema.`, and the buyer CLI refuses the same input before signing.
 2. Over the budget, over the per-seller limit, a seller not on the allowlist, a revoked envelope, and a call above `ask-above` held for the human, each with its own message and reason.
 3. With the runner stopped, the hub answers 503 `The seller is offline. Nothing was charged.` and the buyer refuses.
+
+### 12 · public-spine
+
+1. **a live offer**: the public hub lists an online Arc offer at or under 0.05 USDC; the suite recomputes its hash.
+2. **envelope approves** and the buyer CLI buys it through the public hub; the hosted relayer pays the gas and the hosted seller's runner delivers.
+3. **chain agrees**: `Funded` names this buyer and that seller at the listed price; `Released` carries the slip's hash.
+4. **slip verifies with no hub**, and its explorer link opens.
 
 ## Results
 
