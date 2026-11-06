@@ -48,6 +48,8 @@ The release path never sends `bytes32(0)`. The hash released is exactly `slip.ha
 
 ## D10 — a held call clears only with the approver's signature, never the hub's word (06 Nov; refs #21)
 
+Status: built (#21). Whether it has reached `main` and production: [status.md](status.md).
+
 The envelope's `askAbove` is the one control that stops an agent spending without a person. cs-w1 found (B12) that the first version of remote approvals let the hub's answer clear it: `GET /approvals/:id` said `countersign`, and the agent signed. The hub is the party every earlier fix treats as hostile, so its word cannot stand in for the human.
 
 Rule:
@@ -59,7 +61,9 @@ Rule:
 - The bearer token stays as the hub's way to accept a decision from the phone and to guard the envelope and approval reads, but it proves nothing to the agent.
 - Cap, per-merchant limits and the allowlist are still checked locally before any request is made, so an approval can only lift the ask-above hold.
 
-## D11 — the declared bond is collected, and only the hub's gate can take it (06 Nov; refs #93)
+## D11 — collect the declared bond, and let only the hub's gate take it (06 Nov; refs #93)
+
+Status: built (#93) and on `main`, not deployed. No deployed contract collects the bond yet. The silence rule below is withdrawn by D15 (audit C2).
 
 The offer always declared a bond, and nothing collected it.
 
@@ -71,9 +75,11 @@ The offer always declared a bond, and nothing collected it.
 - **Why disputes do not slash.** A dispute is the buyer's own judgement, and there is no arbitration. If disputes slashed, any buyer could take bonds. The gate's checks (output schema, slip signature, committed hash) are mechanical, so only they slash.
 - **The trust this leaves.** The arbiter decides gate failure, so a dishonest hub could slash. The bond is exactly as strong as the hub's gate, and `docs/spec/escrow.md` says so.
 
-## D12 — delivery opens an optimistic review window; the buyer accepts, or disputes for a refund (06 Nov; refs #93)
+## D12 — open an optimistic review window at delivery; the buyer accepts, or disputes for a refund (06 Nov; refs #93)
 
-**The gap.** Until v1, `release` needed only the seller's signature over `jobId` and `slipHash`. The gate checked shape, integrity, seller identity and price, but a seller who delivered junk that passed the schema, signed and took the money was not stopped.
+Status: design only. Review and dispute have no code yet (#98).
+
+**The gap.** In v1, the escrow that is deployed, `release` needs only the seller's signature over `jobId` and `slipHash`. The gate checks shape, integrity, seller identity and price, but a seller who delivers junk that passes the schema, signs and takes the money is not stopped.
 
 **The fix.** Each offer may set `reviewWindow` (seconds; 0 keeps v1's behaviour).
 
@@ -99,9 +105,95 @@ The state machine, with who calls what and when, is in `docs/spec/escrow.md`, un
 
 ## D13 — the router's trace is the hub's record, outside the committed slip hash (06 Nov; refs #94)
 
+Status: built (#94), on `main`.
+
 The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, and falls back when a challenge or a settle fails.
 
 - **Where the trace goes.** Its record of the chosen rail, the reason and each attempt sits in `slip.settlement.route`, outside the committed body, like `settlement.receipt`.
 - **Why.** The seller does not attest the route: the hub chooses it and records it. Putting it inside the body would have the seller sign a claim about the hub's choice.
 - **What it does not change.** `slipCommitHash` is the same, and so is the slip hash on chain.
 - **Where to read it.** `/healthz` shows the policy and the recent decisions.
+
+## D10, amended — one human decision clears exactly one held call (06 Nov; refs #21)
+
+Status: built with D10 (#21).
+
+cs-w1 found that D10's signed decision bound only values a second call to the same offer repeats (B14). The decision covered agent, offer, amount, rail and terms hash, plus an approval id. The hub chooses that id, so it could answer a new request with an old id and serve the stored decision again: one human yes, two payments above ask-above.
+
+Rule:
+
+- **The request.** The agent's signed approval request carries a fresh random `nonce` (32 bytes, hex). It also carries `title`, `amount`, `terms` and `requestedAt`.
+- **The decision.** The decision body is version 2: `{kind, v: 2, approvalId, agent, offerHash, amount, rail, termsHash, requestHash, decision, decidedAt}`.
+  - `requestHash` is `keccak256(canonicalJson(request))`, where the request is the agent's signed request without `sig`.
+  - The agent rebuilds `requestHash` from its own request, never from the hub's copy. A decision made for any other request, even for the same offer and amount, fails.
+- **Consumed ids.** The agent records every approval id it consumes and refuses an id it has seen before.
+- **What the phone checks.** The hub stores the whole signed request. The approval view returns it with `requestSig`, so the phone checks that the agent signed exactly what it displays, title included, before it signs. A hub can no longer show the human a different title for the same offer and amount.
+- **Body caps.** Every write route caps its body at 16 KiB, including the decision route.
+
+## D14 — five items cut to buy time (06 Nov, 18:12 IST)
+
+With sixteen hours to the deadline, the team dropped these so the build finishes what the demo and the prize rules need. `docs/status.md` lists them as `CUT`.
+
+- Paid sessions.
+- Unified balance.
+- The subgraph and `/graph/stats` (#4). There is no Goldsky account to deploy it with.
+- Railway preview environments for pull requests. If they come back, the preview secrets rule in `docs/deploy.md` still applies.
+- A headless browser for the e2e `web` flow. No browser runs on the build machine, so the screens are checked by hand in a real browser at 390 and 1440 px, light and dark.
+
+## D11, amended — a countersignature can never become a bond deposit; only the arbiter funds a bonded job (06 Nov; refs #93)
+
+cs-w1 found two problems in the first bond build.
+
+- **B16: two functions accepted one signature.** `depositBond` took any `ReceiveWithAuthorization` to the escrow, and a buyer's countersignature is exactly that, with nonce = jobId. Anyone who saw one could spend it as a deposit: the buyer's money became a bond and the job could never be funded.
+- **The deploy gate: anyone could lock a seller's bond.** A stranger could fund a job of their own on any seller, with any bond, and lock that seller's whole free bond.
+
+Rule:
+
+- **Domain separation.** The escrow computes the deposit nonce itself: `keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH, payee, amount, salt))`, with `BondDeposit(address payee,uint256 amount,bytes32 salt)`.
+  - A jobId is an EIP-712 digest, so it never equals a deposit nonce, and a deposit authorization can never fund a job.
+  - Deposits stay relayable, so a seller without gas can deposit.
+- **Who funds a bonded job.** `fundBonded` is arbiter-only. `fund` (bond 0) stays open to anyone.
+- **The buyer's budget.** An on-chain Failed job counts like a refund: the money is back with the buyer.
+- **Accepted for this deployment.** The arbiter key can lock and slash any seller's free bond, so a leaked hub key puts every free bond at risk. The bond is exactly as safe as the hub's key, so bonds stay small. Seller-signed locks (`LockBond(jobId, bond)`) are a later revision; the contract is immutable once deployed, so they would need a new deployment.
+
+## D13, amended — the router ranks rails that protect the buyer first, unless the buyer opts in (06 Nov; refs #94)
+
+cs-w1 reviewed the router (bb5f265) and found a policy problem. Ranking by cost alone put the rails that cannot refund the buyer (gateway, hedera, eip3009 and mpp, all of kind `direct` or `batched`) ahead of escrow, because they carry no toll. The buyer takes the first entry it can pay, so it would pay unprotected by default, against the product's promise that payments move only when the work lands.
+
+Rule:
+
+- **Protected first.** A rail is protected when its kind is `escrow`. Without an opt-in, the order is healthy first, then protected before unprotected, then cost, finality and rail id.
+- **Opting in.** A buyer opts in with `X-Countersign-Allow-Unprotected: 1`, or by naming an unprotected rail in `X-Countersign-Rails`. Price then competes across both kinds.
+- **Nothing is dropped.** Unprotected rails stay listed, so a buyer that can only pay them (a Gateway-only client, the Hedera agent) pays as before.
+- **Health is per rail and offer.** One seller's broken offer or one buyer's late signature cannot degrade a rail for everyone else.
+- **Bounded attempt logs.** At most 20 attempts are kept per key, and at most 5 are copied into a slip.
+
+## D15 — the escrow audit's fixes: the payee signs its bond, silence forfeits it, the arbiter alone funds (06 Nov, 19:45 IST; refs #98, #93)
+
+Status: design only, in [spec/escrow.md](spec/escrow.md) under "Escrow v2". It is in Rajdeep's contract half of #98, and no escrow is redeployed until its regression tests pass and the captain re-runs the audit.
+
+The captain's audit of the escrow on `main` found four deploy blockers and three lows:
+
+- **C1:** the arbiter and a buyer it controls can take any bonded payee's bond;
+- **C2:** a silent seller keeps its bond, so silence is the cheapest strategy;
+- **H1:** the arbiter loses jurisdiction at the deadline;
+- **M1:** anyone can front-run a bonded funding with an unbonded `fund`.
+
+What is decided:
+
+- **The payee signs each lock.** The payee signs `LockBond(jobId, bond, reviewWindow)`, and the bond is capped at the job's amount. A bond moves only on a job the payee chose to serve, and the arbiter's worst case is that job's bond.
+- **Silence forfeits the bond.** A refund after the settle window pays the bond to the buyer. The payee keeps it only by cancelling by the deadline, by a buyer's dispute, or by a release. D11's rule that silence is cheaper than failing is withdrawn: a seller who cannot deliver now says so by cancelling.
+- **One settle window after the deadline.** `release` and `failDelivery` may land until `deadline + DISPUTE_WINDOW` (600 s), and `refund` opens after it. The release shares the window so that an honest release mined late does not forfeit its bond.
+- **Only the arbiter funds.** It keeps `jobId` and every client's derivation unchanged. Today three kinds of hub submit `fund`: production, the e2e suite's and local ones, on both chains. With one arbiter, the production key, the other hubs stay on the v1 escrows (option (a), the captain's call before the redeploy). Binding bond and window into `Countersign` is the stronger fix, but it changes `jobId`, so it waits for a later revision. Meanwhile the buyer checks `bondOfJob` and `reviewOf` after funding, and disputes at once on a mismatch.
+- **The lows.** The toll accrues and anyone can sweep it to the treasury, a payee can never be the escrow, and every time boundary follows one rule: until T means `now <= T`, after T means `now > T`.
+
+## D16 — the captain's 19:40 decisions for escrow v2: terms from signatures, the arbiter fails deliveries only (06 Nov, 19:40 IST; refs #98)
+
+Status: design only, in [spec/escrow.md](spec/escrow.md) under "Escrow v2". Rajdeep writes the contract, and the captain re-runs the audit before any deployment. This supersedes D15 wherever the two differ.
+
+- **Terms.** `bond` and `reviewWindow` come from the published offer into the countersigned `jobId`, and `fund` stays open to anyone with the countersignature. Any other bond or window is another `jobId`, so no front-run can strip them, and M1 is gone. D15's arbiter-only funding, the arbiter-set terms and the payee's per-job lock signature are all withdrawn.
+- **The arbiter does `failDelivery` only.** On Arc that is the production hub's relayer, the signer that runs the gate (`0xE37F64A73225f5eA06BABcb1cc5440F01446C267`). On 1874 it is the relay's signer (`0xa2EEfc657138eE5367291F8e2Ac45BAC28486006`).
+- **The binding (C1).** The buyer chooses every value in `Countersign`, so a locked bond must match terms the payee itself registered on chain: `setTerms(offerHash, price, bond, reviewWindow, minDuration)`, written by the payee only, with the bond capped at the price. Funding with a non-zero bond or window requires an exact match, and a deadline at least `minDuration` away. Otherwise any buyer could lock any payee's bond and collect it through a default or a dispute.
+- **The economics.** A default after `settleBy`, a dispute inside the review window, and a gate failure all pay the buyer `amount + bond`. A dispute before delivery and a cancel by the payee by the deadline return the bond. Disputing before delivery returns the bond so that no buyer can take it before the seller has had a chance to deliver. Aggressive disputes inside the window are the accepted trade.
+- **H1 and the lows are unchanged from D15.** There is one settle window of 600 s after the deadline for `release` and `failDelivery`, the toll accrues, a payee can never be the escrow, and every time boundary follows one rule.
+

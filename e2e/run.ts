@@ -104,7 +104,7 @@ async function main(): Promise<void> {
 
   if (args.list) {
     for (const f of FLOWS) {
-      const blocked = f.notRun?.(env);
+      const blocked = f.notRun?.(env) ?? (f.onDemand ? `on demand: ${f.onDemand}` : null);
       let spends = "";
       try {
         spends = (f.spends?.(env) ?? []).map((s) => `${s.wallet.label} ${formatAmount(s.amount, s.wallet.decimals)} ${s.wallet.asset}`).join(", ");
@@ -126,7 +126,8 @@ async function main(): Promise<void> {
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
 
-  const plan = await planBudget(selected, env);
+  // A full run skips on-demand flows, so their spends do not count against it.
+  const plan = await planBudget(selected.filter((f) => !(f.onDemand && args.flows.length === 0)), env);
   for (const [id, b] of plan.balances) {
     const w = selected.flatMap((f) => {
       try {
@@ -149,7 +150,7 @@ async function main(): Promise<void> {
   for (const flow of selected) {
     log(`[${NUMBERS.get(flow.name) ?? "?"}] ${flow.name} · ${flow.title}`);
     let result: FlowResult;
-    const blocked = flow.notRun?.(env);
+    const blocked = flow.notRun?.(env) ?? (flow.onDemand && args.flows.length === 0 ? `on demand: ${flow.onDemand}` : null);
     const unmet = (flow.needs ?? []).find((n) => byName.get(n)?.status !== "PASS");
     const short = plan.short.get(flow.name);
     if (blocked) result = stub(flow, `NOT RUN (${blocked})`);

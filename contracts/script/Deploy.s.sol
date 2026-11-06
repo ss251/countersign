@@ -7,12 +7,13 @@ import {FeeSplit} from "../src/FeeSplit.sol";
 
 /// @notice Deploys FeeSplit (the treasury) and CountersignedEscrow, then records both in
 ///         contracts/deployments/<DEPLOYMENT_NAME>.json.
-/// Env: CS_DEPLOYER_KEY (never on the command line), ESCROW_TOKEN, FEE_PROTOCOL, FEE_OPERATOR,
-///      ESCROW_TOLL_BPS (default 100), DEPLOYMENT_NAME (e.g. arc-testnet).
+/// Env: CS_DEPLOYER_KEY (never on the command line), ESCROW_TOKEN, ARBITER, FEE_PROTOCOL,
+///      FEE_OPERATOR, ESCROW_TOLL_BPS (default 100), DEPLOYMENT_NAME (e.g. arc-testnet).
 contract Deploy is Script {
     function run() external returns (CountersignedEscrow escrow, FeeSplit split) {
         uint256 key = vm.envUint("CS_DEPLOYER_KEY");
         address token = vm.envAddress("ESCROW_TOKEN");
+        address arbiter = vm.envAddress("ARBITER");
         uint16 tollBps = uint16(vm.envOr("ESCROW_TOLL_BPS", uint256(100)));
         address[] memory payees = new address[](2);
         payees[0] = vm.envAddress("FEE_PROTOCOL");
@@ -23,7 +24,7 @@ contract Deploy is Script {
 
         vm.startBroadcast(key);
         split = new FeeSplit(payees, shares);
-        escrow = new CountersignedEscrow(token, address(split), tollBps);
+        escrow = new CountersignedEscrow(token, address(split), tollBps, arbiter);
         vm.stopBroadcast();
 
         string memory o = "deployment";
@@ -32,6 +33,7 @@ contract Deploy is Script {
         vm.serializeAddress(o, "feeSplit", address(split));
         vm.serializeAddress(o, "feeProtocol", payees[0]);
         vm.serializeAddress(o, "feeOperator", payees[1]);
+        vm.serializeAddress(o, "arbiter", arbiter);
         vm.serializeUint(o, "tollBps", tollBps);
         vm.serializeUint(o, "block", block.number);
         string memory json = vm.serializeAddress(o, "escrow", address(escrow));

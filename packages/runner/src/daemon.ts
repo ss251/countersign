@@ -19,6 +19,10 @@ import {
 } from "@countersign/core";
 import type { RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
+import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
+import { substituteBuyer } from "./mcp.ts";
+
+export type { FundingConfig, JobReader, PinnedEscrow } from "./funding.ts";
 
 export interface ServedOffer {
   offer: Offer;
@@ -43,6 +47,8 @@ export interface RunnerConfig {
   served: ServedOffer[];
   limits?: RunnerLimits;
   now?: () => number;
+  /** When present, an escrow order must show its funded job on chain before work starts. */
+  funding?: FundingConfig;
   onJob?: (event: RunnerJobEvent) => void;
 }
 
@@ -59,6 +65,10 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const maxOutputBytes = cfg.limits?.maxOutputBytes ?? 1_000_000;
   const served = cfg.served.map((entry) => ({ ...entry, hash: offerHash(entry.offer) }));
   const url = connectUrl(cfg.hubUrl);
+  const funding =
+    cfg.funding === undefined
+      ? null
+      : { ...cfg.funding, read: fundingReader(cfg.funding) };
 
   let stopped = false;
   let socket: WebSocket | null = null;
@@ -102,9 +112,27 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       return fail(target, order, reason);
     }
 
+    if (funding !== null) {
+      const unpaid = await fundingRefusal(order, entry.offer, {
+        now: clock,
+        known: funding.known,
+        read: funding.read,
+        retries: funding.retries,
+        retryMs: funding.retryMs,
+      });
+      if (unpaid !== null) {
+        notify(order, entry.offer.title, false, unpaid);
+        return fail(target, order, unpaid);
+      }
+    }
+
     let output: unknown;
     try {
-      output = await runInChild(entry.spec, order.input, { timeMs, maxOutputBytes });
+      output = await runInChild(
+        substituteBuyer(entry.spec, order.buyer),
+        order.input,
+        { timeMs, maxOutputBytes },
+      );
     } catch (error) {
       const reason = messageOf(error);
       notify(order, entry.offer.title, false, reason);

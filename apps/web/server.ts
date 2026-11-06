@@ -78,17 +78,26 @@ async function serveStatic(req: Request, url: URL, head: boolean): Promise<Respo
   const full = normalize(join(root, path));
   if (full !== root && !full.startsWith(root + sep)) return sentence(404, "not-found", "Nothing at this address.");
 
+  // The phone page lives at /phone/ when the deploy carried it; without the slash its relative assets would miss.
+  if (path === "/phone" && (await Bun.file(join(root, "phone", "index.html")).exists())) {
+    return new Response(null, { status: 308, headers: { location: `/phone/${url.search}` } });
+  }
+
   let file = Bun.file(full);
   let name = path;
   if (!(await file.exists())) {
-    // Routes live after the "#", so any other miss is a missing file, except the page itself.
-    if (path.startsWith("/assets/")) return sentence(404, "not-found", "Nothing at this address.");
+    // Routes live after the "#", so any other miss is a missing file, except the page itself. Assets and media
+    // answer 404, so nothing (the landing's hero check included) mistakes the console's page for a file.
+    if (/^\/(assets|phone\/assets|media)\//.test(path)) return sentence(404, "not-found", "Nothing at this address.");
     file = Bun.file(join(root, "index.html"));
     name = "/index.html";
   }
   const headers = new Headers(SECURITY_HEADERS);
   headers.set("content-type", file.type);
-  headers.set("cache-control", name.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
+  headers.set(
+    "cache-control",
+    /^\/(assets|phone\/assets)\//.test(name) ? "public, max-age=31536000, immutable" : "no-cache",
+  );
   if (COMPRESSIBLE.test(name)) {
     headers.set("vary", "accept-encoding");
     if (/\bgzip\b/.test(req.headers.get("accept-encoding") ?? "")) {
