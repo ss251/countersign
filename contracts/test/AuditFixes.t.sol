@@ -482,8 +482,9 @@ contract AuditFixesTest is EscrowSigning {
         bytes memory late0 = _releaseSig(jobs[0]);
         bytes memory late2 = _releaseSig(jobs[2]);
 
-        // At settleBy, after the deadline, a release and a gate failure still land.
+        // At settleBy, after the deadline, the arbiter's release and a gate failure still land.
         vm.warp(settleBy);
+        vm.prank(arbiter);
         escrow.release(jobs[0], SLIP, late0);
         assertEq(_status(jobs[0]), uint8(ICountersignedEscrow.Status.Released));
         vm.prank(arbiter);
@@ -499,15 +500,17 @@ contract AuditFixesTest is EscrowSigning {
         escrow.failDelivery(jobs[3]);
     }
 
-    /// H1's bond property under "bond implies window" (cs-w1, review of bb29f4f): a bonded release that
-    /// lands after the deadline but by settleBy is Delivered, and once the window passes with no dispute
-    /// the seller is paid and gets its whole bond back.
+    /// H1's bond property, corrected under the captain's ruling on Grok's re-audit B: an honest late
+    /// settlement is the hub's. The arbiter submits the seller's release after the deadline but by settleBy,
+    /// the job is Delivered, and once the window passes with no dispute the seller is paid and gets its
+    /// whole bond back. A seller's own late release is refused (test_B_a_late_seller_cannot_release_junk_...).
     function test_H1_an_honest_late_release_keeps_the_bond_once_the_window_passes() public {
         bytes32 jobId = _fundJob(5, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
         bytes memory late = _releaseSig(jobId);
 
         vm.warp(settleBy);
+        vm.prank(arbiter);
         escrow.release(jobId, SLIP, late);
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
         assertEq(escrow.bondOf(seller), 0, "the bond stays locked through the window");
@@ -686,7 +689,8 @@ contract AuditFixesTest is EscrowSigning {
 
         uint256 at = uint256(int256(boundary) + delta);
         vm.warp(at);
-        vm.prank(which == 3 ? arbiter : stranger);
+        // Past the deadline only the arbiter releases (B), so the release boundary is the arbiter's settleBy.
+        vm.prank(which == 2 || which == 3 ? arbiter : stranger);
         (bool ok,) = address(escrow).call(call);
         assertEq(ok, until ? at <= boundary : at > boundary, "the boundary rule");
     }

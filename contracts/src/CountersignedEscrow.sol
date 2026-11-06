@@ -195,6 +195,10 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (job.status != Status.Funded) revert NotFunded(jobId);
         uint256 settleBy = _settleBy(job);
         if (block.timestamp > settleBy) revert SettleWindowClosed(jobId, settleBy);
+        // B (Grok's re-audit of 53eed70): past the deadline only the arbiter settles, as the hub does once it
+        // has checked the delivery. A seller who missed its deadline cannot release a junk slip into a
+        // review window and take the payment plus its bond back when the window lapses.
+        if (block.timestamp > job.deadline && msg.sender != arbiter) revert LateReleaseNeedsArbiter(jobId);
         bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(RELEASE_TYPEHASH, jobId, slipHash)));
         if (!SignatureChecker.isValidSignatureNow(job.payee, digest, sellerSig)) revert NotPayee(jobId);
 
