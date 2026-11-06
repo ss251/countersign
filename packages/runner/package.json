@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@countersign/buyer": "workspace:*",
     "@countersign/core": "workspace:*",
     "viem": "^2.57.16"
   }
