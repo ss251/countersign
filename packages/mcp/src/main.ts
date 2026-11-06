@@ -21,8 +21,8 @@ Environment:
   CS_BUYER_KEY   The agent's private key; without it, buy refuses.
   CS_NETWORK     Must be unset or testnet.
 
-Install it from the countersign release tarball only. The npm packages named @countersign/*,
-countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
+Install: npm i -g @countersign-hub/cli, then countersign mcp (or npx -y @countersign-hub/cli mcp).
+The npm packages named @countersign/*, countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
 
 interface Config {
   hub: string;
