@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as fx from "../src/fixtures/index.ts";
 import type { Listing } from "../src/lib/types.ts";
-import { deliveryRate, groupBySeller, matches, withRecords } from "../src/routes/registry/index.tsx";
+import { deliveryRate, groupBySeller, matches, settlementIndex, withRecords } from "../src/routes/registry/index.tsx";
 
 const listings = fx.listings;
 
@@ -64,5 +64,34 @@ describe("registry with the hub's /sellers", () => {
   test("leaves groups alone when the hub does not serve /sellers", () => {
     const groups = groupBySeller(listings);
     expect(withRecords(groups, null)).toBe(groups);
+  });
+});
+
+describe("registry: what a seller card reads from the settlements", () => {
+  const row = (seller: string, offerHash: string, kind: "released" | "settled" | "refunded", at: number) => ({
+    jobId: `0x${at.toString(16)}`,
+    offerHash,
+    title: "t",
+    seller,
+    amount: "10000",
+    rail: "escrow" as const,
+    network: "eip155:5042002",
+    kind,
+    tx: "0x1",
+    at,
+  });
+
+  test("the newest settlement per seller and paid or refunded per offer, case-blind", () => {
+    const idx = settlementIndex([row("0xAB", "0xO1", "released", 30), row("0xab", "0xo1", "refunded", 20), row("0xab", "0xO2", "settled", 10)]);
+    expect(idx.known).toBe(true);
+    expect(idx.lastBySeller.get("0xab")?.at).toBe(30);
+    expect(idx.byOffer.get("0xo1")).toEqual({ paid: 1, refunded: 1 });
+    expect(idx.byOffer.get("0xo2")).toEqual({ paid: 1, refunded: 0 });
+  });
+
+  test("a hub that does not list settlements is unknown, not empty", () => {
+    expect(settlementIndex(null).known).toBe(false);
+    expect(settlementIndex(undefined).known).toBe(false);
+    expect(settlementIndex([]).known).toBe(true);
   });
 });

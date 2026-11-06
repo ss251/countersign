@@ -59,6 +59,7 @@ Do not edit any `package.json`, `bun.lock`, `contracts/src/**`, `apps/**`, or an
    - `scripts/erc8004/feedback.ts <slip.json> --agent <agentId> --hub <url>` takes the buyer key from `CS_BUYER_KEY`. It gives feedback for that slip and prints the tx hash.
    - `scripts/erc8004/read.ts --agent <agentId> [--from <block>]` prints the feedback list, one line each.
    - All three run against `https://rpc.testnet.arc.network` and `ARC_TESTNET_REGISTRIES`.
+   - **Chain-parametric.** All three also take `--rpc <url>` and `--chain-id <id>`, defaulting to Arc testnet. The same registries are deployed at the same addresses on Hedera testnet (chain 296, RPC `https://testnet.hashio.io/api`), so export `HEDERA_TESTNET_REGISTRIES` beside `ARC_TESTNET_REGISTRIES`. Nothing in `packages/identity` may hard-code Arc beyond those exported constants: every function gets its chain through its clients and an explicit `chainId`.
 
 ## Tests (anvil only, never a public RPC)
 

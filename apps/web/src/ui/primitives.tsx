@@ -3,13 +3,24 @@ import { formatAmount, RAIL_LABEL, shortHex } from "../lib/format.ts";
 import type { JobStatus, Money, RailId } from "../lib/types.ts";
 import "./ui.css";
 
-/* Money. Blue, sans, tabular. */
+/* Money: mono, tabular, the unit in small caps. Ink at rest; blue only while it moves. */
 
 type AmountSize = "sm" | "md" | "lg" | "xl";
 
-export function Amount({ money, size = "md", className }: { money: Money; size?: AmountSize; className?: string }) {
+export function Amount({
+  money,
+  size = "md",
+  flight = false,
+  className,
+}: {
+  money: Money;
+  size?: AmountSize;
+  /** Money in flight: the amount being countersigned, or held until delivery. */
+  flight?: boolean;
+  className?: string;
+}) {
   return (
-    <span className={cx("amount num", `amount--${size}`, className)}>
+    <span className={cx("amount num", `amount--${size}`, flight && "amount--flight", className)}>
       {formatAmount(money)}
       <span className="amount__asset">{money.asset.symbol}</span>
     </span>
@@ -25,6 +36,7 @@ export function Hash({
   href,
   full = false,
   copy = true,
+  tx = false,
   label,
 }: {
   value: string;
@@ -34,6 +46,8 @@ export function Hash({
   /** Show every character, wrapping, instead of the short form. */
   full?: boolean;
   copy?: boolean;
+  /** A transaction: money that moved, so its link is the one blue hash. */
+  tx?: boolean;
   /** Accessible name for the copy button, e.g. "offer hash". */
   label?: string;
 }) {
@@ -41,7 +55,7 @@ export function Hash({
   return (
     <span className={cx("hash", full && "hash--full")}>
       {href ? (
-        <a className="hash__value mono" href={href} target="_blank" rel="noreferrer" title={value}>
+        <a className={cx("hash__value mono", tx && "is-tx")} href={href} target="_blank" rel="noreferrer" title={value}>
           {text}
         </a>
       ) : (
@@ -98,6 +112,11 @@ const STATUS_LABEL: Record<JobStatus, string> = {
 
 export function Status({ status, className }: { status: JobStatus; className?: string }) {
   return <span className={cx("status", `status--${status}`, className)}>{STATUS_LABEL[status]}</span>;
+}
+
+/** A rail's state by shape: filled is live, half is degraded, a ring is off. */
+export function RailState({ state, children }: { state: "live" | "degraded" | "off"; children: ReactNode }) {
+  return <span className={cx("state", `state--${state}`)}>{children}</span>;
 }
 
 export function RailTag({ rail }: { rail: RailId }) {
