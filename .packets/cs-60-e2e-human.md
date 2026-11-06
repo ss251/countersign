@@ -44,7 +44,7 @@ You write code and offline tests only. The browser runs are done later by the la
   - `e2e/human/test/*.test.ts`: offline unit tests run with `bun test e2e/human/test`
   - `e2e/human/README.md`: how to run, env vars, what each project does (short)
   - `.gitignore` additions: `e2e/human/artifacts/`, `e2e/human/test-results/`, `e2e/human/playwright-report/`
-  - Separate final commit: `.github/workflows/human-e2e.yml` (see below)
+  - Separate **first** commit: `.github/workflows/human-e2e.yml` (see below); the lane lands it alone at once
 
 ### Configuration (env, all optional with these defaults)
 
@@ -192,7 +192,7 @@ failing. Any other sign-in failure fails.
   file under `artifacts/<run-id>/`; a hit deletes the offending file, writes the report without it, and
   makes the process exit 1 with "leak: <file>" (never the value).
 
-### CI workflow (its own final commit; it lands in its own PR)
+### CI workflow (your FIRST commit, on its own; the lane lands it in its own PR while you build the rest)
 
 `.github/workflows/human-e2e.yml`:
 
@@ -250,7 +250,8 @@ The full list with states is in the lane's `HUMAN-TESTIDS.md`; the ones this flo
 - Touch only `e2e/human/**`, `e2e/package.json`, `.gitignore`, and the workflow file. Do not edit
   `e2e/lib/**`, `e2e/flows/**`, `apps/**` or `packages/**`. Never commit `bun.lock`.
 - Never push, merge or deploy. Commit on `cs/cs-60` in small present-tense commits, no emoji, no
-  Co-authored-by and no other trailers. The workflow file is the last commit, on its own.
+  Co-authored-by and no other trailers. The workflow file is the first commit, on its own, and no
+  later commit touches it.
 - If a mechanism above cannot work as written (an API that does not exist, a type that cannot be met),
   stop and write in your report exactly what and why; do not substitute another mechanism.
 
