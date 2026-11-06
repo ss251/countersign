@@ -76,6 +76,20 @@ export interface JobOrder {
   lineage: Hex[];
 }
 
+/**
+ * The buyer's countersigned terms on a lock frame.
+ * With the frame's offerHash, these are exactly the fields jobIdOf hashes.
+ */
+export interface LockTerms {
+  buyer: Address;
+  payee: Address;
+  amount: string;
+  deadline: number;
+  salt: string;
+  bond: string;
+  reviewWindow: number;
+}
+
 export type HubToRunner =
   | { t: "challenge"; nonce: string }
   | { t: "ready"; seller: Address; offers: Hex[] }
@@ -89,6 +103,7 @@ export type HubToRunner =
       chainId: number;
       bond: string;
       funder: Address;
+      terms: LockTerms;
     }
   | { t: "ping"; ts: number }
   | { t: "canary"; offerHash: Hex; nonce: string }

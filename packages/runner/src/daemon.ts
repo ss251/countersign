@@ -7,6 +7,7 @@ import {
   canonicalHash,
   canaryMessage,
   checkSchema,
+  jobIdOf,
   lockTypedData,
   offerHash,
   RUNNER_PATH,
@@ -16,6 +17,7 @@ import {
   slipTypedData,
   type HubToRunner,
   type JobOrder,
+  type LockTerms,
   type Offer,
   type RunnerToHub,
 } from "@countersign/core";
@@ -63,6 +65,37 @@ export interface RunnerHandle {
 }
 
 const RECONNECT_DELAYS = [1, 2, 4, 8, 16, 30] as const;
+const ATOMIC = /^(0|[1-9][0-9]*)$/;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** The lock frame's terms, or null when they are missing or not the countersign shape. */
+function readLockTerms(value: unknown): LockTerms | null {
+  if (value === null || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const buyer = raw.buyer;
+  const payee = raw.payee;
+  const amount = raw.amount;
+  const deadline = raw.deadline;
+  const salt = raw.salt;
+  const bond = raw.bond;
+  const reviewWindow = raw.reviewWindow;
+  if (typeof buyer !== "string" || !ADDRESS.test(buyer)) return null;
+  if (typeof payee !== "string" || !ADDRESS.test(payee)) return null;
+  if (typeof amount !== "string" || !ATOMIC.test(amount)) return null;
+  if (typeof deadline !== "number" || !Number.isSafeInteger(deadline)) return null;
+  if (typeof salt !== "string" || !ATOMIC.test(salt)) return null;
+  if (typeof bond !== "string" || !ATOMIC.test(bond)) return null;
+  if (typeof reviewWindow !== "number" || !Number.isSafeInteger(reviewWindow)) return null;
+  return {
+    buyer: buyer as LockTerms["buyer"],
+    payee: payee as LockTerms["payee"],
+    amount,
+    deadline,
+    salt,
+    bond,
+    reviewWindow,
+  };
+}
 
 export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const clock = cfg.now ?? (() => Math.floor(Date.now() / 1000));
@@ -134,6 +167,62 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         jobId: frame.jobId,
         reason: "Refused. The bond does not match this offer.",
       });
+      return;
+    }
+
+    const refuse = (reason: string): void => {
+      send(target, { t: "lock-refused", jobId: frame.jobId, reason });
+    };
+
+    const terms = readLockTerms(frame.terms);
+    if (terms === null) {
+      refuse("bad-terms");
+      return;
+    }
+    if (terms.payee.toLowerCase() !== cfg.account.address.toLowerCase()) {
+      refuse("not-payee");
+      return;
+    }
+    let bondAbove = false;
+    try {
+      bondAbove = BigInt(terms.bond) > 0n;
+    } catch {
+      bondAbove = false;
+    }
+    if (
+      terms.amount !== entry.offer.price ||
+      terms.bond !== entry.offer.bond ||
+      !bondAbove ||
+      terms.reviewWindow !== (entry.offer.reviewWindow ?? 0)
+    ) {
+      refuse("terms-mismatch");
+      return;
+    }
+    if (terms.deadline - clock() < 60) {
+      refuse("deadline-too-near");
+      return;
+    }
+    const escrow = frame.escrow;
+    const pinned =
+      funding !== null &&
+      typeof escrow === "string" &&
+      funding.known.some(
+        (pin) => pin.chainId === frame.chainId && pin.escrow.toLowerCase() === escrow.toLowerCase(),
+      );
+    if (!pinned) {
+      refuse("unknown-escrow");
+      return;
+    }
+
+    let rebuilt: string;
+    try {
+      rebuilt = jobIdOf({ offerHash: frame.offerHash, ...terms }, frame.chainId, frame.escrow);
+    } catch {
+      refuse("job-mismatch");
+      return;
+    }
+    if (typeof frame.jobId !== "string" || rebuilt.toLowerCase() !== frame.jobId.toLowerCase()) {
+      refuse("job-mismatch");
       return;
     }
 
