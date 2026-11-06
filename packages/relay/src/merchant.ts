@@ -1,4 +1,4 @@
-import { toHex } from "viem";
+import { encodeAbiParameters, keccak256, parseAbiParameters, toHex } from "viem";
 import type { Address, Hex, LocalAccount } from "viem";
 import { cancelTypedData } from "@countersign/core";
 import { WHITECHAIN_CHAIN_ID } from "./chain.ts";
@@ -6,6 +6,7 @@ import { signAuthorization, authorizationToWire, sameAddress } from "./eip3009.t
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
 
 export type RefundPayment = {
+  id?: string;
   payer: string;
   payTo: string;
   amount: bigint;
@@ -25,6 +26,17 @@ export type SignedRefund = {
   signature: Hex;
 };
 
+/** The refund's nonce names the payment and the amount already refunded before it. */
+export function refundNonce(paymentId: string, refundedBefore: bigint): Hex {
+  return keccak256(
+    encodeAbiParameters(parseAbiParameters("string, string, uint256"), [
+      "countersign refund",
+      paymentId,
+      refundedBefore,
+    ]),
+  );
+}
+
 export async function signRefund(input: SignRefundInput): Promise<SignedRefund> {
   if (!sameAddress(input.merchant.address, input.payment.payTo)) {
     throw new Error("merchant does not own this payment");
@@ -41,7 +53,10 @@ export async function signRefund(input: SignRefundInput): Promise<SignedRefund> 
     value,
     validAfter: 0n,
     validBefore: BigInt(input.now + validForSeconds),
-    nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
+    nonce:
+      input.payment.id === undefined
+        ? toHex(crypto.getRandomValues(new Uint8Array(32)))
+        : refundNonce(input.payment.id, input.payment.refunded),
   };
   const signature = await signAuthorization(input.merchant, authorization);
   return { authorization: authorizationToWire(authorization), signature };
