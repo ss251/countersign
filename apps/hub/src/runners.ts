@@ -82,6 +82,12 @@ export class RunnerLink {
     return false;
   }
 
+  /** Milliseconds since the runner holding this offer last answered a ping or said hello, or null when no runner holds it. */
+  pongAgeMs(offerHash: string): number | null {
+    const conn = this.find(offerHash);
+    return conn === null ? null : Date.now() - conn.lastPongAt;
+  }
+
   events(): WSEvents {
     return {
       onOpen: (_event, ws) => this.open(ws),
