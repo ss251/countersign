@@ -64,7 +64,7 @@ export function App({ phone }: { phone: Phone }): ReactNode {
           <h2 id="last" className="label">
             Last job
           </h2>
-          {last ? (
+          {state.phase === "loading" ? null : last ? (
             <LastJob job={last} state={state} />
           ) : (
             <p className="quiet empty">
@@ -109,7 +109,7 @@ function StateLine({ state }: { state: PhoneState }): ReactNode {
   let tone: "live" | "work" | "idle" | "refused" = "idle";
   let words: string;
   if (state.phase === "loading") {
-    words = "Opening this phone's key";
+    words = "Opening this phone’s key";
   } else if (state.phase === "broken") {
     words = "Not serving";
   } else if (link.phase === "off") {
@@ -229,47 +229,39 @@ function LastJob({ job, state }: { job: JobRecord; state: PhoneState }): ReactNo
       ) : null}
       {job.reason && job.outcome === "refused" ? <p className="refusal">{job.reason}</p> : null}
 
-      <dl className="facts">
+      <div className="proof">
         {job.slipHash ? (
-          <div>
-            <dt>Slip</dt>
-            <dd>
-              {slipUrl ? (
-                <a className="mono" href={slipUrl}>
-                  {short(job.slipHash)}
-                </a>
-              ) : (
-                <span className="mono">{short(job.slipHash)}</span>
-              )}
-            </dd>
-          </div>
-        ) : null}
+          <ProofRow label="Slip" value={job.slipHash} href={slipUrl} />
+        ) : (
+          <ProofRow label="Job" value={job.jobId} href={null} />
+        )}
         {job.hub?.closeTx ? (
-          <div>
-            <dt>{job.hub.status === "refunded" ? "Refund" : "Release"}</dt>
-            <dd>
-              {job.hub.url ? (
-                <a className="mono money" href={job.hub.url}>
-                  {short(job.hub.closeTx)}
-                </a>
-              ) : (
-                <span className="mono">{short(job.hub.closeTx)}</span>
-              )}
-            </dd>
-          </div>
+          <ProofRow
+            label={job.hub.status === "refunded" ? "Refund" : "Release"}
+            value={job.hub.closeTx}
+            href={job.hub.url ?? null}
+            money
+          />
         ) : null}
-        {job.outputHash ? (
-          <div>
-            <dt>Output</dt>
-            <dd className="mono">{short(job.outputHash)}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Job</dt>
-          <dd className="mono">{short(job.jobId)}</dd>
-        </div>
-      </dl>
+      </div>
     </article>
+  );
+}
+
+/** One proof per ruled row, the whole row a 44 px target. Blue only for the transaction that moved money. */
+function ProofRow({ label, value, href, money = false }: { label: string; value: string; href: string | null; money?: boolean }): ReactNode {
+  const body = (
+    <>
+      <span className="k">{label}</span>
+      <span className="mono">{short(value)}</span>
+    </>
+  );
+  return href ? (
+    <a className={money ? "proof-row money" : "proof-row"} href={href}>
+      {body}
+    </a>
+  ) : (
+    <p className="proof-row">{body}</p>
   );
 }
 
@@ -287,7 +279,7 @@ function Verdict({ job, small = false }: { job: JobRecord; small?: boolean }): R
   } else if (job.hub.status === "refunded") words = "Refunded";
   else {
     tone = "refused";
-    words = small ? "Refused" : "Refused by the hub's delivery check.";
+    words = small ? "Refused" : "Refused by the hub’s delivery check.";
   }
   return (
     <span className={small ? "verdict small" : "verdict"} data-tone={tone}>
@@ -325,10 +317,6 @@ function KeyFacts({ state }: { state: PhoneState }): ReactNode {
           </dd>
         </div>
         <div>
-          <dt>Made</dt>
-          <dd>{state.madeAt ? `On this phone, ${day(state.madeAt)}` : "On first open"}</dd>
-        </div>
-        <div>
           <dt>Hub</dt>
           <dd className="mono">{hubHost}</dd>
         </div>
@@ -344,7 +332,7 @@ function KeyFacts({ state }: { state: PhoneState }): ReactNode {
         </div>
       </dl>
       <p className="quiet">
-        The key was made in this browser and never leaves it. It signs three things: the hub's sign-in nonce, the two
+        The key was made in this browser and never leaves it. It signs three things: the hub’s sign-in nonce, the two
         offers and each slip. Testnet only: never send it real money.
       </p>
     </div>
@@ -467,10 +455,6 @@ function clock(unix: number): string {
 
 function clockShort(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function day(unix: number): string {
-  return new Date(unix * 1000).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function minutes(total: number): string {

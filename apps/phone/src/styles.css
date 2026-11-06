@@ -200,6 +200,7 @@ a {
   gap: 8px;
   margin-top: 8px;
   font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
   line-height: 1.35;
   min-height: 19px;
 }
@@ -256,10 +257,12 @@ a {
   gap: 12px;
 }
 
-.head h3 {
+.head h3,
+.sheet .head h2 {
   font-size: 1.0625rem;
   font-weight: 600;
   line-height: 1.3;
+  text-wrap: balance;
 }
 
 .money-figure {
@@ -321,8 +324,15 @@ a {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 14px;
   font-size: 0.875rem;
+}
+
+/* A 44 px target for a one-line link that sits last in its row. */
+.fact a {
+  display: inline-block;
+  padding-block: 12px;
+  margin-block: -12px;
 }
 
 .fact .k,
@@ -496,6 +506,42 @@ a {
 
 .output .hash {
   margin-top: 2px;
+}
+
+/* The proofs under a job: one ruled row each, the whole row the target. */
+.row.job:has(.proof) {
+  padding-bottom: 0;
+}
+
+.proof {
+  margin-top: 14px;
+}
+
+.proof-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.proof-row .k {
+  width: 4.5rem;
+  flex: none;
+  color: var(--slate);
+}
+
+a.proof-row .mono {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+}
+
+a.proof-row.money .mono {
+  color: var(--usdc);
 }
 
 .facts {
@@ -706,7 +752,7 @@ a.money {
 }
 
 .primary:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .primary:focus-within {
@@ -736,7 +782,7 @@ a.money {
 }
 
 .secondary:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .secondary:disabled {
