@@ -51,3 +51,10 @@ Everything else in the acceptance command passes. If the owner accepts the new l
 - The pre-existing mode change on `packages/cli/src/bin.ts` was left unstaged and uncommitted.
 - The parallel seller-label lines in `Approvals.tsx` were not touched.
 - No wallet signature method was added.
+
+## Follow-up: the paste field stays visible, Create waits for Privy
+
+- `TokenGate`: the `<details>` is gone. The paste form sits below Create in a plain `div.locked__paste` with `data-testid="buyer-own-hub"`; with sign-in on it carries the "Or paste a token" label and a secondary submit button, with sign-in off it is the primary field. `TokenForm` takes `variant?: "primary" | "secondary"` (default `"primary"`); other callers are unchanged.
+- `PrivyCreate`: the button is disabled until Privy is ready and stays labelled "Create an envelope". While a sign-in is pending the effect waits for the embedded wallet rather than failing, showing "Your wallet is still being set up. It opens here in a moment."; the wallet's arrival clears `pending` and creates once. A press while signed in without a wallet still shows the existing "Try again in a moment." message.
+- `create-envelope.test.ts`: the sign-in-off test now asserts "Email sign-in is off on this console", "Approval token", "Use this token" and the buyer-own-hub test id, and that there is no `<details` and no "Paste the token first.".
+- Acceptance: install, typecheck, the whole web suite (240 pass, 3 skip, 0 fail), the Vite build and `wallet-grep` all pass. `buyer-locked.test.ts` is unedited.
