@@ -38,6 +38,8 @@ export type PaywallOptions = {
   description?: string;
   mimeType?: string;
   maxTimeoutSeconds?: number;
+  /** Milliseconds to wait before retrying a settle whose reply was lost. Defaults to 1000. */
+  settleRetryDelayMs?: number;
   /**
    * When to settle relative to the handler. Defaults to "after".
    * "after" keeps read-only handlers cheap and gives no goods when settle fails.
@@ -94,6 +96,7 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   const facilitator = options.facilitator.replace(/\/+$/, "");
   const mimeType = options.mimeType ?? "application/json";
   const maxTimeoutSeconds = options.maxTimeoutSeconds ?? 120;
+  const settleRetryDelayMs = options.settleRetryDelayMs ?? 1000;
   const settleOrder = options.settle ?? "after";
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const claims = new Map<string, Claim>();
@@ -139,7 +142,7 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   function pendingClaim(
     key: string,
     validBefore: number,
-    txHash: string,
+    txHash: string | null,
     retryToken: string,
   ): void {
     claims.set(key, { state: "pending", validBefore, txHash, retryToken });
@@ -172,13 +175,19 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
     }
 
     const send = options.fetch ?? globalThis.fetch;
+    const request: VerifyRequest = {
+      x402Version: 2,
+      paymentPayload: payment,
+      paymentRequirements: requirements,
+    };
     const claim = claimOf(payment);
     if (claim) {
       prune(now());
       const existing = claims.get(claim.key);
       if (existing) {
         if (existing.state !== "pending") return alreadyUsed(c);
-        if (!sameToken(existing.retryToken, c.req.header(PAYMENT_RETRY_HEADER))) {
+        const retryToken = existing.retryToken;
+        if (retryToken === null || !sameToken(retryToken, c.req.header(PAYMENT_RETRY_HEADER))) {
           return stillSettling(c);
         }
         const txHash = existing.txHash;
@@ -195,6 +204,21 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
             await next();
             return withLanded(c, txHash, requirements, payment);
           }
+          return stillSettling(c);
+        }
+        // The claim went pending because the settle reply was lost. Ask the relay to
+        // settle the same authorisation once; its ledger makes that idempotent per nonce.
+        const settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
+        if (settle && settle.success === true) {
+          // The payment has settled. Re-read the claim so a concurrent retry cannot serve twice.
+          const landed = claims.get(claim.key);
+          if (!landed || landed.state !== "pending") return alreadyUsed(c);
+          settleClaim(claim.key, landed.validBefore);
+          await next();
+          return withSettle(c, settle);
+        }
+        if (settle && settle.errorReason === "settlement_pending" && settle.transaction) {
+          pendingClaim(claim.key, existing.validBefore, settle.transaction, retryToken);
         }
         return stillSettling(c);
       }
@@ -205,12 +229,6 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
         retryToken: null,
       });
     }
-
-    const request: VerifyRequest = {
-      x402Version: 2,
-      paymentPayload: payment,
-      paymentRequirements: requirements,
-    };
 
     const verify = (await post(send, `${facilitator}/verify`, request)) as VerifyResponse | null;
     if (!verify) {
@@ -231,15 +249,29 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
     const settlePayment = async (): Promise<
       { kind: "settled"; settle: SettleResponse } | { kind: "refused"; response: Response }
     > => {
-      const settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
+      let settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
+      let retried = false;
       if (!settle) {
-        if (claim) release(claim.key);
-        return { kind: "refused", response: unreachable(c) };
+        // The reply may have been lost after the relay settled. Retry the same request once;
+        // the relay's ledger answers a repeat with replayed: true.
+        retried = true;
+        await delay(settleRetryDelayMs);
+        settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
+      }
+      if (!settle) {
+        if (!claim) return { kind: "refused", response: unreachable(c) };
+        // The relay may have settled without us hearing about it. Keep the claim pending
+        // with no transaction so the requester can retry with the token.
+        const retryToken = newRetryToken();
+        pendingClaim(claim.key, claim.validBefore, null, retryToken);
+        const response = required(c, requirements, url, "Refused. settlement_pending", options);
+        response.headers.set(PAYMENT_RETRY_HEADER, retryToken);
+        return { kind: "refused", response };
       }
       if (settle.success !== true) {
         if (settle.errorReason === "settlement_pending") {
           // The transaction may still land, so keep the payment claimed until it cannot.
-          const retryToken = toHex(crypto.getRandomValues(new Uint8Array(16)));
+          const retryToken = newRetryToken();
           if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction, retryToken);
           const response = required(
             c,
@@ -266,7 +298,9 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       }
       if (settle.replayed === true) {
         if (claim) settleClaim(claim.key, claim.validBefore);
-        return { kind: "refused", response: alreadyUsed(c) };
+        // A replay of our own retry means the first settle landed but its reply was lost.
+        if (!retried) return { kind: "refused", response: alreadyUsed(c) };
+        return { kind: "settled", settle };
       }
       if (claim) settleClaim(claim.key, claim.validBefore);
       return { kind: "settled", settle };
@@ -368,6 +402,14 @@ function sameToken(expected: string | null, presented: string | undefined): bool
   const right = Buffer.from(presented, "utf8");
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+function newRetryToken(): string {
+  return toHex(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requirementsFor(
