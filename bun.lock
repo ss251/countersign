@@ -54,6 +54,14 @@
         "viem": "^2.57.16",
       },
     },
+    "packages/identity": {
+      "name": "@countersign/identity",
+      "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+        "viem": "^2.57.16",
+      },
+    },
     "packages/rail": {
       "name": "@countersign/rail",
       "version": "0.0.0",
@@ -96,6 +104,8 @@
     "@countersign/core": ["@countersign/core@workspace:packages/core"],
 
     "@countersign/hub": ["@countersign/hub@workspace:apps/hub"],
+
+    "@countersign/identity": ["@countersign/identity@workspace:packages/identity"],
 
     "@countersign/rail": ["@countersign/rail@workspace:packages/rail"],
 
