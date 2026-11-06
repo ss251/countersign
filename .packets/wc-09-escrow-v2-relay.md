@@ -129,7 +129,7 @@ The 1874 v2 escrow is deployed with the relay key `0xa2EEfc657138eE5367291F8e2Ac
       - **`dispute`** gives `disputed`. **`failDelivery`** gives `failed`. **v2 `refund`** gives `refunded`.
       - **`cancel`** gives `cancelled` from `funded` **or** `delivered`.
     - **`closeJob`** accepts `delivered` rows as well as `funded`.
-11. **Orders** (`/orders`, `/orders/:id`, `orders.csv`), per `$M/wc/orders-contract.md` ("v2"):
+11. **Orders** (`/orders`, `/orders/:id`, `orders.csv`). The table below is the complete mapping:
 
     | Job | Order |
     |---|---|
@@ -204,7 +204,7 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-09-escrow-v2-relay.md`.
+Write `.packets/reports/wc-09-escrow-v2-relay.md` in your worktree and commit it, saying what changed, what each test proves, and any deviation from this packet.
 
 ## After the worker (cs-wc, not the worker)
 
