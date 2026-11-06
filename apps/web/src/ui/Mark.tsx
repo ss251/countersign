@@ -8,7 +8,7 @@ interface MarkProps {
   className?: string;
 }
 
-/** Two strokes meeting on a vertical seam: ink on the left, seal on the right. */
+/** Two strokes meeting on a vertical seam: the offer in ink on the left, the countersignature in blue ink on the right. */
 export function Mark({ size = 24, title, className }: MarkProps) {
   return (
     <svg
