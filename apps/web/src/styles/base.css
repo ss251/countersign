@@ -1,3 +1,5 @@
+@import "./display.css";
+
 *,
 *::before,
 *::after {
@@ -16,7 +18,8 @@ html {
 body {
   margin: 0;
   min-height: 100dvh;
-  background: var(--paper);
+  /* html paints the paper; body stays clear so the dotted field below shows through. */
+  background: transparent;
   color: var(--ink);
   font: 400 var(--t-16) / 1.5 var(--sans);
   /* A missing weight must look missing, not be faked. */
@@ -24,6 +27,24 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * The dotted field behind every page: one 1.5px square per 15px cell, fading out down the viewport.
+ * The dot is ink mixed into transparency, so it follows the theme. The conic gradient paints only the
+ * cell's top-left quadrant around (1.5px, 1.5px), which is the square.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  --dot: color-mix(in oklab, var(--ink) 22%, transparent);
+  background-image: conic-gradient(at 1.5px 1.5px, transparent 75%, var(--dot) 0);
+  background-size: 15px 15px;
+  -webkit-mask-image: linear-gradient(180deg, black 0%, transparent 85%);
+  mask-image: linear-gradient(180deg, black 0%, transparent 85%);
 }
 
 h1,
@@ -50,9 +71,22 @@ ul {
 h1,
 h2,
 h3 {
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: var(--display);
+  font-weight: var(--w-display);
+  letter-spacing: -0.02em;
   text-wrap: balance;
+}
+
+/* The house face on everything you read at a glance: buttons, nav, labels and counters. */
+button,
+.btn,
+.display,
+.label,
+.status,
+.tag,
+.rail-tag,
+.amount {
+  font-family: var(--display);
 }
 
 p {
@@ -107,7 +141,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--usdc);
   outline-offset: 2px;
 }
 

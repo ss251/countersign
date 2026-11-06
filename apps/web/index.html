@@ -4,9 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f3f0e9" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#121210" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f5ff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#242124" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Checkout for software that sells itself. Every call countersigned, inside limits you sign. Every settled call leaves a slip anyone can check." />
+    <!-- The visitor's stored theme, before first paint, so a reload never flashes the other scheme (src/app/theme.ts). -->
+    <script>
+      try {
+        var q = /[?&]theme=(light|dark)/.exec(location.hash);
+        var t = q ? q[1] : localStorage.getItem("countersign:theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Link previews. Absolute, because unfurlers need it: the origin is a build value (VITE_PUBLIC_ORIGIN in .env, or the deploy's), so a custom domain is one variable. -->

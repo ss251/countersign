@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { RAIL_LABEL } from "../src/lib/format.ts";
 import type { HubStats, RailDeclaration, RailId } from "../src/lib/types.ts";
-import { Figures } from "../src/routes/home/Evidence.tsx";
+import { Figures } from "../src/routes/home/Hero.tsx";
 import { RailFilters } from "../src/routes/registry/index.tsx";
 import { railGroups } from "../src/routes/registry/rails.ts";
 
@@ -86,26 +86,32 @@ describe("the hero and the Registry count the same live rails", () => {
       const groups = railGroups(OFFER_RAILS, hubIds);
       expect(groups?.live.length).toBe(k);
       const rails = hubIds.map(declaration);
-      const html = renderToString(createElement(Figures, { stats: hubStats(7), rails, missing: undefined, down: () => {} }));
-      expect(textOf(html)).toContain(`${k} ${k === 1 ? "rail" : "rails"} live`);
+      // The landing passes railsLive={hubRails?.length}: the hub's /rails, read at runtime (see the source check below).
+      const html = renderToString(createElement(Figures, { stats: hubStats(7), missing: undefined, railsLive: rails.length }));
+      expect(textOf(html)).toMatch(new RegExp(`Rails live\\s*${k}(?!\\d)`));
     });
   }
 });
 
 describe("the landing's hero number is the hub's /rails length", () => {
   for (const k of [1, 3, 5]) {
-    test(`${k} declarations read "${k} ${k === 1 ? "rail" : "rails"} live"`, () => {
+    test(`${k} declarations read "Rails live ${k}"`, () => {
       const rails = Array.from({ length: k }, (_, i) => declaration(DECLARED[i]!));
-      const html = renderToString(createElement(Figures, { stats: hubStats(7), rails, missing: undefined, down: () => {} }));
-      const text = textOf(html);
-      expect(text).toContain(`${k} ${k === 1 ? "rail" : "rails"} live`);
+      const html = renderToString(createElement(Figures, { stats: hubStats(7), missing: undefined, railsLive: rails.length }));
+      expect(textOf(html)).toMatch(new RegExp(`Rails live\\s*${k}(?!\\d)`));
     });
   }
 
   test("no hub rails means no live text at all", () => {
-    const html = renderToString(createElement(Figures, { stats: hubStats(7), rails: undefined, missing: undefined, down: () => {} }));
-    const text = textOf(html);
-    expect(text).not.toContain("live");
+    const html = renderToString(createElement(Figures, { stats: hubStats(7), missing: undefined, railsLive: undefined }));
+    expect(textOf(html)).not.toContain("live");
+  });
+
+  test("the landing feeds the hero the hub's /rails length, never a count that includes retired rails", async () => {
+    const index = await Bun.file(new URL("../src/routes/home/index.tsx", import.meta.url).pathname).text();
+    expect(index).toContain('const hubRails = rails.source === "hub" ? rails.data : undefined;');
+    expect(index).toContain("railsLive={hubRails?.length}");
+    expect(index).not.toMatch(/railsLive=\{[^}]*railOrder/);
   });
 });
 
