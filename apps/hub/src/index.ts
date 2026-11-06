@@ -18,12 +18,16 @@ const now = (): number => Math.floor(Date.now() / 1000);
 // decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
 const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined;
 
+// The Whitechain relay's public order records, read by /orders for refunds after release.
+const relayUrl = process.env.WC_RELAY_URL?.trim() || undefined;
+
 const { app, websocket } = createHub({
   store,
   rails,
   now,
   publicUrl,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
+  ...(relayUrl !== undefined ? { relayUrl } : {}),
 });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
