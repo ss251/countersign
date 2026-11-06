@@ -14,6 +14,25 @@ Checked on 06 Nov 2026 against `cs/int` at `232ce7f`. `SHIPPED` means on `main` 
 
 A pull request that changes a row's status changes it here too.
 
+## Simulation ledger
+
+Every stand-in that is still in place, so none can hide. A claim counts only with a green end-to-end flow on the real chain, a live URL that opens logged out, or a signed transaction link. A row leaves this table when the artefact in its last column exists.
+
+| Stand-in | Why it is there | Owner | Retired by |
+|---|---|---|---|
+| On the EVM rails the buyer agent pays with its own key (`CS_BUYER_KEY`), not a person's wallet | Privy sign-in has no green production run yet | cs-ui (ui-A2), cs-truth (the hub's Privy check), cs-e2e (`e2e/human`) | The `e2e/human` run id, the fund tx on Arc and the slip, with the Playwright run linked |
+| A headless WalletConnect wallet with a local key stands in for a user's Hedera wallet | There is no HashPack account on the build machine | cs-hd; the captain pairs HashPack | The session topic, the tx id and the mirror readback; then the captain's HashPack pairing |
+| The phone runner was accepted in an emulated phone browser, with the photo from a file | No real phone has run a job yet | cs-phone, with the captain | Two Arc release txs from a real iPhone, and the recording |
+| e2e flows 1–7, 10, 11 and 13 move real money, but through a hub, runner and relay started on the build machine | The suite starts its own services | cs-e2e | Flows against production. The production path is already covered by flows 8, 12, 14a–c, 15–18 and 18b |
+| The erc8004, hedera-mcp and production-console flows report `NOT RUN` | They waited for a public hub | cs-e2e | A run id with them green against production |
+| MPP pays through its own local demo endpoint, not the production hub | The hub does not declare `mpp` yet (cs-16) | cs-hd | Production `/rails` lists `mpp`, plus a paid call through it |
+| Escrow v2 is on `main` but dormant (`ARC_ESCROW_VERSION` unset); every deployed escrow is v1 | It waits on the re-audit and the deploy | Rajdeep (contract), orch-cs (Arc), cs-wc (1874) | The deploy txs and a bonded `failDelivery` tx |
+| Sellers run on the build machine, for example the Whitechain merchant's runner, so their offers are online only while those processes run | No seller is hosted | cs-wc, orch-cs | A hosted seller, or the offer labelled as served from the seller's own machine |
+| The merchant refund through the deployed app is unproven; the hosted desk cannot refund, by design, because the merchant key never sits in a hosted app | `e2e/human`'s refund flow is next | cs-wc, cs-e2e | The `e2e/human` merchant-refund run id |
+| Sample data: the console's `?hub=off` and the merchant desk's sample ledger | Opt-in offline modes, labelled as samples | cs-ui, cs-wc | Stays only as a labelled offline mode; never shown by default |
+| The Arc Studio project link opens only when signed in | Studio has no public-project switch (D6) | the firstmate, orch-cs | A URL that opens logged out, or the Studio track dropped from the pitch |
+| "One envelope over both": the EVM buyer and the Hedera agent apply the same rules with separate budgets | No shared budget is built | not assigned | Code and a test that one budget covers both |
+
 ## Offer, countersignature and escrow
 
 | Capability | Status | Evidence | Claimed in |
