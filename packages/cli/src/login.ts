@@ -154,26 +154,34 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
 
 export async function runLogout(_args: string[], deps: LoginDeps): Promise<void> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const hub = hubOrRefuse(deps.hub);
-  if (hub === null) return;
   const session = loadSession(deps.backend);
-  if (session !== null) {
-    try {
-      await fetchImpl(`${hub}/cli/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-    } catch {}
+  if (session === null) {
+    deps.backend.clear();
+    deps.write("Not signed in.\n");
+    return;
   }
+
+  let confirmed = false;
+  try {
+    assertHubUrl(session.hub);
+    const response = await fetchImpl(`${session.hub}/cli/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    confirmed = response.ok;
+  } catch {}
   deps.backend.clear();
-  deps.write(session === null ? "Not signed in.\n" : "Signed out.\n");
+  if (confirmed) {
+    deps.write("Signed out.\n");
+  } else {
+    const expiry = new Date(session.expiresAt * 1000).toISOString();
+    deps.write(`Signed out here; the hub did not confirm, so the session stays valid until ${expiry}.\n`);
+  }
 }
 
 export async function runWhoami(_args: string[], deps: LoginDeps): Promise<void> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const readBalances = deps.balances ?? defaultBalances;
-  const hub = hubOrRefuse(deps.hub);
-  if (hub === null) return;
   const session = loadSession(deps.backend);
   if (session === null) {
     process.stderr.write(`${NOT_SIGNED_IN}\n`);
@@ -181,9 +189,18 @@ export async function runWhoami(_args: string[], deps: LoginDeps): Promise<void>
     return;
   }
 
+  try {
+    assertHubUrl(session.hub);
+  } catch {
+    deps.backend.clear();
+    process.stderr.write(`${NOT_SIGNED_IN}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   let response: Response;
   try {
-    response = await fetchImpl(`${hub}/cli/session`, {
+    response = await fetchImpl(`${session.hub}/cli/session`, {
       headers: { Authorization: `Bearer ${session.token}` },
     });
   } catch {

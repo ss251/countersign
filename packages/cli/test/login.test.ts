@@ -396,6 +396,63 @@ describe("logout", () => {
     expect(out.join("")).not.toContain(TOKEN);
     expect(stderr.join("")).not.toContain(TOKEN);
   });
+
+  test("posts the revoke only to the session's own hub, never CS_HUB", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    backend.write(SESSION);
+    const out: string[] = [];
+    const { fetchImpl, calls } = fetchRecorder(() => json({ ok: true }));
+
+    await runLogout([], { backend, hub: "https://evil.example", write: (t) => out.push(t), fetchImpl });
+
+    expect(calls.map((call) => call.url)).toEqual([`${HUB}/cli/logout`]);
+    expect(calls.some((call) => call.url.includes("evil.example"))).toBe(false);
+    expect(out.join("")).toBe("Signed out.\n");
+    expect(backend.read()).toBeNull();
+  });
+
+  test("a 500 warns that the hub did not confirm and still clears the session", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    backend.write(SESSION);
+    const out: string[] = [];
+    const { fetchImpl } = fetchRecorder(() => json({ error: "boom" }, 500));
+
+    await runLogout([], { backend, hub: "https://evil.example", write: (t) => out.push(t), fetchImpl });
+
+    const expiry = new Date(SESSION.expiresAt * 1000).toISOString();
+    expect(out.join("")).toBe(
+      `Signed out here; the hub did not confirm, so the session stays valid until ${expiry}.\n`,
+    );
+    expect(backend.read()).toBeNull();
+  });
+
+  test("a network error warns that the hub did not confirm and still clears the session", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    backend.write(SESSION);
+    const out: string[] = [];
+    const fetchImpl = (async () => {
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+
+    await runLogout([], { backend, hub: "https://evil.example", write: (t) => out.push(t), fetchImpl });
+
+    const expiry = new Date(SESSION.expiresAt * 1000).toISOString();
+    expect(out.join("")).toBe(
+      `Signed out here; the hub did not confirm, so the session stays valid until ${expiry}.\n`,
+    );
+    expect(backend.read()).toBeNull();
+  });
+
+  test("with no session it says so and never fetches", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    const out: string[] = [];
+    const { fetchImpl, calls } = fetchRecorder(() => json({ ok: true }));
+
+    await runLogout([], { backend, hub: HUB, write: (t) => out.push(t), fetchImpl });
+
+    expect(calls).toHaveLength(0);
+    expect(out.join("")).toBe("Not signed in.\n");
+  });
 });
 
 describe("whoami", () => {
@@ -463,6 +520,49 @@ describe("whoami", () => {
     expect(stderr.join("")).toContain(NOT_SIGNED_IN);
     expect(out.join("")).not.toContain(TOKEN);
     expect(stderr.join("")).not.toContain(TOKEN);
+  });
+
+  test("sends the token only to the session's own hub, never CS_HUB", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    backend.write(SESSION);
+    const out: string[] = [];
+    const { fetchImpl, calls } = fetchRecorder(() =>
+      json({ address: ADDRESS, expiresAt: SESSION.expiresAt }),
+    );
+
+    await runWhoami([], {
+      backend,
+      hub: "https://evil.example",
+      write: (t) => out.push(t),
+      fetchImpl,
+      balances: async () => "unavailable",
+    });
+
+    expect(calls.map((call) => call.url)).toEqual([`${HUB}/cli/session`]);
+    expect(calls.some((call) => call.url.includes("evil.example"))).toBe(false);
+    expect(out.join("")).toContain(`Signed in as ${ADDRESS}`);
+  });
+
+  test("a stored session with an unsafe hub clears the session and exits 1 without a fetch", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    backend.write({ ...SESSION, hub: "http://evil.example" });
+    const out: string[] = [];
+    const { fetchImpl, calls } = fetchRecorder(() =>
+      json({ address: ADDRESS, expiresAt: SESSION.expiresAt }),
+    );
+
+    await runWhoami([], {
+      backend,
+      hub: HUB,
+      write: (t) => out.push(t),
+      fetchImpl,
+      balances: async () => "unavailable",
+    });
+
+    expect(calls).toHaveLength(0);
+    expect(process.exitCode).toBe(1);
+    expect(stderr.join("")).toContain(NOT_SIGNED_IN);
+    expect(backend.read()).toBeNull();
   });
 });
 
