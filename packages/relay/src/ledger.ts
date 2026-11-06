@@ -41,6 +41,93 @@ export type NewPayment = {
   resource?: string | null;
 };
 
+export type JobStatus = "pending" | "funded" | "released" | "cancelled" | "refunded";
+
+export type JobRecord = {
+  jobId: string;
+  offerHash: string;
+  buyer: string;
+  payee: string;
+  amount: bigint;
+  deadline: number;
+  fundTx: string;
+  fundBlock: bigint;
+  status: JobStatus;
+  closeTx: string | null;
+  slipHash: string | null;
+  createdAt: number;
+  closedAt: number | null;
+  resource: string | null;
+};
+
+export type NewJob = {
+  jobId: string;
+  offerHash: string;
+  buyer: string;
+  payee: string;
+  amount: bigint;
+  deadline: number;
+  fundTx: string;
+  fundBlock: bigint;
+  status?: "pending" | "funded";
+  createdAt: number;
+  resource?: string | null;
+};
+
+export type JobFilter = {
+  payee?: string;
+  buyer?: string;
+};
+
+export type OrderKind = "exact" | "escrow";
+export type OrderStatus =
+  | "paid"
+  | "partially_refunded"
+  | "refunded"
+  | "pending"
+  | "held"
+  | "cancelled";
+
+export type Order = {
+  id: string;
+  kind: OrderKind;
+  customer: string;
+  merchant: string;
+  amount: bigint;
+  refunded: bigint;
+  refundable: bigint;
+  status: OrderStatus;
+  createdAt: number;
+  settleTx: string;
+  closeTx: string | null;
+  refundTxs: string[];
+  offerHash?: string;
+  deadline?: number;
+  resource?: string | null;
+};
+
+export type OrderFilter = {
+  merchant?: string;
+  customer?: string;
+};
+
+type JobRow = {
+  job_id: string;
+  offer_hash: string;
+  buyer: string;
+  payee: string;
+  amount: string;
+  deadline: number;
+  fund_tx: string;
+  fund_block: string;
+  status: string;
+  close_tx: string | null;
+  slip_hash: string | null;
+  created_at: number;
+  closed_at: number | null;
+  resource: string | null;
+};
+
 export type PaymentFilter = {
   payTo?: string;
   payer?: string;
@@ -93,7 +180,28 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS refunds_payment
     ON refunds (payment_id);
+  CREATE TABLE IF NOT EXISTS jobs (
+    job_id TEXT PRIMARY KEY,
+    offer_hash TEXT NOT NULL,
+    buyer TEXT NOT NULL,
+    payee TEXT NOT NULL,
+    amount TEXT NOT NULL,
+    deadline INTEGER NOT NULL,
+    fund_tx TEXT NOT NULL,
+    fund_block TEXT NOT NULL,
+    status TEXT NOT NULL,
+    close_tx TEXT,
+    slip_hash TEXT,
+    created_at INTEGER NOT NULL,
+    closed_at INTEGER,
+    resource TEXT
+  );
+  CREATE INDEX IF NOT EXISTS jobs_payee ON jobs (payee);
+  CREATE INDEX IF NOT EXISTS jobs_buyer ON jobs (buyer);
 `;
+
+const ORDERS_CSV_HEADER =
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
 
 const CSV_HEADER =
   "date_utc,payment_id,payer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,refund_tx_urls";
@@ -191,11 +299,196 @@ export class Ledger {
       );
   }
 
-  refundable(paymentId: string): bigint {
-    const payment = this.getPayment(paymentId);
-    if (!payment || payment.status !== "settled") return 0n;
-    const remaining = payment.amount - payment.refunded;
+  refundable(id: string): bigint {
+    const payment = this.getPayment(id);
+    if (payment) {
+      if (payment.status !== "settled") return 0n;
+      const remaining = payment.amount - payment.refunded;
+      return remaining > 0n ? remaining : 0n;
+    }
+    const job = this.getJob(id);
+    if (!job || job.status !== "released") return 0n;
+    const remaining = job.amount - this.refundedFor(job.jobId);
     return remaining > 0n ? remaining : 0n;
+  }
+
+  recordJob(job: NewJob): void {
+    this.db
+      .query(
+        `INSERT INTO jobs
+          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        job.jobId,
+        job.offerHash,
+        job.buyer,
+        job.payee,
+        atomicToWire(job.amount),
+        job.deadline,
+        job.fundTx,
+        job.fundBlock.toString(),
+        job.status ?? "funded",
+        job.createdAt,
+        job.resource ?? null,
+      );
+  }
+
+  getJob(jobId: string): JobRecord | null {
+    const row = this.db
+      .query<JobRow, [string]>("SELECT * FROM jobs WHERE LOWER(job_id) = LOWER(?) LIMIT 1")
+      .get(jobId);
+    return row ? toJob(row) : null;
+  }
+
+  /** pending -> funded, once the fund transaction is seen on chain. */
+  promoteJob(jobId: string, block: bigint): boolean {
+    const result = this.db
+      .query(
+        "UPDATE jobs SET status = 'funded', fund_block = ? WHERE LOWER(job_id) = LOWER(?) AND status = 'pending'",
+      )
+      .run(block.toString(), jobId);
+    return result.changes > 0;
+  }
+
+  /** funded -> released | cancelled | refunded. Any other starting state is left alone. */
+  closeJob(
+    jobId: string,
+    status: "released" | "cancelled" | "refunded",
+    closeTx: string,
+    slipHash?: string,
+    closedAt: number = Date.now(),
+  ): boolean {
+    const result = this.db
+      .query(
+        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?
+         WHERE LOWER(job_id) = LOWER(?) AND status = 'funded'`,
+      )
+      .run(status, closeTx, slipHash ?? null, closedAt, jobId);
+    return result.changes > 0;
+  }
+
+  listJobs(filter: JobFilter = {}): JobRecord[] {
+    const conditions: string[] = [];
+    const params: SQLQueryBindings[] = [];
+    if (filter.payee) {
+      conditions.push("LOWER(payee) = LOWER(?)");
+      params.push(filter.payee);
+    }
+    if (filter.buyer) {
+      conditions.push("LOWER(buyer) = LOWER(?)");
+      params.push(filter.buyer);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const rows = this.db
+      .query<JobRow, SQLQueryBindings[]>(
+        `SELECT * FROM jobs ${where} ORDER BY created_at DESC, rowid DESC`,
+      )
+      .all(...params);
+    return rows.map(toJob);
+  }
+
+  /** Direct payments and escrow jobs as one list, newest first. */
+  listOrders(filter: OrderFilter = {}): Order[] {
+    const orders: Order[] = [];
+    for (const payment of this.listPayments({ payTo: filter.merchant, payer: filter.customer })) {
+      orders.push(this.paymentOrder(payment));
+    }
+    for (const job of this.listJobs({ payee: filter.merchant, buyer: filter.customer })) {
+      orders.push(this.jobOrder(job));
+    }
+    return orders.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getOrder(id: string): Order | null {
+    const payment = this.getPayment(id);
+    if (payment) return this.paymentOrder(payment);
+    const job = this.getJob(id);
+    return job ? this.jobOrder(job) : null;
+  }
+
+  ordersCsv(merchant: string): string {
+    const rows: string[] = [ORDERS_CSV_HEADER];
+    for (const order of this.listOrders({ merchant })) {
+      rows.push(
+        [
+          new Date(order.createdAt).toISOString(),
+          order.id,
+          order.kind,
+          order.customer,
+          order.merchant,
+          formatUnits(order.amount, USDT.decimals),
+          formatUnits(order.refunded, USDT.decimals),
+          formatUnits(order.amount - order.refunded, USDT.decimals),
+          order.status,
+          txUrl(order.settleTx),
+          order.closeTx ? txUrl(order.closeTx) : "",
+          order.refundTxs.map((tx) => txUrl(tx)).join(" "),
+        ]
+          .map(csvField)
+          .join(","),
+      );
+    }
+    return `${rows.join("\n")}\n`;
+  }
+
+  private paymentOrder(payment: PaymentRecord): Order {
+    const refunds = this.listRefunds(payment.id);
+    return {
+      id: payment.id,
+      kind: "exact",
+      customer: payment.payer,
+      merchant: payment.payTo,
+      amount: payment.amount,
+      refunded: payment.refunded,
+      refundable: this.refundable(payment.id),
+      status: payment.status === "pending" ? "pending" : transferStatus(payment.amount, payment.refunded),
+      createdAt: payment.settledAt,
+      settleTx: payment.txHash,
+      closeTx: null,
+      refundTxs: refunds.map((refund) => refund.txHash),
+      resource: payment.resource,
+    };
+  }
+
+  private jobOrder(job: JobRecord): Order {
+    const refunds = this.listRefunds(job.jobId);
+    const refunded = refunds.reduce((total, refund) => total + refund.amount, 0n);
+    let status: OrderStatus;
+    switch (job.status) {
+      case "pending":
+        status = "pending";
+        break;
+      case "funded":
+        status = "held";
+        break;
+      case "released":
+        status = transferStatus(job.amount, refunded);
+        break;
+      case "cancelled":
+        status = "cancelled";
+        break;
+      case "refunded":
+        status = "refunded";
+        break;
+    }
+    return {
+      id: job.jobId,
+      kind: "escrow",
+      customer: job.buyer,
+      merchant: job.payee,
+      amount: job.amount,
+      refunded: job.status === "released" ? refunded : 0n,
+      refundable: this.refundable(job.jobId),
+      status,
+      createdAt: job.createdAt,
+      settleTx: job.fundTx,
+      closeTx: job.closeTx,
+      refundTxs: refunds.map((refund) => refund.txHash),
+      offerHash: job.offerHash,
+      deadline: job.deadline,
+      resource: job.resource,
+    };
   }
 
   listRefunds(paymentId: string): RefundRecord[] {
@@ -290,6 +583,33 @@ export class Ledger {
   private refundedFor(paymentId: string): bigint {
     return this.listRefunds(paymentId).reduce((total, refund) => total + refund.amount, 0n);
   }
+}
+
+function transferStatus(amount: bigint, refunded: bigint): OrderStatus {
+  if (refunded === 0n) return "paid";
+  return refunded >= amount ? "refunded" : "partially_refunded";
+}
+
+function toJob(row: JobRow): JobRecord {
+  const status = (["pending", "funded", "released", "cancelled", "refunded"] as const).find(
+    (value) => value === row.status,
+  );
+  return {
+    jobId: row.job_id,
+    offerHash: row.offer_hash,
+    buyer: row.buyer,
+    payee: row.payee,
+    amount: BigInt(row.amount),
+    deadline: row.deadline,
+    fundTx: row.fund_tx,
+    fundBlock: BigInt(row.fund_block),
+    status: status ?? "pending",
+    closeTx: row.close_tx,
+    slipHash: row.slip_hash,
+    createdAt: row.created_at,
+    closedAt: row.closed_at,
+    resource: row.resource,
+  };
 }
 
 function csvField(value: string): string {

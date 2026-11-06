@@ -1,7 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { getAddress, isAddress } from "viem";
 import type { Address, Hex } from "viem";
 import { USDT, WHITECHAIN_RPC_URL } from "./chain.ts";
+import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 import type { SpendCeilingConfig } from "./ceiling.ts";
 import type { RelayerPolicy } from "./relayer.ts";
 
@@ -36,6 +38,9 @@ export function loadRelayConfig(env: Env): RelayConfig {
   const maxFeeGwei = bigintEnv(env, "RELAY_MAX_FEE_GWEI", 50n);
   const minBalanceWei = bigintEnv(env, "RELAY_MIN_BALANCE_WEI", 20_000_000_000_000_000n);
   const allowedTokens: Address[] = [USDT.address];
+  const escrowRaw = env.RELAY_ESCROW?.trim();
+  if (escrowRaw && !isAddress(escrowRaw)) throw new Error("RELAY_ESCROW must be an address");
+  const allowedEscrows: Address[] = [escrowRaw ? getAddress(escrowRaw) : WHITECHAIN_ESCROW];
   return {
     relayerPrivateKey,
     rpcUrl: env.WHITECHAIN_RPC_URL?.trim() || WHITECHAIN_RPC_URL,
@@ -54,6 +59,7 @@ export function loadRelayConfig(env: Env): RelayConfig {
       gasHeadroomPct: 20,
       receiptTimeoutMs: 60_000,
       allowedTokens,
+      allowedEscrows,
     },
   };
 }

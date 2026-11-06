@@ -1,5 +1,7 @@
 import { parseSignature } from "viem";
 import type { Address, Hash, Hex, LocalAccount } from "viem";
+import { escrowAbi, fundArgs } from "@countersign/rail";
+import type { CountersignPayload } from "@countersign/core";
 import { whitechainSepolia } from "./chain.ts";
 import type { CeilingRefusal, CeilingSnapshot, SpendCeiling } from "./ceiling.ts";
 import { tokenAbi } from "./eip3009.ts";
@@ -12,6 +14,7 @@ export type RelayerPolicy = {
   gasHeadroomPct: number;
   receiptTimeoutMs: number;
   allowedTokens: Address[];
+  allowedEscrows: Address[];
 };
 
 export type TransferCall = {
@@ -21,7 +24,37 @@ export type TransferCall = {
   signature: Hex;
 };
 
-export type RelayCall = TransferCall;
+export type EscrowFundCall = {
+  kind: "escrowFund";
+  escrow: Address;
+  offerHash: Hex;
+  payload: CountersignPayload;
+};
+
+export type EscrowReleaseCall = {
+  kind: "escrowRelease";
+  escrow: Address;
+  jobId: Hex;
+  slipHash: Hex;
+  sellerSig: Hex;
+};
+
+export type EscrowCancelCall = {
+  kind: "escrowCancel";
+  escrow: Address;
+  jobId: Hex;
+  sellerSig: Hex;
+};
+
+export type EscrowRefundCall = {
+  kind: "escrowRefund";
+  escrow: Address;
+  jobId: Hex;
+};
+
+export type EscrowCall = EscrowFundCall | EscrowReleaseCall | EscrowCancelCall | EscrowRefundCall;
+
+export type RelayCall = TransferCall | EscrowCall;
 
 export type RelayRefusalReason =
   | "not_allowed"
@@ -72,6 +105,17 @@ export class Relayer {
     return this.account.address;
   }
 
+  get allowedEscrows(): Address[] {
+    return this.policy.allowedEscrows;
+  }
+
+  private allowed(call: RelayCall): boolean {
+    if (call.kind === "transferWithAuthorization") {
+      return this.policy.allowedTokens.some((token) => sameAddress(token, call.token));
+    }
+    return this.policy.allowedEscrows.some((escrow) => sameAddress(escrow, call.escrow));
+  }
+
   async simulate(call: RelayCall): Promise<SimulationResult> {
     try {
       const contractCall = toContractCall(call);
@@ -100,7 +144,7 @@ export class Relayer {
   }
 
   async submitUnlocked(call: RelayCall, payer: Address): Promise<RelayOutcome> {
-    if (!this.policy.allowedTokens.some((token) => sameAddress(token, call.token))) {
+    if (!this.allowed(call)) {
       return { status: "refused", reason: "not_allowed" };
     }
 
@@ -210,6 +254,34 @@ function toContractCall(call: RelayCall): ContractCall {
         ],
       };
     }
+    case "escrowFund":
+      return {
+        address: call.escrow,
+        abi: escrowAbi,
+        functionName: "fund",
+        args: fundArgs(call.offerHash, call.payload),
+      };
+    case "escrowRelease":
+      return {
+        address: call.escrow,
+        abi: escrowAbi,
+        functionName: "release",
+        args: [call.jobId, call.slipHash, call.sellerSig],
+      };
+    case "escrowCancel":
+      return {
+        address: call.escrow,
+        abi: escrowAbi,
+        functionName: "cancel",
+        args: [call.jobId, call.sellerSig],
+      };
+    case "escrowRefund":
+      return {
+        address: call.escrow,
+        abi: escrowAbi,
+        functionName: "refund",
+        args: [call.jobId],
+      };
   }
 }
 

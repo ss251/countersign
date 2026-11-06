@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
-import type { Hex, LocalAccount } from "viem";
+import type { Address, Hex, LocalAccount } from "viem";
+import { cancelTypedData } from "@countersign/core";
+import { WHITECHAIN_CHAIN_ID } from "./chain.ts";
 import { signAuthorization, authorizationToWire, sameAddress } from "./eip3009.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
 
@@ -43,4 +45,13 @@ export async function signRefund(input: SignRefundInput): Promise<SignedRefund> 
   };
   const signature = await signAuthorization(input.merchant, authorization);
   return { authorization: authorizationToWire(authorization), signature };
+}
+
+/** The seller's early refund of a job still held in escrow: a signed Cancel(jobId). */
+export async function signCancel(input: {
+  merchant: LocalAccount;
+  escrow: Address;
+  jobId: Hex;
+}): Promise<Hex> {
+  return input.merchant.signTypedData(cancelTypedData(WHITECHAIN_CHAIN_ID, input.escrow, input.jobId));
 }

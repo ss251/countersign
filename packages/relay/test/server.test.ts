@@ -36,7 +36,7 @@ async function bodyFor(relay: TestRelay): Promise<VerifyRequest> {
 }
 
 describe("relay server", () => {
-  test("/supported advertises exact eip3009 on chain 1874", async () => {
+  test("/supported advertises exact and countersign on chain 1874", async () => {
     const relay = createTestRelay();
     const response = await appFor(relay).request("/supported");
     expect(response.status).toBe(200);
@@ -47,6 +47,7 @@ describe("relay server", () => {
     };
     expect(body.kinds).toEqual([
       { x402Version: 2, scheme: "exact", network: NETWORK },
+      { x402Version: 2, scheme: "countersign", network: NETWORK },
     ]);
     expect(body.extensions).toEqual([]);
     expect(body.signers["eip155:*"]).toEqual([relay.relayer.address]);

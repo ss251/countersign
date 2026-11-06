@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { USDT } from "../src/chain.ts";
 import { signAuthorization } from "../src/eip3009.ts";
-import type { RelayCall } from "../src/relayer.ts";
+import type { TransferCall } from "../src/relayer.ts";
 import { createTestRelay, makeAuthorization } from "./support.ts";
 
 type TestRelay = ReturnType<typeof createTestRelay>;
 
-async function transfer(relay: TestRelay, value = 1_000_000n): Promise<RelayCall> {
+async function transfer(relay: TestRelay, value = 1_000_000n): Promise<TransferCall> {
   const auth = makeAuthorization({
     from: relay.buyer.address,
     to: relay.merchant.address,
