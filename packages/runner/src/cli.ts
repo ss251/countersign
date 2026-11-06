@@ -18,6 +18,7 @@
  * over Arc's default RPC, ARC_RPC_URL or WC_RPC_URL, plus any --rpc overrides.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -101,8 +102,9 @@ export function fundingFor(options: Options, env: FundingEnv = process.env): Fun
   };
 }
 
-async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+/** Run the seller CLI with these arguments (by default, this process's own). `countersign sell` calls it. */
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const [command, ...args] = argv;
   if (command === "publish") {
     await publishCommand(parseOptions(args));
     return;
@@ -211,7 +213,7 @@ function prepareOpenApi(
     now: Math.floor(Date.now() / 1000),
   });
   const bytes = readFileSync(entry.specPath);
-  const sha256 = new Bun.CryptoHasher("sha256")
+  const sha256 = createHash("sha256")
     .update(bytes)
     .update("\n")
     .update(entry.operationId)
