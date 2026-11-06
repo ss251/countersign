@@ -266,7 +266,10 @@ function decodedOutput(output: unknown): Evidence | null {
   const bytes = bufferBytes(output);
   if (bytes === null) return null;
   try {
-    return { label: "decoded", value: describeTransaction(Transaction.fromBytes(Buffer.from(bytes))) };
+    return {
+      label: "decoded",
+      value: describeTransaction(Transaction.fromBytes(new Uint8Array(Buffer.from(bytes)))),
+    };
   } catch (error) {
     return { label: "decoded", value: `not decodable: ${messageOf(error)}` };
   }
