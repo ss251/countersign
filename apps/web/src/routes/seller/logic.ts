@@ -105,7 +105,9 @@ export interface OfferDraft {
 }
 
 /** The captain's rule (23:25 IST), held by the contract, core and the hub as well: a bond implies a review window. */
-export const BOND_NEEDS_WINDOW = "A bond needs a review window, so set the window first.";
+/** The smallest window a bonded offer may take: the same line as the contract (orch-cs, 18:18Z, with #164). */
+export const MIN_BONDED_WINDOW = 60;
+export const BOND_NEEDS_WINDOW = "A bond needs a review window of at least 60 seconds, so set that first.";
 export const WINDOW_RANGE = "A review window is 0 to 86,400 seconds.";
 
 /** Why these bond terms cannot be published, or null when they can. */
@@ -113,7 +115,7 @@ export function bondTermsError(bond: string | undefined, reviewWindow: number | 
   const window = reviewWindow ?? 0;
   if (!Number.isInteger(window) || window < 0 || window > 86_400) return WINDOW_RANGE;
   const atomic = bond === undefined || bond === "" ? 0n : BigInt(bond);
-  if (atomic > 0n && window === 0) return BOND_NEEDS_WINDOW;
+  if (atomic > 0n && window < MIN_BONDED_WINDOW) return BOND_NEEDS_WINDOW;
   return null;
 }
 
