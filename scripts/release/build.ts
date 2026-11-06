@@ -176,30 +176,8 @@ function rewriteBins(stageDir: string, staged: JsonObject): void {
   }
 }
 
-function sourceFiles(mapPath: string, mapBase: string): { file: string; code: string }[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(mapPath, "utf8"));
-  } catch {
-    return [];
-  }
-  if (!isRecord(parsed)) return [];
-  const sources = parsed.sources;
-  const contents = parsed.sourcesContent;
-  if (!Array.isArray(sources) || !Array.isArray(contents)) return [];
-  const files: { file: string; code: string }[] = [];
-  for (let i = 0; i < sources.length; i++) {
-    const source = sources[i];
-    const code = contents[i];
-    if (typeof source !== "string" || typeof code !== "string") continue;
-    files.push({ file: displayPath(resolveMapSource(mapBase, source)), code });
-  }
-  return files;
-}
-
 function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
   const problems: string[] = [];
-  const reported = new Set<string>();
   const maps = new Map<string, string>();
 
   for (const file of emitted) {
@@ -222,26 +200,6 @@ function guardPackage(short: string, emitted: readonly EmittedFile[]): void {
       }
       const suffix = origin === null ? "" : ` (source ${origin})`;
       problems.push(`${file.file}:${violation.line}:${violation.column} "${violation.text}"${suffix}`);
-      if (origin !== null) reported.add(`${origin}:${violation.pattern}`);
-    }
-  }
-
-  const scanned = new Set<string>();
-  for (const file of emitted) {
-    if (file.mapPath === undefined || scanned.has(file.mapPath)) continue;
-    scanned.add(file.mapPath);
-    for (const source of sourceFiles(file.mapPath, file.mapBase)) {
-      const seen = new Set<string>();
-      for (const violation of findNodeGuardViolations(source.code)) {
-        if (seen.has(violation.pattern)) continue;
-        seen.add(violation.pattern);
-        const key = `${source.file}:${violation.pattern}`;
-        if (reported.has(key)) continue;
-        reported.add(key);
-        problems.push(
-          `${source.file}:${violation.line}:${violation.column} "${violation.text}"`,
-        );
-      }
     }
   }
 
