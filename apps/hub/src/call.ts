@@ -1,4 +1,5 @@
 import {
+  canonicalJson,
   checkSchema,
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -65,6 +66,23 @@ export async function paidCall(
         code: "bad-input",
         message: "Refused. The input does not match the offer's schema.",
         errors: inputCheck.errors,
+      },
+    };
+  }
+
+  // The seller hashes the input into its slip with canonical JSON. An input the schema accepts but
+  // canonical JSON refuses (a fractional or unsafe number, for example) would only fail after a
+  // direct rail had already settled, so it is refused here, before any 402 or payment.
+  try {
+    canonicalJson(input);
+  } catch (error) {
+    return {
+      status: 422,
+      body: {
+        code: "bad-input",
+        message:
+          "Refused. The input holds a value the slip cannot hash, such as a fractional number. Nothing was charged.",
+        errors: [firstLine(error)],
       },
     };
   }
