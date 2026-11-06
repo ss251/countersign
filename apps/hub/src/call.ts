@@ -33,6 +33,7 @@ import type { Fault, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
+const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
 
 export interface CallDeps {
   store: Store;
@@ -68,6 +69,10 @@ export async function paidCall(
   }
   const privyCheck = await personFrom(headers, deps.privy);
   if (privyCheck.kind === "refused") return failure(privyCheck.status, privyCheck.code, privyCheck.message);
+  const claimedAgent = (headers.get("x-countersign-agent") ?? "").trim();
+  if (claimedAgent !== "" && deps.store.getRevocation(claimedAgent) !== null) {
+    return failure(403, "envelope-revoked", REVOKED);
+  }
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
@@ -214,6 +219,10 @@ export async function paidCall(
       "Refused. This payment is not from one of your wallets. Nothing was charged.",
       railId,
     );
+  }
+
+  if (/^0x[0-9a-fA-F]{40}$/.test(verify.payer ?? "") && deps.store.getRevocation(verify.payer as string) !== null) {
+    return failure(403, "envelope-revoked", REVOKED, railId);
   }
 
   const payer = verify.payer ?? "";
