@@ -511,6 +511,61 @@ contract AuditFixesTest is EscrowSigning {
         assertEq(token.balanceOf(seller) - sellerBefore, PRICE - escrow.tollOf(PRICE), "the seller is paid");
     }
 
+    // ------------------------------------------------------------------ M2 (cs-audit's final pass on 53eed70): the lock names its funder
+
+    /// The payee's lock, naming the one address that may fund with it.
+    function _lockSigFor(uint256 payeeKey, bytes32 jobId, address funder) internal view returns (bytes memory) {
+        return _sig(payeeKey, keccak256(abi.encode(keccak256("Lock(bytes32 jobId,address funder)"), jobId, funder)));
+    }
+
+    /// A lock that names no funder lets the buyer land the hub's pending fund first, or replay the public
+    /// lockSig after the hub's fund reverts. The hub then never dispatches, and the buyer collects amount
+    /// plus bond at refund. Only the funder the payee named may use its lock.
+    function test_M2_only_the_named_funder_can_use_the_lock() public {
+        _deposit(BOND);
+        _publish(BOND, WINDOW);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
+        bytes memory lockSig = _lockSigFor(sellerKey, jobId, arbiter);
+
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+        escrow.fund(OFFER, cs, lockSig);
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+        escrow.fund(OFFER, cs, lockSig);
+        assertEq(escrow.bondOf(seller), BOND, "no bond moved for anyone but the named funder");
+
+        vm.prank(arbiter);
+        escrow.fund(OFFER, cs, lockSig);
+        assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Funded));
+        assertEq(escrow.bondOfJob(jobId), BOND);
+    }
+
+    /// The exploit itself: the payee signs the old funder-less Lock(jobId) for the hub, and the buyer lands
+    /// fund with it first. Before the fix that funds; after it, a lock naming no funder opens nothing.
+    function test_M2_the_buyer_cannot_open_the_bonded_job_with_the_payees_lock() public {
+        _deposit(BOND);
+        _publish(BOND, WINDOW);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(2, BOND, WINDOW);
+        bytes memory funderless = _sig(sellerKey, keccak256(abi.encode(keccak256("Lock(bytes32 jobId)"), jobId)));
+
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
+        escrow.fund(OFFER, cs, funderless);
+        assertEq(escrow.bondOf(seller), BOND, "the buyer moved no bond");
+    }
+
+    /// A bonded job always leaves its payee time to deliver: terms with a bond need minDuration of at least
+    /// 60 s, so not even the named funder can open a bonded job a second before its deadline.
+    function test_M2_bonded_terms_need_a_minimum_duration() public {
+        vm.startPrank(seller);
+        vm.expectRevert(bytes4(keccak256("BondNeedsDuration()")));
+        escrow.setTerms(OFFER, PRICE, BOND, WINDOW, 59);
+        escrow.setTerms(OFFER, PRICE, BOND, WINDOW, 60);
+        escrow.setTerms(OFFER, PRICE, 0, 0, 0); // no bond needs no minimum
+        vm.stopPrank();
+    }
+
     function test_H1_refund_waits_for_settleBy() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
