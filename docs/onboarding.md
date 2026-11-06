@@ -83,7 +83,7 @@ bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railwa
 
 Both commands ran from the same clone on 07 Nov against a hub started from that clone, and each printed its offer hash and `runner ready`. The [seller guide](guides/seller.md) covers every flag. The runner's `mcp` adapter already serves one production offer, Hedera's Agent Kit, which [hedera.md](hedera.md#the-hedera-agent-kit-as-a-metered-offer) describes.
 
-No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is not deployed. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
+No production offer carries a seller bond yet, because the escrows on production are v1. Escrow v2, which adds the bond, is deployed on Whitechain testnet, but production does not use it yet. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
 
 ## Charge for your own API in USDT
 
