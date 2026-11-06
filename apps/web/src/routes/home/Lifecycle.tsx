@@ -6,7 +6,7 @@ import { formatDateTime, shortHex, usd } from "../../lib/format.ts";
 import type { Listing, RailDeclaration, Settlement } from "../../lib/types.ts";
 import { verifySlip, type Verdict } from "../../lib/verify.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
-import { heldBy } from "./field.ts";
+import { heldBy, READING } from "./field.ts";
 import { span, toBeat, useBeat } from "./stage.ts";
 
 /*
@@ -48,11 +48,13 @@ export interface LifecycleProps {
   rails: RailDeclaration[] | undefined;
   /** Some read the landing needs has never come back from the hub. */
   hubDown: boolean;
+  /** The hub's first reads are still out: say so, never "none yet". */
+  reading?: boolean;
   pinned: boolean;
   narrow: boolean;
 }
 
-export function LifecycleStage({ release, rails, hubDown, pinned, narrow }: LifecycleProps) {
+export function LifecycleStage({ release, rails, hubDown, reading = false, pinned, narrow }: LifecycleProps) {
   const stage = useRef<HTMLElement>(null);
   const live = release !== undefined && !hubDown;
   const weights = live ? WEIGHTS : ONE;
@@ -102,7 +104,9 @@ export function LifecycleStage({ release, rails, hubDown, pinned, narrow }: Life
       >
         <div className="story__frame" data-beat={0}>
           <div className="story__box">
-            <h2 className="story__line is-on">{hubDown ? HUB_DOWN : NO_RELEASE}</h2>
+            <h2 className="story__line is-on" aria-busy={(reading && !hubDown) || undefined}>
+              {hubDown ? HUB_DOWN : reading ? READING : NO_RELEASE}
+            </h2>
           </div>
         </div>
       </section>

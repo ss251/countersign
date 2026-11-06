@@ -51,6 +51,9 @@ export default function Landing(_props: PageProps) {
   const featured = listed.find((l) => l.online) ?? listed[0];
   // Both escrow stages follow one payment, and only one an escrow contract held (audit A4, firstmate 16:07Z).
   const release = escrowRelease(rows, hubRails);
+  // Until the hub's settlements and rails have each answered once, no stage may say there is no release yet:
+  // a cold read of production takes seconds (firstmate, 23:45 IST).
+  const reading = (goodRows.current === null && settlements.loading) || (rails.loading && rails.data === undefined);
 
   return (
     <div className="landing">
@@ -70,11 +73,12 @@ export default function Landing(_props: PageProps) {
         featured={featured}
         release={release}
         others={otherRailsLines(hubRails)}
+        reading={reading}
         pinned={pinned}
         narrow={narrow}
       />
 
-      <LifecycleStage release={release} rails={hubRails} hubDown={missing !== undefined} pinned={pinned} narrow={narrow} />
+      <LifecycleStage release={release} rails={hubRails} hubDown={missing !== undefined} reading={reading} pinned={pinned} narrow={narrow} />
 
       <Proof rails={hubRails} />
     </div>

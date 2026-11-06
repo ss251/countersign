@@ -116,3 +116,21 @@ describe("each step renders from the payment's own records", () => {
     expect(own.chain).toBe("Hedera testnet");
   });
 });
+
+describe("a cold load never claims there is no release (firstmate, 23:45 IST)", () => {
+  test("while the hub's first reads are out, the stage says it is reading, not that nothing cleared", () => {
+    const out = html({ release: undefined, rails: undefined, hubDown: false, reading: true, pinned: true, narrow: false });
+    expect(out).toContain("Reading this hub&#x27;s payments…");
+    expect(out).not.toContain("No escrow payment has cleared");
+    expect(out).toContain('aria-busy="true"');
+  });
+
+  test("once the reads are back with no release, it says so; a hub that is down says that instead", () => {
+    expect(html({ release: undefined, rails: RAILS, hubDown: false, reading: false, pinned: true, narrow: false })).toContain(
+      "No escrow payment has cleared on this hub yet",
+    );
+    const down = html({ release: undefined, rails: undefined, hubDown: true, reading: true, pinned: true, narrow: false });
+    expect(down).toContain("The hub did not answer");
+    expect(down).not.toContain("Reading this hub");
+  });
+});
