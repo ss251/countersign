@@ -8,7 +8,7 @@ The human's limits on what the agent may spend. Code: `packages/core/src/envelop
 | `cap` | Total budget, atomic 6-decimal USD. |
 | `perMerchant` | Default limit per seller. `merchantLimits` overrides it per seller address. |
 | `allowlist` | Seller addresses or offer hashes that may be paid. Empty means any. |
-| `askAbove` | Above this amount the agent holds the call for the human's countersignature. |
+| `askAbove` | Above this amount the agent holds the call until the human approves it on the agent's machine (`buy --approve`). Approval from the phone, signed by an approver key, is in progress ([#21](https://github.com/ss251/countersign/issues/21)). |
 | `revoked`, `expiresAt` | A revoked or expired envelope approves nothing. |
 
 Order of checks: revoked, expired, allowlist, cap, per-merchant limit, then ask-above. The agent reserves the spend in its journal under a file lock before it signs anything, so two concurrent calls cannot both fit under one cap. A refund gives the spend back only after the escrow's `jobOf` on chain says the job was refunded. The hub's word is not enough.

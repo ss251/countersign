@@ -48,6 +48,8 @@ The release path never sends `bytes32(0)`. The hash released is exactly `slip.ha
 
 ## D10 — a held call clears only with the approver's signature, never the hub's word (06 Nov; refs #21)
 
+Status: decided, and built on a branch in review (#21). Not on `main`: today a held call is cleared only on the agent's machine, with `buy --approve`.
+
 The envelope's `askAbove` is the one control that stops an agent spending without a person. cs-w1 found (B12) that the first version of remote approvals let the hub's answer clear it: `GET /approvals/:id` said `countersign`, and the agent signed. The hub is the party every earlier fix treats as hostile, so its word cannot stand in for the human.
 
 Rule:
@@ -59,7 +61,9 @@ Rule:
 - The bearer token stays as the hub's way to accept a decision from the phone and to guard the envelope and approval reads, but it proves nothing to the agent.
 - Cap, per-merchant limits and the allowlist are still checked locally before any request is made, so an approval can only lift the ask-above hold.
 
-## D11 — the declared bond is collected, and only the hub's gate can take it (06 Nov; refs #93)
+## D11 — collect the declared bond, and let only the hub's gate take it (06 Nov; refs #93)
+
+Status: built on a branch (#93), not merged and not deployed. No deployed contract collects the bond yet.
 
 The offer always declared a bond, and nothing collected it.
 
@@ -71,9 +75,11 @@ The offer always declared a bond, and nothing collected it.
 - **Why disputes do not slash.** A dispute is the buyer's own judgement, and there is no arbitration. If disputes slashed, any buyer could take bonds. The gate's checks (output schema, slip signature, committed hash) are mechanical, so only they slash.
 - **The trust this leaves.** The arbiter decides gate failure, so a dishonest hub could slash. The bond is exactly as strong as the hub's gate, and `docs/spec/escrow.md` says so.
 
-## D12 — delivery opens an optimistic review window; the buyer accepts, or disputes for a refund (06 Nov; refs #93)
+## D12 — open an optimistic review window at delivery; the buyer accepts, or disputes for a refund (06 Nov; refs #93)
 
-**The gap.** Until v1, `release` needed only the seller's signature over `jobId` and `slipHash`. The gate checked shape, integrity, seller identity and price, but a seller who delivered junk that passed the schema, signed and took the money was not stopped.
+Status: design only. Review and dispute have no code yet (#98).
+
+**The gap.** In v1, the escrow that is deployed, `release` needs only the seller's signature over `jobId` and `slipHash`. The gate checks shape, integrity, seller identity and price, but a seller who delivers junk that passes the schema, signs and takes the money is not stopped.
 
 **The fix.** Each offer may set `reviewWindow` (seconds; 0 keeps v1's behaviour).
 
@@ -99,6 +105,8 @@ The state machine, with who calls what and when, is in `docs/spec/escrow.md`, un
 
 ## D13 — the router's trace is the hub's record, outside the committed slip hash (06 Nov; refs #94)
 
+Status: built on a branch in review (#94). Not on `main`.
+
 The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, and falls back when a challenge or a settle fails.
 
 - **Where the trace goes.** Its record of the chosen rail, the reason and each attempt sits in `slip.settlement.route`, outside the committed body, like `settlement.receipt`.
@@ -107,6 +115,8 @@ The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, 
 - **Where to read it.** `/healthz` shows the policy and the recent decisions.
 
 ## D10, amended — one human decision clears exactly one held call (06 Nov; refs #21)
+
+Status: decided; the fix is on the same branch as D10 (#21). Not on `main`.
 
 cs-w1 found that D10's signed decision bound only values a second call to the same offer repeats (B14). The decision covered agent, offer, amount, rail and terms hash, plus an approval id. The hub chooses that id, so it could answer a new request with an old id and serve the stored decision again: one human yes, two payments above ask-above.
 
