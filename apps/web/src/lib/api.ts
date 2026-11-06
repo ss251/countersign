@@ -15,8 +15,8 @@ export interface Loaded<T> {
   source: Source;
 }
 
-const settle = <T,>(data: T, ms = 120): Promise<Loaded<T>> =>
-  new Promise((resolve) => window.setTimeout(() => resolve({ data, source: "fixtures" }), ms));
+/** Fixtures answer at once: no artificial latency, so a recording never waits on a placeholder. */
+const settle = <T,>(data: T): Promise<Loaded<T>> => Promise.resolve({ data, source: "fixtures" });
 
 export const api = {
   listings: () => settle<Listing[]>(fx.listings),
