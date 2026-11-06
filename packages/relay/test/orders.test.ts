@@ -7,7 +7,7 @@ const MERCHANT = "0x2222222222222222222222222222222222222222";
 const OTHER = "0x5555555555555555555555555555555555555555";
 const CUSTOMER = "0x1111111111111111111111111111111111111111";
 const HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls,refund_reasons";
 
 let counter = 0;
 function jobId(): string {
@@ -138,6 +138,86 @@ describe("orders", () => {
     expect(by[s.paid]!.closeKind).toBeNull();
   });
 
+  test("orders carry the slip hash, close time and close reason", () => {
+    const ledger = new Ledger(":memory:");
+    const released = jobId();
+    const cancelled = jobId();
+    const held = jobId();
+    const paid = fakeHash();
+    ledger.recordPayment(newPayment(paid, 1000));
+    ledger.recordJob(newJob(released, 2000));
+    ledger.recordJob(newJob(cancelled, 3000));
+    ledger.recordJob(newJob(held, 4000));
+    ledger.closeJob(released, "released", fakeHash(), "0xslip", 5000);
+    ledger.closeJob(
+      cancelled,
+      "cancelled",
+      fakeHash(),
+      undefined,
+      6000,
+      "requested_by_customer",
+    );
+
+    const releasedOrder = ledger.getOrder(released)!;
+    expect([releasedOrder.slipHash, releasedOrder.closedAt, releasedOrder.closeReason]).toEqual([
+      "0xslip",
+      5000,
+      null,
+    ]);
+    const cancelledOrder = ledger.getOrder(cancelled)!;
+    expect([cancelledOrder.slipHash, cancelledOrder.closedAt, cancelledOrder.closeReason]).toEqual([
+      null,
+      6000,
+      "requested_by_customer",
+    ]);
+    const heldOrder = ledger.getOrder(held)!;
+    expect([heldOrder.slipHash, heldOrder.closedAt, heldOrder.closeReason]).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    const paidOrder = ledger.getOrder(paid)!;
+    expect([paidOrder.slipHash, paidOrder.closedAt, paidOrder.closeReason]).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test("refunds keep their reason and time, and the CSV joins the reasons", () => {
+    const s = seeded();
+    s.ledger.recordRefund({
+      paymentId: s.paid,
+      amount: 500_000n,
+      txHash: fakeHash(),
+      blockNumber: 4n,
+      nonce: fakeNonce(),
+      reason: "duplicate",
+      at: 1234,
+    });
+    s.ledger.recordRefund({
+      paymentId: s.paid,
+      amount: 500_000n,
+      txHash: fakeHash(),
+      blockNumber: 5n,
+      nonce: fakeNonce(),
+      reason: "other",
+      at: 2345,
+    });
+
+    const refunds = s.ledger.listRefunds(s.paid);
+    expect(refunds.map((refund) => [refund.reason, refund.at])).toEqual([
+      ["duplicate", 1234],
+      ["other", 2345],
+    ]);
+    const row = s.ledger
+      .ordersCsv(MERCHANT)
+      .trimEnd()
+      .split("\n")
+      .find((line) => line.includes(s.paid))!;
+    expect(row.split(",").at(-1)).toBe("duplicate other");
+  });
+
   test("a transfer refund against a released job reuses the refunds table", () => {
     const s = seeded();
     const tx = fakeHash();
@@ -207,6 +287,7 @@ describe("orders", () => {
         txUrl(job.fundTx),
         txUrl(job.closeTx!),
         txUrl(refundTx),
+        "",
       ].join(","),
     );
     const held = lines.find((l) => l.includes(s.held))!;

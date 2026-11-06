@@ -227,6 +227,21 @@ describe("refundPayment", () => {
     expect(third).toEqual({ ok: false, reason: "refund_amount" });
   });
 
+  test("a refund records its reason and the time it was sent", async () => {
+    const { relay, paymentId } = setup();
+    const result = await refundPayment(
+      {
+        ...(await refund(relay, { paymentId, signer: relay.merchant, value: 400_000n })),
+        reason: "duplicate",
+      },
+      relay.ctx,
+    );
+    expect(result.ok).toBe(true);
+    const [record] = relay.ledger.listRefunds(paymentId);
+    expect(record!.reason).toBe("duplicate");
+    expect(record!.at).toBe(NOW * 1000);
+  });
+
   test("two concurrent full refunds yield exactly one success", async () => {
     const { relay, paymentId } = setup();
     relay.chain.writeDelayMs = 5;
