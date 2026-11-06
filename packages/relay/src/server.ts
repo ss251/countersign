@@ -21,6 +21,7 @@ import {
   releaseAfterWindowJob,
   releaseJob,
   releaseNeedsHub,
+  HUB_PAYER,
 } from "./escrow-ops.ts";
 import type { EscrowOpResult } from "./escrow-ops.ts";
 import { settleExact, verifyExact, readNow } from "./exact.ts";
@@ -98,6 +99,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       balanceWei: status.balanceWei.toString(),
       balanceWbt: formatUnits(status.balanceWei, 18),
       ceiling: jsonSafe(status.ceiling),
+      hubCeiling: status.hubCeiling ? jsonSafe(status.hubCeiling) : null,
       policy: jsonSafe(status.policy),
       payees: status.policy.allowedPayees,
       minAmount: status.policy.minAmount.toString(),
@@ -268,7 +270,11 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     }
     return replyOp(
       c,
-      await releaseJob({ jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig }, csCtx),
+      await releaseJob(
+        { jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig },
+        csCtx,
+        { fromHub },
+      ),
     );
   });
 
@@ -448,6 +454,19 @@ async function readFunding(
 
 const tollBpsCache = new Map<string, number>();
 
+/**
+ * After a restart, rebuild both hours from the ledger: the hub's own spends seed the hub ceiling,
+ * every other spend seeds the shared one, so neither budget is charged for the other's traffic.
+ */
+export function seedCeilings(
+  recent: readonly { payer: string; costWei: bigint; at: number }[],
+  shared: SpendCeiling,
+  hub: SpendCeiling,
+): void {
+  shared.seed(recent.filter((spend) => spend.payer !== HUB_PAYER));
+  hub.seed(recent.filter((spend) => spend.payer === HUB_PAYER));
+}
+
 async function tollBpsFor(reader: ChainReader, escrow: Address): Promise<number> {
   const key = escrow.toLowerCase();
   const cached = tollBpsCache.get(key);
@@ -535,9 +554,11 @@ if (import.meta.main) {
   const escrow = config.policy.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
   const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });
   const ceiling = new SpendCeiling(config.ceiling);
-  ceiling.seed(ledger.recentSpends(Date.now() - config.ceiling.windowMs));
+  const hubCeiling = new SpendCeiling(config.hubCeiling);
+  seedCeilings(ledger.recentSpends(Date.now() - config.ceiling.windowMs), ceiling, hubCeiling);
   const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling, (spend) =>
     ledger.recordSpend(spend),
+    hubCeiling,
   );
   const app = createRelayApp({
     reader: publicClient,
