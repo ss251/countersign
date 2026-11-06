@@ -1,10 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { packageName, scanImportPackages, selectDependencies } from "../imports.ts";
+import {
+  packageName,
+  scanImportPackages,
+  selectDependencies,
+  stripShebang,
+} from "../imports.ts";
 import { dependencyUnion, type PackageManifest } from "../manifest.ts";
 
 describe("the bundle import scanner", () => {
   test("counts a static import", () => {
     expect(scanImportPackages('import { createPublicClient } from "viem";')).toEqual(["viem"]);
+  });
+
+  test("scans a bundle that starts with a shebang", () => {
+    const fixture = '#!/usr/bin/env node\nimport { createPublicClient } from "viem";';
+    expect(scanImportPackages(fixture)).toEqual(["viem"]);
+  });
+
+  test("stripShebang removes only the leading line", () => {
+    expect(stripShebang('#!/usr/bin/env node\nimport "viem";')).toBe('import "viem";');
+    expect(stripShebang('import "viem";')).toBe('import "viem";');
   });
 
   test("counts a side-effect import", () => {

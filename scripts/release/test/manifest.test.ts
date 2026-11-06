@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { selectDependencies } from "../imports.ts";
 import {
   dependencyUnion,
   entrySources,
+  extraDependencyRanges,
   sourceTargetMap,
   stagedManifest,
   type PackageManifest,
@@ -144,6 +146,16 @@ describe("entries and staged manifest", () => {
     expect(staged.name).toBe("@other-scope/relay");
   });
 
+  test("the staged manifest takes the source package's Node floor", () => {
+    const staged = stagedManifest({
+      short: "cli",
+      manifest: { ...manifest, engines: { node: ">=22" } },
+      dependencies: {},
+      targets: sourceTargetMap(entrySources(manifest)),
+    });
+    expect(staged.engines).toEqual({ node: ">=22" });
+  });
+
   test("a package without bin has no bin field", () => {
     const staged = stagedManifest({
       short: "mcp",
@@ -163,5 +175,43 @@ describe("entries and staged manifest", () => {
         targets: sourceTargetMap(entrySources(manifest)),
       }),
     ).toThrow(/workspace/);
+  });
+});
+
+describe("extra dependencies", () => {
+  const read = (workspaces: Record<string, string>) => (short: string) => {
+    const version = workspaces[short];
+    if (version === undefined) return null;
+    return { label: `packages/${short}/package.json`, manifest: { version } };
+  };
+
+  test("a published extra dependency takes ^ plus the workspace version", () => {
+    const plan = extraDependencyRanges(
+      "cli",
+      { "@countersign-hub/mcp": "mcp" },
+      read({ mcp: "0.1.0" }),
+    );
+    expect(plan.dependencies).toEqual({ "@countersign-hub/mcp": "^0.1.0" });
+    expect(plan.skipped).toEqual([]);
+  });
+
+  test("an absent workspace package is skipped with one loud line", () => {
+    const plan = extraDependencyRanges("cli", { "@countersign-hub/mcp": "mcp" }, () => null);
+    expect(plan.dependencies).toEqual({});
+    expect(plan.skipped).toEqual([
+      "cli: extra dependency @countersign-hub/mcp skipped (packages/mcp not found)",
+    ]);
+  });
+
+  test("an extra dependency is added after the scan and is never pruned", () => {
+    const scanned = selectDependencies([], {});
+    const plan = extraDependencyRanges(
+      "cli",
+      { "@countersign-hub/mcp": "mcp" },
+      read({ mcp: "0.1.0" }),
+    );
+    expect({ ...scanned.dependencies, ...plan.dependencies }).toEqual({
+      "@countersign-hub/mcp": "^0.1.0",
+    });
   });
 });

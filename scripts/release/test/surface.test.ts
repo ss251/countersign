@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  bundleEntries,
   entrySources,
   sourceTargetMap,
   stagedManifest,
@@ -8,6 +9,8 @@ import {
 import {
   PUBLISH_SURFACE,
   exportKeys,
+  extraDependenciesFor,
+  extraEntriesFor,
   omittedExportLines,
   type PublishSurface,
 } from "../surface.ts";
@@ -135,5 +138,43 @@ describe("the publish surface", () => {
     expect(exportKeys({ import: "./src/index.ts" })).toEqual(["."]);
     expect(exportKeys(undefined)).toEqual([]);
     expect(exportKeys({ "./sub": "./src/sub.ts" })).toEqual(["./sub"]);
+  });
+
+  test("cli extra entries join the bundle list but not bin or exports", () => {
+    const cli: PackageManifest = {
+      name: "countersign",
+      version: "0.1.0",
+      engines: { node: ">=22" },
+      bin: { countersign: "./src/bin.ts" },
+    };
+    const entries = entrySources(cli, { short: "cli", surface: PUBLISH_SURFACE });
+    expect(entries).toEqual(["./src/bin.ts"]);
+
+    expect(bundleEntries("cli", cli, { short: "cli", surface: PUBLISH_SURFACE })).toEqual([
+      { source: "packages/cli/src/bin.ts", target: "./dist/bin.js", extra: false },
+      {
+        source: "packages/runner/src/child-entry.ts",
+        target: "dist/child-entry.js",
+        extra: true,
+      },
+    ]);
+
+    const staged = stagedManifest({
+      short: "cli",
+      manifest: cli,
+      dependencies: {},
+      targets: sourceTargetMap(entries),
+      surface: PUBLISH_SURFACE,
+    });
+    expect(staged.bin).toEqual({ countersign: "./dist/bin.js" });
+    expect(staged.exports).toBeUndefined();
+    expect(JSON.stringify(staged)).not.toContain("child-entry");
+  });
+
+  test("relay and mcp have no extra entries or dependencies", () => {
+    expect(extraEntriesFor("relay")).toEqual([]);
+    expect(extraEntriesFor("mcp")).toEqual([]);
+    expect(extraDependenciesFor("relay")).toEqual({});
+    expect(extraDependenciesFor("mcp")).toEqual({});
   });
 });
