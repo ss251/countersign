@@ -1,8 +1,19 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { checkEnvelope } from "@countersign/core";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { checkEnvelope, type EnvelopeDecision } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
-import { playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
-import { formatAmount, formatClock, formatDuration, formatMoney, nowUnix, RAIL_LABEL, remainingAtomic, usd } from "../../lib/format.ts";
+import { api, followJob, playJob, type JobView, type Resource, type Scenario } from "../../lib/api.ts";
+import {
+  ESCROW_RAILS,
+  formatAmount,
+  formatClock,
+  formatDuration,
+  formatMoney,
+  nowUnix,
+  RAIL_LABEL,
+  remainingAtomic,
+  usd,
+} from "../../lib/format.ts";
+import { approvalToken, HubError, rememberApprovalToken } from "../../lib/hub.ts";
 import type { Approval, EnvelopeView } from "../../lib/types.ts";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { Amount, Button, cx, Empty, Hash, KV, Tag } from "../../ui/primitives.tsx";
@@ -22,10 +33,13 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
   if (approvals.loading && !approvals.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
   if (!current || !envelope.data) {
-    const ask = envelope.data ? formatMoney(usd(envelope.data.askAbove)) : "your limit";
+    const ask = envelope.data?.askAbove;
     return (
       <Empty title="Nothing is waiting for you.">
-        Your agent buys inside the envelope on its own and asks you only above {ask}.{" "}
+        {ask === null
+          ? "Your agent buys inside its envelope on its own and never asks you first."
+          : `Your agent buys inside the envelope on its own and asks you only above ${ask ? formatMoney(usd(ask)) : "your limit"}.`}{" "}
+        {approvals.source === "hub" ? "A request shows here as soon as it asks. " : null}
         <Link to="/buyer?tab=history">See what it bought</Link>.
       </Empty>
     );
@@ -70,14 +84,76 @@ function ApprovalFlow({
   const { offer } = listing;
   const money = usd(approval.amount, approval.rail);
   const toll = ESCROW_RAILS.has(approval.rail) ? splitToll(approval.amount) : null;
-  const checks = envelopeChecks(seen, approval);
-  const decision = checkEnvelope(
-    seen.envelope,
-    seen.spent,
-    { seller: offer.seller, offerHash: listing.hash, amount: approval.amount },
-    nowUnix(),
-  );
-  const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded");
+  /** The request came through the hub from a real agent, not from fixtures. */
+  const live = approval.agent !== undefined;
+  /*
+   * The agent checked a hub request against its real envelope before sending it. Without the agent's
+   * signed mirror the phone holds only stand-in limits, and re-checking against those could only refuse
+   * falsely, so it says what the agent checked instead.
+   */
+  const blind = live && seen.mirror === undefined;
+  const checks = blind ? AGENT_CHECKED : envelopeChecks(seen, approval);
+  const decision: EnvelopeDecision = blind
+    ? { ok: true }
+    : checkEnvelope(seen.envelope, seen.spent, { seller: offer.seller, offerHash: listing.hash, amount: approval.amount }, nowUnix());
+  const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded" || job.step === "failed");
+  const [token, setToken] = useState(approvalToken);
+  const [sending, setSending] = useState<"countersign" | "decline" | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  /** Decided elsewhere or expired: nothing more can happen to this request. */
+  const [gone, setGone] = useState(false);
+  /** Bumped after a failed send so the hold starts over instead of reading "Countersigned". */
+  const [attempt, setAttempt] = useState(0);
+
+  const fail = (e: unknown) => {
+    if (e instanceof HubError && e.status === 401) {
+      rememberApprovalToken(null);
+      setToken(null);
+      setProblem(e.code === "no-token" ? null : "The hub did not accept that token. Nothing was signed. Paste it again.");
+    } else if (e instanceof HubError && e.status === 409) {
+      setGone(true);
+      setProblem("This request was already decided, or it expired. Nothing was signed.");
+    } else if (e instanceof HubError && e.status === 503) {
+      setProblem("This hub has no approver set, so it cannot take a countersignature from a phone. Nothing was signed.");
+    } else {
+      setProblem("The hub did not answer. Nothing was signed. Hold again to retry.");
+    }
+  };
+
+  const countersign = async () => {
+    if (!live) {
+      onSigned();
+      stop.current = playJob(approval, scenario, setJob);
+      return;
+    }
+    setSending("countersign");
+    setProblem(null);
+    try {
+      const known = await api.jobIds(approval.agent!);
+      await api.decide(approval.id, "countersign");
+      onSigned();
+      stop.current = followJob(approval, known, setJob);
+    } catch (e) {
+      fail(e);
+      setAttempt((n) => n + 1);
+    } finally {
+      setSending(null);
+    }
+  };
+
+  const decline = async () => {
+    if (!live) return onClose();
+    setSending("decline");
+    setProblem(null);
+    try {
+      await api.decide(approval.id, "decline");
+      onClose();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSending(null);
+    }
+  };
   const onSettledRef = useRef(onSettled);
   onSettledRef.current = onSettled;
 
@@ -93,6 +169,7 @@ function ApprovalFlow({
       <header className="approval__head">
         <p className="approval__who">
           <span className="approval__agent">{approval.agentName}</span> wants to buy
+          {live ? <span className="approval__when num"> · asked at {formatClock(approval.requestedAt)}</span> : null}
         </p>
         <div className="approval__title-row">
           <h1 id="approval-title" className="approval__title">
@@ -139,7 +216,9 @@ function ApprovalFlow({
           <dd>
             <span className="fromto__name">{approval.agentName}</span>
             <span className="fromto__sub num">
-              Your envelope, {formatAmount(usd(remainingAtomic(seen.envelope.cap, seen.spent.total)))} left
+              {blind
+                ? "Checked against its own envelope"
+                : `Your envelope, ${formatAmount(usd(remainingAtomic(seen.envelope.cap, seen.spent.total)))} left`}
             </span>
           </dd>
         </div>
@@ -188,38 +267,109 @@ function ApprovalFlow({
 
       {final ? (
         <Outcome job={job!} approval={approval} onClose={onClose} />
+      ) : gone ? (
+        <div className="outcome outcome--neutral" role="status">
+          <p className="outcome__title">Nothing to sign.</p>
+          <p className="outcome__body">{problem}</p>
+          <Button variant="primary" block onClick={onClose}>
+            Done
+          </Button>
+        </div>
       ) : (
         <div className="approval__dock">
-          <>
-            <p className="approval__dock-line">
-              <Amount money={money} size="sm" /> to {listing.seller.name}, for {offer.title}
+          <p className="approval__dock-line">
+            <Amount money={money} size="sm" /> to {listing.seller.name}, for {offer.title}
+          </p>
+          {problem ? (
+            <p className="approval__problem" role="alert">
+              {problem}
             </p>
+          ) : null}
+          {live && !token ? (
+            <TokenForm
+              onSave={(t) => {
+                rememberApprovalToken(t);
+                setToken(t);
+                setProblem(null);
+              }}
+            />
+          ) : (
             <HoldToSign
+              key={attempt}
               ariaLabel={`Countersign ${formatMoney(money)} to ${offer.title}`}
               left={listing.seller.name}
               right="you"
-              disabled={!decision.ok}
+              disabled={!decision.ok || sending !== null}
               signed={job !== null}
               label={decision.ok ? "Hold to countersign" : "The envelope refuses this call"}
-              onSigned={() => {
-                onSigned();
-                stop.current = playJob(approval, scenario, setJob);
-              }}
+              doneLabel={sending === "countersign" ? "Sending to the hub" : "Countersigned"}
+              onSigned={() => void countersign()}
             />
-            {job ? null : (
-              <Button variant="quiet" block className="approval__decline" onClick={onClose}>
-                Decline
-              </Button>
-            )}
-          </>
+          )}
+          {job ? null : (
+            <Button variant="quiet" block className="approval__decline" disabled={sending !== null} onClick={() => void decline()}>
+              {sending === "decline" ? "Declining" : "Decline"}
+            </Button>
+          )}
         </div>
       )}
     </article>
   );
 }
 
-/** Rails that settle through CountersignedEscrow, which keeps a toll on release. */
-const ESCROW_RAILS = new Set(["escrow", "whitechain", "erc8183"]);
+/** What the phone can say about a hub request when it does not hold the agent's signed envelope. */
+const AGENT_CHECKED: Array<{ kind: CheckKind; text: ReactNode }> = [
+  { kind: "pass", text: "Your agent checked its budget, seller limits and allowlist before asking" },
+  { kind: "ask", text: "Above its ask limit, so it waits for you" },
+];
+
+/** The human's approval token for this hub. Pasted once; it stays on this phone. */
+function TokenForm({ onSave }: { onSave: (token: string) => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const t = value.trim();
+    if (!t) {
+      setError("Paste the token first.");
+      return;
+    }
+    onSave(t);
+  };
+  return (
+    <form className="token" onSubmit={submit} noValidate>
+      <label className="field__label" htmlFor={id}>
+        Approval token
+      </label>
+      <input
+        id={id}
+        className="input mono"
+        type="password"
+        autoComplete="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        enterKeyHint="done"
+        data-1p-ignore
+        data-lpignore="true"
+        value={value}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={`${id}-hint`}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (error && e.target.value.trim()) setError(null);
+        }}
+      />
+      <p id={`${id}-hint`} className={error ? "field__error" : "field__hint"}>
+        {error ?? "The approver token your hub was started with. It stays on this phone and goes only to this hub."}
+      </p>
+      <Button variant="primary" type="submit" block>
+        Use this token
+      </Button>
+    </form>
+  );
+}
+
 /** Both escrow deployments set tollBps to 100 (docs/decisions.md). */
 const TOLL_BPS = 100;
 
@@ -273,7 +423,7 @@ function envelopeChecks(view: EnvelopeView, a: Approval): Array<{ kind: CheckKin
       ? { kind: "pass", text: env.allowlist.length === 0 ? "Any seller is allowed" : `${a.listing.seller.name} is on your allowlist` }
       : { kind: "fail", text: `${a.listing.seller.name} is not on your allowlist` },
   );
-  if (amount > BigInt(view.askAbove)) {
+  if (view.askAbove !== null && amount > BigInt(view.askAbove)) {
     out.push({ kind: "ask", text: <>Above {n(view.askAbove)}, so it waits for you</> });
   }
   return out;
@@ -303,16 +453,16 @@ function CheckGlyph({ kind }: { kind: CheckKind }) {
 
 /* After the hold: what has happened, in order, to the second. */
 
-const STEPS = [
-  { id: "countersigned", label: "Countersigned" },
-  { id: "held", label: "In escrow" },
-  { id: "delivered", label: "Delivered" },
-  { id: "released", label: "Released" },
-] as const;
-
 function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
-  if (job.step === "refused" || job.step === "refunded") return null;
+  if (job.step === "refused" || job.step === "refunded" || job.step === "failed") return null;
   const active = job.step === "funding" ? "held" : job.step === "held" ? "delivered" : job.step === "delivered" ? "released" : null;
+  const escrow = ESCROW_RAILS.has(approval.rail);
+  const STEPS = [
+    { id: "countersigned", label: "Countersigned" },
+    { id: "held", label: escrow ? "In escrow" : "Paid" },
+    { id: "delivered", label: "Delivered" },
+    { id: "released", label: escrow ? "Released" : "Settled" },
+  ] as const;
 
   return (
     <ol className="ledger" aria-label="Progress" aria-live="polite">
@@ -326,7 +476,13 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
             <span className="ledger__label">{s.label}</span>
             <span className="ledger__detail">
               {isDone && s.id === "held" ? <Amount money={usd(approval.amount, approval.rail)} size="sm" /> : null}
-              {isActive && s.id === "held" ? "Funding the escrow" : null}
+              {isActive && s.id === "held"
+                ? job.slow
+                  ? "No payment yet. Your agent may have stopped waiting."
+                  : escrow
+                    ? "Funding the escrow"
+                    : "Paying"
+                : null}
               {isActive && s.id === "delivered" ? "Waiting for delivery" : null}
               {isActive && s.id === "released" ? "Checking the output" : null}
               {isDone && s.id !== "held" ? <span className="num">{formatClock(at)}</span> : null}
@@ -345,6 +501,18 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
 
 function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval; onClose: () => void }) {
   const signed = usd(approval.amount, approval.rail);
+  const escrow = ESCROW_RAILS.has(approval.rail);
+  if (job.step === "failed") {
+    return (
+      <div className="outcome outcome--refused" role="status">
+        <p className="outcome__title">Not released.</p>
+        <p className="outcome__body">{job.reason}</p>
+        <Button variant="primary" block onClick={onClose}>
+          Done
+        </Button>
+      </div>
+    );
+  }
   if (job.step === "refused") {
     return (
       <div className="outcome outcome--refused" role="status">
@@ -382,8 +550,12 @@ function Outcome({ job, approval, onClose }: { job: JobView; approval: Approval;
   }
   return (
     <div className="outcome outcome--settled" role="status">
-      <p className="outcome__title">Released. Slip minted.</p>
-      <p className="outcome__body">The seller was paid once the output matched the schema. The slip proves it without the hub.</p>
+      <p className="outcome__title">{escrow ? "Released. Slip minted." : "Settled. Slip minted."}</p>
+      <p className="outcome__body">
+        {escrow
+          ? "The seller was paid once the output matched the schema. The slip proves it without the hub."
+          : "Paid, and the output matched the schema. The slip proves it without the hub."}
+      </p>
       <div className="outcome__buttons">
         {job.slipHash ? (
           <Link to={`/slip/${job.slipHash}`} className="btn btn--primary btn--block">

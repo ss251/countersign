@@ -22,12 +22,18 @@ interface StoredIssuedAt {
 
 type OfferState = Record<string, StoredIssuedAt>;
 
+export interface PublishedOffer {
+  offerHash: Hex;
+  /** The exact offer sent to the hub, with the stable issuedAt. */
+  offer: Offer;
+}
+
 export async function publishOffer(
   hubUrl: string,
   account: RunnerAccount,
   offer: Offer,
   options: PublishOptions = {},
-): Promise<Hex> {
+): Promise<PublishedOffer> {
   const stable = withStableIssuedAt(account.address, offer, options);
   const hash = offerHash(stable);
   const sig = await account.signMessage({ message: publishMessage(hash) });
@@ -43,7 +49,7 @@ export async function publishOffer(
     if (typeof body.offerHash !== "string") {
       throw new Error("The hub did not return an offer hash.");
     }
-    return body.offerHash as Hex;
+    return { offerHash: body.offerHash as Hex, offer: stable };
   }
 
   let message = `The hub refused the offer with status ${response.status}.`;

@@ -101,6 +101,9 @@ export function formatDay(unix: number, now = new Date()): string {
   return dayFormat.format(d);
 }
 
+/** Rails that settle through CountersignedEscrow: the money waits on chain and a failed delivery returns it. */
+export const ESCROW_RAILS: ReadonlySet<RailId> = new Set<RailId>(["escrow", "whitechain", "erc8183"]);
+
 export const RAIL_LABEL: Record<RailId, string> = {
   escrow: "Arc · escrow",
   eip3009: "Arc · USDC transfer",
