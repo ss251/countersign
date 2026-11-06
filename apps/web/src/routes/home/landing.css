@@ -1,0 +1,528 @@
+/*
+ * The landing: one statement on the near-black field, then the evidence for it. Our ink palette in
+ * its dark form (the tokens are scoped to .landing), the one red, green and blue keeping their meanings.
+ */
+
+.landing {
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.landing a {
+  color: var(--ink);
+  text-underline-offset: 0.22em;
+}
+
+/* Almost no chrome: the wordmark and four links, on the field itself. */
+.landing__bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-5) clamp(16px, 4vw, 40px);
+}
+
+.landing__brand {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  text-decoration: none;
+}
+
+.landing__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2) var(--sp-5);
+  font-size: var(--t-14);
+}
+
+.landing__links a {
+  position: relative;
+  color: var(--slate);
+  text-decoration: none;
+  transition: color var(--d-1) var(--ease-out);
+}
+
+/* 20px to the eye, 44px to the thumb. */
+.landing__links a::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing__links a:hover {
+    color: var(--ink);
+  }
+}
+
+/* The first screen: the statement, set enormous, low on the field like a signature line. */
+.landing__first {
+  position: relative;
+  display: grid;
+  align-content: end;
+  min-height: 100svh;
+  padding: 128px clamp(16px, 4vw, 40px) clamp(40px, 8vh, 88px);
+  overflow: hidden;
+}
+
+/* The captain's loop sits behind, muted; a poster until it loads; nothing until it exists. */
+.landing__loop {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  background: url("/media/hero-poster.jpg") center / cover no-repeat;
+  pointer-events: none;
+}
+
+.landing__loop video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing__first-inner {
+  position: relative;
+  display: grid;
+  gap: clamp(28px, 5vh, 48px);
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+}
+
+.landing__statement {
+  max-width: 12.5ch;
+  font-size: clamp(3.5rem, 1.6rem + 7vw, 7.5rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.landing__under {
+  display: grid;
+  grid-template-columns: minmax(0, 46ch) auto;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+
+.landing__what {
+  color: var(--slate);
+  font-size: var(--t-17);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.landing__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
+}
+
+.landing__go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--t-17);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--ink) 40%, transparent);
+}
+
+.landing__cue {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-13);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing__cue:hover {
+    color: var(--ink);
+  }
+}
+
+/* Every section after the first: ruled, wide, quiet. */
+.landing__section {
+  display: grid;
+  gap: var(--sp-8);
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: clamp(56px, 10vh, 112px) clamp(16px, 4vw, 40px);
+  border-top: var(--hair) solid var(--line);
+}
+
+.landing__h2 {
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.75rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+/* The live desk */
+.landing__desk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.landing__updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.landing__absent {
+  color: var(--slate);
+  font-size: var(--t-15);
+}
+
+.landing__desk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+  align-items: start;
+  gap: clamp(32px, 5vw, 64px);
+}
+
+.landing__desk-left {
+  display: grid;
+  gap: var(--sp-8);
+}
+
+/* Three totals, label over value, from the hub's own ledger. */
+.totals3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-5);
+}
+
+.totals3 > div {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.totals3 dd {
+  font-family: var(--mono);
+  font-size: clamp(2rem, 1.3rem + 2.6vw, 3.5rem);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.totals3__wait {
+  display: block;
+  width: 2.5ch;
+  height: 0.9em;
+}
+
+/* A total changed: it ticks once. Never counts up. */
+.tick {
+  display: inline-block;
+}
+
+.tick.is-ticked {
+  animation: landing-tick 280ms var(--ease-out);
+}
+
+@keyframes landing-tick {
+  from {
+    opacity: 0.35;
+    transform: translateY(-4px);
+  }
+}
+
+.rails-live {
+  display: grid;
+  border-top: var(--hair) solid var(--line);
+}
+
+.rails-live__row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+}
+
+.rails-live__name {
+  font-weight: 500;
+}
+
+.rails-live__chain,
+.rails-live__n {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.rails-live__n {
+  text-align: right;
+}
+
+/* The live dot breathes slowly while the desk is reading. */
+.live-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: landing-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes landing-breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The stream card: the last settlements, newest first. */
+.stream {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+}
+
+.stream__none {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.stream__list {
+  display: grid;
+}
+
+.stream__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-top: var(--hair) solid var(--line);
+}
+
+.stream__row.is-new {
+  animation: landing-in 180ms var(--ease-out);
+}
+
+@keyframes landing-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.stream__what {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stream__title {
+  overflow: hidden;
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream__meta {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.stream__end {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+/* A tx link is money that moved: the one blue in the stream. */
+.landing a.stream__tx {
+  color: var(--usdc);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+.stream__tx--none {
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+/* The ask box */
+.askbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  transition: border-color var(--d-1) var(--ease-out);
+}
+
+.askbox:focus-within {
+  border-color: var(--ink);
+}
+
+/* 16px or more under a finger, so iOS never zooms. */
+.askbox__input {
+  width: 100%;
+  min-height: 60px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(16px, 0.9rem + 0.5vw, 19px);
+  outline: none;
+}
+
+.askbox__input::placeholder {
+  color: var(--slate);
+}
+
+.askbox__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.askbox__go {
+  min-width: 88px;
+  padding: 0 var(--sp-5);
+  border: 0;
+  border-left: var(--hair) solid var(--line);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-15);
+  font-weight: 500;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.askbox__go:active {
+  transform: scale(0.97);
+}
+
+.askbox__examples {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.askbox__example {
+  display: grid;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 80px;
+  padding: var(--sp-4);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  transition:
+    border-color var(--d-1) var(--ease-out),
+    transform var(--d-press) var(--ease-out);
+}
+
+.askbox__example:active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .askbox__example:hover {
+    border-color: color-mix(in oklch, var(--line), var(--ink) 40%);
+  }
+}
+
+.askbox__hits {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+/* Proof */
+.proof {
+  display: grid;
+  border-top: var(--hair) solid var(--line);
+}
+
+.proof li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--sp-4);
+  padding: var(--sp-4) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-15);
+}
+
+.proof li span {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.landing__fine {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* The steps reuse the overview's artifacts; on the landing they sit a little wider apart. */
+.landing .clear {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 860px) {
+  .landing__under,
+  .landing__desk-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .askbox__examples {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proof li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-1);
+  }
+}
+
+@media (max-width: 520px) {
+  .landing__links {
+    gap: var(--sp-2) var(--sp-4);
+    font-size: var(--t-13);
+  }
+  .totals3 {
+    gap: var(--sp-3);
+  }
+  .rails-live__row {
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+  }
+  .rails-live__chain {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .tick.is-ticked,
+  .stream__row.is-new {
+    animation: none;
+  }
+}
