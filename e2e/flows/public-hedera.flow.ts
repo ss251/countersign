@@ -20,7 +20,7 @@ export const publicHedera: Flow = {
   title: "A Hedera agent pays through the public hub",
   owner: "cs-hd",
   network: "hedera",
-  notRun: () => "retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed",
+  onDemand: "covered hourly by flow 17; HBAR budget",
   spends(env) {
     const w = wallets(env.secrets);
     return [
