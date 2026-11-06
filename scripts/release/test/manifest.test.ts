@@ -124,7 +124,15 @@ describe("entries and staged manifest", () => {
     expect(staged.license).toBe("MIT");
     expect(staged.publishConfig).toEqual({ access: "public" });
     expect(staged.engines).toEqual({ node: ">=20" });
-    expect(staged.files).toEqual(["dist"]);
+    expect(staged.files).toEqual(["dist", "README.md", "LICENSE"]);
+    expect(staged.repository).toEqual({
+      type: "git",
+      url: "git+https://github.com/ss251/countersign.git",
+      directory: "packages/relay",
+    });
+    expect(staged.homepage).toBe("https://github.com/ss251/countersign/tree/main/packages/relay#readme");
+    expect(staged.bugs).toEqual({ url: "https://github.com/ss251/countersign/issues" });
+    expect(Array.isArray(staged.keywords)).toBe(true);
     expect(staged.private).toBeUndefined();
     expect(staged.dependencies).toEqual({ hono: "^4.13.16", viem: "^2.57.16" });
     expect(staged.bin).toEqual({ countersign: "./dist/cli.js" });
