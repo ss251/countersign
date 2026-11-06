@@ -67,7 +67,7 @@ export function Integrate(): ReactNode {
       <Snippet title="In your customer’s browser" path={SNIPPET_PATHS.customer} code={CUSTOMER_SNIPPET} />
       <p className="mx-quiet mx-integrate__note">
         {INSTALL_LINE
-          ? `Install with ${INSTALL_LINE}. It is the same code this console runs from its own workspace, under its published name. On npm, @countersign/* belongs to another project: never install it.`
+          ? `Install with ${INSTALL_LINE}. The paywall is Hono middleware, so your server mounts it on a Hono app. It is the same code this console runs from its own workspace, under its published name. On npm, @countersign/* belongs to another project: never install it.`
           : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package, so install nothing under that name until the release is out. On npm, @countersign/* belongs to another project: never install it."}
       </p>
     </section>
