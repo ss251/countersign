@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import type { NavGroup } from "./nav.ts";
 
 /**
  * Routes are folders. "/offer/abc" loads routes/offer/index.tsx with params ["abc"];
@@ -59,13 +60,13 @@ export function hasRoute(name: string): boolean {
  * a view joins the navigation when it is marked ready and its route folder exists.
  */
 const ALL_VIEWS = [
-  { name: "buyer", label: "Buyer", ready: true },
-  { name: "assistant", label: "Assistant", ready: true },
-  { name: "seller", label: "Seller", ready: true },
-  { name: "merchant", label: "Merchant", ready: true },
-  { name: "registry", label: "Registry", ready: true },
-  { name: "verify", label: "Verify", ready: true },
-] as const;
+  { name: "buyer", label: "Buyer", ready: true, group: "buy" },
+  { name: "assistant", label: "Assistant", ready: true, group: "buy" },
+  { name: "seller", label: "Seller", ready: true, group: "sell" },
+  { name: "merchant", label: "Merchant", ready: true, group: "sell" },
+  { name: "registry", label: "Registry", ready: true, group: "check" },
+  { name: "verify", label: "Verify", ready: true, group: "check" },
+] as const satisfies readonly { name: string; label: string; ready: boolean; group: NavGroup }[];
 
 export const VIEWS = ALL_VIEWS.filter((v) => v.ready && hasRoute(v.name));
 

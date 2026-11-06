@@ -60,7 +60,7 @@
 }
 
 .purchase__review-title {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .purchase__terms {

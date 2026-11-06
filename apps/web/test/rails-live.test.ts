@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { RAIL_LABEL } from "../src/lib/format.ts";
 import type { HubStats, RailDeclaration, RailId } from "../src/lib/types.ts";
-import { Figures } from "../src/routes/home/Evidence.tsx";
+import { Figures } from "../src/routes/home/Hero.tsx";
 import { RailFilters } from "../src/routes/registry/index.tsx";
 import { railGroups } from "../src/routes/registry/rails.ts";
 
@@ -86,24 +86,24 @@ describe("the hero and the Registry count the same live rails", () => {
       const groups = railGroups(OFFER_RAILS, hubIds);
       expect(groups?.live.length).toBe(k);
       const rails = hubIds.map(declaration);
-      const html = renderToString(createElement(Figures, { stats: hubStats(7), rails, missing: undefined, down: () => {} }));
-      expect(textOf(html)).toContain(`${k} ${k === 1 ? "rail" : "rails"} live`);
+      const html = renderToString(createElement(Figures, { stats: hubStats(7), railsLive: rails.length, missing: undefined }));
+      expect(textOf(html)).toContain(`Rails live${k}`);
     });
   }
 });
 
 describe("the landing's hero number is the hub's /rails length", () => {
   for (const k of [1, 3, 5]) {
-    test(`${k} declarations read "${k} ${k === 1 ? "rail" : "rails"} live"`, () => {
+    test(`${k} declarations read "Rails live ${k}"`, () => {
       const rails = Array.from({ length: k }, (_, i) => declaration(DECLARED[i]!));
-      const html = renderToString(createElement(Figures, { stats: hubStats(7), rails, missing: undefined, down: () => {} }));
+      const html = renderToString(createElement(Figures, { stats: hubStats(7), railsLive: rails.length, missing: undefined }));
       const text = textOf(html);
-      expect(text).toContain(`${k} ${k === 1 ? "rail" : "rails"} live`);
+      expect(text).toContain(`Rails live${k}`);
     });
   }
 
   test("no hub rails means no live text at all", () => {
-    const html = renderToString(createElement(Figures, { stats: hubStats(7), rails: undefined, missing: undefined, down: () => {} }));
+    const html = renderToString(createElement(Figures, { stats: hubStats(7), railsLive: undefined, missing: undefined }));
     const text = textOf(html);
     expect(text).not.toContain("live");
   });

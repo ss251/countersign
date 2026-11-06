@@ -9,9 +9,10 @@ const SENTENCE =
 
 // Bun cannot run Vite's import.meta.glob in routes.ts, so read the real view list from its source.
 const routesSource = await Bun.file(new URL("../src/app/routes.ts", import.meta.url)).text();
-const VIEWS = [...routesSource.matchAll(/\{ name: "([^"]+)", label: "([^"]+)", ready: true \}/g)].map((m) => ({
+const VIEWS = [...routesSource.matchAll(/\{ name: "([^"]+)", label: "([^"]+)", ready: true, group: "([^"]+)" \}/g)].map((m) => ({
   name: m[1]!,
   label: m[2]!,
+  group: m[3]!,
 }));
 
 globalThis.window = {

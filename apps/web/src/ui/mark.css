@@ -7,9 +7,9 @@
   fill: var(--ink);
 }
 
-/* The countersignature, in the same blue ink as the hold: red belongs to refusal alone. */
+/* The countersignature, in steel: the colour of the hold and of money moving. Red belongs to refusal alone. */
 .mark__seal {
-  fill: var(--usdc);
+  fill: var(--usdc-fill);
 }
 
 .wordmark {
@@ -25,6 +25,6 @@
 }
 
 .wordmark__name {
-  /* Optical: the mono x-height sits a hair below the mark's centre line. */
-  transform: translateY(-0.04em);
+  /* Optical: the display face's tall x-height sits a hair low against the mark's centre line. */
+  transform: translateY(-0.02em);
 }

@@ -27,7 +27,7 @@ export function Mark({ size = 24, title, className }: MarkProps) {
   );
 }
 
-/** The mark and the name. Lowercase, mono, -0.02em. */
+/** The mark and the name. Lowercase, in the house display face. */
 export function Wordmark({ size = 22 }: { size?: number }) {
   return (
     <span className="wordmark" style={{ fontSize: `${Math.round(size * 0.7)}px` }}>

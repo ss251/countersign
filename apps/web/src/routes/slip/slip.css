@@ -57,7 +57,7 @@
 }
 
 .slip__offer {
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .slip__when {
@@ -179,7 +179,7 @@
 .slip__section-title {
   color: var(--slate);
   font-size: var(--t-13);
-  font-weight: 600;
+  font-weight: var(--w-strong);
 }
 
 .slip__foot {
