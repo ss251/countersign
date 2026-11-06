@@ -31,6 +31,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
 | 15 | `public-hedera` | the Hedera agent pays a live offer on the public hub with no human step; mirror, HCS entry, the hub's settlement and the slip | Hedera testnet | cs-hd |
 | 16 | `public-gateway` | a Gateway nanopayment on a live offer of the public hub; balance debited at once, the hub serves the same slip | Arc testnet | orch-cs |
+| 17 | `hedera-mcp` | the Hedera agent pays a call to Hedera's own Agent Kit MCP server on the public hub; the slip binds the call, and the returned bytes decode to an unsigned transfer naming the buyer | Hedera testnet | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
@@ -170,6 +171,18 @@ Each case uses a fresh buyer state and must end with a refusal in the journal an
 2. **debited at once**: the buyer's Gateway balance drops by exactly the price.
 3. **the hosted hub serves the same slip**, rail `gateway`, and it verifies.
 
+### 17 · hedera-mcp
+
+The offer is Hedera's Agent Kit MCP server, `@hashgraph/hedera-agent-kit-mcp` 1.2.0, run by the seller's runner in RETURN_BYTES mode with no operator key. Its tool is `transfer_hbar_tool`.
+
+1. **the offer**: the public hub lists it, found at run time by adapter `mcp` and seller. Its 402 asks for USDC on `hedera:testnet`.
+2. **the agent pays** with `scripts/hedera/agent-run.ts --offer <hash> --input <the tool's arguments>`, no human step.
+3. **mirror and HCS**: the payment is `SUCCESS`, moving exactly the price, and the spend entry names it.
+4. **the slip binds the call**: its `inputHash` is the hash of the tool's arguments, and its `outputHash` is the hash of the call record (tool, server, package and version, input hash, result). The public hub lists the settlement, and the slip verifies.
+5. **the result is real**: the returned bytes decode, with the Hedera SDK, to a `TransferTransaction` whose transaction id names the buyer, carrying the memo and the HBAR legs that were sent and no signature.
+
+Until the agent's `--offer` flag is in the branch (#42), the flow reports NOT RUN.
+
 ### 14a, 14b · production smoke
 
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
@@ -213,7 +226,6 @@ These parts of the product have no end-to-end flow:
 - the subgraph;
 - ENS seller names;
 - the mainnet guard;
-- the `mcp` runner adapter;
 - the Escrow v2 review window, dispute and bond.
 
 The web routes are cut from the suite; the firstmate's screenshot rounds check them. A part moves into the flows table only once its flow passes.

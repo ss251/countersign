@@ -192,7 +192,13 @@ export const hederaMcp: Flow = {
       for (const [account, hbar] of tx.hbarTransfers) legs.set(account.toString(), BigInt(hbar.toTinybars().toString()));
       equal(legs.get(payee), BigInt(HBAR_TO_SEND) * 100_000_000n, "the payee's HBAR leg");
       equal(legs.get(agentId), -BigInt(HBAR_TO_SEND) * 100_000_000n, "the buyer's HBAR leg");
-      equal(tx.getSignatures().size, 0, "the returned transfer carries no signature");
+      // The map is node -> transaction id -> public key -> signature; an unsigned transfer has
+      // an entry per node and transaction id, each with no key in it.
+      let signatures = 0;
+      for (const [, byTx] of tx.getSignatures()) {
+        for (const [, byKey] of byTx as unknown as Iterable<[unknown, Iterable<unknown>]>) for (const _ of byKey) signatures += 1;
+      }
+      equal(signatures, 0, "signatures on the returned transfer");
     });
   },
 };
