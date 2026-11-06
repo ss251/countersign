@@ -130,6 +130,9 @@ export interface SettleResult {
   payer?: string;
   /** EVM tx hash, a Hedera transaction id such as "0.0.1234@1730880000.123456789", or a Stripe payment reference. */
   transaction: string;
+  /** What the hub puts into the rail's explorer template instead of `transaction`, when the transaction that
+   *  moved the money is not `transaction` itself (a held Hedera payment: the scheduled execution's consensus time). */
+  explorerRef?: string;
   network: Network;
   /** A receipt id the rail returns besides the transaction, e.g. the MPP Payment-Receipt id. */
   receipt?: string;

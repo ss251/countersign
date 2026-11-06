@@ -17,9 +17,10 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
  *                                               facilitator; the hub holds no Hedera key)
- *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule
- *                                               executes only when the hub submits the seller's countersignature
- *                                               after a checked delivery; the hub holds no key)
+ *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule moves no USDC
+ *                                               until the seller's key signs it; this hub submits the seller's
+ *                                               countersignature only after a checked delivery, but the seller's
+ *                                               key can also release it alone; the hub holds no key)
  * Rails from other lanes are added here as they integrate.
  *
  * Gateway and Hedera ask their facilitator what it supports while they start. If a facilitator is

@@ -47,6 +47,8 @@ export interface HubDeps {
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
+  /** The full git commit this hub was deployed from, or undefined when unknown. */
+  commit?: string;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -77,6 +79,7 @@ export function createHub(deps: HubDeps) {
   app.get("/healthz", (c) =>
     json({
       ok: true,
+      commit: deps.commit ?? null,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
       router: router.healthz(),

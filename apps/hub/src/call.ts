@@ -365,7 +365,7 @@ export async function paidCall(
     },
   };
   if (match.rail.declaration.explorerTx !== "") {
-    settlement.url = explorerUrl(match.rail.declaration, closeTx);
+    settlement.url = explorerUrl(match.rail.declaration, closing.explorerRef ?? closeTx);
   }
   if (review !== null) settlement.review = review;
   const slip: Slip = {

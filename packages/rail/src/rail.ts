@@ -93,7 +93,7 @@ export interface EscrowOps {
   /** Escrow v2: the buyer accepts a delivered job, paying the seller before the window ends. */
   accept?(jobId: Hex, buyerSig: Hex): Promise<SettleResult>;
   /** Escrow v2: the buyer disputes a funded or delivered job, refunding itself at once. */
-  dispute?(jobId: Hex, buyerSig: Hex): Promise<SettleResult>;
+  dispute?(jobId: Hex, status: number, buyerSig: Hex): Promise<SettleResult>;
   /** Escrow v2: anyone releases a delivered job after its review window. */
   releaseAfterWindow?(jobId: Hex): Promise<SettleResult>;
   /** Escrow v2: the delivery's review window, when it was recorded. */
@@ -111,7 +111,8 @@ export interface Rail {
   readonly declaration: RailDeclaration;
   challenge(offer: Offer, ctx: ChallengeContext): PaymentRequirements;
   verify(payment: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResult>;
-  settle(payment: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResult>;
+  /** `lockSig` is the payee's Lock(jobId) signature; only the escrow v2 rail uses it. */
+  settle(payment: PaymentPayload, requirements: PaymentRequirements, opts?: { lockSig?: Hex }): Promise<SettleResult>;
   /** Present exactly when declaration.kind is "escrow". */
   readonly escrow?: EscrowOps;
 }

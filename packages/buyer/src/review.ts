@@ -50,7 +50,7 @@ export interface ReviewArgs {
   now: number;
   known?: KnownRail[];
   readJob?: JobReader;
-  /** When the hub does not relay a dispute, send dispute(jobId, "") from the agent's key. */
+  /** When the hub does not relay a dispute, send dispute(jobId, status, "") from the agent's key. */
   direct?: boolean;
   /** The agent's full key, needed to send a direct dispute. The CLI passes it; tests inject a transport. */
   account?: LocalAccount;
@@ -67,7 +67,7 @@ export interface ReviewResult {
   transaction?: Hex;
 }
 
-/** Escrow v2's dispute(jobId, buyerSig): the buyer itself may submit with an empty signature. */
+/** Escrow v2's dispute(jobId, status, buyerSig): the buyer itself may submit with an empty signature. */
 const DISPUTE_ABI = [
   {
     type: "function",
@@ -75,6 +75,7 @@ const DISPUTE_ABI = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "jobId", type: "bytes32" },
+      { name: "status", type: "uint8" },
       { name: "buyerSig", type: "bytes" },
     ],
     outputs: [],
@@ -122,8 +123,8 @@ export async function acceptJob(a: ReviewArgs): Promise<ReviewResult> {
 }
 
 /**
- * Dispute a job: sign Dispute(jobId) under the escrow it was funded on, then hand it to the
- * hub to relay. The budget comes back only when `resume` sees the refund on chain.
+ * Dispute a job: sign Dispute(jobId, status) under the escrow it was funded on, then hand it
+ * to the hub to relay. The budget comes back only when `resume` sees the refund on chain.
  */
 export async function disputeJob(a: ReviewArgs): Promise<ReviewResult> {
   const jobId = a.jobId.toLowerCase() as Hex;
@@ -131,14 +132,14 @@ export async function disputeJob(a: ReviewArgs): Promise<ReviewResult> {
   const entries = entriesFor(a.journal, jobId);
   if (entries.length === 0) refuse("This agent's journal has no such job.");
 
-  const rail = await fundedOn(a, jobId, entries, known);
-  const signature = await a.signer.signTypedData(disputeTypedData(rail.chainId, rail.escrow, jobId));
+  const { rail, status } = await fundedOn(a, jobId, entries, known);
+  const signature = await a.signer.signTypedData(disputeTypedData(rail.chainId, rail.escrow, jobId, status));
   let transaction: Hex | undefined;
   try {
     await a.hub.disputeJob(jobId, signature);
   } catch (error) {
     if (!a.direct) throw error;
-    transaction = await submitDispute(a, rail, jobId);
+    transaction = await submitDispute(a, rail, jobId, status);
   }
   a.journal.append({
     ...record(a, jobId, entries),
@@ -155,19 +156,20 @@ export async function disputeJob(a: ReviewArgs): Promise<ReviewResult> {
 }
 
 /**
- * Submit dispute(jobId, "") from the agent's own key, which makes msg.sender the buyer.
+ * Submit dispute(jobId, status, "") from the agent's own key, which makes msg.sender the buyer.
  * Used only with --direct, and only when the hub would not relay the signed dispute.
  */
-async function submitDispute(a: ReviewArgs, rail: KnownRail, jobId: Hex): Promise<Hex> {
+async function submitDispute(a: ReviewArgs, rail: KnownRail, jobId: Hex, status: number): Promise<Hex> {
   const account = a.account;
   if (!account) refuse("The agent key is not available to send the dispute itself.");
-  return sendDispute(rail, jobId, account, a.transport);
+  return sendDispute(rail, jobId, status, account, a.transport);
 }
 
 /** The viem wallet client that carries a direct dispute on the pinned rail's RPC. */
 export async function sendDispute(
   rail: KnownRail,
   jobId: Hex,
+  status: number,
   account: LocalAccount,
   transport?: Transport,
 ): Promise<Hex> {
@@ -186,7 +188,7 @@ export async function sendDispute(
     address: rail.escrow,
     abi: DISPUTE_ABI,
     functionName: "dispute",
-    args: [jobId, "0x"],
+    args: [jobId, status, "0x"],
   });
 }
 
@@ -197,30 +199,55 @@ export async function readJob(rail: KnownRail, jobId: Hex): Promise<{ buyer: Add
   return { buyer: job.buyer, status: Number(job.status) };
 }
 
-/** The escrow the job was funded on: the one the journal recorded, or the single pinned escrow that holds it. */
-async function fundedOn(a: ReviewArgs, jobId: Hex, entries: JournalEntry[], known: KnownRail[]): Promise<KnownRail> {
+/** The escrow the job was funded on, and the status a dispute must name. */
+async function fundedOn(
+  a: ReviewArgs,
+  jobId: Hex,
+  entries: JournalEntry[],
+  known: KnownRail[],
+): Promise<{ rail: KnownRail; status: number }> {
   const recorded = entries.find((e) => e.escrow !== undefined && e.chainId !== undefined);
   if (recorded) {
     const rail = pinned(known, recorded.chainId as number, recorded.escrow as string);
     if (!rail) refuse("The job's escrow is not one this agent pins.");
-    return rail;
+    return { rail, status: await disputeStatus(a, rail, jobId, entries) };
   }
 
   // Older journal lines carry no escrow. Ask each pinned escrow on the job's network.
   const network = entries.find((e) => e.network)?.network;
   const candidates = known.filter((rail) => (network ? rail.network === network : true));
   const read = a.readJob ?? readJob;
-  const holding: KnownRail[] = [];
+  const holding: Array<{ rail: KnownRail; status: number }> = [];
   for (const rail of candidates) {
     try {
       const job = await read(rail, jobId);
-      if (getAddress(job.buyer) === getAddress(a.signer.address) && DISPUTABLE.has(job.status)) holding.push(rail);
+      if (getAddress(job.buyer) === getAddress(a.signer.address) && DISPUTABLE.has(job.status)) {
+        holding.push({ rail, status: job.status });
+      }
     } catch {
       // An escrow that cannot be read is not evidence either way.
     }
   }
   if (holding.length !== 1) refuse("No single pinned escrow holds this job open for this agent.");
-  return holding[0] as KnownRail;
+  return holding[0] as { rail: KnownRail; status: number };
+}
+
+/** Funded (1) or Delivered (5): the status the escrow will check against the signed dispute. */
+async function disputeStatus(
+  a: ReviewArgs,
+  rail: KnownRail,
+  jobId: Hex,
+  entries: JournalEntry[],
+): Promise<number> {
+  if (a.readJob) {
+    try {
+      const job = await a.readJob(rail, jobId);
+      if (DISPUTABLE.has(job.status)) return job.status;
+    } catch {
+      // Fall back to the journal when the escrow cannot be read.
+    }
+  }
+  return entries.some((entry) => entry.slipHash !== undefined) ? 5 : 1;
 }
 
 function heldSlip(a: ReviewArgs, jobId: Hex): Slip {
