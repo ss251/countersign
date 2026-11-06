@@ -66,7 +66,7 @@ export function Integrate(): ReactNode {
       <p className="mx-quiet mx-integrate__note">
         {INSTALL_LINE
           ? `Install with ${INSTALL_LINE}`
-          : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package. Do not install @countersign/* from npm: that scope belongs to another project."}
+          : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package. When it is, install it from the release's own URL, never from npm: @countersign/* on npm is another project's, and @countersign-hub on npm is not ours."}
       </p>
     </section>
   );
