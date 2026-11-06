@@ -74,6 +74,8 @@ export interface Flow {
   timeoutMs?: number;
   /** A reason the flow cannot run here at all, e.g. the browser rule. */
   notRun?(env: RunEnv): string | null;
+  /** Set when the flow is too costly to run every hour: full runs skip it, --flow runs it. */
+  onDemand?: string;
   /** What the flow may spend, for the budget guard. */
   spends?(env: RunEnv): Spend[];
   run(ctx: FlowCtx): Promise<void>;

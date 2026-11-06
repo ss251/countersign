@@ -1,5 +1,5 @@
 import { privateKeyToAccount } from "viem/accounts";
-import { escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
+import { eip3009Rail, escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
 import { createHederaRail } from "@countersign/rail/hedera";
 import type { Address, Hex } from "viem";
 
@@ -10,6 +10,8 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *   ARC_ESCROW, ARC_RPC_URL, CS_RELAYER_KEY  -> rail "escrow" (CountersignedEscrow on Arc testnet, USDC)
  *   WC_RELAY_URL                             -> rail "whitechain" (CountersignedEscrow on Whitechain Sepolia, USDT;
  *                                               the relay holds the WBT gas key and its guards; the hub holds none)
+ *   EIP3009_RAIL=1, ARC_RPC_URL, CS_RELAYER_KEY -> rail "eip3009" (direct USDC on Arc testnet; the buyer
+ *                                               signs TransferWithAuthorization, the hub's relayer submits it)
  *   GATEWAY_RAIL=1                           -> rail "gateway" (Circle Gateway nanopayments on Arc testnet;
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
@@ -48,6 +50,31 @@ export async function railsFromEnv(
         ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
       }),
     );
+  }
+  if (env.EIP3009_RAIL === "1") {
+    if (!env.ARC_RPC_URL || !env.CS_RELAYER_KEY) {
+      log("[hub] rail eip3009 is off: ARC_RPC_URL and CS_RELAYER_KEY are required");
+    } else {
+      try {
+        rails.push(
+          eip3009Rail({
+            id: "eip3009",
+            chainId: 5042002,
+            rpcUrl: env.ARC_RPC_URL,
+            token: ARC_USDC,
+            tokenName: "USDC",
+            tokenVersion: "2",
+            symbol: "USDC",
+            decimals: 6,
+            explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
+            submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex),
+          }),
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error);
+        log(`[hub] rail eip3009 is off: ${reason}`);
+      }
+    }
   }
   if (env.WC_RELAY_URL) {
     rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));

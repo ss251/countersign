@@ -14,7 +14,7 @@ export interface Wallet {
   id: string;
   label: string;
   network: NetworkKey;
-  asset: "USDC" | "USDT" | "USDC gas" | "WBT" | "HBAR";
+  asset: "USDC" | "USDT" | "USDC gas" | "WBT" | "HBAR" | "pathUSD";
   address: string;
   decimals: number;
   /** One RUN-STATE line asking for a top-up, without its timestamp and session. */

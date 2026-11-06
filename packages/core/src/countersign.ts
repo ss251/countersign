@@ -3,6 +3,7 @@
  *
  * jobId  = EIP-712 hash of Countersign(offerHash, buyer, payee, amount, deadline, salt)
  *          under the escrow's domain {name "Countersign", version "1", chainId, escrow}.
+ *          Escrow v2 appends (bond, reviewWindow) to the struct; terms carrying either field are v2.
  * The buyer signs one message: the token's EIP-3009 ReceiveWithAuthorization
  *          {from: buyer, to: escrow, value: amount, validAfter, validBefore, nonce: jobId}.
  * A settlement at any other amount, payee, deadline or offer derives another jobId,
@@ -34,6 +35,25 @@ export const COUNTERSIGN_TYPES = {
   ],
 } as const;
 
+/** Escrow v2 (D16): the offer's bond and review window are countersigned inside jobId. */
+export const COUNTERSIGN_V2_TYPES = {
+  Countersign: [
+    { name: "offerHash", type: "bytes32" },
+    { name: "buyer", type: "address" },
+    { name: "payee", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+    { name: "salt", type: "uint256" },
+    { name: "bond", type: "uint256" },
+    { name: "reviewWindow", type: "uint64" },
+  ],
+} as const;
+
+/** True for escrow v2 terms: they carry bond and reviewWindow (both, even when zero). */
+export function isV2Terms(terms: CountersignTerms): boolean {
+  return terms.bond !== undefined || terms.reviewWindow !== undefined;
+}
+
 export const RELEASE_TYPES = {
   Release: [
     { name: "jobId", type: "bytes32" },
@@ -43,6 +63,19 @@ export const RELEASE_TYPES = {
 
 export const CANCEL_TYPES = {
   Cancel: [{ name: "jobId", type: "bytes32" }],
+} as const;
+
+/** Escrow v2: the buyer accepts a delivered job, paying the seller before the review window ends. */
+export const ACCEPT_TYPES = {
+  Accept: [
+    { name: "jobId", type: "bytes32" },
+    { name: "slipHash", type: "bytes32" },
+  ],
+} as const;
+
+/** Escrow v2: the buyer disputes a funded or delivered job, refunding itself at once. */
+export const DISPUTE_TYPES = {
+  Dispute: [{ name: "jobId", type: "bytes32" }],
 } as const;
 
 export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
@@ -66,6 +99,23 @@ export function tokenDomain(chainId: number, token: Address, name: string, versi
 }
 
 export function jobIdOf(terms: CountersignTerms, chainId: number, escrow: Address): Hex {
+  if (isV2Terms(terms)) {
+    return hashTypedData({
+      domain: escrowDomain(chainId, escrow),
+      types: COUNTERSIGN_V2_TYPES,
+      primaryType: "Countersign",
+      message: {
+        offerHash: terms.offerHash,
+        buyer: getAddress(terms.buyer),
+        payee: getAddress(terms.payee),
+        amount: parseAtomic(terms.amount),
+        deadline: BigInt(terms.deadline),
+        salt: parseAtomic(terms.salt),
+        bond: parseAtomic(terms.bond ?? "0"),
+        reviewWindow: BigInt(terms.reviewWindow ?? 0),
+      },
+    });
+  }
   return hashTypedData({
     domain: escrowDomain(chainId, escrow),
     types: COUNTERSIGN_TYPES,
@@ -194,6 +244,32 @@ export function cancelTypedData(chainId: number, escrow: Address, jobId: Hex) {
     domain: escrowDomain(chainId, escrow),
     types: CANCEL_TYPES,
     primaryType: "Cancel" as const,
+    message: { jobId },
+  };
+}
+
+/**
+ * Typed data the buyer signs to accept a delivered job against the slip it received.
+ * Escrow v2. Sign it under the escrow of a pinned rail, never one a hub names.
+ */
+export function acceptTypedData(chainId: number, escrow: Address, jobId: Hex, slipHash: Hex) {
+  return {
+    domain: escrowDomain(chainId, escrow),
+    types: ACCEPT_TYPES,
+    primaryType: "Accept" as const,
+    message: { jobId, slipHash },
+  };
+}
+
+/**
+ * Typed data the buyer signs to dispute a job: before delivery up to the deadline, or
+ * while its review window is open. Escrow v2. Sign it under the escrow of a pinned rail.
+ */
+export function disputeTypedData(chainId: number, escrow: Address, jobId: Hex) {
+  return {
+    domain: escrowDomain(chainId, escrow),
+    types: DISPUTE_TYPES,
+    primaryType: "Dispute" as const,
     message: { jobId },
   };
 }

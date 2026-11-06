@@ -95,6 +95,8 @@ export async function gatewayRail(cfg: GatewayRailConfig = {}): Promise<Rail> {
     gasPaidBy: "gateway",
     finality: "The buyer's Gateway balance is debited at once; Circle Gateway credits the seller in its next batch.",
     explorerTx: "",
+    finalitySeconds: 900,
+    cost: { tollBps: 0, fixed: "0" },
   };
 
   function challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {

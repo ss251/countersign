@@ -1,5 +1,6 @@
+import { timingSafeEqual } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
-import { getAddress } from "viem";
+import { getAddress, toHex } from "viem";
 import type { Address } from "viem";
 import {
   PAYMENT_REQUIRED_HEADER,
@@ -18,6 +19,8 @@ import type {
   VerifyRequest,
   VerifyResponse,
 } from "./exact.ts";
+
+export const PAYMENT_RETRY_HEADER = "PAYMENT-RETRY";
 
 export type PaywallFetch = (
   input: string | URL | Request,
@@ -54,13 +57,18 @@ type PaymentRequired = {
 };
 
 type Claim = {
-  state: "in_flight" | "settled";
+  state: "in_flight" | "settled" | "pending";
   /** Unix seconds after which a settled claim may be forgotten. */
   validBefore: number;
+  /** The settle transaction, once one is pending. */
+  txHash: string | null;
+  /** The token handed only to the requester whose payment went pending. */
+  retryToken: string | null;
 };
 
 const MAX_CLAIMS = 10_000;
 const ALREADY_USED = "Refused. This payment was already used.";
+const STILL_SETTLING = "Refused. This payment is still settling.";
 
 /**
  * Puts a USDT price on a Hono route. A request without payment gets an x402 v2
@@ -75,7 +83,9 @@ const ALREADY_USED = "Refused. This payment was already used.";
  * The authorisation is claimed by `from:nonce` before the handler runs. A second request
  * presenting the same authorisation gets 409, both while the first is in flight and after it
  * settled. A claim is released when the request is refused before settlement (bad verify, a
- * handler error in "after" mode, or a failed settle), so an unused authorisation can be retried.
+ * handler error in "after" mode, or a settle that failed outright), so an unused authorisation
+ * can be retried. A settle that answers `settlement_pending` keeps the claim until `validBefore`
+ * plus a minute, because the transaction may still land.
  */
 export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   const amount = parseUnits(options.price, USDT.decimals);
@@ -90,6 +100,8 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   function prune(at: number): void {
     for (const [key, claim] of claims) {
       if (claim.state === "settled" && at > claim.validBefore) claims.delete(key);
+      // A pending transaction can still land until the token refuses the authorisation.
+      if (claim.state === "pending" && at > claim.validBefore + 60) claims.delete(key);
     }
     if (claims.size >= MAX_CLAIMS) {
       for (const [key, claim] of claims) {
@@ -115,7 +127,21 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   }
 
   function settleClaim(key: string, validBefore: number): void {
-    claims.set(key, { state: "settled", validBefore: Math.max(validBefore, now() + 60) });
+    claims.set(key, {
+      state: "settled",
+      validBefore: Math.max(validBefore, now() + 60),
+      txHash: null,
+      retryToken: null,
+    });
+  }
+
+  function pendingClaim(
+    key: string,
+    validBefore: number,
+    txHash: string,
+    retryToken: string,
+  ): void {
+    claims.set(key, { state: "pending", validBefore, txHash, retryToken });
   }
 
   return async (c, next) => {
@@ -144,11 +170,39 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       );
     }
 
+    const send = options.fetch ?? globalThis.fetch;
     const claim = claimOf(payment);
     if (claim) {
       prune(now());
-      if (claims.has(claim.key)) return alreadyUsed(c);
-      claims.set(claim.key, { state: "in_flight", validBefore: claim.validBefore });
+      const existing = claims.get(claim.key);
+      if (existing) {
+        if (existing.state !== "pending") return alreadyUsed(c);
+        if (!sameToken(existing.retryToken, c.req.header(PAYMENT_RETRY_HEADER))) {
+          return stillSettling(c);
+        }
+        const txHash = existing.txHash;
+        if (txHash) {
+          const status = await orderStatus(
+            send,
+            `${facilitator}/orders/${encodeURIComponent(txHash)}`,
+          );
+          if (status === "paid" || status === "partially_refunded") {
+            // The payment landed. Re-read the claim so a concurrent retry cannot serve twice.
+            const landed = claims.get(claim.key);
+            if (!landed || landed.state !== "pending") return alreadyUsed(c);
+            settleClaim(claim.key, landed.validBefore);
+            await next();
+            return withLanded(c, txHash, requirements, payment);
+          }
+        }
+        return stillSettling(c);
+      }
+      claims.set(claim.key, {
+        state: "in_flight",
+        validBefore: claim.validBefore,
+        txHash: null,
+        retryToken: null,
+      });
     }
 
     const request: VerifyRequest = {
@@ -156,7 +210,6 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       paymentPayload: payment,
       paymentRequirements: requirements,
     };
-    const send = options.fetch ?? globalThis.fetch;
 
     const verify = (await post(send, `${facilitator}/verify`, request)) as VerifyResponse | null;
     if (!verify) {
@@ -183,6 +236,21 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
         return { kind: "refused", response: unreachable(c) };
       }
       if (settle.success !== true) {
+        if (settle.errorReason === "settlement_pending") {
+          // The transaction may still land, so keep the payment claimed until it cannot.
+          const retryToken = toHex(crypto.getRandomValues(new Uint8Array(16)));
+          if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction, retryToken);
+          const response = required(
+            c,
+            requirements,
+            url,
+            "Refused. settlement_pending",
+            options,
+          );
+          response.headers.set(PAYMENT_RESPONSE_HEADER, toBase64Json(settle));
+          response.headers.set(PAYMENT_RETRY_HEADER, retryToken);
+          return { kind: "refused", response };
+        }
         if (claim) release(claim.key);
         return {
           kind: "refused",
@@ -248,6 +316,31 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   }
 }
 
+function withLanded(
+  c: Context,
+  txHash: string,
+  requirements: PaymentRequirements,
+  payment: PaymentPayload,
+): Response {
+  const response = c.res;
+  const headers = new Headers(response.headers);
+  headers.set(
+    PAYMENT_RESPONSE_HEADER,
+    toBase64Json({
+      success: true,
+      transaction: txHash,
+      network: requirements.network,
+      payer: payment.payload.authorization.from,
+    }),
+  );
+  c.res = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  return c.res;
+}
+
 function withSettle(c: Context, settle: SettleResponse): Response {
   const response = c.res;
   const headers = new Headers(response.headers);
@@ -262,6 +355,18 @@ function withSettle(c: Context, settle: SettleResponse): Response {
 
 function alreadyUsed(c: Context): Response {
   return c.json({ error: ALREADY_USED }, 409);
+}
+
+function stillSettling(c: Context): Response {
+  return c.json({ error: STILL_SETTLING }, 409);
+}
+
+function sameToken(expected: string | null, presented: string | undefined): boolean {
+  if (expected === null || presented === undefined) return false;
+  const left = Buffer.from(expected, "utf8");
+  const right = Buffer.from(presented, "utf8");
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 function requirementsFor(
@@ -282,6 +387,22 @@ function requirementsFor(
       version: USDT.version,
     },
   };
+}
+
+async function orderStatus(send: PaywallFetch, url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await send(url, { method: "GET", signal: controller.signal });
+    if (!response.ok) return null;
+    const body = (await response.json()) as unknown;
+    if (!isRecord(body) || typeof body.status !== "string") return null;
+    return body.status;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function post(

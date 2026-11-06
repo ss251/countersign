@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as fx from "../fixtures/index.ts";
 import { ESCROW_RAILS, explorerTemplate, nowUnix, shortHex, symbolFor } from "./format.ts";
 import {
   approvalToken,
@@ -17,6 +16,7 @@ import {
 import type {
   Approval,
   EnvelopeView,
+  HubStats,
   Listing,
   Purchase,
   RailDeclaration,
@@ -29,25 +29,53 @@ import type {
 } from "./types.ts";
 
 /**
- * Every read the screens make goes through here. With a hub chosen (see hub.ts) the
- * answer is live and its failures surface as errors. With none, or for reads the hub
- * does not serve yet, the answer comes from src/fixtures and says so
- * (source: "fixtures"), so a screen never passes stand-in numbers off as live ones.
+ * Every read the screens make goes through here, and the answer always says where it came from.
+ * "hub": live. "absent": the hub does not serve this read, or holds nothing for it yet, with the
+ * sentence a person reads and a retry; never a stand-in in its place. "fixtures": only with
+ * ?hub=off, loaded on demand, so the default bundle carries no stand-in values at all.
  */
 
-export type Source = "hub" | "fixtures";
+export type Source = "hub" | "fixtures" | "absent";
 
 export interface Loaded<T> {
   data: T;
   source: Source;
+  /** For "absent": what is missing, in a sentence. */
+  reason?: string;
+  /** For "absent": the hub holds this behind the approval token, which this device does not have. */
+  needsToken?: boolean;
 }
 
-/** Fixtures answer at once: no artificial latency, so a recording never waits on a placeholder. */
-const settle = <T,>(data: T): Promise<Loaded<T>> => Promise.resolve({ data, source: "fixtures" });
+type Fixtures = typeof import("../fixtures/index.ts");
+let fixtureModule: Promise<Fixtures> | null = null;
+/** The stand-in catalogue, fetched only when someone asks for it with ?hub=off. */
+const fixtures = (): Promise<Fixtures> => (fixtureModule ??= import("../fixtures/index.ts"));
+
+const settle = <T,>(data: T): Loaded<T> => ({ data, source: "fixtures" });
 
 const live = <T,>(data: T): Loaded<T> => ({ data, source: "hub" });
 
-function fixtureSettlements(limit: number): Settlement[] {
+const absent = <T,>(reason: string, needsToken = false): Loaded<T | null> => ({ data: null, source: "absent", reason, needsToken });
+
+/** The honest sentence for a read the hub could not give, by what was asked for and why it failed. */
+function absence<T>(e: unknown, what: string, missing: string): Loaded<T | null> {
+  if (e instanceof HubError) {
+    if (e.status === 404 && e.code === "unknown-agent") return absent(missing);
+    if (e.status === 404) return absent(`This hub does not serve ${what} yet.`);
+    if (e.status === 401) return absent(`This hub shows ${what} only with the approval token.`, true);
+    if (e.status === 503) return absent(`This hub has no approver set, so it keeps ${what} private.`);
+    if (e.status === 0) return absent(`The hub did not answer, so ${what} cannot be read right now.`);
+  }
+  return absent(`The hub could not give ${what} right now.`);
+}
+
+/** The approval token, for the reads the hub keeps behind it. Sent only to this hub. */
+function tokenHeader(): Record<string, string> {
+  const token = approvalToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
+function fixtureSettlements(fx: Fixtures, limit: number): Settlement[] {
   return fx.purchases
     .filter((p) => p.status === "released" || p.status === "refunded")
     .slice(0, limit)
@@ -130,24 +158,38 @@ async function treeView(root: string): Promise<TreeView> {
 
 export const api = {
   listings: async (): Promise<Loaded<Listing[]>> =>
-    hubBase() ? live((await hubOffers()).map(toListing)) : settle(fx.listings),
+    hubBase() ? live((await hubOffers()).map(toListing)) : settle((await fixtures()).listings),
   listing: async (hash: string): Promise<Loaded<Listing | undefined>> => {
-    if (!hubBase()) return settle(fx.listingByHash(hash) ?? fx.listingByTitle(hash));
+    if (!hubBase()) {
+      const fx = await fixtures();
+      return settle(fx.listingByHash(hash) ?? fx.listingByTitle(hash));
+    }
     const l = await orMissing(hubOffer(hash));
     return live(l ? toListing(l) : undefined);
   },
-  rails: async (): Promise<Loaded<RailDeclaration[]>> => (hubBase() ? live(await hubRails()) : settle(Object.values(fx.rails))),
-  slip: async (hash: string): Promise<Loaded<SlipView | undefined>> => (hubBase() ? live(await slipView(hash)) : settle(fx.slipByHash(hash))),
-  tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle(fx.tree)),
+  rails: async (): Promise<Loaded<RailDeclaration[]>> =>
+    hubBase() ? live(await hubRails()) : settle(Object.values((await fixtures()).rails)),
+  slip: async (hash: string): Promise<Loaded<SlipView | undefined>> =>
+    hubBase() ? live(await slipView(hash)) : settle((await fixtures()).slipByHash(hash)),
+  tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle((await fixtures()).tree)),
   /**
    * Recent releases and refunds, newest first. null means the hub does not serve them yet,
    * which the overview says plainly instead of inventing rows.
    */
   settlements: async (limit = 6): Promise<Loaded<Settlement[] | null>> => {
-    if (!hubBase()) return settle(fixtureSettlements(limit));
+    if (!hubBase()) return settle(fixtureSettlements(await fixtures(), limit));
     const rows = await orMissing(hubGet<{ settlements: Settlement[] } | Settlement[]>(`/settlements?limit=${limit}`));
     if (!rows) return live(null);
     return live(Array.isArray(rows) ? rows : rows.settlements);
+  },
+  /** The hub's own totals. Never fixtures: without a hub there is nothing to count, and the landing says so. */
+  stats: async (): Promise<Loaded<HubStats | null>> => {
+    if (!hubBase()) return absent("No hub is connected, so there is nothing live to count. Open the page without ?hub=off.");
+    try {
+      return live(await hubGet<HubStats>("/stats"));
+    } catch (e) {
+      return absence(e, "totals", "This hub has no totals yet.");
+    }
   },
   /** The hub's sellers with slip-derived counts and identity; null until the hub serves /sellers. */
   sellers: async (): Promise<Loaded<SellerRecord[] | null>> => {
@@ -165,26 +207,35 @@ export const api = {
    * The phone: the agent's signed envelope mirror, its pending approvals and its jobs. Each falls
    * back to labelled fixtures until the hub serves it, so the phone always says which it shows.
    */
-  envelope: async (): Promise<Loaded<EnvelopeView>> => {
+  envelope: async (): Promise<Loaded<EnvelopeView | null>> => {
+    if (!hubBase()) return settle(structuredClone((await fixtures()).envelope));
     const agent = await resolveAgent();
-    const m = agent ? await orMissing(hubGet<EnvelopeMirror>(`/envelopes/${agent}`)).catch(() => undefined) : undefined;
-    if (!agent || !m) return settle(structuredClone(fx.envelope));
-    return live({
-      envelope: m.envelope,
-      spent: m.spent,
-      agentName: shortHex(agent),
-      // No askAbove in the agent's envelope means it never asks: every call inside the limits goes through.
-      askAbove: m.envelope.askAbove ?? null,
-      names: {},
-      mirror: { signedAt: toUnix(m.signedAt), agent },
-    });
+    if (!agent) return absent("No agent has bought through this hub yet, so there is no envelope to show.");
+    try {
+      const m = await hubGet<EnvelopeMirror>(`/envelopes/${agent}`, 5000, tokenHeader());
+      return live({
+        envelope: m.envelope,
+        spent: m.spent,
+        agentName: shortHex(agent),
+        // No askAbove in the agent's envelope means it never asks: every call inside the limits goes through.
+        askAbove: m.envelope.askAbove ?? null,
+        names: {},
+        mirror: { signedAt: toUnix(m.signedAt), agent },
+      });
+    } catch (e) {
+      return absence(e, "envelopes", "Your agent has not published its signed envelope to this hub yet.");
+    }
   },
-  approvals: async (): Promise<Loaded<Approval[]>> => {
+  approvals: async (): Promise<Loaded<Approval[] | null>> => {
+    if (!hubBase()) return settle((await fixtures()).approvals);
     const agent = await resolveAgent();
-    const r = agent
-      ? await orMissing(hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=pending`)).catch(() => undefined)
-      : undefined;
-    if (!r) return settle(fx.approvals);
+    if (!agent) return absent("No agent has bought through this hub yet, so nothing can be waiting for you.");
+    let r: { approvals: HubApproval[] };
+    try {
+      r = await hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=pending`, 5000, tokenHeader());
+    } catch (e) {
+      return absence(e, "approvals", "This hub holds no approvals for your agent.");
+    }
     const pending = r.approvals.filter((a) => a.status === "pending");
     const found = await Promise.all(pending.map((a) => offerOnce(a.offerHash)));
     return live(
@@ -207,18 +258,40 @@ export const api = {
       }),
     );
   },
-  purchases: async (): Promise<Loaded<Purchase[]>> => {
+  purchases: async (): Promise<Loaded<Purchase[] | null>> => {
+    if (!hubBase()) return settle((await fixtures()).purchases);
     const agent = await resolveAgent();
-    const r = agent ? await orMissing(hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${agent}&limit=50`)).catch(() => undefined) : undefined;
-    if (!agent || !r) return settle(fx.purchases);
+    if (!agent) return absent("No agent has bought through this hub yet.");
+    let r: { jobs: HubBuyerJob[] };
+    try {
+      r = await hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${agent}&limit=50`);
+    } catch (e) {
+      return absence(e, "an agent’s purchases", "This hub has no purchases for your agent.");
+    }
     const [listings, decided] = await Promise.all([
       hubOffers().catch(() => [] as HubListing[]),
-      orMissing(hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=decided`)).then(
-        (d) => d?.approvals ?? [],
+      hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=decided`, 5000, tokenHeader()).then(
+        (d) => d.approvals,
         () => [] as HubApproval[],
       ),
     ]);
     return live(r.jobs.map((j) => toPurchase(j, listings, decided)));
+  },
+  /** One seller's sales, newest first, for the seller's desk. */
+  sales: async (seller: string | undefined): Promise<Loaded<Purchase[] | null>> => {
+    if (!hubBase()) {
+      const fx = await fixtures();
+      return settle(fx.purchases.filter((p) => !seller || p.seller.address.toLowerCase() === seller.toLowerCase()));
+    }
+    if (!seller) return absent("This hub has no sellers yet.");
+    let r: { jobs: HubBuyerJob[] };
+    try {
+      r = await hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?seller=${seller}&limit=50`);
+    } catch (e) {
+      return absence(e, "a seller’s sales", "This hub has no sales for this seller.");
+    }
+    const listings = await hubOffers().catch(() => [] as HubListing[]);
+    return live(r.jobs.map((j) => toPurchase(j, listings, [])));
   },
   /** The human's decision on a held call. The token stays on this device and goes only to this hub. */
   decide: async (id: string, decision: "countersign" | "decline"): Promise<void> => {
@@ -440,16 +513,18 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
   const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
   const deadline = now() + approval.listing.offer.deadline;
 
+  // Fixture approvals only exist under ?hub=off, so the catalogue is already loaded by now.
+  const fx = fixtures();
   if (scenario === "moved") {
     const asked = ((BigInt(approval.amount) * 6n) / 5n).toString();
     at(700, () => push({}, "funding"));
     at(1900, () => push({ asked }, "refused"));
   } else {
     at(700, () => push({}, "funding"));
-    at(1700, () => push({ fundTx: fx.fakeHex(`fund:${approval.id}`), deadline }, "held"));
+    at(1700, () => void fx.then((f) => push({ fundTx: f.fakeHex(`fund:${approval.id}`), deadline }, "held")));
     if (scenario === "release") {
       at(3300, () => push({}, "delivered"));
-      at(4300, () => push({ slipHash: fx.demoSlipHash }, "released"));
+      at(4300, () => void fx.then((f) => push({ slipHash: f.demoSlipHash }, "released")));
     } else {
       at(4300, () => push({}, "refunded"));
     }
@@ -462,6 +537,9 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
 export interface Resource<T> {
   data: T | undefined;
   source: Source | undefined;
+  /** For "absent": what is missing, in a sentence a person reads. */
+  reason: string | undefined;
+  needsToken: boolean;
   error: Error | undefined;
   loading: boolean;
   reload: () => void;
@@ -469,7 +547,9 @@ export interface Resource<T> {
 }
 
 export function useResource<T>(load: () => Promise<Loaded<T>>, deps: unknown[]): Resource<T> {
-  const [state, setState] = useState<{ data?: T; source?: Source; error?: Error; loading: boolean }>({ loading: true });
+  const [state, setState] = useState<{ data?: T; source?: Source; reason?: string; needsToken?: boolean; error?: Error; loading: boolean }>({
+    loading: true,
+  });
   const [nonce, setNonce] = useState(0);
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -478,7 +558,7 @@ export function useResource<T>(load: () => Promise<Loaded<T>>, deps: unknown[]):
     let live = true;
     setState((s) => ({ ...s, loading: true, error: undefined }));
     loadRef.current().then(
-      (r) => live && setState({ data: r.data, source: r.source, loading: false }),
+      (r) => live && setState({ data: r.data, source: r.source, reason: r.reason, needsToken: r.needsToken, loading: false }),
       (e: unknown) => live && setState({ loading: false, error: e instanceof Error ? e : new Error(String(e)) }),
     );
     return () => {
@@ -489,5 +569,15 @@ export function useResource<T>(load: () => Promise<Loaded<T>>, deps: unknown[]):
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   const set = useCallback((next: T) => setState((s) => ({ ...s, data: next })), []);
-  return { ...state, data: state.data, source: state.source, error: state.error, loading: state.loading, reload, set };
+  return {
+    ...state,
+    data: state.data,
+    source: state.source,
+    reason: state.reason,
+    needsToken: state.needsToken ?? false,
+    error: state.error,
+    loading: state.loading,
+    reload,
+    set,
+  };
 }

@@ -3,10 +3,12 @@ import type { JsonSchema } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
+import { formatAgo, formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
+import { settlementIndex } from "../../lib/ledger.ts";
+import { useNow } from "../../lib/now.ts";
 import { RailCard } from "../../ui/RailCard.tsx";
-import { Amount, CopyButton, Empty, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
+import { Amount, CopyButton, Empty, FixtureNote, Hash, RailState, Tag, cx } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
 import "./offer.css";
 
@@ -18,6 +20,8 @@ export default function OfferPage({ params }: PageProps) {
   const listing = useResource(() => api.listing(hash), [hash]);
   const rails = useResource(() => api.rails(), []);
   const sellers = useResource(() => api.sellers(), []);
+  const settlements = useResource(() => api.settlements(100), []);
+  const now = useNow();
   const [via, setVia] = useState<"cli" | "curl">("cli");
   const [more, setMore] = useState(false);
 
@@ -47,6 +51,17 @@ export default function OfferPage({ params }: PageProps) {
   const record = sellers.data?.find((s) => s.address.toLowerCase() === offer.seller.toLowerCase());
   const agentId = record?.erc8004?.agentId ?? l.seller.agentId;
   const cli = buyCommand(l.hash, offer.input, base);
+  // The record reads the same settlements as the registry, so the two pages never disagree.
+  const ledger = settlementIndex(settlements.data);
+  const counts = ledger.byOffer.get(l.hash.toLowerCase());
+  const last = (settlements.data ?? []).find((x) => x.offerHash.toLowerCase() === l.hash.toLowerCase());
+  const tally = settlements.loading && settlements.data === undefined
+    ? null
+    : counts
+      ? `${counts.paid} paid${counts.refunded ? ` · ${counts.refunded} refunded` : ""}`
+      : ledger.known
+        ? "No calls yet"
+        : "Not counted yet";
   const curl = curlCommand(l.hash, offer.input, base);
 
   return (
@@ -73,15 +88,7 @@ export default function OfferPage({ params }: PageProps) {
         </p>
         <div className="offer__price-row">
           <Amount money={usd(offer.price, offer.rails[0])} size="xl" />
-          <p className="offer__per num">
-            per call ·{" "}
-            {!l.stats
-              ? "calls not counted yet"
-              : l.stats.released + l.stats.refunded > 0
-                ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
-                : "no calls yet"}
-            {l.online === undefined ? "" : l.online ? " · runner online" : " · runner offline"}
-          </p>
+          <p className="offer__per">per call</p>
         </div>
         <p className="offer__rails">Settles on {offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
         <p className={cx("page__lede offer__summary", !more && offer.summary.length > 220 && "is-clamped")}>{offer.summary}</p>
@@ -101,16 +108,42 @@ export default function OfferPage({ params }: PageProps) {
         ) : null}
       </header>
 
+      {/* What a call costs and what proves the offer delivers, in one ruled strip. */}
+      <dl className="facts">
+        <div>
+          <dt className="label">Deadline</dt>
+          <dd>{formatDuration(offer.deadline)}</dd>
+        </div>
+        <div>
+          <dt className="label">Bond</dt>
+          <dd>
+            <Amount money={usd(offer.bond, offer.rails[0])} size="sm" />
+          </dd>
+        </div>
+        <div>
+          <dt className="label">Record</dt>
+          <dd>{tally}</dd>
+        </div>
+        <div>
+          <dt className="label">Last settlement</dt>
+          <dd>{last ? formatAgo(last.at, now) : ledger.known ? "None yet" : "—"}</dd>
+        </div>
+        <div>
+          <dt className="label">Runner</dt>
+          <dd>{l.online === undefined ? "—" : <RailState state={l.online ? "live" : "off"}>{l.online ? "Online" : "Offline"}</RailState>}</dd>
+        </div>
+      </dl>
+
       <section className="section offer__call" aria-labelledby="call-title">
         <div className="offer__call-head">
           <h2 id="call-title" className="section__title">
             Call it
           </h2>
-          <div className="switch" role="tablist" aria-label="How to call it">
-            <button type="button" role="tab" aria-selected={via === "cli"} className={cx("switch__item", via === "cli" && "is-on")} onClick={() => setVia("cli")}>
+          <div className="toggles" role="tablist" aria-label="How to call it">
+            <button type="button" role="tab" aria-selected={via === "cli"} className={cx("toggle", via === "cli" && "is-on")} onClick={() => setVia("cli")}>
               Buyer CLI
             </button>
-            <button type="button" role="tab" aria-selected={via === "curl"} className={cx("switch__item", via === "curl" && "is-on")} onClick={() => setVia("curl")}>
+            <button type="button" role="tab" aria-selected={via === "curl"} className={cx("toggle", via === "curl" && "is-on")} onClick={() => setVia("curl")}>
               curl
             </button>
           </div>

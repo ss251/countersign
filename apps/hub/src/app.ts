@@ -16,11 +16,14 @@ import {
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
+import { registerBuyerPlumbing } from "./buyerplumbing.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
+import { registerOrders } from "./orders.ts";
 import { Ratings } from "./ratings.ts";
+import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
 import type { Listing } from "./types.ts";
@@ -34,6 +37,10 @@ export interface HubDeps {
   identity?: IdentityLookup;
   /** Sepolia ENS lookups. Without it, an offer that names an ENS seller is refused. */
   ens?: EnsResolve;
+  /** Bearer token the human's phone presents to decide an approval. */
+  humanApprovalToken?: string;
+  /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
+  relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
 }
@@ -44,6 +51,7 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
+  const router = new HubRouter(deps.rails);
   const ratings = new Ratings(deps.store, { now: deps.now, cacheSeconds: deps.ratingsCacheSeconds ?? 5 });
   const frontdoor = (): FrontdoorDeps => {
     const view: FrontdoorDeps = {
@@ -58,11 +66,15 @@ export function createHub(deps: HubDeps) {
 
   app.use("*", cors({ origin: "*", exposeHeaders: PAYMENT_HEADERS }));
 
+  registerBuyerPlumbing(app, deps);
+  registerOrders(app, deps);
+
   app.get("/healthz", (c) =>
     json({
       ok: true,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
+      router: router.healthz(),
     }),
   );
 
@@ -201,7 +213,7 @@ export function createHub(deps: HubDeps) {
 
     let outcome;
     try {
-      outcome = await paidCall({ ...deps, runners }, hash, c.req.raw.headers, body);
+      outcome = await paidCall({ ...deps, runners, router }, hash, c.req.raw.headers, body);
     } catch {
       return fail(500, "internal", "Refused. The hub could not complete the call.");
     }

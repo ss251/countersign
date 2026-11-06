@@ -57,7 +57,7 @@ contract EscrowForkCheck is Script {
         (seller, sellerKey) = makeAddrAndKey("fork-seller");
         treasury = makeAddr("fork-treasury");
         relayer = makeAddr("fork-relayer");
-        escrow = new CountersignedEscrow(USDT, treasury, TOLL_BPS);
+        escrow = new CountersignedEscrow(USDT, treasury, TOLL_BPS, relayer);
 
         _buyUsdt(buyer, 0.05 ether);
         uint256 start = IUsdt(USDT).balanceOf(buyer);

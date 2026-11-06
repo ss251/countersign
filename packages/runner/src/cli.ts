@@ -4,12 +4,14 @@
  *
  *   bun packages/runner/src/cli.ts publish --hub <url> --skill <path> --price <atomic> ...
  *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...] ...
+ *   bun packages/runner/src/cli.ts bond deposit|withdraw|show ... --escrow <address>
  */
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { isEnsName, parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
+import { bondFromEnv } from "./bond.ts";
 import { startRunner, type ServedOffer } from "./daemon.ts";
 import { publishOffer, type PublishedOffer } from "./publish.ts";
 import { readSkill, skillOffer, type Skill } from "./skill.ts";
@@ -39,7 +41,11 @@ async function main(): Promise<void> {
     await serveCommand(parseOptions(args));
     return;
   }
-  throw new Error("Usage: cli.ts <publish|serve> --hub <url> --skill <path> --price <atomic>");
+  if (command === "bond") {
+    await bondFromEnv(args);
+    return;
+  }
+  throw new Error("Usage: cli.ts <publish|serve|bond> ...");
 }
 
 async function publishCommand(options: Options): Promise<void> {

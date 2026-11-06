@@ -180,4 +180,60 @@ describe("ledger", () => {
     ledger.close();
     rmSync(path, { force: true });
   });
+
+  test("adds the refund reason, refund time and close reason to a database from before them", () => {
+    const path = join(tmpdir(), `countersign-ledger-${crypto.randomUUID()}.sqlite`);
+    const old = new Database(path, { create: true });
+    old.exec(`
+      CREATE TABLE refunds (
+        payment_id TEXT NOT NULL, amount TEXT NOT NULL, tx_hash TEXT NOT NULL,
+        block_number TEXT NOT NULL, nonce TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'confirmed', valid_before INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE jobs (
+        job_id TEXT PRIMARY KEY, offer_hash TEXT NOT NULL, buyer TEXT NOT NULL, payee TEXT NOT NULL,
+        amount TEXT NOT NULL, deadline INTEGER NOT NULL, fund_tx TEXT NOT NULL,
+        fund_block TEXT NOT NULL, status TEXT NOT NULL, close_tx TEXT, slip_hash TEXT,
+        created_at INTEGER NOT NULL, closed_at INTEGER, resource TEXT
+      );
+      INSERT INTO refunds (payment_id, amount, tx_hash, block_number, nonce)
+        VALUES ('0xold', '100', '0xtx', '1', '0xn');
+    `);
+    old.close();
+
+    const ledger = new Ledger(path);
+    expect(ledger.listRefunds("0xold").map((refund) => [refund.reason, refund.at])).toEqual([
+      [null, null],
+    ]);
+    const paymentId = fakeHash();
+    ledger.recordRefund({
+      paymentId,
+      amount: 400_000n,
+      txHash: fakeHash(),
+      blockNumber: 1n,
+      nonce: fakeNonce(),
+      reason: "duplicate",
+      at: 1234,
+    });
+    expect(ledger.listRefunds(paymentId).map((refund) => [refund.reason, refund.at])).toEqual([
+      ["duplicate", 1234],
+    ]);
+
+    const jobId = fakeHash();
+    ledger.recordJob({
+      jobId,
+      offerHash: fakeHash(),
+      buyer: PAYER,
+      payee: MERCHANT,
+      amount: 1_000_000n,
+      deadline: 2000,
+      fundTx: fakeHash(),
+      fundBlock: 1n,
+      createdAt: 1000,
+    });
+    expect(ledger.closeJob(jobId, "cancelled", fakeHash(), undefined, 5000, "other")).toBe(true);
+    expect(ledger.getJob(jobId)?.closeReason).toBe("other");
+    ledger.close();
+    rmSync(path, { force: true });
+  });
 });

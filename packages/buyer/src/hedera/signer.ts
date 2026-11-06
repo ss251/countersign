@@ -22,6 +22,8 @@ export interface SignOptions {
   assets?: string[];
   /** Refuse anything above this atomic amount, whatever the envelope says. */
   maxAmount?: bigint;
+  /** Node account ids to freeze with. Omitted, the transfer resolves testnet nodes. */
+  nodeAccountIds?: string[];
 }
 
 function refuse(msg: string): never {
@@ -60,11 +62,17 @@ export async function signHederaTransfer(
     .setTransactionId(TransactionId.generate(AccountId.fromString(req.extra!.feePayer as string)))
     .setTransactionMemo(offerMemo(req.extra!.offerHash as string))
     .setTransactionValidDuration(Math.min(req.maxTimeoutSeconds, 180));
-  const client = Client.forTestnet();
+  const nodeAccountIds = opts.nodeAccountIds;
+  const client = nodeAccountIds?.length ? undefined : Client.forTestnet();
   try {
-    tx.freezeWith(client);
+    if (nodeAccountIds?.length) {
+      tx.setNodeAccountIds(nodeAccountIds.map((id) => AccountId.fromString(id)));
+      tx.freeze();
+    } else {
+      tx.freezeWith(client!);
+    }
   } finally {
-    client.close();
+    client?.close();
   }
   await tx.sign(payer.key);
   const id = tx.transactionId!.toString();

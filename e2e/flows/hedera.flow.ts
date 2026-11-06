@@ -5,7 +5,6 @@
  * the log entry. Last, the agent's envelope refuses a call past its cap and logs that too.
  */
 
-import { join } from "node:path";
 import {
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -14,55 +13,12 @@ import {
 import { startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
 import { HEDERA } from "../lib/chains.ts";
-import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
+import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
 import { hashscanTx, mirrorTransaction, mirrorTxId, netToken, tokenDebits, topicMessage, topicSince } from "../lib/hedera.ts";
 import { sleep } from "../lib/http.ts";
-import { runCmd } from "../lib/procs.ts";
+import { agentRun, evidence as find, OPEN_CAP } from "../lib/agent.ts";
 
 const PRICE = 10_000n; // 0.01 USDC
-/** Wide enough that the history already on the topic never trips the paid call. */
-const OPEN_CAP = "1000000000";
-
-interface Evidence {
-  label: string;
-  value: string | number;
-  url?: string;
-}
-
-interface AgentRun {
-  code: number;
-  ok: boolean;
-  evidence: Evidence[];
-  stderr: string;
-}
-
-async function agentRun(ctx: FlowCtx, label: string, hub: string, cap: string): Promise<AgentRun> {
-  const r = await runCmd(
-    {
-      name: `agent ${label}`,
-      // The agent reads its own key from the Hedera env file; nothing is passed to it here.
-      cmd: ["bun", "scripts/hedera/agent-run.ts", hub, "--cap", cap, "--per-merchant", cap, "--times", "1", "--json"],
-      log: join(ctx.dir, `agent-${label}.log`),
-      redact: (s) => ctx.env.secrets.redact(s),
-    },
-    180_000,
-  );
-  const last = r.stdout.trim().split("\n").at(-1) ?? "";
-  let parsed: { beat?: string; ok?: boolean; evidence?: Evidence[] } = {};
-  try {
-    parsed = JSON.parse(last) as typeof parsed;
-  } catch {
-    throw new Error(`agent printed no JSON (exit ${r.code}; stderr ${JSON.stringify(r.stderr.trim().slice(-300))})`);
-  }
-  equal(parsed.beat, "hedera", "agent evidence beat");
-  return { code: r.code, ok: parsed.ok === true, evidence: parsed.evidence ?? [], stderr: r.stderr };
-}
-
-function find(evidence: Evidence[], label: string): Evidence {
-  const e = evidence.find((x) => x.label === label);
-  check(e, `the agent reports ${label} (it reported ${evidence.map((x) => x.label).join(", ")})`);
-  return e;
-}
 
 export const hedera: Flow = {
   name: "hedera",
@@ -168,27 +124,31 @@ export const hedera: Flow = {
     });
 
     await ctx.step("the spend log is complete for this run", async () => {
-      // Every USDC the agent paid in this window has a spend entry naming its transaction, and
-      // every spend entry in the window is backed by such a payment.
+      // Every USDC the agent paid in this window is backed by a log entry naming its transaction:
+      // a spend, or a schedule whose transfer executed later under the create's id (looked for
+      // up to two hours back). Every spend entry written in the window is backed by a payment.
+      // A schedule entry may not have executed yet, and an expired one moved nothing.
       let debits = await tokenDebits(agentId, HEDERA.usdc, since);
       for (let i = 0; i < 10 && !debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(paid.tx)); i++) {
         await sleep(3000);
         debits = await tokenDebits(agentId, HEDERA.usdc, since);
       }
-      const spends = (await topicSince(topicId, since))
-        .map((m) => m.json as { kind?: string; tx?: string; amount?: string })
-        .filter((e) => e.kind === "spend" && typeof e.tx === "string");
-      ctx.save("reconcile.json", { since, debits, spends });
+      const messages = await topicSince(topicId, since - 7200);
+      const backing = messages
+        .map((m) => ({ at: Number(m.consensusTimestamp.split(".")[0]), e: m.json as { kind?: string; tx?: string; amount?: string } }))
+        .filter((x) => (x.e.kind === "spend" || x.e.kind === "schedule") && typeof x.e.tx === "string");
+      const inWindow = backing.filter((x) => x.e.kind === "spend" && x.at >= since);
+      ctx.save("reconcile.json", { since, debits, backing });
       check(debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(paid.tx)), "the mirror lists this run's payment as an agent debit");
       for (const d of debits) {
-        const e = spends.find((x) => mirrorTxId(x.tx as string) === mirrorTxId(d.txId));
-        check(e, `agent payment ${d.txId} has no spend entry on the log`);
-        equal(e.amount, d.amount.toString(), `logged amount for ${d.txId}`);
+        const b = backing.find((x) => mirrorTxId(x.e.tx as string) === mirrorTxId(d.txId));
+        check(b, `agent payment ${d.txId} has no spend or schedule entry on the log`);
+        equal(b.e.amount, d.amount.toString(), `logged amount for ${d.txId}`);
       }
-      for (const e of spends) {
-        check(debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(e.tx as string)), `spend entry ${e.tx} has no agent payment behind it`);
+      for (const x of inWindow) {
+        check(debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(x.e.tx as string)), `spend entry ${x.e.tx} has no agent payment behind it`);
       }
-      ctx.note(`reconciled ${debits.length} agent payment(s) and ${spends.length} spend entr${spends.length === 1 ? "y" : "ies"} since ${since}`);
+      ctx.note(`reconciled ${debits.length} agent payment(s) against ${backing.length} spend or schedule entr${backing.length === 1 ? "y" : "ies"}`);
     });
   },
 };
