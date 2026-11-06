@@ -1,9 +1,14 @@
 import type { PageProps } from "../../app/routes.ts";
-import BuyerPage from "../buyer/index.tsx";
+import { api, useResource } from "../../lib/api.ts";
+import { Assistant } from "./Assistant.tsx";
+import "../../ui/page.css";
 
-/** The assistant is the buyer’s phone opened on Ask: asking, the envelope and the countersign are one person’s flow. */
-export default function AssistantPage({ params, query }: PageProps) {
-  const q = new URLSearchParams(query);
-  if (!q.get("tab")) q.set("tab", "ask");
-  return <BuyerPage params={params} query={q} />;
+/** The assistant on a desk: what you asked on the left, what fits on the right. The phone has it as Ask. */
+export default function AssistantPage(_props: PageProps) {
+  const envelope = useResource(() => api.envelope(), []);
+  return (
+    <div className="page">
+      <Assistant envelope={envelope} layout="desk" />
+    </div>
+  );
 }

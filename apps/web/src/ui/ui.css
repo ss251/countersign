@@ -435,13 +435,15 @@ a.hash__value {
   white-space: pre;
 }
 
+/* Commands scroll sideways and never break inside a token: a broken flag is a broken command. */
 .command__body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
 }
 
 .command {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-2);
 }
 

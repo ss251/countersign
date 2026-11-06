@@ -37,6 +37,8 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const released = sales.filter((p) => p.status === "released").length;
   const refunded = sales.filter((p) => p.status === "refunded").length;
   const recent = [...sales].sort((a, b) => b.at - a.at).slice(0, 6);
+  // Calls are counted from slips. Until the hub reports them, say so; never show a zero it did not count.
+  const counted = listings.source === "fixtures" || offers.some((l) => l.stats !== undefined);
 
   return (
     <div className="page seller">
@@ -79,6 +81,8 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
       ) : (
         <>
           <section className="totals" aria-label="Totals">
+            {counted ? (
+              <>
             <div className="totals__money">
               {releaseTotals(sales).map((t) => (
                 <Amount key={t.symbol} money={{ amount: t.atomic, asset: { symbol: t.symbol, decimals: 6 } }} size="xl" />
@@ -90,6 +94,10 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
               {plural(sales.length, "call")} · {released} released · {refunded} refunded · {rate(released, refunded)} delivered
             </p>
             <Sparkline sales={sales} />
+              </>
+            ) : (
+              <p className="totals__line">This hub does not report calls per seller yet, so totals are not counted here.</p>
+            )}
           </section>
 
           <section className="section" aria-labelledby="offers-title">
@@ -110,7 +118,7 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
               </thead>
               <tbody>
                 {offers.map((l) => (
-                  <OfferRow key={l.hash} listing={l} sales={sales.filter((p) => p.offerHash === l.hash)} />
+                  <OfferRow key={l.hash} listing={l} sales={sales.filter((p) => p.offerHash === l.hash)} counted={counted} />
                 ))}
               </tbody>
             </table>
@@ -137,8 +145,9 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
   );
 }
 
-function OfferRow({ listing, sales }: { listing: Listing; sales: Purchase[] }) {
+function OfferRow({ listing, sales, counted }: { listing: Listing; sales: Purchase[]; counted: boolean }) {
   const { offer, stats, status, online, reason } = listing;
+
   const released = stats?.released ?? sales.filter((p) => p.status === "released").length;
   const refunded = stats?.refunded ?? sales.filter((p) => p.status === "refunded").length;
   const calls = stats?.calls ?? sales.length;
@@ -163,16 +172,16 @@ function OfferRow({ listing, sales }: { listing: Listing; sales: Purchase[] }) {
         <Amount money={usd(offer.price, offer.rails[0])} size="sm" />
       </td>
       <td className="is-num num" data-label="Calls">
-        {calls}
+        {counted ? calls : <span className="ledger-table__none">—</span>}
       </td>
       <td className="is-num" data-label="Earned">
-        {earned > 0n ? <Amount money={usd(earned, offer.rails[0])} size="sm" /> : <span className="ledger-table__none">—</span>}
+        {counted && earned > 0n ? <Amount money={usd(earned, offer.rails[0])} size="sm" /> : <span className="ledger-table__none">—</span>}
       </td>
       <td className="is-num num" data-label="Refunded">
-        {refunded}
+        {counted ? refunded : <span className="ledger-table__none">—</span>}
       </td>
       <td className="is-num num" data-label="Delivered">
-        {rate(released, refunded)}
+        {counted ? rate(released, refunded) : <span className="ledger-table__none">—</span>}
       </td>
       <td data-label="Runner" className={cx("ledger-table__runner", online === false && "is-off")}>
         {delisted ? `Delisted${reason ? `: ${reason}` : ""}` : online === undefined ? "—" : online ? "Online" : "Offline"}
