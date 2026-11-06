@@ -17,7 +17,43 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub started with `GATEWAY_RAIL=1`. The production hub runs it off, because Gateway debits the buyer before the seller runs. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
-**On Whitechain: a merchant checkout.** A merchant sells to software buyers for USDT, sees every order as it settles, refunds an order in one click, and exports the ledger as CSV for the accountant. The escrow contract is the mechanism underneath, not the product: a payment refuses to settle at a price the buyer did not sign, and waits until the work is delivered. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT, and every payment and refund is a public record the customer can check without trusting us. Today the one-click refund runs from the desk with the merchant's own service ([refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5)); the public console shows orders but cannot refund yet. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain ([e2e/runs/LATEST.md](e2e/runs/LATEST.md)). Network facts, the gas relayer and verification: [docs/whitechain.md](docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
+**On Whitechain** countersign is a merchant checkout, not an escrow product: see [Whitechain: a merchant checkout](#whitechain-a-merchant-checkout).
+
+## Whitechain: a merchant checkout
+
+A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874). It sees every order as it settles, refunds an order, and exports the ledger as CSV for the accountant. The escrow contract and the gas relayer are the mechanism underneath, not the product. Network facts, the relayer and verification are in [docs/whitechain.md](docs/whitechain.md), and feedback for the Whitechain team in [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
+
+### Operate: the checkout, the refund and the export
+
+- **The drop-in.** It is two files:
+  - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
+  - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
+
+  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`). Both import `@countersign/relay`, a package in this repository that is not published yet.
+- **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
+- **The customer's view.** The customer holds USDT only and signs one EIP-3009 authorisation. The buyer above, `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298`, holds 0 WBT.
+- **The refund.** One function, `refundOrder`, refunds every order:
+  - a held escrow order is cancelled in full;
+  - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
+
+  Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
+- **The merchant's view.** The merchant refunds from the order's row: it reads the terms, then signs once in its own wallet, and the relayer pays the gas. That screen is not on the production console yet.
+- **The accountant's export.** The production relay serves [`orders.csv`](https://whitechain-relay-production.up.railway.app/orders.csv?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c). It has one row per order, with the amount, fee, refunded and net amounts, and links to each transaction. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain.
+
+### Scale: the payer holds zero WBT
+
+The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transaction above and pays the gas, so customers and merchants hold USDT only. Its guards are live at [`/status`](https://whitechain-relay-production.up.railway.app/status):
+
+| Guard | Value |
+|---|---|
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrow `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`; it pays gas for nobody else |
+| Fee cap | 50 gwei per gas, with 20% headroom |
+| Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
+| Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
+| Minimum payment | 0.01 USDT |
+| Simulation | every call is simulated before it is sent, so a refused call costs no gas (`packages/relay/src/relayer.ts`) |
+
+**How the business funds it:** the operator sends WBT to the relayer address. It held 1.42 WBT on 06 Nov. The floor and the ceiling bound what one hour can spend.
 
 ## Live links
 
