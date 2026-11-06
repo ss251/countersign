@@ -126,7 +126,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 }
 
 async function publishCommand(options: Options): Promise<void> {
-  const account = await sellerAccount(options.hub);
+  const account = await sellerAccount();
   const path = options.skills[0];
   if (path !== undefined) {
     const skill = await readSkill(path);
@@ -237,7 +237,7 @@ function prepareOpenApi(
 }
 
 async function serveCommand(options: Options): Promise<void> {
-  const account = await sellerAccount(options.hub);
+  const account = await sellerAccount();
   const { served } = await prepareServed(options, account);
 
   const handle = startRunner({
@@ -285,7 +285,7 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
   });
 }
 
-async function sellerAccount(hub: string): Promise<RunnerAccount> {
+async function sellerAccount(): Promise<RunnerAccount> {
   // Read once and dropped from this process's environment on EVERY path, the override's included,
   // so nothing started later can see it (cs-audit on #287, point 2). Each command asks once.
   const session = process.env.CS_SESSION;
@@ -300,7 +300,11 @@ async function sellerAccount(hub: string): Promise<RunnerAccount> {
   }
 
   if (session) {
-    return remoteAccountFromSession({ hubUrl: process.env.CS_HUB ?? hub, session });
+    // The session goes only to the hub that issued it: CS_HUB, which the CLI sets from the stored
+    // session. Never to a --hub given on the command line (cs-audit on #288).
+    const issuer = process.env.CS_HUB;
+    if (!issuer) throw new Error(NOT_SIGNED_IN);
+    return remoteAccountFromSession({ hubUrl: issuer, session });
   }
 
   throw new Error(NOT_SIGNED_IN);

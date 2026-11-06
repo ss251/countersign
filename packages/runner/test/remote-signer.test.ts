@@ -524,13 +524,12 @@ describe("the seller CLI's account precedence", () => {
     }
   });
 
-  test("without CS_HUB the session is checked against the hub the command targets", async () => {
+  test("without CS_HUB the session is refused, never sent to the --hub on the command line", async () => {
     const hub = startHub();
     const log = spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      await withEnv(
-        { CS_SELLER_KEY: undefined, CS_SESSION: SESSION, CS_HUB: undefined },
-        () =>
+      await expect(
+        withEnv({ CS_SELLER_KEY: undefined, CS_SESSION: SESSION, CS_HUB: undefined }, () =>
           main([
             "publish",
             "--hub",
@@ -542,11 +541,12 @@ describe("the seller CLI's account precedence", () => {
             "--state",
             stateDir(),
           ]),
-      );
+        ),
+      ).rejects.toThrow(NOT_SIGNED_IN);
 
-      expect(hub.requests.some((request) => request.path === "/cli/session")).toBe(true);
-      const published = hub.requests.find((request) => request.path === "/offers");
-      expect((published?.body as { offer: Offer }).offer.seller).toBe(hub.address);
+      // Only the hub that issued a session ever sees it: this one received nothing.
+      expect(hub.requests.some((request) => request.path.startsWith("/cli/"))).toBe(false);
+      expect(hub.requests.some((request) => request.authorization?.includes(SESSION))).toBe(false);
     } finally {
       log.mockRestore();
       hub.stop();
