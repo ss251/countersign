@@ -315,6 +315,14 @@ A delisted offer cannot come back under the same hash (D18). So on the first rou
 - In both modes, an offer that passes logs `[canary] ok <offerHash>`, and the hub logs its canary mode once at start: `[hub] canary: off`, `[hub] canary: report` or `[hub] canary: delist`.
 - **Rollout.** Each live runner's owner restarts it on a build that answers the canary and posts the commit it runs. Production then runs `CANARY=report` until one round logs `ok` for every online offer, and only then switches to `CANARY=1`.
 
+## D18, amended again — a runner that stops answering pings is gone, not lying, and the canary skips it (06 Nov; refs #26)
+
+cs-phone found this on the live canary. When iOS puts the phone page in the background, its JavaScript stops but its socket stays open, so the hub counts the runner online until 45 to 65 s after its last pong. A canary round in that window timed out on every attempt and would have delisted the phone's offers for good.
+
+- An attempt that ends `offline`, `pong-timeout` or `closed` means the runner went away. It counts as offline, never as a failure.
+- Before and after each attempt, a runner whose last pong is older than 25 s (one ping interval plus slack) is treated as offline, and its offer is skipped for that round. The hub logs `[canary] skipped <offerHash>: <reason>`.
+- A runner that keeps answering pings but not the canary, such as an old build, is still delisted after three failed attempts.
+
 ## D21 — the erc8183 rail: countersign's escrow, holding its money in an ERC-8183 job, with a JobHook that emits the slip hash (06 Nov; refs #24)
 
 **What exists.** Arc testnet already runs the ERC-8183 reference `AgenticCommerce` at `0x0747EEf0706327138c69792bF28Cd525089e4583`:

@@ -1,7 +1,7 @@
 # cs-65b-e2e-held-honest: the held flows assert that plain x402 Hedera is gone
 
 Lane: cs-e2e. Base: `cs/e2e`. Branch: `cs/cs-65b`. This is the companion to cs-65, written for the
-captain's 23:40 IST flag: with `HEDERA_RAIL` off, production's 402 for a Hedera offer carries only the
+the project lead's 23:40 IST flag: with `HEDERA_RAIL` off, production's 402 for a Hedera offer carries only the
 held accept. cs-hd keeps the Agent Kit offer as declared, so its signed rails still name `hedera`.
 
 ## Change `e2e/flows/hedera-held.flow.ts`, in `heldListing`
@@ -13,7 +13,7 @@ held accept. cs-hd keeps the Agent Kit offer as declared, so its signed rails st
    "the 402 offers the held payment and no plain x402 Hedera". Keep every check on the held accept.
    Replace the exact-accept lines (`const exact = hederaExact(required); check(exact, ...); equal(exact.payTo, ...)`)
    with:
-   `check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (captain, 23:40 IST)")`.
+   `check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (project lead, 23:40 IST)")`.
 
 Nothing else changes. Both held flows share `heldListing`, so both get it.
 

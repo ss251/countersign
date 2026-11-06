@@ -14,7 +14,7 @@ Fix the fixture only. Tracked by issue #41.
 ## Lease
 
 - `packages/rail/src/hedera/test/held-b21.test.ts`: the `mirrorBox` fetch only.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-13c-merge-fixture.md`
+- Report: `$M/reports/hd-13c-merge-fixture.md`
 
 ## The decided change
 
