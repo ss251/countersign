@@ -1,15 +1,28 @@
 {
-  "block": 12361216,
+  "version": 2,
   "chainId": 1874,
-  "deployer": "0xca4Fde0786758681d083E6515C7E3584BE75D11C",
-  "escrow": "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4",
-  "escrowDomainSeparator": "0x04e836f1dcf972a17d79a66f67763c7c9a67bd5af92e6182d5677bae9236ab3f",
-  "feeSplit": "0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F",
   "network": "eip155:1874",
+  "token": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
+  "escrow": "0x55b3d98C17Ba0878DC93fB1521c76c9a10778391",
+  "escrowV2": "0x55b3d98C17Ba0878DC93fB1521c76c9a10778391",
+  "escrowDomainSeparator": "0x9748b564e73ec1d9e2afc8078d5000c7c39ca785f870c7e45b26e04ec02880fc",
+  "feeSplit": "0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c",
+  "tollBps": 100,
+  "arbiter": "0xa2EEfc657138eE5367291F8e2Ac45BAC28486006",
   "payees": [
     "0xa2EEfc657138eE5367291F8e2Ac45BAC28486006",
     "0xca4Fde0786758681d083E6515C7E3584BE75D11C"
   ],
-  "token": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
-  "tollBps": 100
+  "deployer": "0xca4Fde0786758681d083E6515C7E3584BE75D11C",
+  "block": 12399886,
+  "deployTx": "0xf15e1c98547b7b475feae83319b71e176518580c244dff39fe32d1408c249ae1",
+  "feeSplitTx": "0x8612c6d77bdfd1e316c99cbf10e77fa0872df2143a3e091e752c07c8ef639432",
+  "sourceCommit": "52b7c7cd8468",
+  "v1": {
+    "escrow": "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4",
+    "escrowDomainSeparator": "0x04e836f1dcf972a17d79a66f67763c7c9a67bd5af92e6182d5677bae9236ab3f",
+    "feeSplit": "0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F",
+    "tollBps": 100,
+    "block": 12361216
+  }
 }
