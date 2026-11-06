@@ -266,17 +266,12 @@ export function isEscrowOpen(status: OrderStatus): boolean {
 }
 
 /**
- * in_review stays offered until the captain rules on merchant.test.ts, which asserts it (cs-phone
- * NEEDS-CAPTAIN, 06 Nov): on chain a delivered job cannot be cancelled. The wallet path refuses it
- * before the wallet opens (walletRefusal); the relay client's own change waits on the same ruling (wc-10e).
+ * Not in_review: a delivered job cannot be cancelled, because CountersignedEscrow.cancel reverts
+ * unless the job is Funded (v1 NotFunded; v2 52b7c7c NotOpen). So the desk offers no refund that
+ * could not settle (captain's ruling, 06 Nov 03:12 IST).
  */
 export function canRefund(order: Pick<Order, "status" | "refundable">): boolean {
-  if (
-    order.status !== "held" &&
-    order.status !== "in_review" &&
-    order.status !== "paid" &&
-    order.status !== "partially_refunded"
-  ) {
+  if (order.status !== "held" && order.status !== "paid" && order.status !== "partially_refunded") {
     return false;
   }
   return parseAtomic(order.refundable, "USDT") > 0n;
