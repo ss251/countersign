@@ -1,4 +1,4 @@
-# cs-23-review-wiring: the hub serves escrow v2's review window (refs #98)
+# cs-23-review-wiring: the hub serves escrow v2 as the captain decided at 19:40 (refs #98)
 
 ## Setup
 
@@ -11,22 +11,32 @@ Read these first:
 - `docs/spec/escrow.md`, the section "Escrow v2", which includes the audit fixes;
 - D12 and D15 in `docs/decisions.md`.
 
-The contract half (`contracts/**`) is Rajdeep's and does not exist yet. You build the hub and rail side against the interface the spec fixes, and you never touch `contracts/**`. The interface, also used by #98 part 1's parked tests in `contracts/pending/Acceptance.t.sol`:
+The contract half (`contracts/**`) is Rajdeep's and does not exist yet. You build the hub and rail side against the interface the spec fixes, and you never touch `contracts/**`. The interface, STEER-1940 as written in the spec (D16), and part 1's parked tests in `contracts/pending/Acceptance.t.sol` (which predate STEER-1940 for funding):
 
 ```solidity
-function fundBonded(bytes32 offerHash, Countersignature cs, uint256 bond, uint64 reviewWindow, bytes payeeSig) returns (bytes32 jobId); // arbiter only
+struct Countersignature { address buyer; address payee; uint256 amount; uint64 deadline; uint256 salt;
+                          uint256 bond; uint64 reviewWindow;              // v2: countersigned inside jobId
+                          uint256 validAfter; uint256 validBefore; uint8 v; bytes32 r; bytes32 s; }
+function fund(bytes32 offerHash, Countersignature cs) returns (bytes32 jobId); // open to anyone with the countersignature
+function failDelivery(bytes32 jobId);                    // the arbiter's only power, until settleBy
 function accept(bytes32 jobId, bytes buyerSig);          // buyer's Accept(jobId, slipHash), or msg.sender == buyer with ""
 function dispute(bytes32 jobId, bytes buyerSig);         // buyer's Dispute(jobId), or msg.sender == buyer with ""
 function releaseAfterWindow(bytes32 jobId);              // anyone, after endsAt
 function reviewOf(bytes32 jobId) view returns (uint64 window, uint64 deliveredAt, uint64 endsAt);
+function bondOfJob(bytes32 jobId) view returns (uint256);
+function setTerms(bytes32 offerHash, uint256 price, uint256 bond, uint64 reviewWindow, uint64 minDuration); // payee only
 function sweepToll();                                    // anyone
 uint64 constant DISPUTE_WINDOW = 600;                    // settleBy = deadline + DISPUTE_WINDOW
 // Status: 0 None, 1 Funded, 2 Released, 3 Refunded, 4 Failed, 5 Delivered, 6 Disputed
 ```
 
+There is no `fundBonded` and no payee lock signature. Both are withdrawn by STEER-1940.
+
+**Core already has the v2 countersignature** (`cs/int` 4f9bb88). Terms that carry `bond` and `reviewWindow` derive the v2 `jobId` through `jobIdOf`, `authorizationTypedData` and `checkCountersign`; terms without them stay v1. Do not change `packages/core`.
+
 Behaviour you rely on:
 
-- **`release` on a job whose window is greater than 0** leaves it Delivered (5), with `endsAt = deliveredAt + window`, instead of Released.
+- **`release` on a job whose window is greater than 0** leaves it Delivered (5), with `endsAt = deliveredAt + window`.
 - **The time boundaries.** "Until T" means `now <= T`; "after T" means `now > T`.
   - `release` and `failDelivery` run until `settleBy`.
   - `refund` runs after `settleBy`.
@@ -45,11 +55,13 @@ Behaviour you rely on:
   - `status()` gains `"delivered"` and `"disputed"`.
 - **The escrow rail** (`src/escrow/index.ts`).
   - Its config gains `version?: 1 | 2`, default 1. Only version 2 exposes the new methods.
-  - Keep a hand-written fragment of the functions above in `src/escrow/abi-v2.ts`, with a header saying it is replaced by the generated ABI when the contract lands.
-  - The v2 `settle` calls `fundBonded(offerHash, cs, bond, reviewWindow, payeeSig)` whenever bond or window is above 0.
-    - It takes `payeeSig` from `requirements.extra.lockSig`.
-    - If bond is above 0 and there is no `lockSig`, it fails the settle locally with "Refused. The seller has not signed the bond lock." and sends no transaction. Packet cs-24 adds the runner handshake that supplies the signature.
-  - v1 settles exactly as today.
+  - Keep a hand-written fragment of the functions above in `src/escrow/abi-v2.ts`, with a header saying it is replaced by the generated ABI when the contract lands. It includes `fund` with the v2 `Countersignature` struct in exactly the field order above.
+  - **The v2 challenge (402)** puts these in `extra`:
+    - `bond`: `offer.bond` as an atomic string, default `"0"`;
+    - `reviewWindow`: `offer.reviewWindow`, default 0;
+    - `escrowVersion: 2`.
+  - **The v2 `verify` and `settle`** require v2 terms (`isV2Terms`) whose `bond` and `reviewWindow` equal those `extra` values. Otherwise they fail with "Refused. The countersigned bond or review window is not the offer's." and send nothing.
+  - **The v2 `settle`** calls `fund(offerHash, cs)` with `bond` and `reviewWindow` from the terms. A v1 rail refuses v2 terms and settles exactly as today.
 - **Env** (`apps/hub/src/rails.ts`): the escrow rail's version comes from `ARC_ESCROW_VERSION` (`1` or `2`), default 1.
 
 ### 2. Hub (`apps/hub`)
@@ -109,8 +121,9 @@ You may create or change only:
 No network. Use fake `EscrowOps` with an injected clock for the hub, and viem's `encodeFunctionData` for the rail.
 
 1. **Rail v2:**
-   - the encoded calls for `accept`, `dispute`, `releaseAfterWindow`, `sweepToll` and `fundBonded` (with `lockSig`) use the v2 fragment;
-   - a bond with no `lockSig` refuses before any transaction;
+   - the encoded calls for `fund` (v2 struct), `accept`, `dispute`, `releaseAfterWindow` and `sweepToll` use the v2 fragment;
+   - the v2 402 carries `bond`, `reviewWindow` and `escrowVersion: 2`;
+   - v1 terms on a v2 rail, or a bond or window that is not the offer's, refuse before any transaction;
    - a v1 rail has none of the new methods and settles with `fund` exactly as before.
 2. **Routes:**
    - accept on a delivered job: 200, status `released`, outcome `accepted`;
