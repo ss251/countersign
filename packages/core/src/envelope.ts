@@ -58,3 +58,8 @@ export function recordSpend(spent: EnvelopeSpend, req: SpendRequest): EnvelopeSp
     bySeller: { ...spent.bySeller, [seller]: (parseAtomic(spent.bySeller[seller] ?? "0") + amount).toString(10) },
   };
 }
+
+/** True when this amount is above the envelope's askAbove, so a human must countersign it. */
+export function needsHuman(env: Envelope, amount: string): boolean {
+  return env.askAbove !== undefined && parseAtomic(amount) > parseAtomic(env.askAbove);
+}
