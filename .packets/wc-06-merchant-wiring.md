@@ -1,5 +1,7 @@
 # wc-06 — merchant view wiring and fixes (corrective, after wc-05)
 
+Issue: #32
+
 ## Goal
 
 `#/merchant` and `#/merchant/receipt/:id` exist (`apps/web/src/routes/merchant/`). Before they can be filmed against live data, they need four fixes, one per change below.
