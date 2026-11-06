@@ -25,8 +25,10 @@ export interface ClearsProps {
   /** The agent's signed envelope when the hub serves one; otherwise the example stands in. */
   envelope: EnvelopeView | undefined;
   featured: Listing | undefined;
-  /** The newest escrow release: never a direct-rail payment under the escrow claim. */
+  /** The newest release from an escrow contract (escrowRelease): never a direct or held payment under the escrow claim. */
   release: Settlement | undefined;
+  /** The other rails in plain words, from their declarations (otherRailsLines). */
+  others: string[];
   pinned: boolean;
   narrow: boolean;
 }
@@ -63,6 +65,7 @@ function ClearsFrame({
   envelope,
   featured,
   release,
+  others,
   narrow,
 }: ClearsProps & { beat: number; only: boolean; go: (beat: number) => void }) {
   const env = useRef<HTMLDivElement>(null);
@@ -85,7 +88,7 @@ function ClearsFrame({
         <div className="story__desk" style={{ "--env-h": `${envHeight}px` } as CSSProperties}>
           <Envelope view={envelope} back={beat >= 1} gone={beat >= EXIT} box={env} />
           {shows(1) ? <TryOut listing={featured} on={on(1)} onFocus={bring(1)} narrow={narrow} /> : null}
-          {shows(2) ? <Release s={release} on={on(2)} onFocus={bring(2)} narrow={narrow} /> : null}
+          {shows(2) ? <Release s={release} others={others} on={on(2)} onFocus={bring(2)} narrow={narrow} /> : null}
         </div>
       </div>
     </div>
@@ -232,9 +235,21 @@ function TryOut({ listing, on, onFocus, narrow }: { listing: Listing | undefined
   );
 }
 
-/* Beat 2: the newest escrow release, with its amount, transaction and slip; the direct rails said plainly. */
+/* Beat 2: the newest release from an escrow contract, with its amount, transaction and slip; the other rails said plainly. */
 
-function Release({ s, on, onFocus, narrow }: { s: Settlement | undefined; on: boolean; onFocus: () => void; narrow: boolean }) {
+function Release({
+  s,
+  others,
+  on,
+  onFocus,
+  narrow,
+}: {
+  s: Settlement | undefined;
+  others: string[];
+  on: boolean;
+  onFocus: () => void;
+  narrow: boolean;
+}) {
   const template = s ? explorerTemplate(s.network) : undefined;
   const href = s ? (s.explorer ?? (template && s.tx ? template.replace("{tx}", encodeURIComponent(s.tx)) : undefined)) : undefined;
   return (
@@ -284,7 +299,11 @@ function Release({ s, on, onFocus, narrow }: { s: Settlement | undefined; on: bo
       ) : (
         <p className="story__quiet">No escrow release on this hub yet. The first one lands here, with its slip.</p>
       )}
-      <p className="story__quiet">Hedera and Gateway settle before delivery.</p>
+      {others.map((line) => (
+        <p key={line} className="story__quiet">
+          {line}
+        </p>
+      ))}
     </div>
   );
 }
