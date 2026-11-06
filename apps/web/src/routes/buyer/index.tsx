@@ -87,6 +87,7 @@ export default function BuyerPage({ query }: PageProps) {
         and amount.
       </p>
       <nav className="phone-note__nav" aria-label="Other views">
+        <Link to="/">Overview</Link>
         {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
           <Link key={v.name} to={`/${v.name}`}>
             {v.label}
@@ -132,6 +133,9 @@ export default function BuyerPage({ query }: PageProps) {
       {viewsOpen ? (
         <nav id="phone-views" className="phone__views" aria-label="Views">
           <p className="phone__views-label">You are on the buyer's phone. Other views:</p>
+          <Link to="/" className="phone__views-link">
+            Overview
+          </Link>
           {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
             <Link key={v.name} to={`/${v.name}`} className="phone__views-link">
               {v.label}
