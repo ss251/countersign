@@ -109,11 +109,12 @@ async function checkTarget(ctx: FlowCtx, name: string, base: string, expectOffer
   });
 
   await ctx.step(`${name} · Bazaar list`, async () => {
-    const res = (await getOk(ctx, `${name} discovery resources`, at("/discovery/resources?limit=200"))) as {
-      data?: { x402Version?: number; items?: { resource: string; accepts: { amount: string }[]; metadata: { offerHash: string; method: string } }[]; pagination?: { total: number } };
-    };
-    equal(res.data?.x402Version, 2, "Bazaar x402 version");
-    const items = res.data?.items;
+    type BazaarList = { x402Version?: number; items?: { resource: string; accepts: { amount: string }[]; metadata: { offerHash: string; method: string } }[]; pagination?: { total: number } };
+    // Circle's catalogue shape is flat. Hubs deployed before #25 wrapped it in `data`.
+    const raw = (await getOk(ctx, `${name} discovery resources`, at("/discovery/resources?limit=200"))) as BazaarList & { data?: BazaarList };
+    const res = raw.data ?? raw;
+    equal(res.x402Version, 2, "Bazaar x402 version");
+    const items = res.items;
     check(Array.isArray(items), "Bazaar lists items");
     for (const item of items) {
       equal(item.resource, `${root}/offers/${item.metadata.offerHash}/call`, "Bazaar resource URL");

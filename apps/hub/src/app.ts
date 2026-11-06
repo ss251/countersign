@@ -137,6 +137,8 @@ export function createHub(deps: HubDeps) {
         limit: c.req.query("limit"),
         offset: c.req.query("offset"),
         query: c.req.query("query"),
+        category: c.req.query("category"),
+        type: c.req.query("type"),
       }),
     ),
   );
