@@ -6,7 +6,7 @@ import type { Envelope, EnvelopeView } from "../../lib/types.ts";
 import { Meter } from "../../ui/Meter.tsx";
 import { Amount, Button, Hash } from "../../ui/primitives.tsx";
 
-/** The human's limits: budget, per-seller limit, when to ask, allowlist, revoke. */
+/** The human’s limits: budget, per-seller limit, when to ask, allowlist, revoke. */
 export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) {
   const view = envelope.data;
   if (!view) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
@@ -202,7 +202,7 @@ function Allowlist({
     e.preventDefault();
     const a = address.trim().toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(a)) {
-      setError("Enter the seller's address: 0x and 40 hex characters.");
+      setError("Enter the seller’s address: 0x and 40 hex characters.");
       return;
     }
     if (list.includes(a)) {

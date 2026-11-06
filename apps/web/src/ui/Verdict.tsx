@@ -4,7 +4,7 @@ import { Button, Hash, cx } from "./primitives.tsx";
 import "./verdict.css";
 
 export interface ChainControl {
-  /** The slip's release can be read from a public RPC. */
+  /** The slip’s release can be read from a public RPC. */
   can: boolean;
   busy: boolean;
   onRead: () => void;
@@ -13,7 +13,7 @@ export interface ChainControl {
 }
 
 /**
- * The verifier's answer. VALID means every check that ran passed; the note under it
+ * The verifier’s answer. VALID means every check that ran passed; the note under it
  * says which checks ran, so a verdict never claims more than was read.
  */
 export function Verdict({ verdict, chain }: { verdict: VerdictData | null; chain?: ChainControl }) {

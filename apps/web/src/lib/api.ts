@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as fx from "../fixtures/index.ts";
 import { explorerTemplate, shortHex, symbolFor } from "./format.ts";
-import { HubError, hubBase, hubOffer, hubOffers, hubRails, hubSlip, type HubListing } from "./hub.ts";
-import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, Slip, SlipView, TreeView } from "./types.ts";
+import { HubError, hubBase, hubGet, hubOffer, hubOffers, hubRails, hubSlip, type HubListing } from "./hub.ts";
+import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, Settlement, Slip, SlipView, TreeView } from "./types.ts";
 
 /**
  * Every read the screens make goes through here. With a hub chosen (see hub.ts) the
@@ -22,6 +22,29 @@ export interface Loaded<T> {
 const settle = <T,>(data: T): Promise<Loaded<T>> => Promise.resolve({ data, source: "fixtures" });
 
 const live = <T,>(data: T): Loaded<T> => ({ data, source: "hub" });
+
+function fixtureSettlements(limit: number): Settlement[] {
+  return fx.purchases
+    .filter((p) => p.status === "released" || p.status === "refunded")
+    .slice(0, limit)
+    .map((p) => {
+      const slip = p.slipHash ? fx.slipByHash(p.slipHash) : undefined;
+      return {
+        jobId: p.jobId,
+        offerHash: p.offerHash,
+        title: p.title,
+        seller: p.seller.address,
+        amount: p.amount,
+        rail: p.rail,
+        network: fx.rails[p.rail].network,
+        kind: p.status === "released" ? "released" : "refunded",
+        tx: slip?.slip.settlement.transaction ?? "",
+        explorer: undefined,
+        slipHash: p.slipHash,
+        at: p.at,
+      } satisfies Settlement;
+    });
+}
 
 /** undefined for a 404, so "no such thing" and "hub down" stay different. */
 async function orMissing<T>(p: Promise<T>): Promise<T | undefined> {
@@ -92,6 +115,16 @@ export const api = {
   rails: async (): Promise<Loaded<RailDeclaration[]>> => (hubBase() ? live(await hubRails()) : settle(Object.values(fx.rails))),
   slip: async (hash: string): Promise<Loaded<SlipView | undefined>> => (hubBase() ? live(await slipView(hash)) : settle(fx.slipByHash(hash))),
   tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle(fx.tree)),
+  /**
+   * Recent releases and refunds, newest first. null means the hub does not serve them yet,
+   * which the overview says plainly instead of inventing rows.
+   */
+  settlements: async (limit = 6): Promise<Loaded<Settlement[] | null>> => {
+    if (!hubBase()) return settle(fixtureSettlements(limit));
+    const rows = await orMissing(hubGet<{ settlements: Settlement[] } | Settlement[]>(`/settlements?limit=${limit}`));
+    if (!rows) return live(null);
+    return live(Array.isArray(rows) ? rows : rows.settlements);
+  },
   // The phone reads the buyer agent's own state, which no hub endpoint serves yet.
   envelope: () => settle<EnvelopeView>(structuredClone(fx.envelope)),
   approvals: () => settle<Approval[]>(fx.approvals),
