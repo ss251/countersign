@@ -13,7 +13,7 @@ export interface KnownRail {
   rpcUrl: string;
 }
 
-export const KNOWN_RAILS: KnownRail[
+export const KNOWN_RAILS: KnownRail[] = [
   {
     // CountersignedEscrow deployed through Arc Studio: the escrow the hub settles Arc calls through.
     network: "eip155:5042002",
@@ -24,7 +24,7 @@ export const KNOWN_RAILS: KnownRail[
     tokenName: "USDC",
     tokenVersion: "2",
     rpcUrl: "https://rpc.testnet.arc.network",
-  },] = [
+  },
   {
     network: "eip155:5042002",
     scheme: "countersign",
