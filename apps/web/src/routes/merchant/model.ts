@@ -66,6 +66,11 @@ export interface Order {
   asset?: { symbol: string; decimals: number };
   /** Explorer base for this order's links. */
   explorer?: string;
+  /**
+   * The escrow contract that holds this job, as the relay records it. Once v1 and v2 jobs sit side
+   * by side, a cancel must be signed for the job's own contract. Absent on older records.
+   */
+  escrow?: string;
   /* Escrow v2 review, as the hub serves it (docs/spec/escrow.md, 'Escrow v2'). Times in ms. */
   reviewWindow?: number | null;
   deliveredAt?: number | null;
@@ -106,6 +111,29 @@ export interface RelayCeiling {
   resetsAt: number | string;
 }
 
+/** The relayer's guards, as GET /status reports them (packages/relay/src/config.ts). */
+export interface RelayPolicy {
+  /** The fee cap: the relayer refuses to submit above this max fee per gas. */
+  maxFeePerGasWei: string;
+  /** The balance floor: below this the relayer stops submitting rather than run dry mid-call. */
+  minBalanceWei: string;
+  allowedTokens?: string[];
+  allowedEscrows?: string[];
+  /** The merchants whose payments and refunds the relayer will pay gas for. */
+  allowedPayees?: string[];
+  minAmount?: string;
+}
+
+/** Where the relayer's gas money comes from: the escrow's toll, split by the FeeSplit contract. */
+export interface RelayFunding {
+  feeSplit: string;
+  payees: Array<{ address: string; shareBps: number }>;
+  relayerShareBps: number;
+  tollBps: number;
+  /** USDT waiting in the FeeSplit to be paid out, decimal; null when the chain did not answer. */
+  feeSplitUsdt: string | null;
+}
+
 export interface RelayStatus {
   address: string;
   balanceWei: string;
@@ -113,6 +141,10 @@ export interface RelayStatus {
   ceiling: RelayCeiling;
   network: string;
   chainId: number;
+  policy?: RelayPolicy;
+  escrow?: string;
+  token?: string;
+  funding?: RelayFunding | null;
 }
 
 export type StatusTone = "money" | "settled" | "neutral";
@@ -225,18 +257,21 @@ export function statusTone(status: OrderStatus): StatusTone {
   }
 }
 
-/** Money still in the escrow that may yet be cancelled: held, or delivered and in review. */
+/**
+ * Money still in the escrow: held, or delivered and in review. Only a held job can be cancelled:
+ * the escrow's cancel reverts unless the job is still Funded (see canRefund).
+ */
 export function isEscrowOpen(status: OrderStatus): boolean {
   return status === "held" || status === "in_review";
 }
 
+/**
+ * Not in_review: a delivered job cannot be cancelled, because CountersignedEscrow.cancel reverts
+ * unless the job is Funded (v1 NotFunded; v2 52b7c7c NotOpen). So the desk offers no refund that
+ * could not settle (captain's ruling, 06 Nov 03:12 IST).
+ */
 export function canRefund(order: Pick<Order, "status" | "refundable">): boolean {
-  if (
-    order.status !== "held" &&
-    order.status !== "in_review" &&
-    order.status !== "paid" &&
-    order.status !== "partially_refunded"
-  ) {
+  if (order.status !== "held" && order.status !== "paid" && order.status !== "partially_refunded") {
     return false;
   }
   return parseAtomic(order.refundable, "USDT") > 0n;
@@ -431,6 +466,23 @@ export function formatWeiWbt(wei: string): string {
 /** A decimal WBT amount (as the relay reports it) to exactly four decimals. */
 export function formatWbt(value: string): string {
   return formatWeiWbt(decimalToWei(value).toString());
+}
+
+/** Wei per gas as gwei, trimmed to at most two decimals: the relayer's fee cap reads "50 gwei". */
+export function formatGwei(wei: string): string {
+  if (!/^\d+$/.test(wei)) throw new Error(`Not a wei amount: ${wei}`);
+  const hundredths = (BigInt(wei) + 5_000_000n) / 10_000_000n;
+  const whole = hundredths / 100n;
+  const fraction = (hundredths % 100n).toString().padStart(2, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : `${whole}`;
+}
+
+/** Basis points as a percentage, with no trailing zeros: 250 reads "2.5%", 10000 reads "100%". */
+export function bpsPercent(bps: number): string {
+  if (!Number.isInteger(bps) || bps < 0) throw new Error(`Not basis points: ${bps}`);
+  const whole = Math.floor(bps / 100);
+  const fraction = String(bps % 100).padStart(2, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}%` : `${whole}%`;
 }
 
 /** The ledger's status filters. Partly refunded money still sits with the merchant, so it is Paid. */
@@ -963,6 +1015,7 @@ export function fromHubOrder(raw: unknown): Order | null {
     networkName: text(r.networkName) ?? undefined,
     asset,
     explorer: text(r.explorer) ?? undefined,
+    escrow: text(r.escrow) ?? undefined,
     reviewWindow: typeof r.reviewWindow === "number" && Number.isFinite(r.reviewWindow) ? r.reviewWindow : null,
     deliveredAt: millis(r.deliveredAt),
     reviewEndsAt: millis(r.reviewEndsAt),

@@ -80,6 +80,29 @@ These are fresh keys made for this project. The private keys live only in `~/.co
 | merchant | `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` | USDT it was paid, never WBT |
 | buyer | `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298` | USDT only, never WBT |
 
+## Escrow v2 on Whitechain
+
+Escrow v2 is deployed and verified on chain 1874. Its source is `#164` at `52b7c7c`:
+- the payee's `Lock(jobId, funder)` is needed for a bond;
+- a dispute names its status;
+- cancel works only while a job is Funded;
+- **only the arbiter releases.**
+
+| Contract | Address | Deploy tx |
+|---|---|---|
+| CountersignedEscrow v2 | [`0x55b3d98C17Ba0878DC93fB1521c76c9a10778391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), verified | [`0xf15e1c98…9ae1`](https://explorer.testnet.whitechain.io/tx/0xf15e1c98547b7b475feae83319b71e176518580c244dff39fe32d1408c249ae1), block 12399886 |
+| FeeSplit (v2's treasury) | [`0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c`](https://explorer.testnet.whitechain.io/address/0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c), verified | [`0x8612c6d7…9432`](https://explorer.testnet.whitechain.io/tx/0x8612c6d77bdfd1e316c99cbf10e77fa0872df2143a3e091e752c07c8ef639432) |
+
+**What reads back on chain:**
+- `token()` is USDT;
+- `treasury()` is the FeeSplit above, which pays the relayer and the deployer 5000/5000;
+- `tollBps()` is 100;
+- `arbiter()` is the relayer `0xa2EE…6006`.
+
+**The arbiter is the relay's key, so the relay acts as arbiter only on the hub's word.** Every v2 `/escrow/release`, `/escrow/fail`, and every `/settle` that carries a Lock needs the hub's bearer token.
+
+**v1 still serves production.** `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` stays live until the v2 switch, and `contracts/deployments/whitechain-sepolia.json` keeps it under `v1`.
+
 ### How the lane wallets were funded
 
 The relayer is the only wallet that ever gets WBT from outside, and it pays for everything after that. Buyers get no WBT at any point.
@@ -90,6 +113,7 @@ The relayer is the only wallet that ever gets WBT from outside, and it pays for 
 | 2026-11-06 09:33 | relayer swaps 0.2 WBT for 14.664556 USDT, paid to the buyer (`BuyTestUsdt.s.sol`) | [`0x0c1bb12a…0301`](https://explorer.testnet.whitechain.io/tx/0x0c1bb12ac1af1e49f4285703a8c1f23b67391601857548c64484818226bb0301) |
 | 2026-11-06 09:34 | relayer sends 0.1 WBT to the deployer (`TopUpWbt.s.sol`) | [`0xdf4ab567…935b`](https://explorer.testnet.whitechain.io/tx/0xdf4ab567d18958c673c423ed9df7622e22ffd046d8640262ecf2808b20b8935b) |
 | 2026-11-06 09:54 | relayer swaps 0.02 WBT for 1.46572 USDT, paid to the merchant as a refund float. After release the merchant holds the price minus the 1% toll, but a full refund returns the whole price | [`0x5c7d0b07…c0e`](https://explorer.testnet.whitechain.io/tx/0x5c7d0b0709cb83bc1452278fdc789e02e9aa6de645d70ccf2c059c87437c8c0e) |
+| 2026-11-06 20:01 | relayer sends 0.05 WBT to the deployer for the escrow v2 deploy | [`0xc3e70c03…6ec1`](https://explorer.testnet.whitechain.io/tx/0xc3e70c03a7785771d077e324dac8bc744fa9bf4a4825cef4cc0fe529d0ff6ec1) |
 
 Both scripts read keys from the environment through `vm.envUint`, so a key never appears in a command line:
 

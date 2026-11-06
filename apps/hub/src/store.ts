@@ -8,7 +8,7 @@ import type {
   RailId,
   Slip,
 } from "./deps.ts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export type JobStatus =
   | "funded"
@@ -100,6 +100,14 @@ export interface RevocationRecord {
   recordedAt: number;
 }
 
+/** A Buyer-page token, stored only as its SHA-256 (D23). */
+export interface EnvelopeTokenRecord {
+  tokenHash: string;
+  agent: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
 export type ApprovalStatus = "pending" | "countersign" | "decline";
 
 /** A call the buyer agent held for a human decision. */
@@ -120,6 +128,13 @@ export interface ApprovalRecord {
   requestSig: string | null;
   /** The approver's signature over the decision body. */
   decisionSig: string | null;
+}
+
+/** The last ERC-8004 registration the hub saw for a seller. `block` is the log's block. */
+export interface StoredErc8004Identity {
+  registry: Address;
+  agentId: string;
+  block: bigint;
 }
 
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
@@ -217,6 +232,14 @@ interface ApprovalRow {
   request_json: string | null;
   request_sig: string | null;
   decision_sig: string | null;
+}
+
+interface Erc8004IdentityRow {
+  seller: string;
+  registry: string;
+  agent_id: string;
+  block: number | bigint;
+  updated_at: number;
 }
 
 export class Store {
@@ -329,6 +352,16 @@ export class Store {
     this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
     this.db.run(`
       CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
+    `);
+    this.db.run("CREATE TABLE IF NOT EXISTS envelope_tokens (token_hash TEXT PRIMARY KEY, agent TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS erc8004_identities (
+        seller TEXT PRIMARY KEY,
+        registry TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        block INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
     `);
   }
 
@@ -661,6 +694,33 @@ export class Store {
     };
   }
 
+  /** Replace an agent's Buyer-page token, keeping only its hash. */
+  replaceEnvelopeToken(record: EnvelopeTokenRecord): void {
+    const agent = record.agent.toLowerCase();
+    this.db.query("DELETE FROM envelope_tokens WHERE agent = ?").run(agent);
+    this.db
+      .query(
+        "INSERT INTO envelope_tokens (token_hash, agent, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(record.tokenHash, agent, record.issuedAt, record.expiresAt);
+  }
+
+  getEnvelopeToken(tokenHash: string): EnvelopeTokenRecord | null {
+    const row = this.db
+      .query<
+        { token_hash: string; agent: string; issued_at: number; expires_at: number },
+        [string]
+      >("SELECT * FROM envelope_tokens WHERE token_hash = ?")
+      .get(tokenHash);
+    if (!row) return null;
+    return {
+      tokenHash: row.token_hash,
+      agent: row.agent,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
+    };
+  }
+
   /** Insert an approval. False when its id or request signature was already stored. */
   putApproval(approval: ApprovalRecord): boolean {
     const result = this.db
@@ -733,6 +793,34 @@ export class Store {
       .query("UPDATE approvals SET status = ?, decided_at = ?, decision_sig = ? WHERE id = ? AND status = 'pending'")
       .run(status, decidedAt, decisionSig, id);
     return result.changes > 0;
+  }
+
+  getIdentity(seller: string): StoredErc8004Identity | null {
+    const row = this.db
+      .query<Erc8004IdentityRow, [string]>(
+        "SELECT seller, registry, agent_id, block, updated_at FROM erc8004_identities WHERE seller = ?",
+      )
+      .get(seller.toLowerCase());
+    if (!row) return null;
+    return {
+      registry: row.registry as Address,
+      agentId: row.agent_id,
+      block: BigInt(row.block),
+    };
+  }
+
+  putIdentity(seller: string, identity: StoredErc8004Identity, now: number): void {
+    this.db
+      .query(
+        `INSERT INTO erc8004_identities (seller, registry, agent_id, block, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(seller) DO UPDATE SET
+           registry = excluded.registry,
+           agent_id = excluded.agent_id,
+           block = excluded.block,
+           updated_at = excluded.updated_at`,
+      )
+      .run(seller.toLowerCase(), identity.registry, identity.agentId, identity.block, now);
   }
 }
 

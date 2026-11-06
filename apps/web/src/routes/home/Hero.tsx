@@ -74,7 +74,7 @@ export function Hero({ stats, missing, railsLive, reduced, onDown }: HeroProps) 
 }
 
 /** The hub's own figures, read while you look. Never a fixture: with no read, it says so. */
-function Figures({ stats, missing, railsLive }: { stats: HubStats | null; missing: string | undefined; railsLive: number | undefined }) {
+export function Figures({ stats, missing, railsLive }: { stats: HubStats | null; missing: string | undefined; railsLive: number | undefined }) {
   if (!stats) {
     return (
       <p className="hero__figs hero__figs--wait" role="status">

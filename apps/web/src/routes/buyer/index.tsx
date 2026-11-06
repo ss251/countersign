@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { recordSpend } from "@countersign/core";
+import { WalletModeContext } from "../../app/Providers.tsx";
 import type { PageProps } from "../../app/routes.ts";
 import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource, type JobView } from "../../lib/api.ts";
@@ -14,6 +15,7 @@ import { AskTab } from "./AskTab.tsx";
 import { EnvelopeTab } from "./EnvelopeTab.tsx";
 import { HistoryTab } from "./HistoryTab.tsx";
 import { mergeApprovals } from "./queue.ts";
+import { SignedInAgent } from "./SignedInAgent.tsx";
 import "./buyer.css";
 
 /** The phone sits inside the console's shell: the top bar is the way to every other view. */
@@ -47,8 +49,18 @@ function Phone({ query }: PageProps) {
   const envelope = useResource(() => api.envelope(), []);
   const approvals = useResource(() => api.approvals(), []);
   const purchases = useResource(() => api.purchases(), []);
+  const reloadEnvelope = envelope.reload;
+  const reloadApprovals = approvals.reload;
+  const reloadPurchases = purchases.reload;
+  /** A fresh token or a newly created envelope changes every read on this phone. */
+  const openAll = useCallback(() => {
+    reloadEnvelope();
+    reloadApprovals();
+    reloadPurchases();
+  }, [reloadEnvelope, reloadApprovals, reloadPurchases]);
   /** Approvals the human has countersigned: no longer waiting, even while they settle. */
   const [signed, setSigned] = useState<string[]>([]);
+  const privy = useContext(WalletModeContext).privy;
   const agent = chosenAgent();
   const hub = chosenHub();
 
@@ -170,6 +182,7 @@ function Phone({ query }: PageProps) {
         latest.current.closed.add(a.id);
         approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id));
       }}
+      onOpen={openAll}
     />
   );
 
@@ -193,6 +206,7 @@ function Phone({ query }: PageProps) {
   if (narrow) {
     return (
       <div className="buyer buyer--phone">
+        {privy ? <SignedInAgent onChange={openAll} /> : null}
         <header className="buyer__bar">
           <p className="buyer__bar-title">Buyer</p>
           <div className="buyer__bar-end">
@@ -204,8 +218,8 @@ function Phone({ query }: PageProps) {
         <div className="buyer__body">
           {tab === "approvals" ? approvalsView : null}
           {tab === "ask" ? <AskTab envelope={envelope} /> : null}
-          {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
-          {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+          {tab === "envelope" ? <EnvelopeTab envelope={envelope} onOpen={openAll} /> : null}
+          {tab === "history" ? <HistoryTab purchases={purchases} onOpen={openAll} /> : null}
         </div>
         <nav className="tabbar" aria-label="Buyer">
           {TABS.map((t) => (
@@ -226,6 +240,7 @@ function Phone({ query }: PageProps) {
 
   return (
     <div className="buyer">
+      {privy ? <SignedInAgent onChange={openAll} /> : null}
       <header className="buyer__head">
         <div className="buyer__kickers">
           <p className="pill-kicker">The buyer</p>
@@ -274,8 +289,8 @@ function Phone({ query }: PageProps) {
       {tab !== "approvals" ? (
         <Drawer title={tab === "envelope" ? "Your envelope" : tab === "history" ? "History" : "Ask"} onClose={() => navigate(tabHref("approvals"))}>
           {tab === "ask" ? <AskTab envelope={envelope} /> : null}
-          {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
-          {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
+          {tab === "envelope" ? <EnvelopeTab envelope={envelope} onOpen={openAll} /> : null}
+          {tab === "history" ? <HistoryTab purchases={purchases} onOpen={openAll} /> : null}
         </Drawer>
       ) : null}
     </div>

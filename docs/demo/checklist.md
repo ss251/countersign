@@ -38,7 +38,7 @@ The checklist has to name the real URLs, commands, and balances, so I am pulling
 7. `bun packages/buyer/src/cli.ts envelope show` still covers another 0.01.
 8. One Arc buy now, off camera. Save the slip. `bun packages/verify/src/cli.ts <slip> --rpc https://rpc.testnet.arc.network` prints `VALID` and an `onchain` line whose hash equals that `Released`. Repeat for `docs/demo/slip-4320274e.json`.
 9. The stranger key holds ≥ **0.05** Arc native, or you have decided to show `0xca61…0e76` as an earlier transaction.
-10. Leave the kill-scene hub up: `PORT=8787 ARC_ESCROW=0x19c27D770969291E6A0a305dc1Be1a845E7c1b76 ARC_RPC_URL=https://rpc.testnet.arc.network bun run hub`, then `curl -fsS localhost:8787/healthz`.
+10. Leave the kill-scene hub up: `PORT=8797 ARC_ESCROW=0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE ARC_ESCROW_VERSION=2 ARC_RPC_URL=https://rpc.testnet.arc.network bun run hub` (the v2 escrow production declares), then `curl -fsS localhost:8797/healthz`.
 
 ## Cuts
 

@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { formatAgo, formatAmount, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import type { RailDeclaration, Settlement } from "../../lib/types.ts";
 import { cx } from "../../ui/primitives.tsx";
-import { byTime, heldBy, keyOf, otherRailsLines } from "./field.ts";
+import { byTime, heldBy, isRetired, keyOf, otherRailsLines, retiredLabel } from "./field.ts";
 
 /*
  * Beat 5, the evidence: the hub's last settlements as a live tape, newest first. Each row is one
@@ -50,7 +50,9 @@ export function Stream({ rows, loaded, rails, hubDown }: StreamProps) {
                   {formatAmount(usd(s.amount, s.rail))}
                   <span className="stream__asset">{usd(s.amount, s.rail).asset.symbol}</span>
                 </span>
-                <span className="stream__rail">{RAIL_LABEL[s.rail] ?? s.rail}</span>
+                <span className="stream__rail">
+                  {isRetired(s.rail, rails) ? retiredLabel(RAIL_LABEL[s.rail] ?? s.rail) : (RAIL_LABEL[s.rail] ?? s.rail)}
+                </span>
                 <span className="stream__age num">{formatAgo(s.at)}</span>
                 {own.txHref ? (
                   <a className="stream__tx" href={own.txHref} target="_blank" rel="noreferrer" aria-label={`Transaction for ${s.title || "this payment"} on the explorer`}>

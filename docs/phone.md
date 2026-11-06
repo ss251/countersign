@@ -72,5 +72,5 @@ Canonical JSON carries only safe integers as numbers, so a float cannot be hashe
 ## Run it
 
 - **The page:** `bun run --cwd apps/phone dev`, then open `http://127.0.0.1:5193/`. It talks to the production hub by default. `?hub=/hub` reaches a hub on `127.0.0.1:8787` through the dev server's proxy, WebSocket included. Location, the camera and WebCrypto need a secure context: https, or localhost.
-- **Without a phone:** `PHONE_SELLER_KEY=0x… bun apps/phone/test/bench.ts --hub http://127.0.0.1:8787 --lat 19.076090 --lon 72.877420` serves the same runner code from a terminal, with a position you state. It is a protocol check, not a phone.
+- **Without a phone:** `apps/phone/test/bench.ts` serves the same runner code from a terminal, with a position you state. It is the project's own protocol check, not a phone, and not a way to sell.
 - **Tests:** `bun test apps/phone`. They run the phone's runner code against the real hub in process: delivery and release, a declined photo, a person slower than the hub's wait, a hub that funds one unit but orders the full price, re-registration when a skill is turned off, an offer under another key, and a frame-by-frame check that the key never leaves the phone. `funding.test.ts` covers each refusal of the funding check.

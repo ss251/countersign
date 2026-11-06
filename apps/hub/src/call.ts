@@ -11,6 +11,7 @@ import {
   type EnsResolve,
   isV2Terms,
   type CountersignTerms,
+  type LockTerms,
   type Offer,
   type PaymentPayload,
   type PaymentRequired,
@@ -263,6 +264,7 @@ export async function paidCall(
         chainId,
         bond,
         funder: match.rail.funder,
+        terms: lockTermsOf(payment),
       },
       10_000,
     );
@@ -505,6 +507,21 @@ function termsReviewWindow(payment: PaymentPayload): number | null {
   const signed = terms as CountersignTerms;
   if (!isV2Terms(signed)) return null;
   return signed.reviewWindow ?? 0;
+}
+
+/** The buyer's countersigned terms, for the lock frame. bond and reviewWindow default to "0" and 0. */
+function lockTermsOf(payment: PaymentPayload): LockTerms {
+  const raw = (payment.payload as { terms?: unknown }).terms;
+  const terms = raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    buyer: (typeof terms.buyer === "string" ? terms.buyer : "") as Address,
+    payee: (typeof terms.payee === "string" ? terms.payee : "") as Address,
+    amount: typeof terms.amount === "string" ? terms.amount : "",
+    deadline: typeof terms.deadline === "number" ? terms.deadline : 0,
+    salt: typeof terms.salt === "string" ? terms.salt : "",
+    bond: typeof terms.bond === "string" ? terms.bond : "0",
+    reviewWindow: typeof terms.reviewWindow === "number" ? terms.reviewWindow : 0,
+  };
 }
 
 /** The bond a v2 countersignature locks, as a decimal string, or null when it locks none. */

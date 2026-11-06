@@ -31,7 +31,7 @@ cmp <(jq -S . /tmp/slip.json) <(jq -S . docs/demo/slip-4320274e.json) && echo "s
 
 Open two terminals:
 
-- **Terminal A** runs a hub, so the audience can watch it die. Start it with `bun run hub`, then check it answers: `curl -s localhost:8787/healthz`.
+- **Terminal A** runs a hub, so the audience can watch it die. Start it with `PORT=8797 bun run hub` (port 8787 is the local hub loop, which stays up), then check it answers: `curl -s localhost:8797/healthz`.
 - **Terminal B** runs the verifier.
 
 ## On stage
@@ -39,7 +39,7 @@ Open two terminals:
 **1. Kill the hub.** In terminal A, press Ctrl-C, then show that it is gone:
 
 ```sh
-curl -s --max-time 3 localhost:8787/healthz || echo "the hub is gone"
+curl -s --max-time 3 localhost:8797/healthz || echo "the hub is gone"
 ```
 
 The verifier never calls a hub, this local one or the production one. It reads only the slip file and Arc.
@@ -88,6 +88,6 @@ The line to say: "one signature, six terms; change one byte and the slip no long
 ## Honest framing
 
 - **The hub killed on stage is a local one.** The slip came from the production hub earlier today, and the production hub keeps running. What the scene proves holds for both: verifying needs neither hub, only the file and the chain.
-- **The escrow is the v1 deployment,** the one the production hub settles through: deploy tx [`0x06638eb4…6c5a`](https://explorer.testnet.arc.io/tx/0x06638eb4cfa8db52b5e097778160fbc913561e88f56aa8fc2ec195cb6d596c5a).
+- **This slip's escrow is the v1 deployment,** which the production hub settled through when the slip was made: deploy tx [`0x06638eb4…6c5a`](https://explorer.testnet.arc.io/tx/0x06638eb4cfa8db52b5e097778160fbc913561e88f56aa8fc2ec195cb6d596c5a). Since 21:49Z on 06 Nov the production hub has settled through escrow v2, `0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE`: deploy tx [`0x650b6fd9…1207`](https://explorer.testnet.arc.io/tx/0x650b6fd9eaab6c4c4988a773412e063cef230610104f975df7b433ff594c1207). The verifier knows both escrows, so a v2 slip plays the same scene; its `escrow` line reads `known escrow: Arc testnet, escrow v2`.
 - **If Arc's public RPC is slow,** add `--rpc <another Arc testnet RPC>`.
 - **Offline,** the verifier prints `VALID (offline: the chain was not read)`, so the on-chain line needs the network.

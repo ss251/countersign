@@ -6,15 +6,17 @@ What is built, what is on a branch and what is only designed: [docs/status.md](d
 
 ## Get started
 
-Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
+Testnet only. Install from npm: `npx -y @countersign-hub/cli --help` and `npm i @countersign-hub/relay`, on Node 20 or later. Only the `@countersign-hub` scope is this project's: `countersign`, `countersign-mcp` and `@countersign` on npm belong to other projects. The commands are in [docs/onboarding.md](docs/onboarding.md).
 
-- **Hire a tool from your agent.** The buyer CLI, or its OpenAI-compatible endpoint, pays in test USDC on Arc. The MCP server for Claude and Cursor is not built yet.
-- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. One `serve --openapi` command sells an operation of an API.
+- **Hire a tool from your agent.** The MCP server for Claude and Cursor (`npx -y @countersign-hub/cli mcp`), or `countersign buy`, pays in test USDC on Arc.
+- **List your tool.** `countersign sell skill` or `countersign sell openapi` sells a skill or an operation of an API. The runner dials out, so you open no port.
 - **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
 
 ## Rails
 
 One interface, one slip shape. Nothing above a rail knows which chain it is on ([docs/spec/rail.md](docs/spec/rail.md)).
+
+**Live** means the production hub declares the rail on [`/rails`](https://hub-production-e85e.up.railway.app/rails): `escrow` (Arc), `whitechain` and `hedera-scheduled`, three in all. **Listed** means a rail that appears in discovery or in sellers' offers but is not live: `gateway` and `hedera` today, which older offers still name.
 
 | Rail | Network | Token | Kind | Status |
 |---|---|---|---|---|
@@ -23,7 +25,7 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 | Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | held (`hedera-scheduled`) on the production hub; direct x402 v2 `exact` through a hosted facilitator in a hub that turns it on | Live, held. Earlier, over plain x402: an [agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078). The production hub runs only the held rail (`hedera-scheduled`); plain x402 is off there because it pays before the seller runs. The held payment moves only when the seller countersigns and the hub co-signs after checking the delivery; neither can release it alone (a held payment the seller signed but the hub did not expired unexecuted: [`0.0.11343208`](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.11343208)). A held purchase's transfer: [`0.0.11337064@1793978974.115868685`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.11337064-1793978974-115868685). See [Hedera payment flow](#hedera-payment-flow). |
 | MPP | Tempo testnet (Moderato), chain `42431`, `mpp:tempo` | pathUSD `0x20c0000000000000000000000000000000000000` | direct, MPP's Tempo charge (402 with `WWW-Authenticate: Payment`, `Payment-Receipt` on success) | `IN PROGRESS`: not on the hub yet. A real payment through the rail on Tempo testnet, from its own demo endpoint: [0.01 pathUSD settled](https://explore.testnet.tempo.xyz/tx/0x4866e130e21972d08eb7c52eab353bb6259b0f9866621979682cef2179e3a89f). Stripe's card method sits behind `MPP_STRIPE=1`. See [docs/mpp.md](docs/mpp.md). |
 
-A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub started with `GATEWAY_RAIL=1`. The production hub runs it off, because Gateway debits the buyer before the seller runs. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
+A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub started with `GATEWAY_RAIL=1`. On production it is listed, not live: the production hub runs it off, because Gateway debits the buyer before the seller runs. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
 **On Whitechain** countersign is a merchant checkout, not an escrow product: see [Whitechain: a merchant checkout](#whitechain-a-merchant-checkout).
 
@@ -31,13 +33,20 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in a hub starte
 
 A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874). It sees every order as it settles, refunds an order, and exports the ledger as CSV for the accountant. The escrow contract and the gas relayer are the mechanism underneath, not the product. Network facts, the relayer and verification are in [docs/whitechain.md](docs/whitechain.md), and feedback for the Whitechain team in [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
+**Why this needs onchain stablecoin settlement on Whitechain.** The buyer is software, so the payment has to enforce itself:
+- A USDT payment on Whitechain will not settle for a payee or an amount the buyer did not sign.
+- On the hub's `whitechain` rail, it waits in escrow until the seller's delivery passes the hub's gate, and anyone can refund it once 600 seconds have passed after its deadline.
+- Every payment and every refund leaves a public record that the customer can check without trusting us.
+
+A card network cannot bind a payment to an offer hash, or release it on a signed delivery receipt. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT.
+
 ### Operate: the checkout, the refund and the export
 
 - **The drop-in.** It is two files:
   - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
   - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
 
-  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Never install that name from npm: the `@countersign` scope there belongs to another project.
+  Both import the published package: `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. In your own app, run `npm i @countersign-hub/relay hono viem` and the two files run unchanged under Bun, tsx or Node. The package ships no type declarations yet, so a strict TypeScript build reports TS7016 on those imports. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
   Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
@@ -47,7 +56,22 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
   - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
 
   Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
-- **The merchant's view.** The merchant refunds from the order's row: it reads the terms, then signs once in its own wallet, and the relayer pays the gas. That screen is not on the production console yet.
+- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://web-production-a58de.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
+  - the live list of the hub's escrow orders, with a one-click refund on each paid one;
+  - the CSV export;
+  - the gas relayer's panel, read from the relay's live `/status`;
+  - the twenty-line block, with `npm i @countersign-hub/relay`.
+
+  The merchant refunds from the order's row. It reads the terms, then signs once in its own wallet, and the relayer pays the gas.
+
+  **Refunded from the public screen, on production.** An AI agent signed in with the published CLI (`npx -y @countersign-hub/cli@0.1.1 login`), holding USDT and no WBT. It bought the `whitechain-dev` offer through the production hub on the `whitechain` rail, into escrow v2, and the slip verifies `VALID` with `--rpc`. The merchant then refunded that order in full from the public screen with one wallet signature, and the relayer paid the gas:
+  - fund [`0xdc9e…e00b`](https://explorer.testnet.whitechain.io/tx/0xdc9e6c3be640b6cfbe9be23460dc18d81e8bd253c22798c34ac5e7c82f9fe00b);
+  - release [`0x8e49…c615`](https://explorer.testnet.whitechain.io/tx/0x8e497c737aedb2e15139b6ef4d0717226b06294914da34bd56b70368e1e4c615);
+  - refund [`0xe554…2956`](https://explorer.testnet.whitechain.io/tx/0xe55477a5615af49d5653a754062183439aaf7c405e1a8d3d17de3da6d3af2956).
+
+  The order's row in `orders.csv` reads refunded, with all three transactions.
+
+  A purchase through the public checkout, paid from the npm package, also settled: [`0x112a…4e5b`](https://explorer.testnet.whitechain.io/tx/0x112a574797aa3df30969a8578e8e4c44fb0bae1226495a14ed795d356c874e5b). Checkout orders like it are in the relay's `orders.csv`, but they are not on the screen yet, so they have no one-click refund there.
 - **The accountant's export.** The production relay serves [`orders.csv`](https://whitechain-relay-production.up.railway.app/orders.csv?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c). It has one row per order, with the amount, fee, refunded and net amounts, and links to each transaction. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain.
 
 ### Scale: the payer holds zero WBT
@@ -56,7 +80,7 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 
 | Guard | Value |
 |---|---|
-| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrow `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`; it pays gas for nobody else |
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3…0391`; it pays gas for nobody else |
 | Fee cap | 50 gwei per gas, with 20% headroom |
 | Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
 | Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
@@ -111,7 +135,7 @@ Where this is going: the person's wallet on EVM, the agent's account on Hedera, 
 Privy has no Hedera, and none of these is one wallet for every rail.
 
 Two things are true today and differ from the table's end state:
-- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM rails are paid by the buyer agent's own wallet.
 - The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
 
 Each status, with its evidence: [docs/status.md](docs/status.md).
@@ -173,24 +197,7 @@ bun run hub
 curl -s http://127.0.0.1:8787/rails
 ```
 
-A seller serving a catalogue skill, in a second terminal. The runner reads its key from `CS_SELLER_KEY`; this makes a throwaway one:
-
-```sh
-export CS_SELLER_KEY=$(cast wallet new --json | jq -r '.[0].private_key')
-bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8787 \
-  --skill examples/catalogue/circle/use-arc/SKILL.md --price 10000
-```
-
-A buyer agent, in a third terminal. Its key comes from `CS_BUYER_KEY`, and its envelope and journal live in `~/.countersign`:
-
-```sh
-export CS_BUYER_KEY=<a testnet key>
-bun packages/buyer/src/cli.ts discover --hub http://127.0.0.1:8787
-bun packages/buyer/src/cli.ts envelope set --cap 1 --per-merchant 0.5
-bun packages/buyer/src/cli.ts buy <offerHash> --input '{}' --hub http://127.0.0.1:8787
-```
-
-With an unfunded key the buy stops before payment: "Refused. The buyer cannot cover this amount." A paid run needs Arc testnet USDC on the buyer key and a `CS_RELAYER_KEY` on the hub, which submits the escrow transactions and pays their gas in USDC.
+To buy and sell, sign in with `countersign login` against the production hub, as [docs/onboarding.md](docs/onboarding.md) shows. The end-to-end suite below runs sellers and buyers against a local hub with its own test wallets.
 
 Verify any slip, from a hub or from `~/.countersign/slips/`. This one is the hosted purchase above:
 
@@ -240,7 +247,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
 - **Direct rails pay before delivery.** On `hedera`, `eip3009`, `gateway` and `mpp` the payment settles before the seller runs, and nothing returns it if the delivery fails. The production hub offers none of them: its `/rails` lists only `escrow`, `whitechain` and `hedera-scheduled`. The escrow rails hold the money until the output checks out, and the held Hedera rail (`hedera-scheduled`) leaves it in the buyer's account until both the seller and the hub have signed, and the hub signs only after checking the delivery, so neither can release it alone. The cost: every transfer out of the seller's payee account, earnings included, needs the hub's co-signature too, done by hand tonight. Which rail returns what: [terms.md §4](docs/terms.md#4-delivery-release-and-refunds).
 - **Post-delivery collusion.** Once released, nothing on chain reverses a payment. A seller, alone or together with the hub, can release against output the buyer did not get or cannot use. The slip's `outputHash` is the buyer's evidence of what it was given, not a remedy.
-- **The bond is declared, not collected.** The escrows production uses are v1, so nothing production runs collects it. Escrow v2, which does, is deployed on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production does not use it yet ([#93](https://github.com/ss251/countersign/issues/93)).
+- **The bond is declared, not collected.** Production uses v2 on both chains, for unbonded jobs only, so nothing production runs collects it yet. Escrow v2, which does, is deployed on Arc at [`0x10A3…F3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) and on Whitechain Sepolia at [`0x55b3…0391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), and production's Whitechain rail now runs on it for unbonded jobs. A bonded `failDelivery` on Arc v2 paid the buyer the price plus the bond ([`0x9734…5e2d`](https://explorer.testnet.arc.io/tx/0x973476ed251384f84e33ddfc3deb97b10840da0e6410572a2a92c6edff8b5e2d), run by script) ([#93](https://github.com/ss251/countersign/issues/93)).
 - **Token blocklists.** If the token blocklists the treasury, releases revert until the deadline and buyers recover by refund. If it blocklists a buyer, refunds to that buyer revert ([escrow.md](docs/spec/escrow.md#known-limits)).
 
 ## Guides

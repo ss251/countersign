@@ -79,7 +79,8 @@ describe("the escrow claims follow only an escrow contract's release", () => {
   test("the other rails are said from their declarations, with the held rail's plain limit", () => {
     expect(otherRailsLines(PROD)).toEqual([
       "Gateway and Hedera x402 pay the seller before delivery.",
-      "Held Hedera waits for the seller's key, which can also release it without delivering.",
+      // Evidence (captain via firstmate 21:52:02Z): since A4 the Hedera payee is 2-of-2 with the hub, proven on schedule 0.0.11343208.
+      "Held Hedera moves only when the seller and the hub both sign.",
     ]);
     for (const line of otherRailsLines(PROD)) {
       expect(line).not.toMatch(/escrow|refund|until the output checks out/i);

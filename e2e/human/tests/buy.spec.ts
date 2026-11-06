@@ -19,6 +19,7 @@ import {
 import { parseAbiItem, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
+import { sessionEnvelopeProblems, type SessionEnvelope } from "../lib/envelope.ts";
 import { raiseIfFailed } from "../lib/failure.ts";
 import {
   approveIfPrompted,
@@ -40,8 +41,8 @@ import {
   transfer,
 } from "../lib/fund.ts";
 import { Keyring } from "../lib/keys.ts";
-import { REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
-import { slipHashFromHref } from "../lib/slip.ts";
+import { compareSettlement, REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
+import { escrowRailAddress, slipHashFromHref } from "../lib/slip.ts";
 import { installTestWallet, newTestAccount } from "../lib/wallet.ts";
 import {
   currentRunId,
@@ -69,6 +70,15 @@ class SkipRun extends Error {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** STEER-0300 C1: a wait between the review and Sign, from 0 to 600 whole seconds. */
+function signDelaySeconds(): number {
+  const signDelayS = Number(process.env.E2E_HUMAN_SIGN_DELAY_S ?? "0");
+  if (!Number.isInteger(signDelayS) || signDelayS < 0 || signDelayS > 600) {
+    throw new Error("E2E_HUMAN_SIGN_DELAY_S must be 0..600");
+  }
+  return signDelayS;
 }
 
 async function step<T>(
@@ -119,6 +129,18 @@ function testId(page: Page, testid: string): Locator {
 
 function missingAttribute(testid: string, name: string): Error {
   return new Error(`the console does not expose ${testid}[${name}] (cs-ui)`);
+}
+
+/** The hub's answer as status and code only; never a request header. */
+async function hubFailure(response: Response): Promise<string> {
+  let code = "no code";
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    if (typeof body.code === "string" && body.code !== "") code = body.code;
+  } catch {
+    // a body that is not JSON has no code
+  }
+  return `${response.status} (${code})`;
 }
 
 async function waitAttr(
@@ -194,6 +216,7 @@ interface SlipFields {
   offerHash: Hex;
   amount: bigint;
   buyer: Address;
+  escrow: Address;
 }
 
 /** The hub wraps a slip in `{ body, hash, ... }`; a bare body is accepted too. */
@@ -208,6 +231,7 @@ function slipFieldsOf(value: unknown): SlipFields {
   const offerHash = body.offerHash;
   const amount = body.amount;
   const buyer = body.buyer;
+  const escrow = body.escrow;
   if (typeof jobId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(jobId)) {
     throw new Error("the slip has no 0x job id");
   }
@@ -220,7 +244,16 @@ function slipFieldsOf(value: unknown): SlipFields {
   if (typeof buyer !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(buyer)) {
     throw new Error("the slip has no buyer address");
   }
-  return { jobId: jobId as Hex, offerHash: offerHash as Hex, amount: BigInt(amount), buyer: buyer as Address };
+  if (typeof escrow !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(escrow)) {
+    throw new Error("the slip names no escrow");
+  }
+  return {
+    jobId: jobId as Hex,
+    offerHash: offerHash as Hex,
+    amount: BigInt(amount),
+    buyer: buyer as Address,
+    escrow: escrow as Address,
+  };
 }
 
 interface ListedOffer {
@@ -261,6 +294,7 @@ const runHuman = async (
   const project = testInfo.project.name;
   if (project !== "privy" && project !== "injected") test.skip(true, `unknown project ${project}`);
 
+  const signDelayS = signDelaySeconds();
   const runId = currentRunId();
   const rec = new Recorder(runId, project);
   const keys = new Keyring();
@@ -422,6 +456,12 @@ const runHuman = async (
       rec.note(`review job: ${review.job}`);
       await rec.screenshot(page, "05", "review");
 
+      if (signDelayS > 0) {
+        rec.note(`waited ${signDelayS} s between the review and Sign (STEER-0300 C1 stale case)`);
+        test.setTimeout(testInfo.timeout + signDelayS * 1000);
+        await page.waitForTimeout(signDelayS * 1000);
+      }
+
       await testId(page, "start-sign").click();
       await approveAndNote(rec, page);
       await approveAndNote(rec, page);
@@ -459,12 +499,22 @@ const runHuman = async (
       if (slip.buyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
       }
-      if (slip.jobId.toLowerCase() !== bought.review.job.toLowerCase()) {
-        throw new Error(`the review showed ${bought.review.job}, but the slip's jobId was ${slip.jobId}`);
+
+      const railsResponse = await fetch(`${hub}/rails`);
+      if (railsResponse.status !== 200) {
+        throw new Error(`the hub answered ${railsResponse.status} for the rails`);
       }
-      if (slip.amount !== bought.review.amount) {
-        throw new Error(`the review showed ${bought.review.amount}, but the slip's amount was ${slip.amount}`);
+      let railsValue: unknown;
+      try {
+        railsValue = await railsResponse.json();
+      } catch {
+        throw new Error("the hub's rails are not JSON");
       }
+      const declared = escrowRailAddress(railsValue);
+      if (declared === null || slip.escrow.toLowerCase() !== declared.toLowerCase()) {
+        throw new Error(`the slip's escrow ${slip.escrow} is not the escrow production declares (${declared})`);
+      }
+      rec.note(`escrow: ${slip.escrow}`);
 
       const offerResponse = await fetch(`${hub}/offers/${slip.offerHash}`);
       if (offerResponse.status !== 200) {
@@ -487,7 +537,7 @@ const runHuman = async (
       }
 
       const fundedLogs = await client.getLogs({
-        address: ARC.escrow,
+        address: slip.escrow,
         event: FUNDED,
         args: { jobId: slip.jobId },
         fromBlock: funded.blockNumber,
@@ -515,9 +565,12 @@ const runHuman = async (
       if (fundBuyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the Funded buyer is ${fundBuyer}, not ${wallet}`);
       }
-      if (fundPayee.toLowerCase() !== bought.review.payee.toLowerCase()) {
-        throw new Error(`the review showed ${bought.review.payee}, but the Funded payee was ${fundPayee}`);
-      }
+      const comparison = compareSettlement(
+        bought.review,
+        { payee: fundPayee, amount: slip.amount, job: slip.jobId },
+        signDelayS,
+      );
+      if (comparison.note) rec.note(comparison.note);
       if (fundAmount !== slip.amount) {
         throw new Error(`the Funded amount is ${fundAmount}, not the slip amount ${slip.amount}`);
       }
@@ -532,7 +585,7 @@ const runHuman = async (
       rec.tx("escrow fund", fundLog.transactionHash);
 
       let releasedLogs = await client.getLogs({
-        address: ARC.escrow,
+        address: slip.escrow,
         event: RELEASED,
         args: { jobId: slip.jobId },
         fromBlock: funded.blockNumber,
@@ -542,7 +595,7 @@ const runHuman = async (
       while (releasedLogs.length === 0 && Date.now() < releaseDeadline) {
         await page.waitForTimeout(2_000);
         releasedLogs = await client.getLogs({
-          address: ARC.escrow,
+          address: slip.escrow,
           event: RELEASED,
           args: { jobId: slip.jobId },
           fromBlock: funded.blockNumber,
@@ -569,7 +622,7 @@ const runHuman = async (
       if (resultReceipt.status !== "success") {
         throw new Error(`the result transaction ${bought.hash} failed`);
       }
-      const events = escrowEvents(ARC, resultReceipt);
+      const events = escrowEvents({ ...ARC, escrow: slip.escrow }, resultReceipt);
       const recorded =
         events.funded.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase()) ||
         events.released.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase());
@@ -616,6 +669,89 @@ const runHuman = async (
         await transfer(client, injected, funder.address, amount, RPC);
       }
     });
+
+    if (project === "privy") {
+      await step(rec, page, "09", "buyer", "Buyer offers to create an envelope", async () => {
+        await page.goto("/#/buyer");
+        const locked = testId(page, "buyer-locked");
+        await expect(locked).toBeVisible({ timeout: 30_000 });
+        const create = locked.getByRole("button", { name: /create an envelope/i });
+        await expect(create).toBeVisible({ timeout: 30_000 });
+        await expect(create).toBeEnabled({ timeout: 30_000 });
+      });
+
+      const session = await step(rec, page, "10", "envelope", "Create an envelope, shown in place", async () => {
+        const before = page.url();
+        await testId(page, "buyer-locked")
+          .getByRole("button", { name: /create an envelope/i })
+          .click();
+
+        await expect(testId(page, "buyer-locked")).toBeHidden({ timeout: 30_000 });
+        await expect(page.locator('[role="alert"]:visible')).toHaveCount(0);
+        await expect(
+          page
+            .getByText("Nothing is waiting for you.", { exact: true })
+            .or(page.locator('article[aria-labelledby="approval-title"]'))
+            .first(),
+        ).toBeVisible({ timeout: 30_000 });
+        if (!new URL(page.url()).hash.startsWith("#/buyer")) {
+          throw new Error(`the page left the buyer route: ${before} -> ${page.url()}`);
+        }
+
+        const token = await page.evaluate(() => window.localStorage.getItem("countersign.approval-token"));
+        if (token === null || !/^cse_[0-9a-f]{64}$/.test(token)) {
+          throw new Error("the console stored no session token");
+        }
+        keys.hide(token);
+
+        const storedAgent = await page.evaluate(() => window.localStorage.getItem("countersign.agent"));
+        if (storedAgent === null || storedAgent.toLowerCase() !== wallet.toLowerCase()) {
+          throw new Error("the console stored another agent, not the embedded wallet");
+        }
+
+        const hub = hubUrl().replace(/\/$/, "");
+        const response = await fetch(`${hub}/envelopes/${wallet}`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (response.status !== 200) {
+          throw new Error(`the hub answered ${await hubFailure(response)} for the envelope`);
+        }
+        const answer = (await response.json()) as { envelope?: SessionEnvelope };
+        if (typeof answer.envelope !== "object" || answer.envelope === null) {
+          throw new Error("the hub's envelope answer has no envelope");
+        }
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const problems = sessionEnvelopeProblems(answer.envelope, wallet, nowSeconds);
+        if (problems.length > 0) throw new Error(problems.join("; "));
+
+        const scope = await fetch(
+          `${hub}/envelopes/0x000000000000000000000000000000000000dEaD`,
+          { headers: { authorization: `Bearer ${token}` } },
+        );
+        if (scope.status !== 401) {
+          throw new Error(
+            `a session token reads only its own agent's envelope: the hub answered ${await hubFailure(scope)}`,
+          );
+        }
+
+        const expiresAt = answer.envelope.expiresAt;
+        if (typeof expiresAt !== "number") throw new Error("the envelope has no expiresAt");
+        return { expiresAt };
+      });
+
+      await step(rec, page, "11", "envelope-tab", "The envelope tab shows the envelope", async () => {
+        await page
+          .getByRole("navigation", { name: "Buyer" })
+          .getByRole("link", { name: /envelope/i })
+          .click();
+        await expect(page.getByRole("region", { name: "Budget" })).toBeVisible({ timeout: 30_000 });
+        if (!new URL(page.url()).hash.startsWith("#/buyer")) {
+          throw new Error("the page left the buyer route on the envelope tab");
+        }
+        const hours = Math.round((session.expiresAt - Math.floor(Date.now() / 1000)) / 3600);
+        rec.note(`envelope: cap 1 USDC, per seller 0.5, ask above 0.05, expires in ${hours} h`);
+      });
+    }
 
     status = "PASS";
   } catch (error) {

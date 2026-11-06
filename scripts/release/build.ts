@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -46,6 +47,17 @@ import {
 } from "./surface.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
+
+/**
+ * README.md comes from the package, LICENSE from the repository root. A package
+ * without a README fails the build: the npm page would be empty.
+ */
+function copyDocs(short: string, packageDir: string, stageDir: string): void {
+  const readme = join(packageDir, "README.md");
+  if (!existsSync(readme)) throw new Error(`packages/${short}/README.md is missing; the npm page needs it`);
+  copyFileSync(readme, join(stageDir, "README.md"));
+  copyFileSync(join(ROOT, "LICENSE"), join(stageDir, "LICENSE"));
+}
 const SOURCE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
 const LEAK_ENVIRONMENT = buildEnvironment();
 
@@ -369,6 +381,7 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
   if (typeof staged.version !== "string") throw new Error(`staged ${short} manifest has no version`);
   writeFileSync(join(stageDir, "package.json"), `${JSON.stringify(staged, null, 2)}\n`);
   rewriteBins(stageDir, staged);
+  copyDocs(short, packageDir, stageDir);
   guardPackage(short, emitted);
   checkFiles(displayPath(stageDir), readDist(stageDir), LEAK_ENVIRONMENT);
 

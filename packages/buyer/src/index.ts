@@ -7,6 +7,7 @@ export * from "./known-rails.ts";
 export * from "./mirror.ts";
 export * from "./payer.ts";
 export * from "./resume.ts";
+export * from "./remote-signer.ts";
 export * from "./review.ts";
 export * from "./state.ts";
 export * from "./terms.ts";

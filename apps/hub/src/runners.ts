@@ -8,6 +8,7 @@ import {
   runnerAuthMessage,
   type HubToRunner,
   type JobOrder,
+  type LockTerms,
   type RunnerToHub,
   type Slip,
 } from "./deps.ts";
@@ -135,7 +136,15 @@ export class RunnerLink {
   }
 
   async lock(
-    req: { jobId: Hex; offerHash: Hex; escrow: Address; chainId: number; bond: string; funder: Address },
+    req: {
+      jobId: Hex;
+      offerHash: Hex;
+      escrow: Address;
+      chainId: number;
+      bond: string;
+      funder: Address;
+      terms: LockTerms;
+    },
     timeoutMs: number,
   ): Promise<{ sig: Hex } | { refused: string }> {
     const conn = this.find(req.offerHash);
@@ -163,6 +172,7 @@ export class RunnerLink {
         chainId: req.chainId,
         bond: req.bond,
         funder: req.funder,
+        terms: req.terms,
       };
       try {
         conn.ws.send(JSON.stringify(frame));

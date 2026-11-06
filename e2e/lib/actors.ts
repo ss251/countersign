@@ -3,10 +3,12 @@
  * runner, the buyer CLI and the standalone verifier. Each process gets only its own key.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Address, Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { canonicalHash, type Offer } from "@countersign/core";
+import { KNOWN_RAILS, type KnownRail } from "@countersign/buyer";
 import { ARC } from "./chains.ts";
 import { check, equal, sameHex, type FlowCtx } from "./flow.ts";
 import { freePort } from "./http.ts";
@@ -72,6 +74,7 @@ export async function startHub(ctx: FlowCtx, opts: HubOptions): Promise<HubHandl
     env.ARC_ESCROW = ARC.escrow;
     env.ARC_RPC_URL = ARC.rpc;
     env.CS_RELAYER_KEY = ctx.env.secrets.key("E2E_ARC_SUBMITTER_KEY");
+    if (ARC.escrowVersion === 2) env.ARC_ESCROW_VERSION = "2";
   }
   if (opts.hedera) env.HEDERA_RAIL = "1";
   const proc = spawnProc({
@@ -136,6 +139,7 @@ export async function startSkillSeller(ctx: FlowCtx, hub: HubHandle, o: SellerOp
       "--upstream-url", o.item.upstream.url,
       "--licence", o.item.upstream.licence,
       ...Object.entries(o.payTo ?? {}).flatMap(([rail, id]) => ["--pay-to", `${rail}=${id}`]),
+      ...(ARC.escrowVersion === 2 ? ["--known-escrow", `5042002=${ARC.escrow}`] : []),
       // Never the shared default under $HOME: other runners on the machine write there too.
       "--state", o.state ?? join(ctx.dir, `${label}-state`),
     ],
@@ -163,6 +167,27 @@ export async function startSkillSeller(ctx: FlowCtx, hub: HubHandle, o: SellerOp
   return { offerHash, offer: listing.offer, seller, proc };
 }
 
+/**
+ * The Arc entry of the buyer's own rail list, pinned to this suite's escrow as v2. The buyer
+ * never takes the version from the hub: it reads this pin through state.loadRails().
+ */
+export function arcV2Rail(): KnownRail {
+  const arc = KNOWN_RAILS.find((rail) => rail.chainId === ARC.chainId);
+  if (!arc) throw new Error("the buyer has no Arc rail to pin");
+  return { ...arc, escrow: ARC.escrow, version: 2 };
+}
+
+/** Pin Arc v2 in a buyer state directory before the buyer's first call. */
+export function pinArcV2(stateDir: string): void {
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "rails.json"), `${JSON.stringify([arcV2Rail()], null, 2)}\n`);
+}
+
+/** The address the suite's hub signs Arc transactions with; the key never leaves the signer. */
+export function submitterAddress(ctx: FlowCtx): Address {
+  return privateKeyToAccount(ctx.env.secrets.key("E2E_ARC_SUBMITTER_KEY")).address;
+}
+
 /** One buyer CLI command with the buyer key in its environment and nothing else. */
 export function buyerCli(
   ctx: FlowCtx,
@@ -173,6 +198,7 @@ export function buyerCli(
   args: string[],
   timeoutMs = 150_000,
 ): Promise<CmdResult> {
+  if (ARC.escrowVersion === 2) pinArcV2(state);
   return runCmd(
     {
       name: `buyer ${label}`,

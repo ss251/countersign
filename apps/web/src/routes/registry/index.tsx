@@ -3,12 +3,13 @@ import type { AdapterKind, RailId } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { ANONYMOUS, formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
 import { settlementIndex, type Ledger } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
 import type { Listing, SellerRecord, Settlement } from "../../lib/types.ts";
 import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
 import { Amount, Button, Empty, FixtureNote, Hash, RailState, Tag, cx } from "../../ui/primitives.tsx";
+import { railGroups } from "./rails.ts";
 import "../../ui/page.css";
 import "./registry.css";
 
@@ -123,11 +124,57 @@ export function deliveryRate(released: number, refunded: number): string {
 
 export { settlementIndex };
 
+type RailGroups = NonNullable<ReturnType<typeof railGroups>>;
+
+/**
+ * The rail row: every offer rail on a hub whose rails are unknown, otherwise the same toggles
+ * under the hub's live rails and the rails only offers name.
+ */
+export function RailFilters({
+  groups,
+  flat,
+  rail,
+  onRail,
+  count,
+}: {
+  groups: RailGroups | null;
+  flat: RailId[];
+  rail: RailId | "all";
+  onRail: (r: RailId | "all") => void;
+  count: (r: RailId | "all") => number;
+}) {
+  const toggle = (r: RailId | "all") => (
+    <button key={r} type="button" className={cx("toggle", rail === r && "is-on")} aria-pressed={rail === r} onClick={() => onRail(r)}>
+      {r === "all" ? "Every rail" : RAIL_LABEL[r]} <span className="toggle__n num">{count(r)}</span>
+    </button>
+  );
+  return (
+    <div className="toggles" role="group" aria-label="Rail">
+      {toggle("all")}
+      {groups ? (
+        <>
+          <span className="label">{`Live (${groups.live.length})`}</span>
+          {groups.live.map(toggle)}
+          {groups.listed.length > 0 ? (
+            <>
+              <span className="label">{`Listed only (${groups.listed.length})`}</span>
+              {groups.listed.map(toggle)}
+            </>
+          ) : null}
+        </>
+      ) : (
+        flat.map(toggle)
+      )}
+    </div>
+  );
+}
+
 /** Every seller this hub knows and what each sells, with who they are and how they have delivered. */
 export default function RegistryPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
   const sellers = useResource(() => api.sellers(), []);
   const settlements = useResource(() => api.settlements(100), []);
+  const hubRails = useResource(() => api.rails(), []);
   const now = useNow();
   const [text, setText] = useState("");
   const [adapter, setAdapter] = useState<AdapterFilter>("all");
@@ -136,6 +183,8 @@ export default function RegistryPage(_props: PageProps) {
 
   const all = listings.data ?? [];
   const rails = useMemo(() => [...new Set(all.flatMap((l) => l.offer.rails))], [all]);
+  const hubRailIds = hubRails.source === "hub" && hubRails.data ? hubRails.data.map((d) => d.id) : undefined;
+  const railSets = railGroups(rails, hubRailIds);
   // Counts on every toggle reflect the other filters, so a toggle never promises rows it cannot show.
   const adapterCount = (a: AdapterFilter) => all.filter((l) => matches(l, text, a, rail)).length;
   const railCount = (r: RailId | "all") => all.filter((l) => matches(l, text, adapter, r)).length;
@@ -209,16 +258,7 @@ export default function RegistryPage(_props: PageProps) {
                 </button>
               ))}
             </div>
-            <div className="toggles" role="group" aria-label="Rail">
-              <button type="button" className={cx("toggle", rail === "all" && "is-on")} aria-pressed={rail === "all"} onClick={() => setRail("all")}>
-                Every rail <span className="toggle__n num">{railCount("all")}</span>
-              </button>
-              {rails.map((r) => (
-                <button key={r} type="button" className={cx("toggle", rail === r && "is-on")} aria-pressed={rail === r} onClick={() => setRail(r)}>
-                  {RAIL_LABEL[r]} <span className="toggle__n num">{railCount(r)}</span>
-                </button>
-              ))}
-            </div>
+            <RailFilters groups={railSets} flat={rails} rail={rail} onRail={setRail} count={railCount} />
           </div>
 
           <p className="registry__count num" aria-live="polite">
@@ -248,7 +288,7 @@ export default function RegistryPage(_props: PageProps) {
   );
 }
 
-function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
+export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
   const last = ledger.lastBySeller.get(g.address);
   const calls = g.released + g.refunded + g.failed;
   const titleId = `seller-${g.address}`;
@@ -258,7 +298,7 @@ function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: n
         <AddressGlyph address={g.address} />
         <div className="scard__who">
           <h2 id={titleId} className={cx("scard__name", !g.named && "is-unnamed")}>
-            {g.named ? g.name : "Unnamed seller"}
+            {g.named ? g.name : ANONYMOUS}
             {g.agentId ? (
               <svg className="scard__tick" viewBox="0 0 16 16" width="15" height="15" role="img" aria-label="Identity proven by ERC-8004">
                 <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
