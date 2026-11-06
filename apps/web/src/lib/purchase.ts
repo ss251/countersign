@@ -74,12 +74,19 @@ function sameHex(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
+/**
+ * The time a person may spend in the wallet's sign dialog. It stays well under the rail's 300 s
+ * maximum, and it only ever gives the seller more time, never less.
+ */
+export const SIGN_SLACK_SECONDS = 120;
+
 /** The authorization the wallet signs, built from the pin and the hub's own terms. */
 export function buildAuthorization(
   req: PaymentRequirements,
   address: Address,
   nowSeconds: number,
   salt: string,
+  slackSeconds = 0,
 ): AuthorizationInput {
   const extra = req.extra as Partial<CountersignExtra> | undefined;
   if (!extra || typeof extra.offerHash !== "string" || typeof extra.deadlineSeconds !== "number") {
@@ -90,7 +97,7 @@ export function buildAuthorization(
     buyer: address,
     payee: req.payTo as Address,
     amount: req.amount,
-    deadline: nowSeconds + extra.deadlineSeconds,
+    deadline: nowSeconds + extra.deadlineSeconds + slackSeconds,
     salt: coreSalt(salt),
   };
   return {
@@ -125,6 +132,8 @@ export interface PendingPurchase {
   /** The one job this signature can fund: the authorization's nonce, so it can never be reused for another. */
   jobId: Hex;
   base: string;
+  /** Unix seconds when these terms were prepared for review. */
+  preparedAt: number;
 }
 
 export function pendingOf(
@@ -133,8 +142,93 @@ export function pendingOf(
   req: PaymentRequirements,
   authorization: AuthorizationInput,
   base: string,
+  preparedAt = 0,
 ): PendingPurchase {
-  return { listing, input, req, authorization, jobId: jobIdOf(authorization.terms, authorization.chainId, authorization.escrow), base };
+  return {
+    listing,
+    input,
+    req,
+    authorization,
+    jobId: jobIdOf(authorization.terms, authorization.chainId, authorization.escrow),
+    base,
+    preparedAt,
+  };
+}
+
+export type Refresh =
+  | { kind: "ready"; pending: PendingPurchase }
+  | { kind: "changed"; pending: PendingPurchase }
+  | { kind: "failed"; message: string };
+
+/**
+ * Rebuilds the authorization for the moment the person actually signs. Older terms are checked
+ * against a fresh 402 first; anything material that moved goes back for review.
+ */
+export async function freshTerms(deps: {
+  pending: PendingPurchase;
+  address: Address;
+  nowSeconds: number;
+  salt: string;
+  refetch: () => Promise<PaymentRequirements | null>;
+}): Promise<Refresh> {
+  const { pending, address, nowSeconds, salt, refetch } = deps;
+  let req = pending.req;
+
+  if (nowSeconds - pending.preparedAt > 30) {
+    let next: PaymentRequirements | null;
+    try {
+      next = await refetch();
+    } catch {
+      next = null;
+    }
+    if (!next) {
+      return {
+        kind: "failed",
+        message: "These terms expired, and fresh ones could not be fetched, so nothing was signed.",
+      };
+    }
+    if (materiallyDifferent(next, pending.req)) {
+      return {
+        kind: "changed",
+        pending: pendingOf(
+          pending.listing,
+          pending.input,
+          next,
+          buildAuthorization(next, address, nowSeconds, salt, SIGN_SLACK_SECONDS),
+          pending.base,
+          nowSeconds,
+        ),
+      };
+    }
+    req = next;
+  }
+
+  return {
+    kind: "ready",
+    pending: pendingOf(
+      pending.listing,
+      pending.input,
+      req,
+      buildAuthorization(req, address, nowSeconds, salt, SIGN_SLACK_SECONDS),
+      pending.base,
+      nowSeconds,
+    ),
+  };
+}
+
+function materiallyDifferent(a: PaymentRequirements, b: PaymentRequirements): boolean {
+  if (a.network !== b.network || a.amount !== b.amount) return true;
+  if (!sameAddress(a.payTo, b.payTo) || !sameAddress(a.asset, b.asset)) return true;
+  const aExtra = isRecord(a.extra) ? a.extra : {};
+  const bExtra = isRecord(b.extra) ? b.extra : {};
+  const aHash = aExtra.offerHash;
+  const bHash = bExtra.offerHash;
+  if (typeof aHash !== "string" || typeof bHash !== "string") {
+    if (aHash !== bHash) return true;
+  } else if (!sameHex(aHash, bHash)) {
+    return true;
+  }
+  return aExtra.deadlineSeconds !== bExtra.deadlineSeconds;
 }
 
 /** One purchase: ask the hub for its terms, show them, and only then open the wallet for that one job. */
@@ -142,6 +236,8 @@ export function usePurchase(): {
   phase: PurchasePhase;
   pending: PendingPurchase | null;
   signature: Hex | null;
+  /** The wallet that signed the pending job, named on the receipt line. */
+  signer: Address | null;
   outcome: PurchaseOutcome | null;
   note: string | null;
   /** Asks the hub for its 402 and checks the terms. It never opens the wallet; confirm() does. */
@@ -156,6 +252,7 @@ export function usePurchase(): {
   const [phase, setPhase] = useState<PurchasePhase>("idle");
   const [pending, setPending] = useState<PendingPurchase | null>(null);
   const [signature, setSignature] = useState<Hex | null>(null);
+  const [signer, setSigner] = useState<Address | null>(null);
   const [outcome, setOutcome] = useState<PurchaseOutcome | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -167,6 +264,7 @@ export function usePurchase(): {
     setPhase("asking");
     setPending(null);
     setSignature(null);
+    setSigner(null);
     setOutcome(null);
     setNote(null);
     try {
@@ -200,7 +298,9 @@ export function usePurchase(): {
       }
 
       try {
-        setPending(pendingOf(listing, input, choice.req, buildAuthorization(choice.req, account.address, now, randomSalt()), base));
+        setPending(
+          pendingOf(listing, input, choice.req, buildAuthorization(choice.req, account.address, now, randomSalt()), base, now),
+        );
         next = "review";
       } catch (error) {
         setNote(messageOf(error));
@@ -213,15 +313,57 @@ export function usePurchase(): {
   };
 
   const confirm = async () => {
-    const p = pending;
-    if (!p || phase !== "review") return;
+    const reviewed = pending;
+    if (!reviewed || phase !== "review") return;
     // The terms on screen name one buyer; a wallet that changed since would sign for someone else.
-    if (!account.address || account.address.toLowerCase() !== p.authorization.terms.buyer.toLowerCase() || account.chainId !== ARC_CHAIN_ID) {
+    if (
+      !account.address ||
+      account.address.toLowerCase() !== reviewed.authorization.terms.buyer.toLowerCase() ||
+      account.chainId !== ARC_CHAIN_ID
+    ) {
       setPending(null);
       setPhase("idle");
       setNote("The wallet or its chain changed since these terms were shown, so nothing was signed. Ask again.");
       return;
     }
+
+    const refetch = async (): Promise<PaymentRequirements | null> => {
+      const response = await postCall(reviewed.base, reviewed.listing.hash, reviewed.input);
+      if (response.status !== 402) return null;
+      const body = await readJson(response);
+      const required = paymentRequiredOf(body, response);
+      if (!required) return null;
+      const choice = trustedRequirement(required.accepts, reviewed.listing);
+      return choice.ok ? choice.req : null;
+    };
+
+    setNote("Preparing fresh terms…");
+    let fresh: Refresh;
+    try {
+      fresh = await freshTerms({
+        pending: reviewed,
+        address: account.address,
+        nowSeconds: Math.floor(Date.now() / 1000),
+        salt: randomSalt(),
+        refetch,
+      });
+    } catch {
+      fresh = { kind: "failed", message: "These terms expired, and fresh ones could not be fetched, so nothing was signed." };
+    }
+    if (fresh.kind === "failed") {
+      setNote(fresh.message);
+      return;
+    }
+    if (fresh.kind === "changed") {
+      setPending(fresh.pending);
+      setPhase("review");
+      setNote("The hub's terms changed since you reviewed them. Check them again before signing.");
+      return;
+    }
+
+    const p = fresh.pending;
+    setPending(p);
+    setNote(null);
     setPhase("signing");
     try {
       let sig: Hex;
@@ -232,6 +374,7 @@ export function usePurchase(): {
         return;
       }
       setSignature(sig);
+      setSigner(p.authorization.terms.buyer);
       setPhase("sending");
 
       const payment: PaymentPayload = {
@@ -288,11 +431,12 @@ export function usePurchase(): {
     setPhase("idle");
     setPending(null);
     setSignature(null);
+    setSigner(null);
     setOutcome(null);
     setNote(null);
   };
 
-  return { phase, pending, signature, outcome, note, buy, confirm, cancel, reset };
+  return { phase, pending, signature, signer, outcome, note, buy, confirm, cancel, reset };
 }
 
 function randomSalt(): Hex {
