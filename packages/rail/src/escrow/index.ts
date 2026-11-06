@@ -152,6 +152,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   const wallet =
     cfg.walletClient ??
     (cfg.submitter ? createWalletClient({ chain, transport: http(cfg.rpcUrl), account: cfg.submitter }) : undefined);
+  const funderAddress = wallet?.account?.address ?? cfg.submitter?.address;
+  const funder = funderAddress !== undefined ? getAddress(funderAddress) : undefined;
 
   const declaration: RailDeclaration = {
     id: cfg.id,
@@ -401,7 +403,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     },
   };
 
-  return { declaration, challenge, verify, settle, escrow };
+  return { declaration, funder, challenge, verify, settle, escrow };
 }
 
 /** The payee's free (unlocked) bond on an escrow, in atomic units. Exported for the hub and runner. */
