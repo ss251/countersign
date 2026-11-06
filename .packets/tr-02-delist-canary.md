@@ -1,6 +1,6 @@
 # tr-02: a seller delists its own offer, and a canary delists offers whose runner stops answering (refs #26)
 
-**Design: decided.** cs-truth wrote this on Opus from the captain's acceptance (STEER-2050) and `docs/decisions.md` D18, which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose.
+**Design: decided.** cs-truth wrote this on Opus from the project lead's acceptance (STEER-2050) and `docs/decisions.md` D18, which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose.
 
 ## Goal
 
@@ -161,7 +161,6 @@ Every existing test still passes, unedited.
 - **No network** in tests.
 - **Existing tests:** never edit, weaken, skip or delete one to make it pass. If one fails, fix the code, or stop and report the root cause.
 - **Commits:** small, present tense, ending `refs #26`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -181,4 +180,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/tr-02-delist-canary.md`: the diff summary, the test names, and the gate output counts.
+Write `$M/reports/tr-02-delist-canary.md`: the diff summary, the test names, and the gate output counts.
