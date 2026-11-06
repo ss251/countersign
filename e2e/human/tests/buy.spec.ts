@@ -253,9 +253,8 @@ const runHuman = async (
         if (privyFailures.length > 0) throw new SkipRun(`Privy unavailable: ${privyFailures[0]}`);
         throw error;
       }
+      await expect(page.getByRole("dialog")).toBeHidden({ timeout: 30_000 });
       await rec.screenshot(page, "01", "signed-in");
-      await context.tracing.start({ screenshots: true, snapshots: true });
-      tracing = true;
     });
 
     const wallet = await step(rec, page, "02", "wallet", "the wallet on Arc", async () => {
@@ -383,6 +382,7 @@ const runHuman = async (
         cwd: REPO_ROOT,
         encoding: "utf8",
         timeout: 90_000,
+        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", NO_COLOR: "1" },
       });
       if (verifier.error) throw new Error(`the verifier did not run: ${verifier.error.message}`);
       const lines = `${verifier.stdout ?? ""}`

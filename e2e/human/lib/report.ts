@@ -364,6 +364,38 @@ export function gitInfo(): { commit: string; dirty: boolean } {
   return { commit: dirty ? `${commit} with local changes` : commit, dirty };
 }
 
+export interface RunFinalizeOptions {
+  artifactsDir?: string;
+  runsDir?: string;
+  secrets?: Secrets;
+}
+
+/** Finalize one run from its per-project states; a run with no states is still scanned. */
+export function finalizeRun(
+  runId: string,
+  startedAt: Date,
+  options: RunFinalizeOptions = {},
+): FinalizeResult {
+  const artifactsDir = options.artifactsDir ?? ARTIFACTS_DIR;
+  const runsDir = options.runsDir ?? RUNS_DIR;
+  const projects = readProjectStates(runId, artifactsDir);
+  let secrets = options.secrets;
+  if (!secrets) {
+    const keys = new Keyring();
+    for (const name of SECRET_NAMES) keys.secret(name);
+    secrets = keys.secrets;
+  }
+  const meta: RunMeta = {
+    runId,
+    commit: gitInfo().commit,
+    consoleUrl: consoleUrl(),
+    hubUrl: hubUrl(),
+    startedAt: startedAt.toISOString(),
+    ms: Date.now() - startedAt.getTime(),
+  };
+  return finalizeReport({ meta, projects, secrets, artifactsDir, runsDir });
+}
+
 class HumanReporter {
   private runId = "";
   private startedAt = new Date();
@@ -377,23 +409,7 @@ class HumanReporter {
 
   onEnd(): void {
     const runId = this.runId || currentRunId();
-    const projects = readProjectStates(runId);
-    if (projects.length === 0) return;
-    const keys = new Keyring();
-    for (const name of SECRET_NAMES) keys.secret(name);
-    const meta: RunMeta = {
-      runId,
-      commit: gitInfo().commit,
-      consoleUrl: consoleUrl(),
-      hubUrl: hubUrl(),
-      startedAt: this.startedAt.toISOString(),
-      ms: Date.now() - this.startedAt.getTime(),
-    };
-    const result = finalizeReport({
-      meta,
-      projects,
-      secrets: keys.secrets,
-    });
+    const result = finalizeRun(runId, this.startedAt);
     console.log(`human report: ${result.path}${result.latest ? ` and ${result.latest}` : ""}`);
     if (result.exitCode !== 0) process.exit(1);
   }
