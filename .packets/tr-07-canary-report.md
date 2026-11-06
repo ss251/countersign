@@ -1,6 +1,6 @@
 # tr-07: the canary gets a report mode, so production watches a round before anything is delisted (refs #26)
 
-**Design: decided.** cs-truth wrote this on Opus for the project lead's STEER-2235 item 3 (the automatic delist on production) and `docs/decisions.md` "D18, amended", which is already committed on this branch. This branch is cs/tr-02 (PR #186) plus that amendment, so `apps/hub/src/canary.ts` exists. Implement exactly what follows. Nothing here is left for you to choose.
+**Design: decided.** cs-truth wrote this on Opus for the project lead's STEER-2235 item 3 (the automatic delist on production) and `docs/decisions.md` "D18, amended", which is already committed on this branch. PR #186 has merged into cs/int, and this branch is cs/int plus that amendment, so `apps/hub/src/canary.ts` exists. Implement exactly what follows. Nothing here is left for you to choose.
 
 ## Goal
 
