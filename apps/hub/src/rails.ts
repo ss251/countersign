@@ -28,7 +28,7 @@ export async function railsFromEnv(env: Record<string, string | undefined>): Pro
         tokenVersion: "2",
         symbol: "USDC",
         decimals: 6,
-        explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+        explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
         finality: "Final in the Arc block that includes the release.",
         gasPaidBy: "hub",
         ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
