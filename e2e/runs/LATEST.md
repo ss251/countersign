@@ -1,41 +1,41 @@
-<!-- the latest full run; its own file is 20261106-171601-8af8.md -->
-# e2e run 20261106-171601-8af8
+<!-- the latest full run; its own file is 20261106-181701-16c7.md -->
+# e2e run 20261106-181701-16c7
 
 | | |
 |---|---|
-| commit | `2a67039` on `cs/e2e` |
-| started | 2026-11-06 17:16:01 UTC (22:46 IST) |
-| duration | 358.6 s |
+| commit | `2175b7e` on `cs/e2e` |
+| started | 2026-11-06 18:17:01 UTC (23:47 IST) |
+| duration | 269.9 s |
 | scope | full run, every flow |
-| result | 23 pass · 0 fail · 0 skipped · 4 not run |
+| result | 17 pass · 1 fail · 0 skipped · 9 not run |
 
 | # | Flow | Status | Time | Failed step |
 |---|---|---|---|---|
-| 1 | `arc-spine` | PASS | 8.5 s |  |
-| 1b | `runner-restart` | PASS | 2.9 s |  |
+| 1 | `arc-spine` | PASS | 8.2 s |  |
+| 1b | `runner-restart` | PASS | 3.0 s |  |
 | 2 | `arc-wrong-amount` | PASS | 3.1 s |  |
-| 3 | `arc-deadline-refund` | PASS | 49.7 s |  |
-| 4a | `slip-onchain-arc` | PASS | 2.6 s |  |
-| 10 | `arc-gateway` | PASS | 3.7 s |  |
-| 11 | `refusals` | PASS | 4.3 s |  |
-| 13 | `ratings` | PASS | 92.9 s |  |
-| 5 | `whitechain` | PASS | 32.6 s |  |
-| 4b | `slip-onchain-whitechain` | PASS | 4.1 s |  |
-| 6 | `hedera` | PASS | 14.2 s |  |
-| 7 | `merchant` | PASS | 31.9 s |  |
+| 3 | `arc-deadline-refund` | PASS | 50.4 s |  |
+| 4a | `slip-onchain-arc` | PASS | 2.4 s |  |
+| 10 | `arc-gateway` | NOT RUN (retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed) |  |  |
+| 11 | `refusals` | PASS | 3.6 s |  |
+| 13 | `ratings` | PASS | 64.9 s |  |
+| 5 | `whitechain` | PASS | 32.3 s |  |
+| 4b | `slip-onchain-whitechain` | PASS | 5.3 s |  |
+| 6 | `hedera` | NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed) |  |  |
+| 7 | `merchant` | PASS | 28.6 s |  |
 | 8 | `discovery` | PASS | 4.0 s |  |
-| 12 | `public-spine` | PASS | 14.2 s |  |
-| 15 | `public-hedera` | PASS | 12.6 s |  |
-| 16 | `public-gateway` | PASS | 3.9 s |  |
-| 17 | `hedera-mcp` | PASS | 12.2 s |  |
-| 18 | `erc8004-identity` | PASS | 27.3 s |  |
-| 18b | `erc8004-arc` | PASS | 5.7 s |  |
-| 19 | `mpp` | PASS | 14.0 s |  |
+| 12 | `public-spine` | PASS | 14.1 s |  |
+| 15 | `public-hedera` | NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed) |  |  |
+| 16 | `public-gateway` | NOT RUN (retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed) |  |  |
+| 17 | `hedera-mcp` | NOT RUN (retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21) |  |  |
+| 18 | `erc8004-identity` | PASS | 22.4 s |  |
+| 18b | `erc8004-arc` | FAIL | 2.0 s | `every feedback the reputation registry holds for them is checked, and earned feedback exists` |
+| 19 | `mpp` | PASS | 10.8 s |  |
 | 20 | `hedera-schedule` | NOT RUN (on demand: about 0.18 HBAR a run; run it with --flow hedera-schedule) |  |  |
 | 21 | `hedera-held` | NOT RUN (on demand: about 0.16 HBAR a run; run it with --flow hedera-held) |  |  |
 | 21b | `hedera-held-undelivered` | NOT RUN (on demand: about 0.16 HBAR and 7 minutes a run; run it with --flow hedera-held-undelivered) |  |  |
-| 14a | `production-console` | PASS | 5.1 s |  |
-| 14b | `production-hub` | PASS | 4.4 s |  |
+| 14a | `production-console` | PASS | 6.2 s |  |
+| 14b | `production-hub` | PASS | 4.5 s |  |
 | 14c | `production-approvals` | PASS | 2.7 s |  |
 | 9 | `web` | NOT RUN (cut: screenshot rounds cover it) |  |  |
 
@@ -43,324 +43,254 @@
 
 **arc-spine**
 
-- fund: [`0x22355b5b…77af5e`](https://explorer.testnet.arc.io/tx/0x22355b5be893471899365b4b3246192bab30af312a59edcfc6915b6fd977af5e)
-- release: [`0xb9dcbbb1…f46760`](https://explorer.testnet.arc.io/tx/0xb9dcbbb1513dcdfd2ae89459a132acb21526ecedccddc2cfb362cef9dcf46760)
+- fund: [`0x10270dfc…ef3477`](https://explorer.testnet.arc.io/tx/0x10270dfcd7a01931f8f82075043a4ac2b6bf6b8ec60d091f7bfb90fc9fef3477)
+- release: [`0x358d5199…02209f`](https://explorer.testnet.arc.io/tx/0x358d5199f5e635243d0b367a847a8d098595e31e28e0d38a913e646c2302209f)
 
 **arc-wrong-amount**
 
-- fund at twice the signed price (reverted, as expected): [`0x9f79cd12…e5f1f1`](https://explorer.testnet.arc.io/tx/0x9f79cd12b740245328d97065c95537d7150829383089a138527331ab3ee5f1f1)
+- fund at twice the signed price (reverted, as expected): [`0x31b3cdb7…c96ed0`](https://explorer.testnet.arc.io/tx/0x31b3cdb7a5977908bb7a5acb0fbc6c1c389e8306a95a948c921540ab06c96ed0)
 
 **arc-deadline-refund**
 
-- fund: [`0xc202f2fc…c229ab`](https://explorer.testnet.arc.io/tx/0xc202f2fc89801deb63112c0648babad0e1e91ab4b901327ec594d0ba2bc229ab)
-- refund by a stranger: [`0x1c9241a5…44a9b0`](https://explorer.testnet.arc.io/tx/0x1c9241a538ae79ae77a9af10c4aacf8708b6467c07f9eba8721e636fe944a9b0)
+- fund: [`0x976e6d50…f13c76`](https://explorer.testnet.arc.io/tx/0x976e6d50a126fa17113d555aebdf4ae7e23ccd15f93dc59c02734f3507f13c76)
+- refund by a stranger: [`0x3748f757…8f1af1`](https://explorer.testnet.arc.io/tx/0x3748f757e0546b935d2eec53418c7143a1db73f5c7a001f66dd029ad3f8f1af1)
 
 **slip-onchain-arc**
 
-- release: [`0xb9dcbbb1…f46760`](https://explorer.testnet.arc.io/tx/0xb9dcbbb1513dcdfd2ae89459a132acb21526ecedccddc2cfb362cef9dcf46760)
+- release: [`0x358d5199…02209f`](https://explorer.testnet.arc.io/tx/0x358d5199f5e635243d0b367a847a8d098595e31e28e0d38a913e646c2302209f)
 
 **ratings**
 
-- refund by the hub's janitor: [`0x7d1f48e3…ce5da1`](https://explorer.testnet.arc.io/tx/0x7d1f48e3b81ce7517cb8b53ae2181e91b4ad4ab366cd85712eacf73357ce5da1)
+- refund by the hub's janitor: [`0x4bd4ecf0…a3849c`](https://explorer.testnet.arc.io/tx/0x4bd4ecf0f1ff5c160b968c0ecc972ce529309ef00d6e39cb16f099da3da3849c)
 
 **whitechain**
 
-- sale fund: [`0x47d2125c…e3b7fb`](https://explorer.testnet.whitechain.io/tx/0x47d2125cdd0ca5b396ad7f2db4aa120743c754e23bf0dff9949d3f56d2e3b7fb)
-- sale release: [`0x77917ce2…b8f596`](https://explorer.testnet.whitechain.io/tx/0x77917ce295053f302c07c2e7312c5c21560fc282733787bb82593c7e34b8f596)
-- one-click refund: [`0x0b0243c4…8cade6`](https://explorer.testnet.whitechain.io/tx/0x0b0243c4c24859e120844b92e2687bcd692e1820ebd948a6d488bc0d748cade6)
+- sale fund: [`0x93304d32…0e48dc`](https://explorer.testnet.whitechain.io/tx/0x93304d3297de57511397e1a94ef4819335980eee2e0fe9df28a9157c600e48dc)
+- sale release: [`0xca8ec992…fda053`](https://explorer.testnet.whitechain.io/tx/0xca8ec9920b22d5c20fbcea8a72de50b3516055943dc19bc2c67746fcfdfda053)
+- one-click refund: [`0x04c015b1…9b2164`](https://explorer.testnet.whitechain.io/tx/0x04c015b1fe59e65894ad97ca5f91806c6e96d5edfb40a5b56323fa2ff69b2164)
 
 **slip-onchain-whitechain**
 
-- release: [`0x77917ce2…b8f596`](https://explorer.testnet.whitechain.io/tx/0x77917ce295053f302c07c2e7312c5c21560fc282733787bb82593c7e34b8f596)
-
-**hedera**
-
-- agent payment: [`0.0.918580…856313`](https://hashscan.io/testnet/transaction/0.0.9185802@1793985566.820856313)
+- release: [`0xca8ec992…fda053`](https://explorer.testnet.whitechain.io/tx/0xca8ec9920b22d5c20fbcea8a72de50b3516055943dc19bc2c67746fcfdfda053)
 
 **merchant**
 
-- sale fund: [`0x694d5b60…b79c54`](https://explorer.testnet.whitechain.io/tx/0x694d5b60f0fdac54457df04b69da274722f0441f46f05894437c7992bfb79c54)
-- sale release: [`0xa8f0a8a9…8774e1`](https://explorer.testnet.whitechain.io/tx/0xa8f0a8a9bdf774f52d8f3770b88338f9120d3107312e7ae2c853502f998774e1)
-- partial refund: [`0x53e64bcd…f682d4`](https://explorer.testnet.whitechain.io/tx/0x53e64bcda96c146363421af6904da55415068200bfd92850024c5cff1ff682d4)
+- sale fund: [`0x4eaf5903…78df7a`](https://explorer.testnet.whitechain.io/tx/0x4eaf590325aa413e6e3b42ea8dfb98732f07ead3468ab292498c148b8478df7a)
+- sale release: [`0x84e25180…2db90d`](https://explorer.testnet.whitechain.io/tx/0x84e25180660c333a9ae94ac9c09a8c5020584e4884347ccd179dbbb7dd2db90d)
+- partial refund: [`0x20aa1c84…16d9cc`](https://explorer.testnet.whitechain.io/tx/0x20aa1c84052135fe9e673c62ae344cd9a96bc9f9483875b11e901b509916d9cc)
 
 **public-spine**
 
-- fund (public hub): [`0xdc2cf475…599e34`](https://explorer.testnet.arc.io/tx/0xdc2cf475dc09470bad8d730917084586cda2eef8908f16151859e6aa30599e34)
-- release (public hub): [`0xd321099e…1b5f53`](https://explorer.testnet.arc.io/tx/0xd321099e441508bf0376cfd4cc9e6780d2e5c90d847ffbfd7d463337371b5f53)
-
-**public-hedera**
-
-- agent payment through the public hub: [`0.0.918580…574642`](https://hashscan.io/testnet/transaction/0.0.9185802@1793985628.223574642)
-
-**hedera-mcp**
-
-- agent payment for the MCP call: [`0.0.918580…480171`](https://hashscan.io/testnet/transaction/0.0.9185802@1793985642.910480171)
-
-**erc8004-arc**
-
-- earned feedback for agent 897802: [`0x3af33b85…0d1072`](https://explorer.testnet.arc.io/tx/0x3af33b85a60ab3bea32666b5ea627c56151018e70b7c4d00d8e9bc94600d1072)
+- fund (public hub): [`0xbbd9a467…bb7aa3`](https://explorer.testnet.arc.io/tx/0xbbd9a467a8e5839ff25dd87932359470a5feeae128ea41bb5932f55d09bb7aa3)
+- release (public hub): [`0x3ce0d434…a67e1e`](https://explorer.testnet.arc.io/tx/0x3ce0d4341797435ded37b5ad6e9b437404e590033def483b3dd902dc65a67e1e)
 
 **mpp**
 
-- mpp payment: [`0x2f4aa8e4…a3075a`](https://explore.testnet.tempo.xyz/tx/0x2f4aa8e4db56978893218eade1fbd598dc4f75ddff2c46c77c54aaeb0ca3075a)
-- mpp payment (signed credential): [`0x06c1aeed…704810`](https://explore.testnet.tempo.xyz/tx/0x06c1aeed852ba145a34d4242216887d4a441dbee71823b80b4fbf58205704810)
+- mpp payment: [`0x80d3e502…6e55f2`](https://explore.testnet.tempo.xyz/tx/0x80d3e502823ee569c23f1e4068b44f614d4a318138a3a2324f1b5f7f5a6e55f2)
+- mpp payment (signed credential): [`0xb41d6309…308cb6`](https://explore.testnet.tempo.xyz/tx/0xb41d6309900a2007b7fb730f497b9d86fc77ae4a5fade8b813b881b190308cb6)
+
+## Failures
+
+**erc8004-arc** · step `every feedback the reputation registry holds for them is checked, and earned feedback exists` · owner orch-cs
+
+> no earned feedback for agents 897803 since block 71029600
 
 ## Notes
 
-- `arc-gateway`: Gateway transfer cfe3df10-baff-4b9d-830d-5d1187199944; the seller is credited in Gateway's next batch
-- `hedera`: facilitator: x402.org
-- `hedera`: spend log: topic 0.0.11337070 sequence 99
-- `hedera`: reconciled 1 agent payment(s) against 13 spend or schedule entries
 - `public-spine`: bought use-arc 0xdd24c0f8 from seller 0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a
-- `public-hedera`: paid use-usdc 0x41536222 to 0.0.11337065
-- `public-gateway`: paid use-usdc 0x41536222 from seller 0xA55a31E3468E03E2Eb094535A8ae8e912e8CB093
-- `public-gateway`: Gateway transfer 98019c30-836f-48ac-a2a7-7450507db2a5
-- `hedera-mcp`: paid MCP offer 0xc0ceb0a0 (Hedera Agent Kit: an HBAR transfer, built for you to sign) to 0.0.11337065
 - `erc8004-identity`: agent 158 in 0x8004A818BFB912233c491871b3d84c89A494BD9e on chain 296 is owned by 0xE4eBF122a912BeF5FeC9C56e003FD4Af2CBDB5fE
-- `erc8004-arc`: agents: 897802 (0x6BE98051)
-- `erc8004-arc`: feedback on Arc for these agents: 1, earned 1
-- `production-console`: default bundle: index-DrL1CyTX.js, rolldown-runtime-BWaJ3C7D.js, utils-Bpv4vmSW.js, chain-DGHNkaZc.js, hashTypedData-OJxD_jjD.js, hashMessage-NC5SDVnI.js, ccip-Cx9Un7-3.js, _esm-BdNswz-Z.js, src-NnqN028C.js, http-BQJpC50I.js, approver-DioVlLqE.js, model-sTAEdp3S.js
+- `erc8004-arc`: agents: 897803 (0xA55a31E3)
+- `erc8004-arc`: feedback on Arc for these agents: 0, earned 0
+- `production-console`: default bundle: index-JG2mNQ3H.js, rolldown-runtime-DLMaRju-.js, utils-De7E53Fk.js, chain-RQe9NUAy.js, hmac-DVvFcWUx.js, secp256k1-B8ku9kFS.js, serializeSignature-y6mntGi8.js, ccip-vyHjqwBh.js, _esm-DeIESQQN.js, src-RTyVsmjM.js, hooks.module-JBIue0DG.js, approver-B8R4hi2q.js, model-CaoI6Rsn.js, index.es-CXUqFyhV.js, index.es-DU8FEXoR.js, browser-ubDSPG6M.js
 - `production-console`: fixture markers checked: 89
-- `production-hub`: checked 11 endpoints for agent 0.0.11337064 and seller 0xE4eBF122a912BeF5FeC9C56e003FD4Af2CBDB5fE
+- `production-hub`: checked 11 endpoints for agent 0xE0625e01b7c79d1E399B55F252e6Bdc820733f48 and seller 0x6BE98051B852824A3923E3B27f9781Ceb0C0ca4a
 - `production-hub`: the approval routes, /envelopes and /approvals, are checked by production-approvals: they depend on production's approver configuration
-- `production-approvals`: the phone follows 0.0.11337064, which has published no envelope mirror here, so the phone shows its absent state
 
 ## Steps
 
 **arc-spine**
 
-- ok · hub up · 532 ms
-- ok · seller publishes use-arc · 399 ms
-- ok · buyer discovers · 206 ms
-- ok · envelope approves · 213 ms
-- ok · seller balance before · 181 ms
-- ok · countersign, fund, deliver, release · 4.0 s
+- ok · hub up · 530 ms
+- ok · seller publishes use-arc · 415 ms
+- ok · buyer discovers · 189 ms
+- ok · envelope approves · 183 ms
+- ok · seller balance before · 212 ms
+- ok · countersign, fund, deliver, release · 3.6 s
 - ok · hub job record · 1 ms
 - ok · chain agrees · 1.1 s
-- ok · slip names its rail · 765 ms
+- ok · slip names its rail · 911 ms
 - ok · hub stopped · 7 ms
 - ok · verifier VALID with the hub stopped · 1.0 s
 
 **runner-restart**
 
-- ok · hub up · 527 ms
-- ok · runner serves use-arc · 317 ms
-- ok · runner stops, offer goes offline · 5 ms
-- ok · runner restarts: same offer, back online · 552 ms
+- ok · hub up · 584 ms
+- ok · runner serves use-arc · 339 ms
+- ok · runner stops, offer goes offline · 4 ms
+- ok · runner restarts: same offer, back online · 561 ms
 
 **arc-wrong-amount**
 
-- ok · hub up · 718 ms
-- ok · seller publishes use-arc · 314 ms
+- ok · hub up · 740 ms
+- ok · seller publishes use-arc · 338 ms
 - ok · 402 challenge · 6 ms
-- ok · buyer countersigns the listed price · 6 ms
-- ok · hub refuses a moved price · 186 ms
+- ok · buyer countersigns the listed price · 5 ms
+- ok · hub refuses a moved price · 183 ms
 - ok · chain refuses a moved price · 1.7 s
-- ok · the signature holds at the signed price · 182 ms
+- ok · the signature holds at the signed price · 187 ms
 
 **arc-deadline-refund**
 
-- ok · hub up · 596 ms
-- ok · seller publishes use-arc with a 45 s deadline · 571 ms
-- ok · envelope approves · 258 ms
-- ok · buyer pays, seller cannot deliver · 2.9 s
-- ok · escrow holds the money · 368 ms
-- ok · hub stopped · 9 ms
-- ok · a refund before the deadline is refused · 370 ms
-- ok · chain passes the deadline · 43.2 s
+- ok · hub up · 992 ms
+- ok · seller publishes use-arc with a 45 s deadline · 406 ms
+- ok · envelope approves · 276 ms
+- ok · buyer pays, seller cannot deliver · 2.5 s
+- ok · escrow holds the money · 365 ms
+- ok · hub stopped · 6 ms
+- ok · a refund before the deadline is refused · 366 ms
+- ok · chain passes the deadline · 44.0 s
 - ok · a stranger refunds · 1.3 s
-- ok · the refund is final · 184 ms
+- ok · the refund is final · 192 ms
 
 **slip-onchain-arc**
 
 - ok · the slip agrees with itself · 0 ms
-- ok · Released carries the slip hash · 421 ms
-- ok · the escrow stores the slip hash · 177 ms
-- ok · the genuine slip verifies · 1.2 s
-- ok · a tampered slip fails on chain · 820 ms
-
-**arc-gateway**
-
-- ok · hub up with the escrow and Gateway rails · 954 ms
-- ok · seller publishes use-arc on both rails · 544 ms
-- ok · 402 offers Circle Gateway · 7 ms
-- ok · envelope approves · 245 ms
-- ok · buyer's Gateway balance before · 283 ms
-- ok · buyer pays through Gateway · 1.2 s
-- ok · Gateway debits the buyer at once · 285 ms
-- ok · slip names the gateway rail and verifies · 237 ms
+- ok · Released carries the slip hash · 364 ms
+- ok · the escrow stores the slip hash · 175 ms
+- ok · the genuine slip verifies · 1.0 s
+- ok · a tampered slip fails on chain · 783 ms
 
 **refusals**
 
-- ok · hub up · 527 ms
-- ok · seller publishes use-arc · 337 ms
+- ok · hub up · 510 ms
+- ok · seller publishes use-arc · 325 ms
 - ok · the hub's input gate refuses a bad input · 2 ms
-- ok · an input the slip cannot hash is refused before any 402 · 5 ms
-- ok · the buyer refuses a bad input before signing · 508 ms
-- ok · over the budget · 513 ms
-- ok · over the per-seller limit · 521 ms
-- ok · seller not on the allowlist · 506 ms
-- ok · envelope revoked · 475 ms
-- ok · held above ask-above until the human approves · 480 ms
-- ok · seller offline: refused, nothing charged · 450 ms
+- ok · an input the slip cannot hash is refused before any 402 · 6 ms
+- ok · the buyer refuses a bad input before signing · 407 ms
+- ok · over the budget · 402 ms
+- ok · over the per-seller limit · 405 ms
+- ok · seller not on the allowlist · 386 ms
+- ok · envelope revoked · 393 ms
+- ok · held above ask-above until the human approves · 395 ms
+- ok · seller offline: refused, nothing charged · 364 ms
 
 **ratings**
 
-- ok · hub up · 466 ms
-- ok · seller publishes use-arc with a 45 s deadline · 355 ms
-- ok · a buyer's call is delivered · 12.1 s
-- ok · the seller buys from itself · 7.7 s
-- ok · a buyer's call fails delivery · 2.6 s
+- ok · hub up · 420 ms
+- ok · seller publishes use-arc with a 45 s deadline · 305 ms
+- ok · a buyer's call is delivered · 3.8 s
+- ok · the seller buys from itself · 3.4 s
+- ok · a buyer's call fails delivery · 2.3 s
 - ok · the seller's rating counts what the slips prove · 4 ms
 - ok · hub stats agree · 0 ms
-- ok · the hub's janitor refunds the failed call after its deadline · 69.6 s
-- ok · the rating follows the refund · 2 ms
+- ok · the hub's janitor refunds the failed call after its deadline · 54.6 s
+- ok · the rating follows the refund · 1 ms
 
 **whitechain**
 
-- ok · relay up with the suite's gas wallet · 1.5 s
-- ok · merchant server up · 232 ms
-- ok · hub up on the Whitechain rail · 882 ms
-- ok · merchant publishes whitechain-dev · 425 ms
-- ok · buyer holds no gas before paying · 944 ms
-- ok · sale · envelope approves · 265 ms
-- ok · sale · buyer pays in USDT, released · 17.7 s
+- ok · relay up with the suite's gas wallet · 1.2 s
+- ok · merchant server up · 184 ms
+- ok · hub up on the Whitechain rail · 428 ms
+- ok · merchant publishes whitechain-dev · 319 ms
+- ok · buyer holds no gas before paying · 936 ms
+- ok · sale · envelope approves · 200 ms
+- ok · sale · buyer pays in USDT, released · 17.4 s
 - ok · sale · chain agrees, relayer paid every fee · 1.5 s
-- ok · buyer holds no gas after paying · 557 ms
-- ok · the merchant sees the order · 12 ms
-- ok · merchant refunds in one click · 8.0 s
-- ok · buyer holds no gas after the refund · 555 ms
+- ok · buyer holds no gas after paying · 559 ms
+- ok · the merchant sees the order · 8 ms
+- ok · merchant refunds in one click · 8.2 s
+- ok · buyer holds no gas after the refund · 1.3 s
 
 **slip-onchain-whitechain**
 
 - ok · the slip agrees with itself · 0 ms
-- ok · Released carries the slip hash · 564 ms
-- ok · the escrow stores the slip hash · 230 ms
-- ok · the genuine slip verifies · 1.8 s
+- ok · Released carries the slip hash · 1.4 s
+- ok · the escrow stores the slip hash · 193 ms
+- ok · the genuine slip verifies · 2.1 s
 - ok · a tampered slip fails on chain · 1.5 s
-
-**hedera**
-
-- ok · hub up with the Hedera rail · 1.8 s
-- ok · seller lists an offer paid on Hedera · 454 ms
-- ok · 402 names the Hedera rail · 5 ms
-- ok · agent pays with no human step · 6.0 s
-- ok · mirror node confirms the transfer · 312 ms
-- ok · spend log entry on HCS · 307 ms
-- ok · envelope refuses past its cap, and logs it · 4.1 s
-- ok · the spend log is complete for this run · 1.2 s
 
 **merchant**
 
 - ok · relay up with the suite's gas wallet · 1.2 s
-- ok · merchant server up · 285 ms
-- ok · hub up on the Whitechain rail · 560 ms
-- ok · merchant publishes whitechain-dev · 551 ms
-- ok · sale · envelope approves · 236 ms
-- ok · sale · buyer pays in USDT, released · 19.0 s
-- ok · sale · chain agrees, relayer paid every fee · 1.8 s
-- ok · totals match the chain · 13 ms
-- ok · partial refund of 0.005 USDT · 8.2 s
-- ok · totals move by the refund and nothing else · 1 ms
+- ok · merchant server up · 198 ms
+- ok · hub up on the Whitechain rail · 469 ms
+- ok · merchant publishes whitechain-dev · 328 ms
+- ok · sale · envelope approves · 187 ms
+- ok · sale · buyer pays in USDT, released · 17.1 s
+- ok · sale · chain agrees, relayer paid every fee · 934 ms
+- ok · totals match the chain · 31 ms
+- ok · partial refund of 0.005 USDT · 8.1 s
+- ok · totals move by the refund and nothing else · 2 ms
 - ok · the accountant's export · 2 ms
 - ok · no token, no refund · 2 ms
 
 **discovery**
 
-- ok · local hub up · 481 ms
-- ok · seller publishes use-arc · 358 ms
+- ok · local hub up · 423 ms
+- ok · seller publishes use-arc · 266 ms
 - ok · local · healthz · 1 ms
 - ok · local · offer list · 1 ms
-- ok · local · A2A agent card · 4 ms
+- ok · local · A2A agent card · 5 ms
 - ok · local · skills index · 1 ms
 - ok · local · OpenAPI · 1 ms
 - ok · local · Bazaar list · 1 ms
 - ok · local · unpaid call answers 402 · 3 ms
-- ok · public · healthz · 416 ms
-- ok · public · offer list · 320 ms
+- ok · public · healthz · 487 ms
+- ok · public · offer list · 297 ms
 - ok · public · A2A agent card · 1.2 s
-- ok · public · skills index · 316 ms
-- ok · public · OpenAPI · 293 ms
-- ok · public · Bazaar list · 292 ms
-- ok · public · unpaid call answers 402 · 299 ms
+- ok · public · skills index · 300 ms
+- ok · public · OpenAPI · 319 ms
+- ok · public · Bazaar list · 374 ms
+- ok · public · unpaid call answers 402 · 293 ms
 
 **public-spine**
 
-- ok · the public hub lists a live Arc offer · 292 ms
-- ok · envelope approves · 202 ms
+- ok · the public hub lists a live Arc offer · 296 ms
+- ok · envelope approves · 177 ms
 - ok · buyer pays through the public hub · 11.1 s
-- ok · chain agrees · 849 ms
-- ok · slip verifies with no hub · 1.8 s
-
-**public-hedera**
-
-- ok · the public hub lists a live Hedera offer · 312 ms
-- ok · 402 names the Hedera rail on production · 303 ms
-- ok · agent pays through the public hub, no human step · 6.7 s
-- ok · mirror node confirms the transfer · 509 ms
-- ok · spend log entry on HCS · 3.6 s
-- ok · the public hub records the settlement and its slip verifies · 1.2 s
-
-**public-gateway**
-
-- ok · the public hub lists a live Gateway offer · 290 ms
-- ok · envelope approves · 197 ms
-- ok · buyer's Gateway balance before · 408 ms
-- ok · buyer pays through Gateway on the public hub · 2.3 s
-- ok · Gateway debits the buyer at once · 267 ms
-- ok · the public hub serves the same slip, and it verifies · 473 ms
-
-**hedera-mcp**
-
-- ok · the public hub lists the Agent Kit MCP offer · 290 ms
-- ok · 402 names the Hedera rail · 307 ms
-- ok · agent pays, the runner calls the tool · 6.9 s
-- ok · mirror node confirms the payment · 306 ms
-- ok · spend log entry on HCS · 3.6 s
-- ok · the slip binds the MCP call · 827 ms
-- ok · the tool's record matches the slip · 1 ms
-- ok · the tool returned an unsigned transfer for the buyer · 11 ms
+- ok · chain agrees · 893 ms
+- ok · slip verifies with no hub · 1.6 s
 
 **erc8004-identity**
 
-- ok · the seller owns its agent id · 7.2 s
-- ok · the registration file is an ERC-8004 v1 file naming a hub and offers · 7.4 s
-- ok · the A2A endpoint is this hub's card, and it lists the offer · 297 ms
-- ok · every registered offer is the owner's and live on the hub · 288 ms
-- ok · the declared wallet is the owner, on the chain the identity lives on · 12.1 s
+- ok · the seller owns its agent id · 11.2 s
+- ok · the registration file is an ERC-8004 v1 file naming a hub and offers · 8.8 s
+- ok · the A2A endpoint is this hub's card, and it lists the offer · 300 ms
+- ok · every registered offer is the owner's and live on the hub · 320 ms
+- ok · the declared wallet is the owner, on the chain the identity lives on · 1.8 s
 
 **erc8004-arc**
 
-- ok · the public hub names sellers with ERC-8004 identities · 3.5 s
-- ok · agent 897802 is owned by its seller and registers this hub and its offers · 360 ms
-- ok · every feedback the reputation registry holds for them is checked, and earned feedback exists · 1.6 s
+- ok · the public hub names sellers with ERC-8004 identities · 343 ms
+- ok · agent 897803 is owned by its seller and registers this hub and its offers · 363 ms
+- FAIL · every feedback the reputation registry holds for them is checked, and earned feedback exists · 955 ms · no earned feedback for agents 897803 since block 71029600
 
 **mpp**
 
-- ok · demo server up on the mpp rail · 1.7 s
-- ok · the 402 names Tempo testnet, the price and the recipient, before anything pays · 5 ms
-- ok · the named payer pays with the pinned mppx · 5.4 s
-- ok · Moderato shows exactly the price moved from the payer to the recipient · 393 ms
-- ok · a credential replayed is refused · 6.6 s
+- ok · demo server up on the mpp rail · 398 ms
+- ok · the 402 names Tempo testnet, the price and the recipient, before anything pays · 8 ms
+- ok · the named payer pays with the pinned mppx · 4.9 s
+- ok · Moderato shows exactly the price moved from the payer to the recipient · 331 ms
+- ok · a credential replayed is refused · 5.1 s
 
 **production-console**
 
-- ok · the console serves its default bundle · 4.9 s
-- ok · the default bundle is live, not fixtures · 238 ms
+- ok · the console serves its default bundle · 5.6 s
+- ok · the default bundle is live, not fixtures · 592 ms
 
 **production-hub**
 
-- ok · the hub has a listed offer and a settlement to read · 862 ms
-- ok · production declares every rail it claims · 285 ms
+- ok · the hub has a listed offer and a settlement to read · 914 ms
+- ok · production declares exactly the rails that return money · 299 ms
 - ok · every endpoint a screen calls answers 200, open to the console · 3.3 s
 
 **production-approvals**
 
-- ok · the agent the phone follows · 295 ms
-- ok · the approval routes answer a client with no token · 887 ms
+- ok · the agent the phone follows · 302 ms
+- ok · the approval routes answer a client with no token · 897 ms
 - ok · without the approver's token the routes refuse · 0 ms
-- ok · with the approver's token the routes answer · 899 ms
-- ok · every approval route answers, open to the console · 295 ms
-- ok · the approval decision passes CORS preflight · 294 ms
+- ok · with the approver's token the routes answer · 910 ms
+- ok · every approval route answers, open to the console · 301 ms
+- ok · the approval decision passes CORS preflight · 289 ms
 
-Artifacts for this run (bodies, logs, slips) stay on the build machine under `e2e/artifacts/20261106-171601-8af8/`.
+Artifacts for this run (bodies, logs, slips) stay on the build machine under `e2e/artifacts/20261106-181701-16c7/`.
