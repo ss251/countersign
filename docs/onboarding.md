@@ -61,7 +61,7 @@ OFFER=$(curl -s $HUB/offers | jq -r '[.offers[] | select(.online and .offer.titl
 npx -y @countersign-hub/cli buy $OFFER --input '{"question":"what is arc?"}' --hub $HUB
 ```
 
-It prints the seller's output, `Released. Slip minted.`, the slip hash and the release transaction. Open the transaction at `https://explorer.testnet.arc.io/tx/<hash>`. The slip is saved under `~/.countersign/slips/`. Check it yourself, without the hub:
+It prints the seller's output, `Released. Slip minted.`, the slip hash and the release transaction. When you are signed in, it also prints one line, `[buyer] envelope mirror failed: This wallet signs only through the hub's typed-data route.` The purchase still completes. Open the transaction at `https://explorer.testnet.arc.io/tx/<hash>`. The slip is saved under `~/.countersign/slips/`. Check it yourself, without the hub:
 
 ```sh
 npx -y @countersign-hub/cli verify ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
