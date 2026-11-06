@@ -13,10 +13,12 @@ import {
   http,
   isAddress,
   isHex,
+  keccak256,
   parseAbi,
   parseAbiItem,
   parseEventLogs,
   type PublicClient,
+  toBytes,
 } from "viem";
 import {
   checkCountersign,
@@ -138,6 +140,15 @@ function checkHeld(slip: Slip, add: (c: string, ok: boolean, d: string) => void)
   const settlement = slip.settlement.transaction;
   if (settlement !== createTxId) {
     add("countersignature", false, `the slip's settlement ${settlement} is not the schedule's create ${createTxId}`);
+    return;
+  }
+  const derived = keccak256(toBytes(createTxId));
+  if (slip.body.jobId.toLowerCase() !== derived.toLowerCase()) {
+    add(
+      "countersignature",
+      false,
+      `the seller signed job ${slip.body.jobId}, not the job this schedule paid (${derived})`,
+    );
     return;
   }
   add(
