@@ -77,6 +77,13 @@ export class Secrets {
     return s;
   }
 
+  /** Treat a value made at run time, such as a fresh server secret, as secret from now on. */
+  hide(value: string): void {
+    if (value.length < MIN_SECRET_LENGTH || this.hidden.includes(value)) return;
+    this.hidden.push(value);
+    this.hidden.sort((a, b) => b.length - a.length);
+  }
+
   has(name: string): boolean {
     const v = this.values.get(name);
     return v !== undefined && v !== "";

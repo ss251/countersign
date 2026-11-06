@@ -3,7 +3,7 @@ import { escrowRail } from "@countersign/rail";
 import { txUrl } from "./chain.ts";
 import { readNow } from "./exact.ts";
 import type { CountersignContext } from "./countersign-scheme.ts";
-import type { JobRecord } from "./ledger.ts";
+import type { JobRecord, RefundReason } from "./ledger.ts";
 import type { RelayCall } from "./relayer.ts";
 import { WHITECHAIN_ESCROW, whitechainEscrowConfig } from "./whitechain-config.ts";
 
@@ -17,7 +17,7 @@ export type EscrowOpResult =
 
 export type JobView = {
   jobId: string;
-  chain: "none" | "funded" | "released" | "refunded";
+  chain: "none" | "funded" | "released" | "refunded" | "failed";
   job: JobRecord | null;
 };
 
@@ -55,6 +55,7 @@ async function close(
   call: (escrow: Address) => RelayCall,
   ctx: EscrowContext,
   slipHash?: Hex,
+  closeReason?: RefundReason | null,
 ): Promise<EscrowOpResult> {
   if (!isJobId(jobId)) return { ok: false, reason: "job_not_found" };
   const known = ctx.ledger.getJob(jobId);
@@ -72,7 +73,14 @@ async function close(
   const outcome = await ctx.relayer.submit(call(escrow), (known?.buyer ?? escrow) as Address);
   switch (outcome.status) {
     case "confirmed":
-      ctx.ledger.closeJob(jobId, status, outcome.txHash, slipHash, readNow(ctx.now) * 1000);
+      ctx.ledger.closeJob(
+        jobId,
+        status,
+        outcome.txHash,
+        slipHash,
+        readNow(ctx.now) * 1000,
+        closeReason,
+      );
       return { ok: true, transaction: outcome.txHash, url: txUrl(outcome.txHash), status };
     case "pending":
       return { ok: false, reason: "settlement_pending" };
@@ -107,12 +115,17 @@ export function releaseJob(
   );
 }
 
-export function cancelJob(input: { jobId: string; sellerSig: Hex }, ctx: EscrowContext): Promise<EscrowOpResult> {
+export function cancelJob(
+  input: { jobId: string; sellerSig: Hex; reason?: RefundReason },
+  ctx: EscrowContext,
+): Promise<EscrowOpResult> {
   return close(
     input.jobId,
     "cancelled",
     (escrow) => ({ kind: "escrowCancel", escrow, jobId: input.jobId as Hex, sellerSig: input.sellerSig }),
     ctx,
+    undefined,
+    input.reason ?? null,
   );
 }
 

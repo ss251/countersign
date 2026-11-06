@@ -46,6 +46,10 @@ export class HubClient {
     this.base = baseUrl.replace(/\/+$/, "");
   }
 
+  get url(): string {
+    return this.base;
+  }
+
   private async getJson<T>(path: string): Promise<T> {
     const res = await this.fetchImpl(`${this.base}${path}`);
     if (!res.ok) {
@@ -69,6 +73,28 @@ export class HubClient {
 
   slip(hash: string): Promise<Slip> {
     return this.getJson<Slip>(`/slips/${hash}`);
+  }
+
+  /** Hand the buyer's Accept(jobId, slipHash) signature to the hub to relay (escrow v2). */
+  acceptJob(jobId: string, sig: Hex): Promise<void> {
+    return this.postSig(`/jobs/${jobId}/accept`, sig);
+  }
+
+  /** Hand the buyer's Dispute(jobId) signature to the hub to relay (escrow v2). */
+  disputeJob(jobId: string, sig: Hex): Promise<void> {
+    return this.postSig(`/jobs/${jobId}/dispute`, sig);
+  }
+
+  private async postSig(path: string, sig: Hex): Promise<void> {
+    const res = await this.fetchImpl(`${this.base}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sig }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(body.message ?? `Hub answered ${res.status} for ${path}.`);
+    }
   }
 
   async call(hash: string, input: unknown, payment?: PaymentPayload, lineage?: Hex[]): Promise<CallOutcome> {

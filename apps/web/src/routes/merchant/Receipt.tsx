@@ -1,22 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReceiptOrder } from "./model.ts";
 import {
   addressUrl,
+  assetOf,
+  isEscrowOpen,
+  decimalsFor,
+  explorerOf,
+  formatFixed,
   formatUsdt,
   humanDate,
   itemLabel,
+  networkNameOf,
   shortAddress,
   shortHash,
   statusLabel,
   statusTone,
-  txUrl,
+  timeline,
 } from "./model.ts";
-import { fetchOfferTitle, fetchRelayOrder } from "./api.ts";
-import { findFixtureOrder } from "./fixtures.ts";
+import { fetchOfferTitle, fetchOrder } from "./api.ts";
+import { Timeline } from "./Timeline.tsx";
 
 interface ReceiptProps {
   id: string;
-  fixture: boolean;
+  /** ?hub=off: a sample receipt from the sample ledger, loaded only then. */
+  offline: boolean;
 }
 
 type ReceiptState =
@@ -25,30 +32,40 @@ type ReceiptState =
   | { kind: "missing" }
   | { kind: "error"; message: string };
 
-function fixtureState(id: string): ReceiptState {
-  const order = findFixtureOrder(id);
-  return order ? { kind: "ready", order } : { kind: "missing" };
+/** Money that went back to the customer: each transfer refund, or the whole amount on a cancel. */
+function returnedLines(order: ReceiptOrder): bigint[] {
+  const close = order.closeKind;
+  if (close === "cancel" || close === "deadline_refund" || close === "dispute_refund" || close === "delivery_failed") {
+    return [BigInt(order.amount)];
+  }
+  const records = order.refunds?.length ? order.refunds : order.refundTxs.map(() => ({ amount: undefined }));
+  return records.map((refund) => {
+    const value = refund.amount ?? (records.length === 1 ? order.refunded : undefined);
+    return value ? BigInt(value) : 0n;
+  });
 }
 
-/** A line of the receipt's ledger: what was paid, and every amount that went back. */
-interface LedgerLine {
-  label: string;
-  amount: bigint;
-  txHash?: string;
+function Unit({ symbol }: { symbol: string }) {
+  return <span className="mx-unit">{symbol}</span>;
 }
 
-export function Receipt({ id, fixture }: ReceiptProps) {
-  const [state, setState] = useState<ReceiptState>(() => (fixture ? fixtureState(id) : { kind: "loading" }));
+export function Receipt({ id, offline }: ReceiptProps) {
+  const [state, setState] = useState<ReceiptState>({ kind: "loading" });
   const [hubTitle, setHubTitle] = useState<string | null>(null);
+  const [standIn, setStandIn] = useState<((hash: string) => boolean) | undefined>(undefined);
+  const statusId = useId();
+  const proofId = useId();
 
   useEffect(() => {
-    if (fixture) {
-      setState(fixtureState(id));
-      return;
-    }
     let cancelled = false;
     setState({ kind: "loading" });
-    fetchRelayOrder(id)
+    const read = offline
+      ? import("./fixtures.ts").then((sample) => {
+          setStandIn(() => sample.isStandIn);
+          return sample.findFixtureOrder(id);
+        })
+      : fetchOrder(id);
+    read
       .then((order) => {
         if (!cancelled) setState(order ? { kind: "ready", order } : { kind: "missing" });
       })
@@ -60,11 +77,11 @@ export function Receipt({ id, fixture }: ReceiptProps) {
     return () => {
       cancelled = true;
     };
-  }, [fixture, id]);
+  }, [offline, id]);
 
   const offerHash = state.kind === "ready" && !state.order.description ? state.order.offerHash : undefined;
   useEffect(() => {
-    if (fixture || !offerHash) return;
+    if (offline || !offerHash) return;
     let cancelled = false;
     void fetchOfferTitle(offerHash).then((title) => {
       if (!cancelled) setHubTitle(title);
@@ -72,12 +89,12 @@ export function Receipt({ id, fixture }: ReceiptProps) {
     return () => {
       cancelled = true;
     };
-  }, [fixture, offerHash]);
+  }, [offline, offerHash]);
 
   if (state.kind !== "ready") {
     return (
       <div className="mx-receipt-page">
-        <section className="mx-receipt mx-receipt--message" aria-busy={state.kind === "loading"}>
+        <section className="mx-receipt" aria-busy={state.kind === "loading"}>
           <p className="mx-receipt__brand">countersign · receipt</p>
           {state.kind === "missing" ? <p className="mx-receipt__message">No order with that id.</p> : null}
           {state.kind === "error" ? <p className="mx-receipt__message">{state.message}</p> : null}
@@ -87,68 +104,69 @@ export function Receipt({ id, fixture }: ReceiptProps) {
   }
 
   const order = state.order;
-  const tone = statusTone(order.status);
   const amount = BigInt(order.amount);
-  const item = itemLabel(order, hubTitle);
-
-  // Money that went back: transfer refunds, or the whole amount when the escrow was cancelled or ran out.
-  const returned: LedgerLine[] = [];
-  const refundTxs = order.refunds?.length ? order.refunds : order.refundTxs.map((txHash) => ({ txHash, amount: undefined }));
-  for (const refund of refundTxs) {
-    const value = refund.amount ?? (refundTxs.length === 1 ? order.refunded : undefined);
-    returned.push({
-      label: `Returned to ${shortAddress(order.customer)}`,
-      amount: value ? BigInt(value) : 0n,
-      txHash: refund.txHash,
-    });
-  }
-  if ((order.closeKind === "cancel" || order.closeKind === "deadline_refund") && order.closeTx) {
-    returned.push({ label: `Returned to ${shortAddress(order.customer)}`, amount, txHash: order.closeTx });
-  }
-  const returnedTotal = returned.reduce((sum, line) => sum + line.amount, 0n);
-  const net = amount - returnedTotal;
-  const close = closeWords(order.closeKind);
+  const returned = returnedLines(order);
+  const returnedTotal = returned.reduce((sum, value) => sum + value, 0n);
+  const kept = amount > returnedTotal ? amount - returnedTotal : 0n;
+  const places = decimalsFor([amount, kept, ...returned]);
+  const inFlight = isEscrowOpen(order.status) || order.status === "pending";
+  const unit = assetOf(order);
+  const explorer = explorerOf(order);
 
   return (
     <div className="mx-receipt-page">
-      <article className="mx-receipt" aria-labelledby="mx-receipt-status">
-        <p className="mx-receipt__brand">countersign · receipt</p>
-        <h1 className={`mx-receipt__status mx-receipt__status--${tone}`} id="mx-receipt-status">
+      <article className="mx-receipt" aria-labelledby={statusId}>
+        <p className="mx-receipt__brand">countersign · receipt{offline ? " · sample" : ""}</p>
+        <h1 className="mx-receipt__status" id={statusId}>
+          <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
           {statusLabel(order.status)}
         </h1>
-        <p className="mx-receipt__amount num">
+        <p className={`mx-receipt__amount mono${inFlight ? " mx-money" : ""}`}>
           {formatUsdt(order.amount)}
-          <span className="mx-receipt__unit">USDT</span>
+          <Unit symbol={unit} />
         </p>
-        <p className="mx-receipt__item">{item}</p>
+        <p className="mx-receipt__item">{itemLabel(order, hubTitle)}</p>
         <ReceiptId id={order.id} />
 
         {returned.length > 0 ? (
-        <dl className="mx-ledger">
-          <div className="mx-ledger__line">
-            <dt>Paid</dt>
-            <dd className="num">{formatUsdt(order.amount)} USDT</dd>
-          </div>
-          {returned.map((line, index) => (
-            <div className="mx-ledger__line mx-ledger__line--back" key={`${line.txHash ?? "line"}-${index}`}>
-              <dt>{line.label}</dt>
-              <dd className="num">
-                {line.amount > 0n ? `−${formatUsdt(line.amount.toString())} USDT` : "Returned"}
+          <dl className="mx-sum">
+            <div className="mx-sum__line">
+              <dt>Paid</dt>
+              <dd className="mono">
+                {formatFixed(amount, places)}
+                <Unit symbol={unit} />
               </dd>
             </div>
-          ))}
-          <div className="mx-ledger__line mx-ledger__line--total">
-            <dt>Net paid</dt>
-            <dd className="num">{formatUsdt((net > 0n ? net : 0n).toString())} USDT</dd>
-          </div>
-        </dl>
+            {returned.map((value, index) => (
+              <div className="mx-sum__line mx-sum__line--less" key={index}>
+                <dt>Returned to you</dt>
+                <dd className="mono">
+                  {value > 0n ? (
+                    <>
+                      −{formatFixed(value, places)}
+                      <Unit symbol={unit} />
+                    </>
+                  ) : (
+                    "Returned"
+                  )}
+                </dd>
+              </div>
+            ))}
+            <div className="mx-sum__line mx-sum__line--total">
+              <dt>You paid</dt>
+              <dd className="mono">
+                {formatFixed(kept, places)}
+                <Unit symbol={unit} />
+              </dd>
+            </div>
+          </dl>
         ) : null}
 
         <dl className="mx-facts">
           <div className="mx-fact">
             <dt>Paid to</dt>
             <dd>
-              <a className="mono" href={addressUrl(order.merchant)} title={order.merchant}>
+              <a className="mono" href={addressUrl(order.merchant, explorer)} title={order.merchant} target="_blank" rel="noreferrer">
                 {shortAddress(order.merchant)}
               </a>
             </dd>
@@ -156,7 +174,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           <div className="mx-fact">
             <dt>From</dt>
             <dd>
-              <a className="mono" href={addressUrl(order.customer)} title={order.customer}>
+              <a className="mono" href={addressUrl(order.customer, explorer)} title={order.customer} target="_blank" rel="noreferrer">
                 {shortAddress(order.customer)}
               </a>
             </dd>
@@ -169,43 +187,21 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           </div>
           <div className="mx-fact">
             <dt>Network</dt>
-            <dd>Whitechain Sepolia</dd>
+            <dd>{networkNameOf(order)}</dd>
           </div>
-          <div className="mx-fact">
-            <dt>Payment</dt>
-            <dd>
-              <a className="mono" href={txUrl(order.settleTx)} title={order.settleTx}>
-                {shortHash(order.settleTx)}
-              </a>
-            </dd>
-          </div>
-          {close && order.closeTx ? (
-            <div className="mx-fact">
-              <dt>{close.term}</dt>
-              <dd>
-                <a className="mono" href={txUrl(order.closeTx)} title={order.closeTx}>
-                  {shortHash(order.closeTx)}
-                </a>
-                <span className="mx-fact__note">{close.words}</span>
-              </dd>
-            </div>
-          ) : null}
-          {returned
-            .filter((line) => line.txHash && line.txHash !== order.closeTx)
-            .map((line) => (
-              <div className="mx-fact" key={line.txHash}>
-                <dt>Refund</dt>
-                <dd>
-                  <a className="mono" href={txUrl(line.txHash!)} title={line.txHash}>
-                    {shortHash(line.txHash!)}
-                  </a>
-                </dd>
-              </div>
-            ))}
         </dl>
 
+        <section className="mx-receipt__proof" aria-labelledby={proofId}>
+          <h2 className="mx-label" id={proofId}>
+            What happened
+          </h2>
+          <Timeline events={timeline(order, "customer")} labelledBy={proofId} explorer={explorer} isStandIn={standIn} />
+        </section>
+
         <p className="mx-receipt__footer">
-          This record is on chain. Anyone can check it on the explorer, with or without countersign.
+          {standIn?.(order.settleTx)
+            ? "A made-up order in the sample ledger: none of its steps is a real transaction."
+            : `Every step above is a transaction on ${networkNameOf(order)}. Anyone can check it on the explorer, with or without countersign.`}
         </p>
       </article>
     </div>
@@ -222,13 +218,14 @@ function ReceiptId({ id }: { id: string }) {
   }, [copied]);
   return (
     <p className="mx-receipt__id">
-      <span className="mx-muted">Receipt</span>{" "}
+      <span className="mx-label">Receipt</span>
       <span className="mono" title={id}>
         {shortHash(id)}
       </span>
       <button
         type="button"
         className="mx-button mx-button--quiet mx-button--small"
+        aria-label={copied ? "Receipt id copied" : "Copy the receipt id"}
         onClick={() => {
           void navigator.clipboard
             .writeText(id)
@@ -240,18 +237,4 @@ function ReceiptId({ id }: { id: string }) {
       </button>
     </p>
   );
-}
-
-/** How the escrow finished, in the customer's words. */
-function closeWords(kind: ReceiptOrder["closeKind"]): { term: string; words: string } | null {
-  switch (kind) {
-    case "release":
-      return { term: "Released", words: "Delivered, then paid to the merchant." };
-    case "cancel":
-      return { term: "Cancelled", words: "Cancelled by the merchant. Full amount returned." };
-    case "deadline_refund":
-      return { term: "Refunded", words: "Refunded after the deadline. Full amount returned." };
-    default:
-      return null;
-  }
 }

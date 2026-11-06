@@ -56,6 +56,10 @@ function b64(value: string | object): string {
   return Buffer.from(typeof value === "string" ? value : canonicalJson(value)).toString("base64");
 }
 
+function logged(sequence: number, value: SpendEntry): { sequence: number; consensusAt: string; entry: SpendEntry } {
+  return { sequence, consensusAt: `17939570${sequence}.000000001`, entry: value };
+}
+
 function mirrorTransaction(id: string, result: string, over: { credit?: bigint; debit?: bigint; memo?: string } = {}) {
   return {
     transaction_id: toMirrorTxId(id),
@@ -192,6 +196,121 @@ describe("spend log", () => {
     expect(result.unlogged).toEqual([toSdkTxId(unloggedTx)]);
     expect(urls.some((u) => u.includes("timestamp=gte:1793957000.000000001"))).toBe(true);
     expect(urls.some((u) => u.includes("account.id=0.0.11337064"))).toBe(true);
+  });
+
+  function reconcileMirror(opts: { executions?: Record<string, object>; schedules?: Record<string, object> } = {}) {
+    const urls: string[] = [];
+    const fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("/api/v1/transactions?account.id=")) {
+        return Response.json({ transactions: Object.values(opts.executions ?? {}), links: { next: null } });
+      }
+      if (url.includes("/api/v1/schedules/")) {
+        const id = url.slice(url.lastIndexOf("/") + 1);
+        const record = opts.schedules?.[id];
+        return record ? Response.json(record) : new Response("{}", { status: 404 });
+      }
+      const id = url.slice(url.lastIndexOf("/") + 1).split("?")[0]!;
+      const tx = opts.executions?.[id];
+      return tx ? Response.json({ transactions: [tx] }) : new Response("{}", { status: 404 });
+    }) as unknown as typeof globalThis.fetch;
+    return { base: "http://mirror.test", fetch, urls };
+  }
+
+  function scheduleRecord(over: Record<string, unknown> = {}) {
+    return {
+      schedule_id: "0.0.500",
+      creator_account_id: AGENT,
+      payer_account_id: AGENT,
+      memo: offerMemo(OFFER),
+      executed_timestamp: null,
+      expiration_time: "9999999999.000000000",
+      deleted: false,
+      wait_for_expiry: false,
+      transaction_body: "",
+      signatures: [],
+      ...over,
+    };
+  }
+
+  test("reconcile matches an executed schedule entry and backs both ids", async () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const executedTx = "0.0.11337064@1793958000.000000001";
+    const mirror = reconcileMirror({
+      executions: { [toMirrorTxId(createTx)]: mirrorTransaction(executedTx, "SUCCESS") },
+    });
+    const entries = [logged(1, entry({ kind: "schedule", tx: createTx, schedule: "0.0.500", expiresAt: 1793957300 }))];
+
+    const result = await reconcile(entries, AGENT, USDC_TESTNET, {
+      base: mirror.base,
+      fetch: mirror.fetch,
+      since: "1793957000.000000001",
+    });
+
+    expect(result.matched.map((e) => e.sequence)).toEqual([1]);
+    expect(result.unbacked).toEqual([]);
+    expect(result.unlogged).toEqual([]);
+    expect(result.pending).toEqual([]);
+    expect(result.released).toEqual([]);
+    expect(mirror.urls.some((u) => u.includes("?scheduled=true"))).toBe(true);
+  });
+
+  test("reconcile files a pending schedule entry as pending", async () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const mirror = reconcileMirror({ schedules: { "0.0.500": scheduleRecord() } });
+    const entries = [logged(1, entry({ kind: "schedule", tx: createTx, schedule: "0.0.500", expiresAt: 1793957300 }))];
+
+    const result = await reconcile(entries, AGENT, USDC_TESTNET, {
+      base: mirror.base,
+      fetch: mirror.fetch,
+      since: "1793957000.000000001",
+    });
+
+    expect(result.pending.map((e) => e.sequence)).toEqual([1]);
+    expect(result.matched).toEqual([]);
+    expect(result.unbacked).toEqual([]);
+    expect(result.released).toEqual([]);
+  });
+
+  test("reconcile files an expired schedule entry as released", async () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const mirror = reconcileMirror({
+      schedules: { "0.0.500": scheduleRecord({ expiration_time: "1.000000000" }) },
+    });
+    const entries = [
+      logged(1, entry({ kind: "schedule", tx: createTx, schedule: "0.0.500", expiresAt: 1793957060 })),
+      logged(2, entry({ kind: "expired", tx: createTx, schedule: "0.0.500" })),
+    ];
+
+    const result = await reconcile(entries, AGENT, USDC_TESTNET, {
+      base: mirror.base,
+      fetch: mirror.fetch,
+      since: "1793957000.000000001",
+    });
+
+    expect(result.released.map((e) => e.sequence)).toEqual([1]);
+    expect(result.unbacked).toEqual([]);
+    expect(result.pending).toEqual([]);
+  });
+
+  test("reconcile flags an expired entry whose schedule executed", async () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const executedTx = "0.0.11337064@1793958000.000000001";
+    const mirror = reconcileMirror({
+      executions: { [toMirrorTxId(createTx)]: mirrorTransaction(executedTx, "SUCCESS") },
+      schedules: { "0.0.500": scheduleRecord({ executed_timestamp: "1793958001.000000001" }) },
+    });
+    const entries = [logged(1, entry({ kind: "expired", tx: createTx, schedule: "0.0.500" }))];
+
+    const result = await reconcile(entries, AGENT, USDC_TESTNET, {
+      base: mirror.base,
+      fetch: mirror.fetch,
+      since: "1793957000.000000001",
+    });
+
+    expect(result.unbacked.map((u) => u.why)).toEqual(["logged as expired, but the schedule executed"]);
+    expect(result.unlogged).toEqual([]);
   });
 
   test("an outgoing HBAR-only transfer is never unlogged", async () => {

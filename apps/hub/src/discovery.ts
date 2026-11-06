@@ -1,6 +1,16 @@
 import { declareDiscoveryExtension } from "@x402/extensions";
 import type { Hex } from "viem";
-import { GATEWAY_BATCHED, type JsonSchema, type Offer, type PaymentRequirements, type Rail, type RailId } from "./deps.ts";
+import {
+  GATEWAY_BATCHED,
+  type BuyerCaps,
+  type JsonSchema,
+  type Offer,
+  type PaymentRequirements,
+  type Rail,
+  type RailHealth,
+  type RailId,
+} from "./deps.ts";
+import { planChallenges, type ChallengePlan } from "./route.ts";
 import type { Store, StoredOffer } from "./store.ts";
 import { isRecord } from "./util.ts";
 
@@ -64,34 +74,38 @@ export interface DiscoveryParams {
   type?: string | undefined;
 }
 
-const PROVIDER_DESCRIPTION = "Escrowed, countersigned x402 calls to software that sells itself.";
+const PROVIDER_DESCRIPTION = "Countersigned x402 calls to software that sells itself, escrowed on the escrow rails.";
 const CATEGORY = "INFRASTRUCTURE";
 
 export function resourceFor(publicUrl: string, offerHash: Hex): string {
   return `${publicUrl}/offers/${offerHash}/call`;
 }
 
-/** Every configured rail the offer lists, in the offer's order. Shared by the 402 and discovery. */
+/**
+ * Every configured rail the offer lists that the policy accepts, in policy order.
+ * Shared by the 402 and discovery. A broken challenge never takes the 402 down.
+ */
 export function challengeOptions(
   rails: Rail[],
   offer: Offer,
   resource: string,
   now: number,
-): ChallengeOption[] {
-  const configured = new Map<string, Rail>();
-  for (const rail of rails) configured.set(rail.declaration.id, rail);
-  const options: ChallengeOption[] = [];
-  for (const id of offer.rails) {
-    const rail = configured.get(id);
-    if (!rail) continue;
-    try {
-      options.push({ entry: rail.challenge(offer, { resource, now }), rail });
-    } catch (error) {
-      // One broken rail must not take the 402 down. Never log the offer body.
-      console.warn(`[hub] rail ${id} challenge failed: ${firstLine(error)}`);
-    }
-  }
-  return options;
+  caps?: BuyerCaps,
+  health?: Record<string, RailHealth>,
+): ChallengePlan {
+  const hooks = {
+    ...(caps ? { caps } : {}),
+    ...(health ? { health } : {}),
+    ...(health
+      ? {
+          onChallengeFailure: (railId: RailId) => {
+            const current = health[railId];
+            health[railId] = { failures: (current?.failures ?? 0) + 1, lastFailureAt: now };
+          },
+        }
+      : {}),
+  };
+  return planChallenges(rails, offer, resource, now, hooks);
 }
 
 /** The first line of an error, safe to put in one log line or one refusal. */
@@ -106,7 +120,7 @@ export function acceptsFor(
   resource: string,
   now: number,
 ): PaymentRequirements[] {
-  return challengeOptions(rails, offer, resource, now).map((option) => option.entry);
+  return challengeOptions(rails, offer, resource, now).options.map((option) => option.entry);
 }
 
 export function exampleInput(schema: JsonSchema): Record<string, unknown> {

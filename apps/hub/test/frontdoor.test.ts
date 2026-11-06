@@ -431,8 +431,8 @@ describe("settlements", () => {
     await runner.ready;
 
     const accepts = (await requirementsFor(hub, hash)).accepts;
-    const escrowEntry = accepts[0];
-    const directEntry = accepts[1];
+    const escrowEntry = accepts.find((entry) => entry.network === "eip155:5042002");
+    const directEntry = accepts.find((entry) => entry.network === "eip155:1874");
     if (!escrowEntry || !directEntry) throw new Error("missing accepts entries");
     const secondNonce = id("d4");
     const thirdNonce = id("e5");

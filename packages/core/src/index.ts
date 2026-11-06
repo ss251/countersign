@@ -1,4 +1,5 @@
 export * from "./amount.ts";
+export * from "./approval.ts";
 export * from "./canonical.ts";
 export * from "./countersign.ts";
 export * from "./envelope.ts";

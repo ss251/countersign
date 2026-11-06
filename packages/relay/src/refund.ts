@@ -11,11 +11,14 @@ import {
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
 import { reconcilePendingRefunds } from "./reconcile.ts";
 import type { RelayCall } from "./relayer.ts";
+import { isRefundReason } from "./ledger.ts";
+import type { RefundReason } from "./ledger.ts";
 
 export type RefundInput = {
   paymentId: string;
   authorization: Authorization | WireAuthorization;
   signature: Hex;
+  reason?: RefundReason;
 };
 
 export type RefundResult =
@@ -26,6 +29,9 @@ export async function refundPayment(
   input: RefundInput,
   ctx: ExactContext,
 ): Promise<RefundResult> {
+  if (input.reason !== undefined && !isRefundReason(input.reason)) {
+    return { ok: false, reason: "invalid_payload" };
+  }
   const payment = findRefundable(input.paymentId, ctx);
   if (!payment) return { ok: false, reason: "payment_not_found" };
   if (payment.status !== "settled") return { ok: false, reason: "payment_not_settled" };
@@ -118,6 +124,8 @@ export async function refundPayment(
         txHash: outcome.txHash,
         blockNumber: outcome.blockNumber,
         nonce: auth.nonce,
+        reason: input.reason ?? null,
+        at: now * 1000,
       });
       return {
         ok: true,
@@ -134,6 +142,7 @@ export async function refundPayment(
           amount: auth.value,
           txHash: outcome.txHash,
           nonce: auth.nonce,
+          reason: input.reason ?? null,
         },
         Number(auth.validBefore),
       );

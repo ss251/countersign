@@ -23,7 +23,7 @@ import {
 import { escrowAbi } from "@countersign/rail";
 import { sleep } from "./http.ts";
 
-export type NetworkKey = "arc" | "whitechain" | "hedera";
+export type NetworkKey = "arc" | "whitechain" | "hedera" | "tempo";
 
 export interface EvmNetwork {
   key: "arc" | "whitechain";
@@ -89,7 +89,18 @@ export const HEDERA = {
   usdc: "0.0.429274",
 };
 
+/** Tempo Moderato, the MPP rail's testnet. pathUSD has 6 decimals. */
+export const TEMPO = {
+  key: "tempo" as const,
+  label: "Tempo Moderato",
+  chainId: 42431,
+  rpc: process.env.E2E_TEMPO_RPC ?? "https://rpc.moderato.tempo.xyz",
+  pathUsd: "0x20c0000000000000000000000000000000000000" as Address,
+  explorer: "https://explore.testnet.tempo.xyz",
+};
+
 export function explorerTx(network: NetworkKey, tx: string): string {
+  if (network === "tempo") return `${TEMPO.explorer}/tx/${tx}`;
   if (network === "hedera") {
     // HashScan takes the SDK form, 0.0.payer@seconds.nanos.
     const dash = /^(\d+\.\d+\.\d+)-(\d+)-(\d+)$/.exec(tx);
@@ -100,6 +111,7 @@ export function explorerTx(network: NetworkKey, tx: string): string {
 }
 
 export function explorerAddress(network: NetworkKey, address: string): string {
+  if (network === "tempo") return `${TEMPO.explorer}/address/${address}`;
   if (network === "hedera") return `${HEDERA.hashscan}/account/${address}`;
   const net = network === "arc" ? ARC : WHITECHAIN;
   return `${net.explorer}/address/${address}`;

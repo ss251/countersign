@@ -27,6 +27,11 @@ export interface MirrorTx {
   consensusTimestamp: string;
 }
 
+/** One mirror REST read, as a status and parsed body. */
+export async function mirrorGet(path: string): Promise<{ status: number; body: unknown }> {
+  return getJson(path);
+}
+
 async function getJson(path: string): Promise<{ status: number; body: unknown }> {
   const res = await fetch(`${HEDERA.mirror}${path}`, { signal: AbortSignal.timeout(20_000), headers: { accept: "application/json" } });
   const text = await res.text();
