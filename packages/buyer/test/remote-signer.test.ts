@@ -42,13 +42,18 @@ interface Captured {
 
 function hubStub(
   signer: PrivateKeyAccount,
+  token: string,
   capture: Captured,
   send?: (wire: WireTypedData, capture: Captured) => Response | Promise<Response>,
 ): typeof fetch {
   return Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const request = new Request(input, init);
-      capture.authorization = request.headers.get("authorization");
+      const authorization = request.headers.get("authorization");
+      capture.authorization = authorization;
+      if (authorization !== `Bearer ${token}`) {
+        return Response.json({ code: "no-session", message: "No session." }, { status: 401 });
+      }
       const text = await request.text();
       const body = JSON.parse(text) as { kind: string; typedData: WireTypedData };
       capture.body = body;
@@ -116,7 +121,7 @@ describe("the remote signer", () => {
   test("a ReceiveWithAuthorization signature verifies against the session address", async () => {
     const signer = privateKeyToAccount(generatePrivateKey());
     const session = sessionFor(signer, "session-token");
-    const account = remoteAccount(session, { fetch: hubStub(signer, { authorization: null, body: undefined }) });
+    const account = remoteAccount(session, { fetch: hubStub(signer, "session-token", { authorization: null, body: undefined }) });
     expect(account.address).toBe(signer.address);
 
     const typedData = authorizationTypedData(authorizationFor(account));
@@ -132,7 +137,9 @@ describe("the remote signer", () => {
   test("the request carries the token and the bigints as decimal strings", async () => {
     const signer = privateKeyToAccount(generatePrivateKey());
     const capture: Captured = { authorization: null, body: undefined };
-    const account = remoteAccount(sessionFor(signer, "secret-session-token"), { fetch: hubStub(signer, capture) });
+    const account = remoteAccount(sessionFor(signer, "secret-session-token"), {
+      fetch: hubStub(signer, "secret-session-token", capture),
+    });
 
     await account.signTypedData(authorizationTypedData(authorizationFor(account)));
 
@@ -210,7 +217,7 @@ describe("the remote signer", () => {
   test("signMessage and signTransaction refuse", async () => {
     const signer = privateKeyToAccount(generatePrivateKey());
     const account = remoteAccount(sessionFor(signer, "t"), {
-      fetch: hubStub(signer, { authorization: null, body: undefined }),
+      fetch: hubStub(signer, "t", { authorization: null, body: undefined }),
     });
     expect((await rejection(account.signMessage({ message: "hi" }))).message).toBe(
       "This wallet signs only through the hub's typed-data route.",
