@@ -28,6 +28,7 @@ export const escrowV2Abi = [
           { name: "s", type: "bytes32" },
         ],
       },
+      { name: "lockSig", type: "bytes" },
     ],
     outputs: [{ name: "jobId", type: "bytes32" }],
   },
@@ -47,6 +48,7 @@ export const escrowV2Abi = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "jobId", type: "bytes32" },
+      { name: "status", type: "uint8" },
       { name: "buyerSig", type: "bytes" },
     ],
     outputs: [],

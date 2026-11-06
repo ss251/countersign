@@ -281,7 +281,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     return { isValid: true, payer: check.buyer };
   }
 
-  async function settle(payment: PaymentPayload, req: PaymentRequirements): Promise<SettleResult> {
+  async function settle(payment: PaymentPayload, req: PaymentRequirements, opts?: { lockSig?: Hex }): Promise<SettleResult> {
     const v = await verify(payment, req);
     if (!v.isValid) return { success: false, errorReason: v.invalidReason, transaction: "", network };
     const p = payment.payload as unknown as CountersignPayload;
@@ -294,7 +294,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
             address: cfg.escrow,
             abi: escrowV2Abi,
             functionName: "fund",
-            args: fundArgsV2(extra.offerHash, p),
+            args: [...fundArgsV2(extra.offerHash, p), opts?.lockSig ?? "0x"],
           }),
         v.payer,
       );
@@ -328,9 +328,14 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
             submit("acceptance", () =>
               wallet!.writeContract({ address: cfg.escrow, abi: escrowV2Abi, functionName: "accept", args: [jobId, buyerSig] }),
             ),
-          dispute: (jobId, buyerSig) =>
+          dispute: (jobId, status, buyerSig) =>
             submit("dispute", () =>
-              wallet!.writeContract({ address: cfg.escrow, abi: escrowV2Abi, functionName: "dispute", args: [jobId, buyerSig] }),
+              wallet!.writeContract({
+                address: cfg.escrow,
+                abi: escrowV2Abi,
+                functionName: "dispute",
+                args: [jobId, status, buyerSig],
+              }),
             ),
           releaseAfterWindow: (jobId) =>
             submit("window release", () =>
