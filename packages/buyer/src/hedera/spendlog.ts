@@ -27,8 +27,10 @@ export interface SpendEntry {
   asset: string;
   /** Atomic units of `asset`. */
   amount: string;
-  /** Hedera transaction id of the payment; spends only. */
+  /** Hedera transaction id of the payment, or the schedule create transaction; spends only. */
   tx?: string;
+  /** Schedule id when the spend was a scheduled transfer; `tx` is then the create transaction id. */
+  schedule?: string;
   /** Why the envelope said no; refusals only. */
   reason?: EnvelopeRefusal | string;
   /** Running total under the envelope after this entry, atomic. */
@@ -70,6 +72,7 @@ function parseEntry(raw: unknown): SpendEntry | null {
     if (typeof e[k] !== "string") return null;
   }
   if (e.kind === "spend" && typeof e.tx !== "string") return null;
+  if (e.schedule !== undefined && typeof e.schedule !== "string") return null;
   return e as SpendEntry;
 }
 
@@ -130,11 +133,14 @@ export async function reconcile(
     const e = logged.entry;
     if (e.kind !== "spend" || !e.tx) continue;
     loggedTx.add(toSdkTxId(e.tx));
-    const tx = await getTransaction(e.tx, opts).catch(() => null);
+    const scheduled = typeof e.schedule === "string";
+    const tx = await getTransaction(e.tx, { ...opts, scheduled }).catch(() => null);
     if (!tx) {
-      unbacked.push({ logged, why: "transaction not found" });
+      unbacked.push({ logged, why: scheduled ? "scheduled execution not found" : "transaction not found" });
       continue;
     }
+    // A scheduled transfer executes under its own transaction id; both ids are backed by this entry.
+    if (scheduled) loggedTx.add(toSdkTxId(tx.id));
     const moved = tx.tokens[e.asset] ?? [];
     const why =
       tx.result !== "SUCCESS"

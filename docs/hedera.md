@@ -86,14 +86,33 @@ The audit has caught a real gap. At 15:59 IST a rail smoke test (`scripts/hedera
 
 A price that moved after the agent signed cannot settle. The signed amount no longer equals `PaymentRequirements.amount`, the hub refuses before settlement, and the facilitator's exact-amount rule refuses it again.
 
+## Scheduled checkout
+
+The scheduled flow is a second way to pay on the same rail. Nothing moves when the agent creates the payment: the agent submits a `ScheduleCreateTransaction` that wraps the USDC transfer (`agent -amount`, seller `+amount`) with the offer memo `cs1:<offer hash>` on the inner transfer and on the schedule. The create carries an explicit `expirationTime`, `waitForExpiry = false`, and no admin key. The agent signs the create, and that signature counts toward the scheduled transfer.
+
+The seller does not trust the schedule blindly. It reads the schedule's transaction body from the mirror node, decodes the transfer, and checks that it is exactly one debit from the buyer and one credit to itself, of the offer's amount, on `0.0.429274`, with the offer memo. Only then does it submit `ScheduleSignTransaction`. The seller-sign account used here has `receiverSignatureRequired = true`, so its USDC credit cannot execute without that key; the transfer runs as soon as the second signature lands.
+
+If the seller never signs, the schedule reaches its expiration and is deleted by the network without moving funds. There is no refund to issue because the agent's balance was never debited.
+
+- **Seller key:** `scripts/hedera/keygen.ts` adds `SELLER_SIGN` (`HD_SELLER_SIGN_KEY`, `_EVM`, `_ID`). `scripts/hedera/setup.ts` creates that account from the operator with `setReceiverSignatureRequired(true)` and seeds it with 0.3 HBAR for its `ScheduleSign` fees and USDC association.
+- **Spend log:** a scheduled spend logs `kind: "spend"`, `tx` = the schedule create transaction id, and `schedule` = the schedule id. `reconcile` reads its execution with `GET /api/v1/transactions/{createTxId}?scheduled=true` and applies the same exact-amount and memo checks as an unscheduled spend.
+- **Commands:**
+
+```sh
+bun scripts/hedera/schedule.ts                # create, seller check-and-sign, execute, log, audit
+bun scripts/hedera/schedule.ts --expiry-demo  # create, never sign, show expired with nothing moved
+```
+
+The main run prints the create transaction and schedule links, the seller's sign transaction, the executed transfer's consensus time, the seller's credit, the HCS entry, and a reconciliation of the run's window. The expiry demo prints the schedule link, waits past its expiration, and shows `expired`, no `executed_timestamp`, and an unchanged agent USDC balance.
+
 ## Setup
 
 Keys live only in `~/.config/countersign/hd.env` (mode 0600). The scripts print addresses and ids, never keys.
 
 ```sh
-bun scripts/hedera/keygen.ts   # three ECDSA keys: operator, agent, seller; prints EVM addresses
+bun scripts/hedera/keygen.ts   # four ECDSA keys: operator, agent, seller, seller-sign; prints EVM addresses
 # fund the operator's EVM address with testnet HBAR at https://portal.hedera.com/faucet
-bun scripts/hedera/setup.ts    # creates agent + seller from the operator, associates USDC, creates the topic
+bun scripts/hedera/setup.ts    # creates agent + seller + seller-sign from the operator, associates USDC, creates the topic
 # send testnet USDC to the agent account at https://faucet.circle.com (network: Hedera Testnet)
 bun scripts/hedera/status.ts   # HBAR and USDC balances from the mirror node
 bun scripts/hedera/smoke.ts [x402.org|blocky402|local]   # one rail payment end to end, plus a moved-price and a replay refusal
