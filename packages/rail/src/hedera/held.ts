@@ -240,7 +240,15 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       }
 
       holds.delete(jobId);
-      return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
+      const settled: SettleResult = {
+        success: true,
+        payer: hold.payer,
+        transaction: hold.createTxId,
+        network: HEDERA_TESTNET,
+      };
+      // The link opens the execution, not the create; the enumeration stays as it was.
+      Object.defineProperty(settled, "explorerRef", { value: record.consensusTimestamp, enumerable: false });
+      return settled;
     },
 
     async refund(jobId) {
