@@ -32,7 +32,7 @@ import {
 } from "@countersign/rail/hedera";
 import type { Client } from "@hiero-ledger/sdk";
 import { createScheduledPayment, type ScheduledPayment } from "./schedule.ts";
-import { hederaPayment, type HederaPayer } from "./signer.ts";
+import { hederaPayment, type HederaPayer, type SignOptions } from "./signer.ts";
 import { appendEntry, type LoggedEntry, type SpendEntry } from "./spendlog.ts";
 
 export interface Listing {
@@ -57,6 +57,8 @@ export interface HederaAgentOptions {
   /** Test seam: build and submit a schedule. Defaults to createScheduledPayment. */
   createSchedule?: typeof createScheduledPayment;
   fetch?: typeof fetch;
+  /** Signing options for each payment, e.g. fixed node account ids in tests. */
+  sign?: SignOptions;
   mirror?: MirrorOptions;
   now?: () => number;
 }
@@ -289,7 +291,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       let payment: PaymentPayload;
       let transactionId: string;
       try {
-        ({ payment, transactionId } = await hederaPayment(opts.payer, req, url));
+        ({ payment, transactionId } = await hederaPayment(opts.payer, req, url, opts.sign));
       } catch (error) {
         // Nothing signed, so nothing can land.
         release(reservation);
