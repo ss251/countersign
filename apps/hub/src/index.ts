@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
+import { runCanary } from "./canary.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
 
@@ -56,7 +57,7 @@ const identity =
       })
     : undefined;
 
-const { app, websocket } = createHub({
+const { app, websocket, runners } = createHub({
   store,
   rails,
   now,
@@ -71,5 +72,17 @@ const server = Bun.serve({ port, fetch: app.fetch, websocket });
 setInterval(() => {
   void runJanitor({ store, rails, now });
 }, 30_000);
+
+if (process.env.CANARY === "1") {
+  const everyMs = Number(process.env.CANARY_INTERVAL_S ?? 300) * 1000;
+  let running = false;
+  setInterval(() => {
+    if (running) return;
+    running = true;
+    void runCanary({ store, runners, now, log: (line) => console.log(line) }).finally(() => {
+      running = false;
+    });
+  }, everyMs);
+}
 
 console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
