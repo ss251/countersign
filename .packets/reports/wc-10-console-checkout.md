@@ -88,7 +88,7 @@ No existing test was edited.
 
 - `bun install --linker hoisted`: no changes.
 - `bun run typecheck`: clean.
-- `bun test`: 1214 pass, 4 skip, 0 fail; 1218 tests across 143 files.
+- `bun test`: 1220 pass, 4 skip, 0 fail; 1224 tests across 145 files.
 - `forge test`: 47 passed, 0 failed, 0 skipped across 5 suites.
 - `bun run --cwd apps/web build`: built successfully.
 - Full acceptance chain exit: 0.
