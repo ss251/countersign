@@ -1,0 +1,208 @@
+/**
+ * The seller CLI. The key comes only from CS_SELLER_KEY; it is never printed
+ * and never accepted as an argument.
+ *
+ *   bun packages/runner/src/cli.ts publish --hub <url> --skill <path> --price <atomic> ...
+ *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...] ...
+ */
+
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import { parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
+import type { Address, Hex, RunnerAccount } from "./account.ts";
+import { startRunner, type ServedOffer } from "./daemon.ts";
+import { publishOffer } from "./publish.ts";
+import { readSkill, skillOffer, type Skill } from "./skill.ts";
+
+const DEFAULT_DEADLINE = 120;
+
+interface Options {
+  hub: string;
+  skills: string[];
+  price: string;
+  deadline: number;
+  rails: RailId[];
+  upstream?: { url: string; licence: string };
+}
+
+async function main(): Promise<void> {
+  const [command, ...args] = process.argv.slice(2);
+  if (command === "publish") {
+    await publishCommand(parseOptions(args));
+    return;
+  }
+  if (command === "serve") {
+    await serveCommand(parseOptions(args));
+    return;
+  }
+  throw new Error("Usage: cli.ts <publish|serve> --hub <url> --skill <path> --price <atomic>");
+}
+
+async function publishCommand(options: Options): Promise<void> {
+  const account = await sellerAccount();
+  const path = options.skills[0];
+  if (path === undefined) throw new Error("--skill is required.");
+  const skill = await readSkill(path);
+  const offer = makeOffer(account.address, skill, options);
+  const hash = await publishOffer(options.hub, account, offer);
+  console.log(hash);
+}
+
+async function serveCommand(options: Options): Promise<void> {
+  const account = await sellerAccount();
+  const served: ServedOffer[] = [];
+
+  for (const path of options.skills) {
+    const skill = await readSkill(path);
+    const offer = makeOffer(account.address, skill, options);
+    const hash = await publishOffer(options.hub, account, offer);
+    console.log(`published ${hash} ${offer.title}`);
+    served.push({ offer, spec: { adapter: "skill", skillPath: path } });
+  }
+
+  const handle = startRunner({
+    hubUrl: options.hub,
+    account,
+    served,
+    onJob: (event) => {
+      const jobId = event.jobId.length > 10 ? `${event.jobId.slice(0, 10)}…` : event.jobId;
+      console.log(`${jobId} ${event.title} ${event.ok ? "ok" : event.reason ?? "refused"}`);
+    },
+  });
+
+  let resolveStop: () => void = () => undefined;
+  const stopped = new Promise<void>((resolve) => {
+    resolveStop = resolve;
+  });
+  const shutdown = (): void => {
+    handle.stop();
+    resolveStop();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+
+  const first = await Promise.race([
+    handle.ready.then(() => "ready" as const),
+    stopped.then(() => "stopped" as const),
+  ]);
+  if (first === "ready") console.log("runner ready");
+  await stopped;
+}
+
+function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
+  return skillOffer({
+    seller,
+    skill,
+    price: options.price,
+    deadline: options.deadline,
+    rails: options.rails,
+    upstream: options.upstream,
+    now: Math.floor(Date.now() / 1000),
+  });
+}
+
+interface AccountsModule {
+  privateKeyToAccount(key: Hex): RunnerAccount;
+}
+
+async function sellerAccount(): Promise<RunnerAccount> {
+  const key = process.env.CS_SELLER_KEY;
+  if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+  }
+  const module = await loadAccounts();
+  return module.privateKeyToAccount(key as Hex);
+}
+
+/** Resolve viem through @countersign/core, which declares it as a dependency. */
+async function loadAccounts(): Promise<AccountsModule> {
+  const require = createRequire(import.meta.resolve("@countersign/core"));
+  const path = require.resolve("viem/accounts");
+  return (await import(pathToFileURL(path).href)) as AccountsModule;
+}
+
+function parseOptions(args: string[]): Options {
+  const skills: string[] = [];
+  let hub: string | undefined;
+  let price: string | undefined;
+  let deadline = DEFAULT_DEADLINE;
+  let rails: RailId[] = ["escrow"];
+  let upstreamUrl: string | undefined;
+  let licence: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const flag = args[i] ?? "";
+    const value = (): string => {
+      const next = args[i + 1];
+      if (next === undefined || next.startsWith("--")) throw new Error(`${flag} needs a value.`);
+      i += 1;
+      return next;
+    };
+    switch (flag) {
+      case "--hub":
+        hub = value();
+        break;
+      case "--skill":
+        skills.push(value());
+        break;
+      case "--price":
+        price = value();
+        break;
+      case "--deadline": {
+        const parsed = Number(value());
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+          throw new Error("--deadline must be a positive integer.");
+        }
+        deadline = parsed;
+        break;
+      }
+      case "--rails":
+        rails = parseRails(value());
+        break;
+      case "--upstream-url":
+        upstreamUrl = value();
+        break;
+      case "--licence":
+        licence = value();
+        break;
+      default:
+        throw new Error(`Unknown argument ${flag}.`);
+    }
+  }
+
+  if (hub === undefined) throw new Error("--hub is required.");
+  if (skills.length === 0) throw new Error("--skill is required.");
+  if (price === undefined) throw new Error("--price is required.");
+  try {
+    if (parseAtomic(price) === 0n) throw new Error("zero");
+  } catch {
+    throw new Error("--price must be a positive atomic amount.");
+  }
+  if ((upstreamUrl === undefined) !== (licence === undefined)) {
+    throw new Error("--upstream-url and --licence go together.");
+  }
+
+  const options: Options = { hub, skills, price, deadline, rails };
+  if (upstreamUrl !== undefined && licence !== undefined) {
+    options.upstream = { url: upstreamUrl, licence };
+  }
+  return options;
+}
+
+function parseRails(raw: string): RailId[] {
+  const values = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  if (values.length === 0) throw new Error("--rails needs at least one rail.");
+  const rails = values.map((value) => {
+    if (!RAIL_IDS.includes(value as RailId)) throw new Error(`Unknown rail ${value}.`);
+    return value as RailId;
+  });
+  return [...new Set(rails)];
+}
+
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
