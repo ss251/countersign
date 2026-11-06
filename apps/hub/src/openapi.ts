@@ -1,4 +1,4 @@
-import { acceptsFor, resourceFor, type DiscoveryDeps } from "./discovery.ts";
+import { acceptsFor, callBodySchema, resourceFor, type DiscoveryDeps } from "./discovery.ts";
 import type { StoredOffer } from "./store.ts";
 
 type JsonObject = Record<string, unknown>;
@@ -143,11 +143,7 @@ function offerPath(deps: DiscoveryDeps, stored: StoredOffer): JsonObject {
         required: true,
         content: {
           "application/json": {
-            schema: {
-              type: "object",
-              properties: { input: offer.input },
-              required: ["input"],
-            },
+            schema: callBodySchema(offer),
           },
         },
       },

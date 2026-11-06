@@ -4,8 +4,8 @@ The hub publishes what it sells in the formats x402 clients already read. Code: 
 
 | Route | Format | Contents |
 |---|---|---|
-| `GET /discovery/resources?limit&offset&query` | x402 Bazaar list, in the same response shape as Circle's public discovery API (`{data: {x402Version, items, pagination}}`) | One item per listed offer: the paid resource URL, its `accepts` (built by the same helper the 402 uses, so the two never drift), provider, path, method, and the offer's input and output schemas |
-| every `402` | x402 v2 `PaymentRequired` with an `extensions.bazaar` entry | The discovery extension declared with `@x402/extensions`, describing the POST body and output |
+| `GET /discovery/resources?limit&offset&query` | x402 Bazaar list, in the same response shape as Circle's public discovery API (`{x402Version, items, pagination}`), with its `category` and `type` filters. A `query` holding an offer's hash, such as its resource URL, finds that offer | One item per listed offer: the paid resource URL, its `accepts` (built by the same helper the 402 uses, so the two never drift), provider, path, method, and the offer's input and output schemas |
+| every `402` | x402 v2 `PaymentRequired` with an `extensions.bazaar` entry | The discovery extension declared with `@x402/extensions`, describing the POST body as it is sent, `{input, lineage?}`, and the output |
 | `GET /.well-known/agent-card.json` (and `/.well-known/agent.json`) | A2A agent card, protocol 0.3.0 | One skill per offer; interfaces for the Bazaar list and OpenAPI |
 | `GET /.well-known/skills/index.json` | skills index | The `skill` offers with price, upstream and rails |
 | `GET /openapi.json` | OpenAPI 3.1 | Generic routes, plus one explicit `POST /offers/<hash>/call` per listed offer with that offer's input and output schemas |
