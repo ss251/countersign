@@ -116,7 +116,8 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(dir, { recursive: true });
-  const commit = git("rev-parse", "--short", "HEAD");
+  const dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".") !== "unknown";
+  const commit = `${git("rev-parse", "--short", "HEAD")}${dirty ? " with local changes" : ""}`;
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
 
