@@ -14,7 +14,17 @@ const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
 
-const { app, websocket } = createHub({ store, rails, now, publicUrl });
+// The human's approver token guards approval decisions and the envelope and approval reads. Unset, the
+// decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
+const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined;
+
+const { app, websocket } = createHub({
+  store,
+  rails,
+  now,
+  publicUrl,
+  ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
+});
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
 setInterval(() => {
