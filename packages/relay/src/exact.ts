@@ -258,6 +258,7 @@ export async function settleExact(
       blockNumber: outcome.blockNumber,
       settledAt: readNow(ctx.now) * 1000,
       resource: resourceUrl(input.paymentPayload.resource),
+      description: resourceDescription(input.paymentPayload.resource),
     });
     return {
       success: true,
@@ -280,6 +281,7 @@ export async function settleExact(
       blockNumber: 0n,
       settledAt: readNow(ctx.now) * 1000,
       resource: resourceUrl(input.paymentPayload.resource),
+      description: resourceDescription(input.paymentPayload.resource),
     });
     return {
       success: false,
@@ -368,4 +370,12 @@ function resourceUrl(resource: PaymentPayload["resource"]): string | null {
   if (typeof resource === "string") return resource;
   if (resource && typeof resource === "object" && typeof resource.url === "string") return resource.url;
   return null;
+}
+
+/** The human-readable item from the x402 ResourceInfo, capped for the ledger. */
+export function resourceDescription(resource: unknown): string | null {
+  if (!resource || typeof resource !== "object") return null;
+  const description = (resource as { description?: unknown }).description;
+  if (typeof description !== "string") return null;
+  return description.slice(0, 120);
 }
