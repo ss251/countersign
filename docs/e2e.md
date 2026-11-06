@@ -33,6 +33,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 16 | `public-gateway` | a Gateway nanopayment on a live offer of the public hub; balance debited at once, the hub serves the same slip | Arc testnet | orch-cs |
 | 17 | `hedera-mcp` | the Hedera agent pays a call to Hedera's own Agent Kit MCP server on the public hub; the slip binds the call, and the returned bytes decode to an unsigned transfer naming the buyer | Hedera testnet | cs-hd |
 | 18 | `erc8004-identity` | the Hedera seller's ERC-8004 identity: owner, registration file, the hub card and live offers it names, and the wallet it declares | Hedera testnet | cs-hd |
+| 19 | `mpp` | the MPP rail's Tempo method pays for real on Tempo testnet: the challenge is checked before paying, the receipt, the transfer on chain, a replay refused | Tempo Moderato | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
@@ -194,6 +195,15 @@ Reads only, over Hedera's JSON-RPC relay, from the IdentityRegistry `0x8004A818�
 4. **offers**: every registered offer is listed, online, and sold by the agent's owner.
 5. **wallet**: the registry's agent wallet is the owner, and the file's `agentWallet` endpoint names that account on the chain the identity lives on.
 
+### 19 · mpp
+
+The demo server (`scripts/mpp/server.ts`) runs the countersign `mpp` rail on Tempo Moderato (chain 42431). That is the logic the hub will use; the hub's MPP wiring is not built yet. The project payer pays with the pinned `mppx` 0.17.1, always named by `--account`, with the Stripe CLI off `PATH` and no Stripe or mppx variables in the child's environment.
+
+1. **the challenge first**: the 402's `WWW-Authenticate: Payment` challenge must name method `tempo`, 10000 pathUSD, the project recipient, chain 42431 and the offer hash before anything is allowed to pay.
+2. **paid**: `mppx` pays `GET /rail/paid`. The answer is 200 with the Tempo transaction, and its `Payment-Receipt` says `tempo`, `success`, with that transaction as `reference`.
+3. **chain**: on the Moderato RPC, the receipt is a success, and exactly 10000 pathUSD moved from the payer to the recipient.
+4. **replay refused**: a credential signed with `mppx sign` is accepted once and refused with 409 `replay` the second time. The credential is held in memory only, never written to a log.
+
 ### 14a, 14b · production smoke
 
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
@@ -232,7 +242,7 @@ A full run goes through the shared gate lock about once an hour from a clean che
 These parts of the product have no end-to-end flow:
 
 - ERC-8004 feedback (identity is flow 18);
-- the Stripe MPP rail;
+- the MPP rail's Stripe card method (behind a flag; the Tempo method is flow 19), and MPP through the hub;
 - receipt trees and lineage;
 - ENS seller names;
 - the mainnet guard;

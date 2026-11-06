@@ -7,6 +7,7 @@ import { discovery } from "./discovery.flow.ts";
 import { erc8004Identity } from "./erc8004-identity.flow.ts";
 import { hedera } from "./hedera.flow.ts";
 import { hederaMcp } from "./hedera-mcp.flow.ts";
+import { mpp } from "./mpp.flow.ts";
 import { productionConsole, productionHub } from "./production.flow.ts";
 import { publicGateway } from "./public-gateway.flow.ts";
 import { publicHedera } from "./public-hedera.flow.ts";
@@ -38,6 +39,7 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "16", flow: publicGateway },
   { n: "17", flow: hederaMcp },
   { n: "18", flow: erc8004Identity },
+  { n: "19", flow: mpp },
   { n: "14a", flow: productionConsole },
   { n: "14b", flow: productionHub },
   { n: "9", flow: web },
