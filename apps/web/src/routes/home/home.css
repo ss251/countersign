@@ -1,243 +1,443 @@
-/* The front door: the purpose and the live numbers first, then how it works beside a real offer. */
+/* The settlement desk: ruled sections on one sheet of paper, read top to bottom. */
 
-.home {
+.desk {
   display: grid;
   gap: var(--sp-12);
 }
 
-.home__lead {
+.desk__head {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-2);
+}
+
+.desk__purpose {
+  max-width: 44ch;
+  font-size: var(--t-24);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.desk__section {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+.desk__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--sp-4);
-  max-width: 820px;
 }
 
-.home__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.home__title {
-  font-size: clamp(2rem, 1.2rem + 2.4vw, var(--t-44));
-  line-height: 1.06;
-  letter-spacing: -0.03em;
-}
-
-/* Numbers inside the sentence, not in tiles. */
-.home__live {
-  max-width: 64ch;
-  min-height: 1.6em;
-  font-size: var(--t-17);
-  color: var(--ink);
-}
-
-.home__live strong {
-  font-weight: 700;
-}
-
-.home__rails {
-  color: var(--slate);
-}
-
-.home__live-skeleton {
-  display: inline-block;
-  width: 22ch;
-  height: 1em;
-  border-radius: var(--r-1);
-  background: var(--sunk);
-  vertical-align: middle;
-}
-
-.home__quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-5);
-  font-size: var(--t-14);
-  font-weight: 500;
-}
-
-.home__command {
-  max-width: 720px;
-}
-
-.home__h2 {
-  margin-bottom: var(--sp-3);
+.desk__aside {
   color: var(--slate);
   font-size: var(--t-13);
-  font-weight: 600;
-  letter-spacing: 0;
 }
 
-.home__note {
-  max-width: 64ch;
+.desk__aside-link {
+  color: var(--ink);
+  font-size: var(--t-13);
+  text-underline-offset: 0.2em;
+}
+
+.desk__note {
+  padding: var(--sp-4) 0;
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
   color: var(--slate);
   font-size: var(--t-14);
 }
 
-.home__block {
+/* Rows shared by the rail strip and the settlements: ruled, two lines, figures right. */
+
+.rails,
+.srows {
   display: grid;
-  gap: var(--sp-2);
+  border-top: var(--hair) solid var(--line);
 }
 
-/* How it works: three steps on the left, the real thing on the right. */
-.how {
+.rail,
+.srow {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: var(--sp-8) var(--sp-12);
   align-items: start;
-}
-
-@media (max-width: 960px) {
-  .how {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.steps3 {
-  display: grid;
-  border-top: 1px solid var(--ink);
-}
-
-.steps3__item {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  grid-template-rows: auto auto;
   column-gap: var(--sp-4);
   row-gap: 2px;
-  padding: var(--sp-4) 0;
+  min-width: 0;
+  padding: var(--sp-3) 0;
   border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+  line-height: 1.45;
 }
 
-.steps3__n {
-  grid-row: 1 / 3;
+.rail > *,
+.srow > * {
+  min-width: 0;
+}
+
+.rail--head,
+.srow--head {
+  padding: var(--sp-2) 0;
   color: var(--slate);
-  font-size: var(--t-17);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.rail--skeleton,
+.srow--skeleton {
+  height: 62px;
+}
+
+/* The rail strip */
+
+.rail {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.9fr);
+}
+
+.rail__name {
+  display: grid;
   font-weight: 500;
 }
 
-.steps3__name {
-  font-size: var(--t-17);
+.rail__net {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 400;
 }
 
-.steps3__body {
-  max-width: 60ch;
+.rail--off .rail__name {
   color: var(--slate);
-  font-size: var(--t-15);
 }
+
+.rail--off .rail__net {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+.rail__state {
+  display: grid;
+  justify-items: start;
+}
+
+.rail__why {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.rail__last {
+  font-family: var(--mono);
+  font-size: var(--t-13);
+}
+
+.rail__today {
+  text-align: right;
+}
+
+.rail__zero,
+.rail__none {
+  color: var(--slate);
+}
+
+/* The settlements */
+
+.srow {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 1.3fr) minmax(0, 0.75fr);
+}
+
+.srow__what,
+.srow__outcome,
+.srow__proof {
+  display: grid;
+  justify-items: start;
+}
+
+.srow__title {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.srow__job,
+.srow__rail,
+.srow__when {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.srow__job {
+  font-size: var(--t-12);
+}
+
+.srow__amount {
+  text-align: right;
+}
+
+.srow__proof {
+  font-size: var(--t-13);
+}
+
+.srow__tx {
+  color: var(--slate);
+}
+
+.srow__slip {
+  color: var(--ink);
+  font-size: var(--t-13);
+  text-underline-offset: 0.2em;
+}
+
+.srow__slip .mono {
+  font-size: var(--t-12);
+}
+
+.srow__none {
+  color: var(--slate);
+}
+
+.srow__age {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--t-13);
+}
+
+.srow__when {
+  font-family: var(--sans);
+  font-size: var(--t-12);
+}
+
+/* How a purchase clears: three steps, each over the artifact it names, aligned on one grid. */
+
+.clear {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto auto auto 1fr;
+  column-gap: var(--sp-8);
+  border-top: var(--hair) solid var(--line);
+  padding-top: var(--sp-5);
+}
+
+.clear__step {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--sp-2);
+  align-content: start;
+  min-width: 0;
+}
+
+.clear__n {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.clear__name {
+  font-size: var(--t-16);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.clear__body {
+  max-width: 46ch;
+  color: var(--slate);
+  font-size: var(--t-14);
+  line-height: 1.55;
+}
+
+/* An artifact is a ruled box on the same paper: a receipt, not a tile. */
 
 .artifact {
   display: grid;
+  align-content: start;
+  gap: var(--sp-4);
+  min-width: 0;
+  margin-top: var(--sp-3);
+  padding: var(--sp-4);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+}
+
+.artifact--skeleton {
+  min-height: 220px;
+}
+
+.artifact__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--sp-3);
-  margin: 0;
+  min-width: 0;
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--hair) dashed var(--line);
 }
 
-.artifact.card {
-  padding: var(--sp-5);
-}
-
-.artifact__eyebrow {
+.artifact__meta {
   color: var(--slate);
+  font-family: var(--mono);
   font-size: var(--t-12);
-  font-weight: 600;
 }
 
-.artifact__title {
-  font-size: var(--t-20);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.artifact__title a {
-  text-decoration-color: transparent;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .artifact__title a:hover {
-    text-decoration-color: currentColor;
-  }
+.artifact__link {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  text-underline-offset: 0.2em;
+  white-space: nowrap;
 }
 
 .artifact__exact {
   display: grid;
-  gap: 2px;
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.artifact__payee {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  justify-items: start;
   gap: var(--sp-1);
+}
+
+.artifact__note {
   color: var(--slate);
   font-size: var(--t-13);
 }
 
-.artifact .hold {
-  background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.artifact .hold__seam {
-  fill: var(--paper);
-}
-
-.artifact__caption {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-/* Latest settlements, as activity rows: what, then how and when, then the amount. */
-.activity {
-  display: grid;
-  max-width: 820px;
-  border-top: var(--hair) solid var(--line);
-}
-
-.activity__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  min-height: 64px;
-  padding: var(--sp-3) 0;
-  border-bottom: var(--hair) solid var(--line);
+.artifact__go {
+  justify-self: start;
   color: var(--ink);
-  text-decoration: none;
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-underline-offset: 0.2em;
 }
 
-/* Same height as a real row, so nothing jumps when the hub answers. */
-.activity__row--skeleton::before {
-  content: "";
-  width: 40%;
-  height: 14px;
-  border-radius: var(--r-1);
-  background: var(--sunk);
+/* A field grid: small caps over mono values, two to a row, like the face of a ticket. */
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-4);
 }
 
-.activity__main {
+.fields > div {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.activity__title {
-  font-weight: 600;
+.fields__wide {
+  grid-column: 1 / -1;
 }
 
-.activity__meta {
-  color: var(--slate);
-  font-size: var(--t-13);
+.fields dd {
+  min-width: 0;
+  font-size: var(--t-14);
 }
 
-.activity__meta .status {
-  font-size: var(--t-13);
+.fields__word {
+  font-size: var(--t-14);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .activity__row--link:hover .activity__title {
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
+/* The foot: the terminal way in, and the rest of the product. */
+
+.desk__foot {
+  display: grid;
+  gap: var(--sp-4);
+  padding-top: var(--sp-6);
+  border-top: var(--hair) solid var(--line);
+}
+
+.desk__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  font-size: var(--t-14);
+}
+
+.desk__links a {
+  color: var(--ink);
+  text-underline-offset: 0.2em;
+}
+
+/* Narrower than the five columns: each row folds into two lines, figures still on the right. */
+
+@media (max-width: 1000px) {
+  .clear {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    row-gap: var(--sp-8);
+  }
+  .clear__step {
+    grid-row: auto;
+    grid-template-rows: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .desk {
+    gap: var(--sp-10);
+  }
+  .desk__purpose {
+    font-size: var(--t-20);
+  }
+  .rail--head,
+  .srow--head {
+    display: none;
+  }
+  .rail {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name today"
+      "state last";
+    row-gap: var(--sp-2);
+  }
+  .rail__name {
+    grid-area: name;
+  }
+  .rail__state {
+    grid-area: state;
+  }
+  .rail__last {
+    grid-area: last;
+    text-align: right;
+    align-self: end;
+  }
+  .rail__today {
+    grid-area: today;
+  }
+  .srow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "what amount"
+      "outcome age"
+      "proof proof";
+    row-gap: var(--sp-2);
+  }
+  .srow__what {
+    grid-area: what;
+  }
+  .srow__outcome {
+    grid-area: outcome;
+  }
+  .srow__amount {
+    grid-area: amount;
+  }
+  .srow__proof {
+    grid-area: proof;
+    grid-auto-flow: column;
+    justify-content: start;
+    gap: var(--sp-4);
+  }
+  .srow__age {
+    grid-area: age;
+    align-self: end;
+  }
+  .srow__when {
+    display: none;
   }
 }

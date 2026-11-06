@@ -316,7 +316,7 @@ function CountersignCard({ listing, view }: { listing: Listing; view: EnvelopeVi
         Countersign card
       </h2>
       <p className="cs-card__exact">
-        {view.agentName} countersigns exactly <Amount money={money} size="lg" />
+        {view.agentName} countersigns exactly <Amount money={money} size="lg" flight />
       </p>
       <dl className="cs-card__terms">
         <div>

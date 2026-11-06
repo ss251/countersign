@@ -110,9 +110,13 @@ function ApprovalFlow({
       rememberApprovalToken(null);
       setToken(null);
       setProblem(e.code === "no-token" ? null : "The hub did not accept that token. Nothing was signed. Paste it again.");
-    } else if (e instanceof HubError && e.status === 409) {
+    } else if (e instanceof HubError && (e.status === 409 || e.status === 404)) {
       setGone(true);
-      setProblem("This request was already decided, or it expired. Nothing was signed.");
+      setProblem(
+        e.status === 404
+          ? "The hub no longer knows this request. Nothing was signed."
+          : "This request was already decided, or it expired. Nothing was signed.",
+      );
     } else if (e instanceof HubError && e.status === 503) {
       setProblem("This hub has no approver set, so it cannot take a countersignature from a phone. Nothing was signed.");
     } else {
@@ -191,7 +195,7 @@ function ApprovalFlow({
 
       <section className="approval__amount" aria-label="Amount">
         <p className="approval__exact">You countersign exactly</p>
-        <Amount money={money} size="xl" />
+        <Amount money={money} size="xl" flight />
         {toll ? (
           <dl className="approval__split">
             <div>
@@ -278,7 +282,7 @@ function ApprovalFlow({
       ) : (
         <div className="approval__dock">
           <p className="approval__dock-line">
-            <Amount money={money} size="sm" /> to {listing.seller.name}, for {offer.title}
+            <Amount money={money} size="sm" flight /> to {listing.seller.name}, for {offer.title}
           </p>
           {problem ? (
             <p className="approval__problem" role="alert">
@@ -475,7 +479,7 @@ function JobLedger({ job, approval }: { job: JobView; approval: Approval }) {
             <span className="ledger__marker" aria-hidden="true" />
             <span className="ledger__label">{s.label}</span>
             <span className="ledger__detail">
-              {isDone && s.id === "held" ? <Amount money={usd(approval.amount, approval.rail)} size="sm" /> : null}
+              {isDone && s.id === "held" ? <Amount money={usd(approval.amount, approval.rail)} size="sm" flight /> : null}
               {isActive && s.id === "held"
                 ? job.slow
                   ? "No payment yet. Your agent may have stopped waiting."
