@@ -6,8 +6,9 @@
  *   bond show --escrow <address> [--rpc <url>]
  *
  * deposit signs an EIP-3009 ReceiveWithAuthorization from the seller to the escrow, good for ten
- * minutes, and submits depositBond itself. On Arc the token domain is "USDC"/"2"; --token-name
- * and --token-version override it.
+ * minutes, and submits depositBond itself. The token nonce is derived from a random salt exactly
+ * as the escrow derives it, so a buyer's countersignature can never be replayed as a deposit. On
+ * Arc the token domain is "USDC"/"2"; --token-name and --token-version override it.
  */
 
 import {
@@ -15,11 +16,14 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  encodeAbiParameters,
   getAddress,
   type Hex,
   http,
   isAddress,
+  keccak256,
   parseSignature,
+  toBytes,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { parseAtomic } from "@countersign/core";
@@ -50,7 +54,7 @@ const bondAbi = [
       { name: "amount", type: "uint256" },
       { name: "validAfter", type: "uint256" },
       { name: "validBefore", type: "uint256" },
-      { name: "nonce", type: "bytes32" },
+      { name: "salt", type: "bytes32" },
       { name: "v", type: "uint8" },
       { name: "r", type: "bytes32" },
       { name: "s", type: "bytes32" },
@@ -203,7 +207,8 @@ export async function runBond(
     abi: bondAbi,
     functionName: "token",
   });
-  const nonce = randomNonce();
+  const salt = randomSalt();
+  const nonce = bondDepositNonce(account.address, amount, salt);
   const validAfter = 0n;
   const validBefore = BigInt(Math.floor(Date.now() / 1000) + 600);
   const signature = await account.signTypedData({
@@ -230,13 +235,25 @@ export async function runBond(
     address: command.escrow,
     abi: bondAbi,
     functionName: "depositBond",
-    args: [account.address, amount, validAfter, validBefore, nonce, v, sig.r, sig.s],
+    args: [account.address, amount, validAfter, validBefore, salt, v, sig.r, sig.s],
   });
   await pub.waitForTransactionReceipt({ hash });
   log(hash);
 }
 
-function randomNonce(): Hex {
+const BOND_DEPOSIT_TYPEHASH = keccak256(toBytes("BondDeposit(address payee,uint256 amount,bytes32 salt)"));
+
+/** The token nonce the escrow derives from a deposit salt. */
+export function bondDepositNonce(payee: Address, amount: bigint, salt: Hex): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "address" }, { type: "uint256" }, { type: "bytes32" }],
+      [BOND_DEPOSIT_TYPEHASH, payee, amount, salt],
+    ),
+  );
+}
+
+function randomSalt(): Hex {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
