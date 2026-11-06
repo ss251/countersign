@@ -161,10 +161,6 @@ function challengeResponse(requirements: PaymentRequirements, error: string): Re
   return Response.json({ error }, { status: 402, headers: { "www-authenticate": header } });
 }
 
-console.log(
-  `mpp demo on http://localhost:${port}: Tempo testnet (Moderato, chain 42431), pathUSD, 0.01 per call; Stripe card method ${cardEnabled ? "on" : "off"}`,
-);
-
 const server = Bun.serve({
   port,
   async fetch(request: Request): Promise<Response> {
@@ -228,6 +224,10 @@ const server = Bun.serve({
     return new Response("not found", { status: 404 });
   },
 });
+
+console.log(
+  `mpp demo on http://localhost:${server.port}: Tempo testnet (Moderato, chain 42431), pathUSD, 0.01 per call; Stripe card method ${cardEnabled ? "on" : "off"}`,
+);
 
 process.on("SIGTERM", () => {
   server.stop();
