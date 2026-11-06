@@ -12,7 +12,8 @@
 # origin; server.ts forwards them.
 #
 # Environment: RAILWAY_SERVICE (default "web"); DRY_RUN=1 stages without uploading;
-# VITE_HUB_URL= (set but empty) builds a console that shows labelled fixtures.
+# VITE_HUB_URL defaults to the production hub: the console is live by default, and ?hub=off is the
+# only way to fixtures. VITE_HUB_URL=/hub builds against this server's same-origin proxy instead.
 set -euo pipefail
 
 ref="${1:-origin/main}"
@@ -37,7 +38,7 @@ fi
 echo "building apps/web from $label"
 (
   cd "$src/apps/web"
-  VITE_HUB_URL="${VITE_HUB_URL-/hub}" \
+  VITE_HUB_URL="${VITE_HUB_URL:-https://hub-production-e85e.up.railway.app}" \
   VITE_RELAY_URL="${VITE_RELAY_URL-/relay}" \
   VITE_MERCHANT_URL="${VITE_MERCHANT_URL-/merchant-api}" \
     bunx --bun vite build --logLevel warn
