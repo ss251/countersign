@@ -256,6 +256,7 @@ describe("B21: release confirms the schedule it held", () => {
       payer: PAYER,
       transaction: CREATE_TX,
       network: HEDERA_TESTNET,
+      explorerRef: `${NOW + 5}.000000000`,
     });
   });
 
@@ -290,6 +291,7 @@ describe("B21: release confirms the schedule it held", () => {
       payer: PAYER,
       transaction: CREATE_TX,
       network: HEDERA_TESTNET,
+      explorerRef: `${NOW + 5}.000000000`,
     });
   });
 });
