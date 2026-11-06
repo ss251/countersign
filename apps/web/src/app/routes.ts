@@ -53,12 +53,20 @@ export function hasRoute(name: string): boolean {
   return `../routes/${name}/index.tsx` in modules;
 }
 
-/** Top-level views, in the order they are shown in navigation. */
-export const VIEWS = [
-  { name: "buyer", label: "Buyer" },
-  { name: "seller", label: "Seller" },
-  { name: "merchant", label: "Merchant" },
-  { name: "registry", label: "Registry" },
-  { name: "verify", label: "Verify" },
-  { name: "demo", label: "Demo" },
+/**
+ * Top-level views, in navigation order. The public console shows only finished screens:
+ * a view joins the navigation when it is marked ready and its route folder exists.
+ */
+const ALL_VIEWS = [
+  { name: "buyer", label: "Buyer", ready: true },
+  { name: "seller", label: "Seller", ready: true },
+  { name: "merchant", label: "Merchant", ready: true },
+  { name: "registry", label: "Registry", ready: false },
+  { name: "verify", label: "Verify", ready: true },
+  { name: "demo", label: "Demo", ready: false },
 ] as const;
+
+export const VIEWS = ALL_VIEWS.filter((v) => v.ready && hasRoute(v.name));
+
+/** Where "#/" lands until the overview is built: the most complete view. */
+export const LANDING = "/buyer";

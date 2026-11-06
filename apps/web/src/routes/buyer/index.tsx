@@ -2,6 +2,7 @@ import { useState } from "react";
 import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
+import { VIEWS } from "../../app/routes.ts";
 import { api, useResource, type JobView } from "../../lib/api.ts";
 import { formatAmount, nowUnix, remainingAtomic, usd } from "../../lib/format.ts";
 import type { Approval, Purchase } from "../../lib/types.ts";
@@ -28,6 +29,7 @@ export default function BuyerPage({ query }: PageProps) {
   const purchases = useResource(() => api.purchases(), []);
   /** Approvals the human has countersigned: no longer waiting, even while they settle. */
   const [signed, setSigned] = useState<string[]>([]);
+  const [viewsOpen, setViewsOpen] = useState(false);
 
   const fixtures = [envelope, approvals, purchases].some((r) => r.source === "fixtures");
   const waiting = (approvals.data ?? []).filter((a) => !signed.includes(a.id)).length;
@@ -76,12 +78,38 @@ export default function BuyerPage({ query }: PageProps) {
   };
 
   return (
+    <div className="phone-stage">
+    <aside className="phone-note" aria-label="About this view">
+      <p className="phone-note__eyebrow">Buyer · phone</p>
+      <p className="phone-note__title">The human side of an agent's purchase.</p>
+      <p className="phone-note__body">
+        Your agent buys inside the envelope you set. Above your limit it waits, and you hold to countersign the exact offer
+        and amount.
+      </p>
+      <nav className="phone-note__nav" aria-label="Other views">
+        {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
+          <Link key={v.name} to={`/${v.name}`}>
+            {v.label}
+          </Link>
+        ))}
+      </nav>
+    </aside>
     <div className="phone">
       <header className="phone__bar">
-        <Link to="/" className="phone__brand" aria-label="countersign, all views">
+        <button
+          type="button"
+          className="phone__brand"
+          aria-expanded={viewsOpen}
+          aria-controls="phone-views"
+          aria-label="countersign, switch view"
+          onClick={() => setViewsOpen((o) => !o)}
+        >
           <Mark size={22} />
           <span className="phone__name">countersign</span>
-        </Link>
+          <svg className={viewsOpen ? "phone__chevron is-open" : "phone__chevron"} viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+            <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <div className="phone__bar-end">
           <FixtureNote show={fixtures} />
           {view && left ? (
@@ -101,6 +129,16 @@ export default function BuyerPage({ query }: PageProps) {
           ) : null}
         </div>
       </header>
+      {viewsOpen ? (
+        <nav id="phone-views" className="phone__views" aria-label="Views">
+          <p className="phone__views-label">You are on the buyer's phone. Other views:</p>
+          {VIEWS.filter((v) => v.name !== "buyer").map((v) => (
+            <Link key={v.name} to={`/${v.name}`} className="phone__views-link">
+              {v.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
 
       <div className="phone__body">
         {tab === "approvals" ? (
@@ -130,6 +168,7 @@ export default function BuyerPage({ query }: PageProps) {
           </Link>
         ))}
       </nav>
+    </div>
     </div>
   );
 }

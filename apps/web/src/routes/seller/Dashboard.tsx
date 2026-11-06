@@ -1,14 +1,15 @@
 import { useId, useMemo } from "react";
 import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDuration, formatTime, formatDay, shortHex, usd } from "../../lib/format.ts";
+import { formatDay, formatTime, shortHex, symbolFor, usd } from "../../lib/format.ts";
+import { hubBase } from "../../lib/hub.ts";
 import type { Listing, Purchase } from "../../lib/types.ts";
-import { Amount, Empty, FixtureNote, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
-import { releaseTotals } from "./logic.ts";
+import { Amount, CopyButton, Empty, FixtureNote, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
+import { absoluteHub, publishCommand, releaseTotals } from "./logic.ts";
 
 /**
- * A seller's desk: one seller at a time. What each offer charges and accepts, whether its
- * runner is connected, what it has released, and the latest sales with their slips.
+ * A seller's desk, one seller at a time. Totals first, with the failures counted right beside
+ * them; then each offer's record in a table; then the latest sales with their slips.
  */
 export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const listings = useResource(() => api.listings(), []);
@@ -25,7 +26,7 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
     return (
       <div className="page">
         <Empty title="The hub did not answer.">
-          Check that it is running, or open this page without <span className="mono">?hub</span> to see fixtures.
+          Check that it is running, or open this page with <span className="mono">?hub=off</span> to see fixture data.
         </Empty>
       </div>
     );
@@ -33,7 +34,6 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
 
   const offers = (listings.data ?? []).filter((l) => seller && l.offer.seller.toLowerCase() === seller.address);
   const sales = (purchases.data ?? []).filter((p) => seller && p.seller.address.toLowerCase() === seller.address);
-  const totals = releaseTotals(sales);
   const released = sales.filter((p) => p.status === "released").length;
   const refunded = sales.filter((p) => p.status === "refunded").length;
   const recent = [...sales].sort((a, b) => b.at - a.at).slice(0, 6);
@@ -74,51 +74,54 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
         </div>
       </header>
 
-      <div className="page__split seller__split">
-        <section className="section" aria-labelledby="offers-title">
-          <div className="seller__section-head">
+      {offers.length === 0 ? (
+        <FirstOffer />
+      ) : (
+        <>
+          <section className="totals" aria-label="Totals">
+            <div className="totals__money">
+              {releaseTotals(sales).map((t) => (
+                <Amount key={t.symbol} money={{ amount: t.atomic, asset: { symbol: t.symbol, decimals: 6 } }} size="xl" />
+              ))}
+              {released === 0 ? <Amount money={usd("0")} size="xl" /> : null}
+              <span className="totals__label">released to you</span>
+            </div>
+            <p className="totals__line num">
+              {plural(sales.length, "call")} · {released} released · {refunded} refunded · {rate(released, refunded)} delivered
+            </p>
+            <Sparkline sales={sales} />
+          </section>
+
+          <section className="section" aria-labelledby="offers-title">
             <h2 id="offers-title" className="section__title">
               Offers
             </h2>
-            <p className="seller__count num">{offers.length === 1 ? "1 offer" : `${offers.length} offers`}</p>
-          </div>
-          {offers.length === 0 ? (
-            <Empty title="Nothing published yet.">
-              Publish a SKILL.md and it appears here with its price, its rails and every sale.{" "}
-              <Link to="/seller/publish">Publish a skill</Link>
-            </Empty>
-          ) : (
-            <ul className="offers">
-              {offers.map((l) => (
-                <OfferRow key={l.hash} listing={l} />
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <aside className="page__rail seller__rail" aria-label="Earnings">
-          <section className="card seller__earned">
-            <h2 className="section__title">Released to you</h2>
-            {totals.length === 0 ? (
-              <p className="seller__none">No releases yet. Money arrives here when a buyer's escrow releases.</p>
-            ) : (
-              <div className="seller__totals">
-                {totals.map((t) => (
-                  <Amount key={t.symbol} money={{ amount: t.atomic, asset: { symbol: t.symbol, decimals: 6 } }} size="lg" />
+            <table className="ledger-table">
+              <thead>
+                <tr>
+                  <th scope="col">Offer</th>
+                  <th scope="col" className="is-num">Price</th>
+                  <th scope="col" className="is-num">Calls</th>
+                  <th scope="col" className="is-num">Earned</th>
+                  <th scope="col" className="is-num">Refunded</th>
+                  <th scope="col" className="is-num">Delivered</th>
+                  <th scope="col">Runner</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offers.map((l) => (
+                  <OfferRow key={l.hash} listing={l} sales={sales.filter((p) => p.offerHash === l.hash)} />
                 ))}
-              </div>
-            )}
-            <p className="seller__record num">
-              {released} released · {refunded} refunded
-            </p>
+              </tbody>
+            </table>
           </section>
 
-          <section className="section" aria-labelledby="sales-title">
+          <section className="section seller__sales" aria-labelledby="sales-title">
             <h2 id="sales-title" className="section__title">
               Latest sales
             </h2>
             {recent.length === 0 ? (
-              <p className="seller__none">Each paid call lands here with its slip.</p>
+              <p className="seller__quiet">No sales yet. Each paid call lands here with its slip.</p>
             ) : (
               <ul className="sales">
                 {recent.map((p) => (
@@ -126,53 +129,80 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
                 ))}
               </ul>
             )}
+            {refunded === 0 && released > 0 ? <p className="seller__quiet">No refunds. Every call so far delivered before its deadline.</p> : null}
           </section>
-        </aside>
-      </div>
+        </>
+      )}
     </div>
   );
 }
 
-function OfferRow({ listing }: { listing: Listing }) {
+function OfferRow({ listing, sales }: { listing: Listing; sales: Purchase[] }) {
   const { offer, stats, status, online, reason } = listing;
+  const released = stats?.released ?? sales.filter((p) => p.status === "released").length;
+  const refunded = stats?.refunded ?? sales.filter((p) => p.status === "refunded").length;
+  const calls = stats?.calls ?? sales.length;
+  const earned = sales
+    .filter((p) => p.status === "released")
+    .reduce((sum, p) => sum + BigInt(p.amount), 0n);
   const delisted = status === "delisted";
   return (
-    <li className={cx("offer-row", delisted && "offer-row--delisted")}>
-      <div className="offer-row__main">
-        <p className="offer-row__title">
+    <tr className={cx(delisted && "is-delisted")}>
+      <th scope="row" className="ledger-table__offer">
+        <span className="ledger-table__title">
           <Link to={`/offer/${listing.hash}`}>{offer.title}</Link>
           <Tag>{offer.adapter}</Tag>
-        </p>
-        <p className="offer-row__summary">{offer.summary}</p>
-        <p className="offer-row__rails">
+        </span>
+        <span className="ledger-table__rails">
           {offer.rails.map((r) => (
             <RailTag key={r} rail={r} />
           ))}
-        </p>
-      </div>
-      <dl className="offer-row__facts">
-        <div>
-          <dt>Price</dt>
-          <dd>
-            <Amount money={usd(offer.price, offer.rails[0])} size="md" />
-          </dd>
-        </div>
-        <div>
-          <dt>Deadline</dt>
-          <dd className="num">{formatDuration(offer.deadline)}</dd>
-        </div>
-        <div>
-          <dt>Record</dt>
-          <dd className="num">{stats ? `${stats.released} released · ${stats.refunded} refunded` : "No calls yet"}</dd>
-        </div>
-        <div>
-          <dt>Runner</dt>
-          <dd className={cx("offer-row__runner", online === false && "offer-row__runner--off")}>
-            {delisted ? `Delisted${reason ? `: ${reason}` : ""}` : online === undefined ? "Not reported" : online ? "Online" : "Offline"}
-          </dd>
-        </div>
-      </dl>
-    </li>
+        </span>
+      </th>
+      <td className="is-num" data-label="Price">
+        <Amount money={usd(offer.price, offer.rails[0])} size="sm" />
+      </td>
+      <td className="is-num num" data-label="Calls">
+        {calls}
+      </td>
+      <td className="is-num" data-label="Earned">
+        {earned > 0n ? <Amount money={usd(earned, offer.rails[0])} size="sm" /> : <span className="ledger-table__none">—</span>}
+      </td>
+      <td className="is-num num" data-label="Refunded">
+        {refunded}
+      </td>
+      <td className="is-num num" data-label="Delivered">
+        {rate(released, refunded)}
+      </td>
+      <td data-label="Runner" className={cx("ledger-table__runner", online === false && "is-off")}>
+        {delisted ? `Delisted${reason ? `: ${reason}` : ""}` : online === undefined ? "—" : online ? "Online" : "Offline"}
+      </td>
+    </tr>
+  );
+}
+
+/** Calls per hour over the last day. A count, so ink, never blue. */
+function Sparkline({ sales }: { sales: Purchase[] }) {
+  const now = Math.floor(Date.now() / 1000);
+  const buckets = Array.from({ length: 24 }, () => 0);
+  for (const p of sales) {
+    const h = Math.floor((now - p.at) / 3600);
+    if (h >= 0 && h < 24) buckets[23 - h]! += 1;
+  }
+  const total = buckets.reduce((a, b) => a + b, 0);
+  const max = Math.max(1, ...buckets);
+  const w = 240;
+  const hgt = 32;
+  const step = w / (buckets.length - 1);
+  const points = buckets.map((v, i) => `${(i * step).toFixed(1)},${(hgt - 2 - (v / max) * (hgt - 4)).toFixed(1)}`).join(" ");
+  return (
+    <figure className="spark">
+      <svg viewBox={`0 0 ${w} ${hgt}`} width={w} height={hgt} role="img" aria-label={`${plural(total, "call")} in the last 24 hours`}>
+        <line x1="0" x2={w} y1={hgt - 2} y2={hgt - 2} className="spark__base" />
+        <polyline points={points} className="spark__line" />
+      </svg>
+      <figcaption className="spark__caption num">{plural(total, "call")} in the last 24 hours</figcaption>
+    </figure>
   );
 }
 
@@ -204,6 +234,45 @@ function SaleRow({ p }: { p: Purchase }) {
   );
 }
 
+/** The empty desk teaches the next step with the real command. */
+function FirstOffer() {
+  const command = publishCommand({
+    hub: absoluteHub(hubBase(), window.location.origin),
+    price: "20000",
+    deadline: 120,
+    rails: ["escrow"],
+  });
+  return (
+    <section className="first-offer" aria-labelledby="first-title">
+      <h2 id="first-title" className="first-offer__title">
+        No calls yet. Publish your first offer.
+      </h2>
+      <p className="first-offer__body">
+        From the repository root, beside your SKILL.md, with your key in <span className="mono">CS_SELLER_KEY</span>:
+      </p>
+      <div className="command">
+        <div className="command__head">
+          <p className="field__label">Publish at 0.02 {symbolFor("escrow")} a call</p>
+          <CopyButton value={command} label="publish command" />
+        </div>
+        <pre className="command__body mono">{command}</pre>
+      </div>
+      <p className="first-offer__body">
+        Or <Link to="/seller/publish">build the terms step by step</Link>.
+      </p>
+    </section>
+  );
+}
+
+function rate(released: number, refunded: number): string {
+  const n = released + refunded;
+  return n === 0 ? "—" : `${Math.round((released / n) * 100)}%`;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 interface SellerRef {
   address: string;
   name: string;
@@ -217,3 +286,4 @@ function sellersOf(listings: Listing[]): SellerRef[] {
   }
   return [...seen.values()];
 }
+

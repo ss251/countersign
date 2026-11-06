@@ -1,9 +1,13 @@
+import { useEffect } from "react";
 import type { PageProps } from "../../app/routes.ts";
+import { navigate } from "../../app/router.tsx";
+import { LANDING } from "../../app/routes.ts";
 
-export default function OverviewPage(_props: PageProps) {
-  return (
-    <section style={{ maxWidth: "var(--content)", margin: "0 auto", padding: "var(--sp-10) var(--sp-6)" }}>
-      <h1>Overview</h1>
-    </section>
-  );
+/** The overview is not built yet, so "#/" lands on the most complete view instead of a blank page. */
+export default function HomePage({ query }: PageProps) {
+  useEffect(() => {
+    const q = query.toString();
+    navigate(`${LANDING}${q ? `?${q}` : ""}`, { replace: true });
+  }, [query]);
+  return null;
 }
