@@ -34,6 +34,7 @@ export interface ChainReader {
   estimateContractGas(call: SimulationCall): Promise<bigint>;
   estimateFeesPerGas(): Promise<FeeEstimate>;
   getBalance(args: { address: Address }): Promise<bigint>;
+  getTransactionReceipt(args: { hash: Hash }): Promise<Receipt | null>;
   waitForTransactionReceipt(args: { hash: Hash; timeout?: number }): Promise<Receipt>;
 }
 

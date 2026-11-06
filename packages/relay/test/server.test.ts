@@ -64,7 +64,9 @@ describe("relay server", () => {
       balanceWei: string;
       balanceWbt: string;
       ceiling: { usedWei: string; remainingWei: string; capWei: string };
-      policy: { maxFeePerGasWei: string; allowedTokens: string[] };
+      policy: { maxFeePerGasWei: string; allowedTokens: string[]; minAmount: string };
+      payees: string[];
+      minAmount: string;
     };
     expect(body.address).toBe(relay.relayer.address);
     expect(body.balanceWei).toBe("1500000000000000000");
@@ -73,6 +75,8 @@ describe("relay server", () => {
     expect(body.ceiling.capWei).toBe("1000000000000000000");
     expect(body.policy.maxFeePerGasWei).toBe("50000000000");
     expect(body.policy.allowedTokens).toEqual([USDT.address]);
+    expect(body.payees).toEqual([relay.merchant.address]);
+    expect(body.minAmount).toBe("10000");
   });
 
   test("/verify accepts a valid payment", async () => {
@@ -179,6 +183,34 @@ describe("relay server", () => {
     const csv = await app.request(`/orders.csv?merchant=${merchant}`);
     expect(csv.headers.get("content-disposition")).toContain("attachment");
     expect((await app.request("/orders.csv")).status).toBe(400);
+  });
+
+  test("list routes refuse without a filter", async () => {
+    const app = appFor(createTestRelay());
+    for (const path of ["/payments", "/orders", "/payments.csv", "/orders.csv"]) {
+      const response = await app.request(path);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "filter_required" });
+    }
+  });
+
+  test("detail routes stay public", async () => {
+    const relay = createTestRelay();
+    const id = fakeHash();
+    relay.ledger.recordPayment({
+      id,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: id,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    const app = appFor(relay);
+    expect((await app.request(`/payments/${id}`)).status).toBe(200);
+    expect((await app.request(`/orders/${id}`)).status).toBe(200);
   });
 
   test("/status names the escrow, token and chain", async () => {

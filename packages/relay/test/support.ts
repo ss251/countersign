@@ -10,6 +10,7 @@ import type { ChainReader, ChainWriter, ContractCall, Receipt, SimulationCall, W
 import { WHITECHAIN_ESCROW } from "../src/whitechain-config.ts";
 import { Relayer } from "../src/relayer.ts";
 import type { RelayerPolicy } from "../src/relayer.ts";
+import type { SpendRecord } from "../src/ledger.ts";
 
 export const NOW = 1_760_000_000;
 
@@ -43,6 +44,8 @@ export class FakeChain implements ChainReader, ChainWriter {
   effectiveGasPrice = 1_000_000_000n;
   blockNumber = 100n;
   receiptStatus: "success" | "reverted" = "success";
+  receipts = new Map<string, Receipt>();
+  feeEstimate: { maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint } | null = null;
   failSimulation = false;
   timeoutReceipt = false;
   writeDelayMs = 0;
@@ -72,7 +75,7 @@ export class FakeChain implements ChainReader, ChainWriter {
     const args = call.args ?? [];
     if (call.functionName === "balanceOf") {
       const owner = args[0] as string;
-      return this.balances.get(owner.toLowerCase()) ?? 0n;
+      return this.balances.get(owner.toLowerCase()) ?? 100_000_000n;
     }
     if (call.functionName === "authorizationState") {
       const owner = args[0] as string;
@@ -95,7 +98,8 @@ export class FakeChain implements ChainReader, ChainWriter {
     return this.gasEstimate;
   }
 
-  async estimateFeesPerGas(): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+  async estimateFeesPerGas(): Promise<{ maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint }> {
+    if (this.feeEstimate) return this.feeEstimate;
     return {
       maxFeePerGas: this.maxFeePerGas,
       maxPriorityFeePerGas: this.maxPriorityFeePerGas,
@@ -104,6 +108,10 @@ export class FakeChain implements ChainReader, ChainWriter {
 
   async getBalance(_args: { address: Address }): Promise<bigint> {
     return this.wbt;
+  }
+
+  async getTransactionReceipt(args: { hash: Hash }): Promise<Receipt | null> {
+    return this.receipts.get(args.hash) ?? null;
   }
 
   async waitForTransactionReceipt(args: {
@@ -148,6 +156,10 @@ export type TestRelayOptions = {
   minBalanceWei?: bigint;
   wbt?: bigint;
   maxFeePerGas?: bigint;
+  tollBps?: number;
+  spends?: SpendRecord[];
+  allowedPayees?: Address[];
+  minAmount?: bigint;
 };
 
 export function createTestRelay(options: TestRelayOptions = {}) {
@@ -160,13 +172,15 @@ export function createTestRelay(options: TestRelayOptions = {}) {
   const merchant = privateKeyToAccount(generatePrivateKey());
   chain.setBalance(buyer.address, 100_000_000n);
 
-  const ledger = new Ledger(":memory:");
+  const ledger = new Ledger(":memory:", { tollBps: options.tollBps });
+  for (const spend of options.spends ?? []) ledger.recordSpend(spend);
   const ceiling = new SpendCeiling({
     windowMs: 3_600_000,
     capWei: options.capWei ?? 10n ** 18n,
     maxTx: 100,
     maxTxPerPayer: 100,
   });
+  ceiling.seed(ledger.recentSpends(Date.now() - 3_600_000));
   const policy: RelayerPolicy = {
     maxFeePerGasWei: options.maxFeePerGasWei ?? 50n * 10n ** 9n,
     minBalanceWei: options.minBalanceWei ?? 0n,
@@ -174,8 +188,12 @@ export function createTestRelay(options: TestRelayOptions = {}) {
     receiptTimeoutMs: 100,
     allowedTokens: [USDT.address],
     allowedEscrows: [WHITECHAIN_ESCROW],
+    allowedPayees: options.allowedPayees ?? [merchant.address],
+    minAmount: options.minAmount ?? 10_000n,
   };
-  const relayer = new Relayer(chain, chain.writer, relayerAccount, policy, ceiling);
+  const relayer = new Relayer(chain, chain.writer, relayerAccount, policy, ceiling, (spend) =>
+    ledger.recordSpend(spend),
+  );
   const ctx: ExactContext = { reader: chain, relayer, ledger, now: () => NOW };
 
   return { chain, relayerAccount, buyer, merchant, ledger, ceiling, policy, relayer, ctx };

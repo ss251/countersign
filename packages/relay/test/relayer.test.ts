@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { USDT } from "../src/chain.ts";
 import { signAuthorization } from "../src/eip3009.ts";
 import type { TransferCall } from "../src/relayer.ts";
-import { createTestRelay, makeAuthorization } from "./support.ts";
+import { createTestRelay, fakeHash, makeAuthorization } from "./support.ts";
 
 type TestRelay = ReturnType<typeof createTestRelay>;
 
@@ -55,6 +55,33 @@ describe("relayer refusals", () => {
     expect(relay.chain.writes).toHaveLength(0);
   });
 
+  test("missing fee estimate", async () => {
+    const relay = createTestRelay();
+    relay.chain.feeEstimate = {};
+    const outcome = await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    expect(outcome).toEqual({ status: "refused", reason: "fee_too_high", detail: "no fee estimate" });
+    expect(relay.chain.writes).toHaveLength(0);
+  });
+
+  test("zero fee estimate", async () => {
+    const relay = createTestRelay({ maxFeePerGas: 0n });
+    const outcome = await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    expect(outcome).toEqual({ status: "refused", reason: "fee_too_high", detail: "no fee estimate" });
+    expect(relay.chain.writes).toHaveLength(0);
+  });
+
+  test("a ceiling seeded from the ledger refuses after a restart", async () => {
+    const relay = createTestRelay({
+      capWei: 1000n,
+      spends: [
+        { txHash: fakeHash(), payer: "0x1111111111111111111111111111111111111111", costWei: 1000n, at: Date.now() },
+      ],
+    });
+    const outcome = await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    expect(outcome).toEqual({ status: "refused", reason: "ceiling_wei" });
+    expect(relay.chain.writes).toHaveLength(0);
+  });
+
   test("balance_floor", async () => {
     const relay = createTestRelay({ wbt: 0n, minBalanceWei: 1n });
     const outcome = await relay.relayer.submit(await transfer(relay), relay.buyer.address);
@@ -74,6 +101,24 @@ describe("relayer settlement", () => {
     expect(relay.chain.writes).toHaveLength(1);
     expect(relay.ceiling.snapshot().usedWei).toBe(90_000_000_000_000n);
     expect(relay.ceiling.snapshot().txCount).toBe(1);
+  });
+
+  test("records the actual confirmed cost as a spend", async () => {
+    const relay = createTestRelay();
+    await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    const spends = relay.ledger.recentSpends(0);
+    expect(spends).toHaveLength(1);
+    expect(spends[0]!.costWei).toBe(90_000_000_000_000n);
+    expect(spends[0]!.payer).toBe(relay.buyer.address);
+  });
+
+  test("records the worst case for a pending transaction", async () => {
+    const relay = createTestRelay();
+    relay.chain.timeoutReceipt = true;
+    await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    const spends = relay.ledger.recentSpends(0);
+    expect(spends).toHaveLength(1);
+    expect(spends[0]!.costWei).toBe(120_000n * 1_000_000_000n);
   });
 
   test("sends the gas limit with headroom, not the bare estimate", async () => {

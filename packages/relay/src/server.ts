@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createPublicClient, createWalletClient, http } from "viem";
+import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { formatUnits } from "@countersign/core";
+import { escrowAbi } from "@countersign/rail";
 import { NETWORK, USDT, WHITECHAIN_CHAIN_ID, txUrl, whitechainSepolia } from "./chain.ts";
 import { SpendCeiling } from "./ceiling.ts";
 import { loadRelayConfig } from "./config.ts";
@@ -14,6 +16,7 @@ import { settleExact, verifyExact } from "./exact.ts";
 import type { ExactClock, ExactContext, VerifyRequest } from "./exact.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
 import { Ledger } from "./ledger.ts";
+import { reconcileOrder } from "./reconcile.ts";
 import { refundPayment } from "./refund.ts";
 import { Relayer } from "./relayer.ts";
 import type { ChainReader } from "./ports.ts";
@@ -37,7 +40,13 @@ export type RelayAppOptions = {
 export function createRelayApp(options: RelayAppOptions): Hono {
   const { reader, relayer, ledger, now } = options;
   const ctx: ExactContext = { reader, relayer, ledger, now };
-  const csCtx: CountersignContext = { chainClient: options.chainClient ?? reader, relayer, ledger, now };
+  const csCtx: CountersignContext = {
+    chainClient: options.chainClient ?? reader,
+    reader,
+    relayer,
+    ledger,
+    now,
+  };
   const app = new Hono();
 
   app.use("*", cors({ origin: "*" }));
@@ -52,6 +61,8 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       balanceWbt: formatUnits(status.balanceWei, 18),
       ceiling: jsonSafe(status.ceiling),
       policy: jsonSafe(status.policy),
+      payees: status.policy.allowedPayees,
+      minAmount: status.policy.minAmount.toString(),
       escrow: relayer.allowedEscrows[0] ?? WHITECHAIN_ESCROW,
       token: USDT.address,
       network: NETWORK,
@@ -130,17 +141,19 @@ export function createRelayApp(options: RelayAppOptions): Hono {
   });
 
   app.get("/payments", (c) => {
-    const payments = ledger.listPayments({
-      payTo: c.req.query("payTo"),
-      payer: c.req.query("payer"),
-    });
+    const payTo = c.req.query("payTo");
+    const payer = c.req.query("payer");
+    if (!payTo && !payer) {
+      return c.json({ error: "filter_required" }, 400);
+    }
+    const payments = ledger.listPayments({ payTo, payer });
     return c.json({ payments: jsonSafe(payments) });
   });
 
   app.get("/payments.csv", (c) => {
-    const payTo = c.req.query("payTo");
+    const payTo = c.req.query("payTo") ?? c.req.query("merchant");
     if (!payTo) {
-      return c.json({ error: "payTo_required" }, 400);
+      return c.json({ error: "filter_required" }, 400);
     }
     c.header("Content-Type", "text/csv; charset=utf-8");
     c.header("Content-Disposition", 'attachment; filename="payments.csv"');
@@ -197,25 +210,29 @@ export function createRelayApp(options: RelayAppOptions): Hono {
   });
 
   app.get("/orders", (c) => {
-    const orders = ledger.listOrders({
-      merchant: c.req.query("merchant"),
-      customer: c.req.query("customer"),
-    });
+    const merchant = c.req.query("merchant");
+    const customer = c.req.query("customer");
+    if (!merchant && !customer) {
+      return c.json({ error: "filter_required" }, 400);
+    }
+    const orders = ledger.listOrders({ merchant, customer });
     return c.json({ orders: jsonSafe(orders) });
   });
 
   app.get("/orders.csv", (c) => {
-    const merchant = c.req.query("merchant");
+    const merchant = c.req.query("merchant") ?? c.req.query("payTo");
     if (!merchant) {
-      return c.json({ error: "merchant_required" }, 400);
+      return c.json({ error: "filter_required" }, 400);
     }
     c.header("Content-Type", "text/csv; charset=utf-8");
     c.header("Content-Disposition", 'attachment; filename="orders.csv"');
     return c.body(ledger.ordersCsv(merchant));
   });
 
-  app.get("/orders/:id", (c) => {
-    const order = ledger.getOrder(c.req.param("id"));
+  app.get("/orders/:id", async (c) => {
+    const id = c.req.param("id");
+    await reconcileOrder(id, ctx);
+    const order = ledger.getOrder(id);
     if (!order) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -244,9 +261,13 @@ if (import.meta.main) {
     process.exit(1);
   }
   const walletClient = createWalletClient({ chain: whitechainSepolia, transport, account });
-  const ledger = new Ledger(config.dbPath);
+  const escrow = config.policy.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
+  const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });
   const ceiling = new SpendCeiling(config.ceiling);
-  const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling);
+  ceiling.seed(ledger.recentSpends(Date.now() - config.ceiling.windowMs));
+  const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling, (spend) =>
+    ledger.recordSpend(spend),
+  );
   const app = createRelayApp({
     reader: publicClient,
     relayer,
@@ -256,6 +277,25 @@ if (import.meta.main) {
   });
   Bun.serve({ port: config.port, fetch: app.fetch });
   console.log(`relay listening on ${config.port} as ${account.address}`);
+}
+
+const tollBpsCache = new Map<string, number>();
+
+async function tollBpsFor(reader: ChainReader, escrow: Address): Promise<number> {
+  const key = escrow.toLowerCase();
+  const cached = tollBpsCache.get(key);
+  if (cached !== undefined) return cached;
+  const value = await reader.readContract({
+    address: escrow,
+    abi: escrowAbi,
+    functionName: "tollBps",
+  });
+  const bps = Number(value);
+  if (!Number.isSafeInteger(bps) || bps < 0) {
+    throw new Error(`invalid tollBps for ${escrow}`);
+  }
+  tollBpsCache.set(key, bps);
+  return bps;
 }
 
 function schemeOf(body: unknown): unknown {
