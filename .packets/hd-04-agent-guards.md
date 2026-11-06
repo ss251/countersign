@@ -11,7 +11,8 @@ The money-path review of the hedera agent (`packages/buyer/src/hedera/agent.ts`)
 
 - `packages/buyer/src/hedera/agent.ts`.
 - `packages/buyer/src/hedera/test/agent.test.ts`: add tests; keep every existing assertion.
-- `scripts/hedera/agent-run.ts`: pass the trusted fee payers (step 2).
+- `scripts/hedera/agent-run.ts`: pass the trusted fee payers (step 2) and add `--json` (step 3).
+- `scripts/hedera/audit.ts`: add `--json` (step 3).
 - Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-04-agent-guards.md`.
 
 ## Context
@@ -33,7 +34,17 @@ Read `agent.ts`, `test/agent.test.ts`, `packages/core/src/envelope.ts` (`checkEn
    - If it is omitted, the agent asks each facilitator in `FACILITATORS` for its fee payer once, on the first `buy`, and trusts those.
    - A challenge whose `extra.feePayer` is not trusted is refused before the envelope, nothing is signed, and nothing is logged. Return `{kind: "refused", reason: "untrusted-fee-payer", message: "Refused. The hub named a fee payer this agent does not trust."}`.
    - `agent-run.ts` passes the fee payers it reads from `FACILITATORS` up front, and also `HD_OPERATOR_ID`, because the hub's last-resort local facilitator uses the operator.
-3. **Tests**, offline with the existing fakes:
+3. **Evidence for the demo page.** With `--json`, both scripts print their usual lines to stderr. They print exactly one JSON object to stdout at the end.
+   - `agent-run.ts` prints `{beat: "hedera", ok, evidence: [{label, value, url?}]}`. `ok` is true when the run did what it was asked: every requested buy either paid or was refused by the envelope. Entries, in order:
+     - `agent`, with its HashScan account URL;
+     - `offer`, the offer hash;
+     - `facilitator`, the facilitator name for the challenge's fee payer, taken from the trusted set;
+     - `payment`, the transaction id, with its HashScan transaction URL;
+     - `spend log`, as `#<sequence>`, with the HashScan topic URL.
+     When a refusal happened, also add `refusal` (the sentence) and `refusal log` (`#<sequence>`, with the topic URL).
+   - `audit.ts` prints `{beat: "hedera-audit", ok, evidence: [{label: "matched", value}, {label: "unbacked", value}, {label: "unlogged", value}]}`, with `ok` true when unbacked and unlogged are both 0.
+   - Use `hashscanTx`, `hashscanAccount` and `hashscanTopic` from `@countersign/rail/hedera`.
+4. **Tests**, offline with the existing fakes:
    - two parallel buys under a cap that fits exactly one: one pays, one refuses `over-cap`, and the total spent equals one price;
    - a failed call whose transfer did not land releases its reservation, so the next buy fits;
    - an untrusted fee payer is refused with no `PAYMENT-SIGNATURE` request and no log entry;
