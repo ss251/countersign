@@ -15,6 +15,8 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
+**Why onchain, on Whitechain.** The buyer is software, so the payment has to enforce itself. A USDT payment on Whitechain refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, and goes back to the buyer when a deadline passes, through a refund anyone can call, with no dispute desk. It leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash or settle a five-cent call in a second. With the relayer paying gas, neither customer nor merchant ever holds WBT. Network facts, the gas relayer and verification: [docs/whitechain.md](https://github.com/ss251/countersign/blob/cs/wc/docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](https://github.com/ss251/countersign/blob/cs/wc/WHITECHAIN_FEEDBACK.md). Both land in this tree with [#17](https://github.com/ss251/countersign/pull/17).
+
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
