@@ -1,6 +1,6 @@
 # tr-05: a lineage that names the offer or its seller directly is refused before any 402 (refs #27)
 
-**Design: decided.** cs-truth wrote this on Opus from the captain's STEER-2235 item 4 and `docs/decisions.md` "D17, amended", which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose.
+**Design: decided.** cs-truth wrote this on Opus from the project lead's STEER-2235 item 4 and `docs/decisions.md` "D17, amended", which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose.
 
 ## Goal
 
@@ -42,7 +42,6 @@ Every existing test still passes, unedited, including the eight in `lineage.test
 - **Never run `git stash`.** Every worktree of a clone shares one stash stack. Use a temporary commit or a second worktree.
 - **Existing tests:** never edit, weaken, skip or delete one to make it pass. If one fails, fix the code, or stop and report the root cause.
 - **Commits:** small, present tense, ending `refs #27`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -62,4 +61,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `~/Developer/countersign-mac/reports/tr-05-lineage-direct.md` (on the MacBook): the diff summary, the test names, and the gate output counts.
+Write `~/Developer/countersign-mac/reports/tr-05-lineage-direct.md` (on the second machine): the diff summary, the test names, and the gate output counts.
