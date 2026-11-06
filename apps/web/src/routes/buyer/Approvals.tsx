@@ -505,20 +505,21 @@ export function TokenGate({ rejected, onOpen }: { rejected: boolean; onOpen: () 
       ) : (
         <p className="locked__alt">Email sign-in is off on this console, so paste a token instead.</p>
       )}
-      <details className="locked__paste" open={rejected || !available}>
-        <summary>Paste a token instead</summary>
+      <div className="locked__paste" data-testid="buyer-own-hub">
+        {available ? <p className="label">Or paste a token</p> : null}
         {rejected ? (
           <p className="field__error" role="alert" data-testid="buyer-token-rejected">
             This hub did not accept the token on this phone. Paste the right one.
           </p>
         ) : null}
         <TokenForm
+          variant={available ? "secondary" : "primary"}
           onSave={(t) => {
             rememberApprovalToken(t);
             onOpen();
           }}
         />
-      </details>
+      </div>
     </>
   );
 }
@@ -563,12 +564,8 @@ function PrivyCreate({ onOpen }: { onOpen: () => void }) {
   }, [embedded, getAccessToken, onOpen]);
 
   useEffect(() => {
-    if (!pending || !authenticated) return;
+    if (!pending || !authenticated || !embedded) return;
     setPending(false);
-    if (!embedded) {
-      setProblem(MISSING_WALLET);
-      return;
-    }
     void create();
   }, [pending, authenticated, embedded, create]);
 
@@ -581,10 +578,13 @@ function PrivyCreate({ onOpen }: { onOpen: () => void }) {
           {problem}
         </p>
       ) : null}
+      {pending && authenticated && !embedded ? (
+        <p className="locked__alt">Your wallet is still being set up. It opens here in a moment.</p>
+      ) : null}
       <Button
         variant="primary"
         block
-        disabled={creating}
+        disabled={creating || !ready}
         onClick={() => {
           if (!ready) return;
           if (!authenticated) {
@@ -602,7 +602,13 @@ function PrivyCreate({ onOpen }: { onOpen: () => void }) {
 }
 
 /** The human's approval token for this hub. Pasted once; it stays on this phone. */
-export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
+export function TokenForm({
+  onSave,
+  variant = "primary",
+}: {
+  onSave: (token: string) => void;
+  variant?: "primary" | "secondary";
+}) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const id = useId();
@@ -641,7 +647,7 @@ export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
       <p id={`${id}-hint`} className={error ? "field__error" : "field__hint"}>
         {error ?? "Whoever started this hub has it."}
       </p>
-      <Button variant="primary" type="submit" block>
+      <Button variant={variant} type="submit" block>
         Use this token
       </Button>
     </form>

@@ -106,7 +106,7 @@ describe("creating an envelope session", () => {
 });
 
 describe("the locked phone's way in", () => {
-  test("with sign-in off, it says so and keeps the token field as the open secondary option", () => {
+  test("with sign-in off, it says so and keeps the token field visible", () => {
     const html = renderToString(
       createElement(
         WalletModeContext.Provider,
@@ -114,9 +114,11 @@ describe("the locked phone's way in", () => {
         createElement(TokenGate, { rejected: false, onOpen: () => {} }),
       ),
     );
-    expect(html).toContain("Paste a token instead");
-    expect(html).toMatch(/<details[^>]*\bopen\b/);
     expect(html).toContain("Email sign-in is off on this console");
+    expect(html).toContain("Approval token");
+    expect(html).toContain("Use this token");
+    expect(html).toContain('data-testid="buyer-own-hub"');
+    expect(html).not.toContain("<details");
     expect(html).not.toContain("Paste the token first.");
   });
 });
