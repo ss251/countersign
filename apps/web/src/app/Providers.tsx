@@ -26,7 +26,11 @@ const privyWagmiConfig = createPrivyWagmiConfig({
 });
 
 const failureKey = "countersign.privy-failed";
-const watchdogAfter = 8_000;
+/**
+ * Privy's ready must come within this long, or the console drops to the injected wallet with its reason line and
+ * an enabled "Connect a browser wallet": the menu's waiting options can never stay disabled for good.
+ */
+export const watchdogAfter = 8_000;
 export const watchdogReason = "Email sign-in did not start on this page, so connect a browser wallet.";
 
 /** Forget this tab's Privy failure and load the page again, so email sign-in gets another try. */

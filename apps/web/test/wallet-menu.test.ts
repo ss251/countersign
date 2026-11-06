@@ -33,3 +33,13 @@ describe("the wallet menu while Privy starts", () => {
     expect(options[1]).toMatchObject({ label: "No wallet in this browser · Get one", href: "https://metamask.io/download/" });
   });
 });
+
+describe("if Privy never becomes ready (orch-cs's should-fix on #230)", () => {
+  test("the watchdog drops to the browser wallet well inside 15 s, so the waiting options never stay disabled", async () => {
+    const { watchdogAfter } = await import("../src/app/Providers.tsx");
+    expect(watchdogAfter).toBeLessThanOrEqual(15_000);
+    // After the drop the console runs ui-A's injected tree: no Privy, so nothing waits.
+    const options = menuOptions({ connectBrowser: noop, injected: true, starting: false });
+    expect(options.every((o) => o.disabled !== true)).toBe(true);
+  });
+});
