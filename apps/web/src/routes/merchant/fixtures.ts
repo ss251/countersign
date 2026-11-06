@@ -140,11 +140,27 @@ export const fixtureOrders: Order[] = [
   },
 ];
 
+/*
+ * Every hash this sample made up, rather than took from the chain. They are shown as plain text,
+ * never as explorer links, because no explorer has them (STEER-1730).
+ */
+const STAND_INS = new Set<string>([
+  "0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a",
+  "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
+  "0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c",
+]);
+
+export function isStandIn(hash: string): boolean {
+  return STAND_INS.has(hash.toLowerCase());
+}
+
 /** The refund a fixture desk pretends to send: a hash of its own per order and per attempt, never reused. */
 export function fixtureRefundTx(orderId: string, attempt = 0): string {
   const body = orderId.slice(2);
   const cut = (32 + 8 * attempt) % 64 || 4;
-  return `0x${body.slice(cut)}${body.slice(0, cut)}`;
+  const hash = `0x${body.slice(cut)}${body.slice(0, cut)}`;
+  STAND_INS.add(hash.toLowerCase());
+  return hash;
 }
 
 export const fixtureStatus: RelayStatus = {

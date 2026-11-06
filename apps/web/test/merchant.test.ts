@@ -19,7 +19,7 @@ import {
   txUrl,
   type Order,
 } from "../src/routes/merchant/model.ts";
-import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder } from "../src/routes/merchant/fixtures.ts";
+import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder, isStandIn } from "../src/routes/merchant/fixtures.ts";
 import { offersRefund } from "../src/routes/merchant/Panel.tsx";
 import { NOT_SERVED, fetchOrder, fetchOrders, refundOrder, unlockRefunds } from "../src/routes/merchant/api.ts";
 import {
@@ -675,5 +675,19 @@ describe("refunds sign only what the merchant confirmed (cs-w1 B15 and should-fi
     globalThis.fetch = (async () => Response.json({ items: [] })) as unknown as typeof fetch;
     await expect(fetchOrders(merchant)).rejects.toThrow("The answer carried no list of orders.");
     globalThis.fetch = realFetch;
+  });
+});
+
+describe("stand-in hashes (STEER-1730: never rendered as links)", () => {
+  test("the sample's made-up hashes are stand-ins; its real ones are not", () => {
+    expect(isStandIn("0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a")).toBe(true);
+    expect(isStandIn("0x2C4E6A8B0D2F4A6C8E0B2D4F6A8C0E2B4D6F8A0C2E4B6D8F0A2C4E6B8D0F2A4C")).toBe(true);
+    expect(isStandIn("0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5")).toBe(false);
+    expect(isStandIn("0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812")).toBe(false);
+  });
+
+  test("every simulated refund hash is a stand-in", () => {
+    const hash = fixtureRefundTx(fixtureOrders[0]!.id, 3);
+    expect(isStandIn(hash)).toBe(true);
   });
 });

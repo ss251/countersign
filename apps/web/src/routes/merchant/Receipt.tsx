@@ -48,6 +48,7 @@ function Unit({ symbol }: { symbol: string }) {
 export function Receipt({ id, offline }: ReceiptProps) {
   const [state, setState] = useState<ReceiptState>({ kind: "loading" });
   const [hubTitle, setHubTitle] = useState<string | null>(null);
+  const [standIn, setStandIn] = useState<((hash: string) => boolean) | undefined>(undefined);
   const statusId = useId();
   const proofId = useId();
 
@@ -55,7 +56,10 @@ export function Receipt({ id, offline }: ReceiptProps) {
     let cancelled = false;
     setState({ kind: "loading" });
     const read = offline
-      ? import("./fixtures.ts").then((sample) => sample.findFixtureOrder(id))
+      ? import("./fixtures.ts").then((sample) => {
+          setStandIn(() => sample.isStandIn);
+          return sample.findFixtureOrder(id);
+        })
       : fetchOrder(id);
     read
       .then((order) => {
@@ -187,7 +191,7 @@ export function Receipt({ id, offline }: ReceiptProps) {
           <h2 className="mx-label" id={proofId}>
             What happened
           </h2>
-          <Timeline events={timeline(order, "customer")} labelledBy={proofId} explorer={explorer} />
+          <Timeline events={timeline(order, "customer")} labelledBy={proofId} explorer={explorer} isStandIn={standIn} />
         </section>
 
         <p className="mx-receipt__footer">

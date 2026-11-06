@@ -10,11 +10,14 @@ export function Timeline({
   events,
   labelledBy,
   explorer,
+  isStandIn,
 }: {
   events: readonly TimelineEvent[];
   labelledBy: string;
   /** The order's own explorer: every rail links to its own chain. */
   explorer?: string;
+  /** Sample-ledger hashes that no explorer has: shown as text, never as links. */
+  isStandIn?: (hash: string) => boolean;
 }) {
   return (
     <ol className="mx-tl" aria-labelledby={labelledBy}>
@@ -26,7 +29,11 @@ export function Timeline({
             {event.detail ? <p className="mx-tl__detail">{event.detail}</p> : null}
             {event.txHash || event.slipHash ? (
               <p className="mx-tl__proof">
-                {event.txHash ? (
+                {event.txHash && isStandIn?.(event.txHash) ? (
+                  <span className="mono" title="A stand-in in the sample ledger, not a real transaction">
+                    {shortHash(event.txHash)}
+                  </span>
+                ) : event.txHash ? (
                   <a
                     className="mono mx-tx"
                     href={txUrl(event.txHash, explorer)}

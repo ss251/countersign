@@ -91,6 +91,8 @@ interface OrderPanelProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
   /** True inside the phone sheet, where nothing takes focus on its own (no keyboard popping up). */
   touch: boolean;
+  /** The sample ledger's made-up hashes, shown as text rather than links. */
+  isStandIn?: (hash: string) => boolean;
   onView: (view: PanelView) => void;
   onClose: () => void;
   onRefundAll: () => void;
@@ -129,6 +131,7 @@ function OrderDetail({
   refusals,
   access,
   places: deskPlaces,
+  isStandIn,
   receiptTo,
   headingRef,
   onView,
@@ -236,7 +239,7 @@ function OrderDetail({
         <h3 className="mx-label" id={activityId}>
           Activity
         </h3>
-        <Timeline events={events} labelledBy={activityId} explorer={explorer} />
+        <Timeline events={events} labelledBy={activityId} explorer={explorer} isStandIn={isStandIn} />
       </section>
     </div>
   );

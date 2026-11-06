@@ -565,6 +565,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
       refusals={refusals[selected.id] ?? []}
       access={access}
       places={places}
+      isStandIn={sample?.isStandIn}
       view={view}
       receiptTo={`/merchant/receipt/${selected.id}${receiptQuery}`}
       headingRef={headingRef}
@@ -721,16 +722,22 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
                         <p className="mx-result" role="status">
                           {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} {active} returned to{" "}
                           <span className="mono">{shortAddress(order.customer)}</span>.{" "}
-                          <a
-                            className="mono mx-tx"
-                            href={txUrl(row.txHash, explorerOf(order))}
-                            title={row.txHash}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {shortHash(row.txHash)}
-                          </a>
+                          {sample?.isStandIn(row.txHash) ? (
+                            <span className="mono" title="A stand-in in the sample ledger, not a real transaction">
+                              {shortHash(row.txHash)}
+                            </span>
+                          ) : (
+                            <a
+                              className="mono mx-tx"
+                              href={txUrl(row.txHash, explorerOf(order))}
+                              title={row.txHash}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {shortHash(row.txHash)}
+                            </a>
+                          )}
                         </p>
                       ) : row.kind === "unknown" ? (
                         <p className="mx-result" role="status">
