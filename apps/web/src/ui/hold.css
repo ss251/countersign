@@ -5,8 +5,8 @@
   width: 100%;
   padding: var(--sp-4) var(--sp-4) var(--sp-4);
   border: 0;
-  border-radius: var(--r-3);
-  background: var(--raised);
+  border-radius: var(--r-2);
+  background: none;
   box-shadow: var(--elev-1);
   color: var(--ink);
   text-align: left;
@@ -24,14 +24,17 @@
   outline-offset: 3px;
 }
 
-/* Holding: the edge takes the seal colour, the box gives slightly under the thumb. */
+/*
+ * Your countersignature is blue ink beside the seller's black: it is the act that moves money.
+ * Holding, the rule around the box takes that blue and the box gives slightly under the thumb.
+ */
 .hold--holding {
-  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--seal) 55%, transparent), var(--elev-1);
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--usdc) 60%, transparent);
   transform: scale(0.985);
 }
 
 .hold--done {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--seal) 40%, transparent), var(--elev-1);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--usdc) 45%, transparent);
   cursor: default;
 }
 
@@ -70,12 +73,12 @@
 }
 
 .hold__seal {
-  stroke: var(--seal);
+  stroke: var(--usdc);
 }
 
-/* The hairline gap. Painted in the surface colour so the strokes look cut. */
+/* The hairline gap. Painted in the paper colour so the strokes look cut. */
 .hold__seam {
-  fill: var(--raised);
+  fill: var(--paper);
 }
 
 .hold__parties {
@@ -98,5 +101,5 @@
 }
 
 .hold--done .hold__label {
-  color: var(--seal);
+  color: var(--usdc);
 }

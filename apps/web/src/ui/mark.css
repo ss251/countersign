@@ -7,8 +7,9 @@
   fill: var(--ink);
 }
 
+/* The countersignature, in the same blue ink as the hold: red belongs to refusal alone. */
 .mark__seal {
-  fill: var(--seal);
+  fill: var(--usdc);
 }
 
 .wordmark {
