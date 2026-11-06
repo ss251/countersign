@@ -1,3 +1,5 @@
+import type { Slip } from "@countersign/core";
+import { explorerTemplate, networkName } from "../../lib/format.ts";
 import type { RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
 
 /*
@@ -231,4 +233,31 @@ export function labelSpots(order: RailId[], beat: number, narrow: boolean): Spot
   const at = beat >= 3 && !narrow ? centres(order.length, 0, 42) : centres(order.length);
   const o = beat === 2 ? 1 : beat === 3 ? (narrow ? 0.22 : 0.3) : 0;
   return at.map((x) => ({ x, y: g.base, dx: 0, dy: 10, s: 1, o }));
+}
+
+export interface HeldBy {
+  /** The escrow contract that held this payment, or undefined until a record names it. */
+  escrow: string | undefined;
+  escrowHref: string | undefined;
+  /** The chain's name, from the payment's own network. */
+  chain: string;
+  txHref: string | undefined;
+}
+
+/**
+ * Where this payment waited, from its own records only: the escrow from the seller's slip, else from
+ * its own rail's declaration; the chain from its network; links from its own explorer. A record that
+ * names no escrow leaves the line out rather than borrow another rail's contract.
+ */
+export function heldBy(release: Settlement, rails: RailDeclaration[] | undefined, slip: Slip | undefined): HeldBy {
+  const declared = rails?.find((r) => r.id === release.rail);
+  const escrow = slip?.body.escrow ?? declared?.escrow;
+  const template = declared?.explorerTx || explorerTemplate(release.network);
+  const at = (path: string) => (template.includes("/tx/{tx}") ? template.replace("/tx/{tx}", path) : undefined);
+  return {
+    escrow,
+    escrowHref: escrow ? at(`/address/${encodeURIComponent(escrow)}`) : undefined,
+    chain: networkName(release.network),
+    txHref: release.explorer ?? (release.tx ? at(`/tx/${encodeURIComponent(release.tx)}`) : undefined),
+  };
 }

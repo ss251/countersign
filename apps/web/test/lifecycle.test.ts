@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { Slip } from "@countersign/core";
 import type { RailDeclaration, Settlement } from "../src/lib/types.ts";
-import { heldBy, LifecycleStage, type LifecycleProps } from "../src/routes/home/Lifecycle.tsx";
+import { heldBy } from "../src/routes/home/field.ts";
+import { LifecycleStage, type LifecycleProps } from "../src/routes/home/Lifecycle.tsx";
 
 // A released escrow payment as the hub serves it; no slip is read without the hub.
 const RELEASE: Settlement = {

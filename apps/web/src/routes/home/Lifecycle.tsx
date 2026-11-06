@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { Slip } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { explorerTemplate, formatDateTime, networkName, shortHex, usd } from "../../lib/format.ts";
+import { formatDateTime, shortHex, usd } from "../../lib/format.ts";
 import type { Listing, RailDeclaration, Settlement } from "../../lib/types.ts";
 import { verifySlip, type Verdict } from "../../lib/verify.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
+import { heldBy } from "./field.ts";
 import { span, toBeat, useBeat } from "./stage.ts";
 
 /*
@@ -318,33 +319,6 @@ function LifeStep({
       {children}
     </li>
   );
-}
-
-export interface HeldBy {
-  /** The escrow contract that held this payment, or undefined until a record names it. */
-  escrow: string | undefined;
-  escrowHref: string | undefined;
-  /** The chain's name, from the payment's own network. */
-  chain: string;
-  txHref: string | undefined;
-}
-
-/**
- * Where this payment waited, from its own records only: the escrow from the seller's slip, else from
- * its own rail's declaration; the chain from its network; links from its own explorer. A record that
- * names no escrow leaves the line out rather than borrow another rail's contract.
- */
-export function heldBy(release: Settlement, rails: RailDeclaration[] | undefined, slip: Slip | undefined): HeldBy {
-  const declared = rails?.find((r) => r.id === release.rail);
-  const escrow = slip?.body.escrow ?? declared?.escrow;
-  const template = declared?.explorerTx || explorerTemplate(release.network);
-  const at = (path: string) => (template.includes("/tx/{tx}") ? template.replace("/tx/{tx}", path) : undefined);
-  return {
-    escrow,
-    escrowHref: escrow ? at(`/address/${encodeURIComponent(escrow)}`) : undefined,
-    chain: networkName(release.network),
-    txHref: release.explorer ?? (release.tx ? at(`/tx/${encodeURIComponent(release.tx)}`) : undefined),
-  };
 }
 
 /** Step 4's word: the verifier's verdict, or that it is still running. */
