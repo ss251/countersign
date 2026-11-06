@@ -4,12 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun run.ts"
+    "start": "bun run.ts",
+    "human": "playwright test -c human/playwright.config.ts"
   },
   "dependencies": {
     "@countersign/buyer": "workspace:*",
     "@countersign/core": "workspace:*",
     "@countersign/rail": "workspace:*",
     "viem": "^2.57.16"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
   }
 }
