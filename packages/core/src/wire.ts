@@ -61,7 +61,7 @@ export interface JobOrder {
   chainId?: number;
   /** A held payment: the buyer's schedule and the transaction that created it. */
   schedule?: { id: string; createTx: string };
-  /** Offer hashes of the purchases this call is nested inside, outermost first. The hub refuses a cycle before payment. */
+  /** The purchases this call is nested inside, outermost first, as offer hashes or job ids. The hub refuses a cycle before payment (terms.md §2). */
   lineage: Hex[];
 }
 

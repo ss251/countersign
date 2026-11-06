@@ -6,7 +6,7 @@ What a client that is not countersign's own buyer needs in order to read a hub, 
 
 | You have | You can | You cannot |
 |---|---|---|
-| Any x402 v2 client | Read the 402. Pay an `exact` option: Gateway (`GATEWAY_RAIL=1`) or Hedera. | Pay a `countersign` option without implementing the countersignature |
+| Any x402 v2 client | Read the 402. Pay an `exact` option on a hub that runs one: Gateway (`GATEWAY_RAIL=1`) or Hedera (`HEDERA_RAIL=1`). The production hub runs neither | Pay a `countersign` option without implementing the countersignature |
 | An x402 Bazaar reader, such as the Circle CLI | List and inspect a hub's offers, as for Circle's own catalogue | Place a testnet hub in Circle's public catalogue: services enter it through the facilitator that settles them |
 | An A2A or OpenAPI client | Read the agent card, skills index or OpenAPI document | |
 | A slip and, optionally, an RPC URL | Verify the slip with no hub running | |
