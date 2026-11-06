@@ -18,6 +18,7 @@ import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
+import { Ratings } from "./ratings.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
 import type { Listing } from "./types.ts";
@@ -37,6 +38,7 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
+  const ratings = new Ratings(deps.store);
   const frontdoor = (): FrontdoorDeps => {
     const view: FrontdoorDeps = {
       store: deps.store,
@@ -147,6 +149,16 @@ export function createHub(deps: HubDeps) {
     if (!slip) return fail(404, "unknown-slip", "Refused. That slip is not known.");
     return json(slip);
   });
+
+  app.get("/ratings", async () => json({ ratings: await ratings.all() }));
+
+  app.get("/ratings/:seller", async (c) => {
+    const rating = await ratings.seller(c.req.param("seller"));
+    if (!rating) return fail(404, "unknown-seller", "Refused. That seller has no offers here.");
+    return json(rating);
+  });
+
+  app.get("/stats", async () => json(await ratings.stats(runners.count)));
 
   app.get("/jobs/:jobId", (c) => {
     const job = deps.store.getJob(c.req.param("jobId"));

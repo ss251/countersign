@@ -35,7 +35,8 @@ export interface Money {
 export interface Listing {
   hash: Hex;
   offer: Offer;
-  seller: { name: string; agentId?: string };
+  /** named is false when the hub has no name for the seller and name is only its short address. */
+  seller: { name: string; agentId?: string; named?: boolean };
   /** Derived from slips, never self-reported. Absent until the hub reports it. */
   stats?: { calls: number; released: number; refunded: number };
   status: "listed" | "delisted";

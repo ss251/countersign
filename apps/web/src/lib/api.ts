@@ -69,7 +69,7 @@ async function orMissing<T>(p: Promise<T>): Promise<T | undefined> {
 }
 
 function toListing(l: HubListing): Listing {
-  return { hash: l.offerHash, offer: l.offer, seller: { name: shortHex(l.offer.seller) }, status: l.status, online: l.online };
+  return { hash: l.offerHash, offer: l.offer, seller: { name: shortHex(l.offer.seller), named: false }, status: l.status, online: l.online };
 }
 
 /** What a slip itself says about its rail, for a hub that does not declare it. */

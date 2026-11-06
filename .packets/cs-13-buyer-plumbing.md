@@ -18,6 +18,7 @@ You may create or change only these paths:
 
 - `apps/hub/src/buyerplumbing.ts` (new), `apps/hub/src/store.ts` (new tables and read/write methods only), and `apps/hub/src/app.ts` (route registration and new options through `HubDeps`)
 - `apps/hub/test/buyerplumbing.test.ts` (new)
+- `apps/hub/src/call.ts`: only the failed-delivery message (item 5 under Hub)
 - `packages/buyer/src/**` except `packages/buyer/src/hedera/`, and `packages/buyer/test/**`. Never edit `packages/buyer/test/w1-attacks.test.ts`.
 - `.packets/reports/cs-13-buyer-plumbing.md`
 
@@ -48,6 +49,9 @@ Do not edit any `package.json`, `bun.lock`, `packages/core/**` or anything else.
      - Otherwise set the status and `decided_at`, and return 200.
    - Pending approvals older than 15 minutes read as `expired` and cannot be decided.
 4. `HubDeps` gains `humanApprovalToken?: string`. `apps/hub/src/index.ts` is outside your lease: say in the report that it must read `HUMAN_APPROVAL_TOKEN`.
+5. The failed-delivery message in `call.ts` must be true on every rail. "Your money returns at the deadline" is true only on escrow rails, where the rail has `escrow`.
+   - On a direct or batched rail, settlement already happened before dispatch, so the message is: "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure."
+   - Add a hub test for each kind.
 
 ### Buyer (`packages/buyer`)
 

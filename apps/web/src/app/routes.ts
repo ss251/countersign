@@ -29,7 +29,7 @@ type Page = ComponentType<PageProps>;
 const modules = import.meta.glob<PageModule>("../routes/*/index.tsx", { eager: true });
 
 /** Screens designed for a phone at 390 px. Everything else is a desktop surface. */
-const PHONE = new Set(["buyer", "assistant"]);
+const PHONE = new Set(["buyer"]);
 
 export interface Resolved {
   name: string;
