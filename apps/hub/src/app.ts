@@ -21,6 +21,7 @@ import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
 import { Ratings } from "./ratings.ts";
+import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
 import type { Listing } from "./types.ts";
@@ -46,6 +47,7 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
+  const router = new HubRouter(deps.rails);
   const ratings = new Ratings(deps.store, { now: deps.now, cacheSeconds: deps.ratingsCacheSeconds ?? 5 });
   const frontdoor = (): FrontdoorDeps => {
     const view: FrontdoorDeps = {
@@ -67,6 +69,7 @@ export function createHub(deps: HubDeps) {
       ok: true,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
+      router: router.healthz(),
     }),
   );
 
@@ -201,7 +204,7 @@ export function createHub(deps: HubDeps) {
 
     let outcome;
     try {
-      outcome = await paidCall({ ...deps, runners }, hash, c.req.raw.headers, body);
+      outcome = await paidCall({ ...deps, runners, router }, hash, c.req.raw.headers, body);
     } catch {
       return fail(500, "internal", "Refused. The hub could not complete the call.");
     }

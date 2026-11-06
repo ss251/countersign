@@ -75,6 +75,10 @@ export interface EscrowRailConfig {
   explorerTx: string;
   finality: string;
   gasPaidBy: "hub" | "relayer";
+  /** Seconds until the settlement is final. Defaults to 2 for Arc escrow. */
+  finalitySeconds?: number;
+  /** The rail's own cost. Defaults to a 1% toll, no fixed fee. */
+  cost?: { tollBps: number; fixed: string };
   /** Sends fund, release, refund and cancel. Without one the rail can verify but not settle. */
   submitter?: LocalAccount;
   /**
@@ -148,6 +152,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     gasPaidBy: cfg.gasPaidBy,
     finality: cfg.finality,
     explorerTx: cfg.explorerTx,
+    finalitySeconds: cfg.finalitySeconds ?? 2,
+    cost: cfg.cost ?? { tollBps: 100, fixed: "0" },
   };
 
   // One sender, one queue: transactions go out in order so nonces never collide.

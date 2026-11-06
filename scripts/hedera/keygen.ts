@@ -3,7 +3,7 @@
 import { PrivateKey } from "../../packages/rail/src/hedera/sdk.ts";
 import { ENV_FILE, readEnv, writeEnv, type Env } from "./env.ts";
 
-const ROLES = ["OPERATOR", "AGENT", "SELLER"] as const;
+const ROLES = ["OPERATOR", "AGENT", "SELLER", "SELLER_SIGN"] as const;
 
 const env = readEnv();
 const updates: Env = {};

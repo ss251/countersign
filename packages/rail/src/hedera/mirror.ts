@@ -18,6 +18,11 @@ export interface MirrorOptions {
   fetch?: typeof fetch;
 }
 
+export interface GetTransactionOptions extends MirrorOptions {
+  /** Read the record of a scheduled execution rather than the schedule create itself. */
+  scheduled?: boolean;
+}
+
 async function get<T>(path: string, opts: MirrorOptions = {}): Promise<T | null> {
   const f = opts.fetch ?? fetch;
   const r = await f((opts.base ?? MIRROR_TESTNET) + path);
@@ -89,9 +94,10 @@ export function normalizeTransaction(raw: RawTransaction): MirrorTransaction {
   };
 }
 
-/** The first record of a transaction id (scheduled and child records are ignored), or null if unseen. */
-export async function getTransaction(txId: string, opts?: MirrorOptions): Promise<MirrorTransaction | null> {
-  const d = await get<{ transactions: RawTransaction[] }>(`/api/v1/transactions/${toMirrorTxId(txId)}`, opts);
+/** The first record of a transaction id, or null if unseen. `scheduled` reads the executed child record. */
+export async function getTransaction(txId: string, opts: GetTransactionOptions = {}): Promise<MirrorTransaction | null> {
+  const suffix = opts.scheduled ? "?scheduled=true" : "";
+  const d = await get<{ transactions: RawTransaction[] }>(`/api/v1/transactions/${toMirrorTxId(txId)}${suffix}`, opts);
   const first = d?.transactions[0];
   return first ? normalizeTransaction(first) : null;
 }
