@@ -1,4 +1,4 @@
-/* The front door. Left-aligned: the thesis reads first, the artifact sits beside it. */
+/* The front door: the purpose and the live numbers first, then how it works beside a real offer. */
 
 .home {
   display: grid;
@@ -7,93 +7,61 @@
 
 .home__lead {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: var(--sp-8) var(--sp-12);
+  gap: var(--sp-4);
+  max-width: 820px;
+}
+
+.home__eyebrow {
+  display: flex;
   align-items: center;
-  padding-top: var(--sp-4);
-}
-
-@media (max-width: 900px) {
-  .home__lead {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.home__thesis {
-  display: grid;
-  gap: var(--sp-5);
+  gap: var(--sp-2);
 }
 
 .home__title {
-  max-width: 16ch;
-  font-size: clamp(2rem, 1.2rem + 2.6vw, var(--t-44));
+  font-size: clamp(2rem, 1.2rem + 2.4vw, var(--t-44));
   line-height: 1.06;
   letter-spacing: -0.03em;
 }
 
-.home__lede {
-  max-width: 54ch;
-  color: var(--slate);
+/* Numbers inside the sentence, not in tiles. */
+.home__live {
+  max-width: 64ch;
+  min-height: 1.6em;
   font-size: var(--t-17);
+  color: var(--ink);
 }
 
-.home__sign {
-  display: grid;
-  gap: var(--sp-3);
-  margin: 0;
-}
-
-.home__sign-caption {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-/* What this hub has right now. */
-.live {
-  display: grid;
-  gap: var(--sp-3);
-  padding: var(--sp-5) 0;
-  border-top: var(--hair) solid var(--line);
-  border-bottom: var(--hair) solid var(--line);
-}
-
-.live__figure {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--sp-2) var(--sp-3);
-}
-
-.live__count {
-  font-size: var(--t-20);
-}
-
-.live__count strong {
+.home__live strong {
   font-weight: 700;
 }
 
-.live__sub {
+.home__rails {
   color: var(--slate);
-  font-size: var(--t-15);
 }
 
-.live__rails {
+.home__live-skeleton {
+  display: inline-block;
+  width: 22ch;
+  height: 1em;
+  border-radius: var(--r-1);
+  background: var(--sunk);
+  vertical-align: middle;
+}
+
+.home__quick {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2);
-}
-
-.live__empty {
-  color: var(--slate);
+  gap: var(--sp-2) var(--sp-5);
   font-size: var(--t-14);
+  font-weight: 500;
 }
 
-.home__block {
-  display: grid;
-  gap: var(--sp-4);
+.home__command {
+  max-width: 720px;
 }
 
 .home__h2 {
+  margin-bottom: var(--sp-3);
   color: var(--slate);
   font-size: var(--t-13);
   font-weight: 600;
@@ -106,10 +74,27 @@
   font-size: var(--t-14);
 }
 
-/* Three steps, as a ledger: a real sequence reads down the page, not across three cards. */
+.home__block {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+/* How it works: three steps on the left, the real thing on the right. */
+.how {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--sp-8) var(--sp-12);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .how {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .steps3 {
   display: grid;
-  max-width: 820px;
   border-top: 1px solid var(--ink);
 }
 
@@ -135,71 +120,123 @@
 }
 
 .steps3__body {
-  max-width: 64ch;
+  max-width: 60ch;
   color: var(--slate);
   font-size: var(--t-15);
 }
 
-/* Settlements, as ledger rows. */
-.settled {
+.artifact {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+}
+
+.artifact.card {
+  padding: var(--sp-5);
+}
+
+.artifact__eyebrow {
+  color: var(--slate);
+  font-size: var(--t-12);
+  font-weight: 600;
+}
+
+.artifact__title {
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.artifact__title a {
+  text-decoration-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .artifact__title a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+.artifact__exact {
+  display: grid;
+  gap: 2px;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.artifact__payee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.artifact .hold {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.artifact .hold__seam {
+  fill: var(--paper);
+}
+
+.artifact__caption {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* Latest settlements, as activity rows: what, then how and when, then the amount. */
+.activity {
   display: grid;
   max-width: 820px;
   border-top: var(--hair) solid var(--line);
 }
 
-.settled__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px var(--sp-4);
+.activity__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: 64px;
   padding: var(--sp-3) 0;
   border-bottom: var(--hair) solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
 }
 
-.settled__main,
-.settled__end {
+/* Same height as a real row, so nothing jumps when the hub answers. */
+.activity__row--skeleton::before {
+  content: "";
+  width: 40%;
+  height: 14px;
+  border-radius: var(--r-1);
+  background: var(--sunk);
+}
+
+.activity__main {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
-.settled__end {
-  justify-items: end;
-}
-
-.settled__title {
+.activity__title {
   font-weight: 600;
 }
 
-.settled__title a {
-  text-decoration-color: transparent;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .settled__title a:hover {
-    text-decoration-color: currentColor;
-  }
-}
-
-.settled__meta {
+.activity__meta {
   color: var(--slate);
   font-size: var(--t-13);
 }
 
-.settled__end .status {
-  font-size: var(--t-12);
-}
-
-.settled__tx {
-  grid-column: 1 / -1;
+.activity__meta .status {
   font-size: var(--t-13);
 }
 
-.home__links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-6);
-  padding-top: var(--sp-5);
-  border-top: var(--hair) solid var(--line);
-  font-size: var(--t-14);
-  font-weight: 500;
+@media (hover: hover) and (pointer: fine) {
+  .activity__row--link:hover .activity__title {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
 }
