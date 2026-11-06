@@ -60,6 +60,7 @@ let anvil: Subprocess;
 let token: Address;
 let escrowAddr: Address;
 let rail: Rail;
+let knownEscrows: Array<{ chainId: number; escrow: Address; name: string }>;
 
 function artifact(file: string, name: string): Hex {
   const json = JSON.parse(readFileSync(join(ROOT, "contracts/out", file, `${name}.json`), "utf8"));
@@ -99,6 +100,7 @@ beforeAll(async () => {
       args: [buyer.address, 100_000_000n],
     }),
   });
+  knownEscrows = [{ chainId: 31337, escrow: escrowAddr, name: "anvil test deployment" }];
   rail = escrowRail({
     id: "escrow",
     chainId: 31337,
@@ -208,7 +210,7 @@ async function slipFor(
 }
 
 describe("verifySlip on anvil", () => {
-  test("a released slip passes the slip hash check", async () => {
+  test("a released slip passes the onchain check", async () => {
     const { payment, jobId, terms } = await pay("1001");
     const funded = await rail.settle(payment, payment.accepted);
     expect(funded.success).toBe(true);
@@ -223,17 +225,36 @@ describe("verifySlip on anvil", () => {
     expect(released.success).toBe(true);
     const slip: Slip = { ...draft, settlement: { transaction: released.transaction, network: "eip155:31337" } };
 
-    const verdict = await verifySlip(slip, { rpcUrl });
+    const verdict = await verifySlip(slip, { rpcUrl, knownEscrows });
     expect(verdict.findings.filter((f) => !f.ok)).toEqual([]);
     expect(verdict.valid).toBe(true);
-    const finding = verdict.findings.find((f) => f.check === "slip hash");
+    const finding = verdict.findings.find((f) => f.check === "onchain");
     expect(finding).toBeDefined();
     expect(finding!.ok).toBe(true);
     expect(finding!.detail).toContain("the chain holds this slip's hash");
     expect(finding!.detail).toContain(`tx ${released.transaction}`);
   }, 30_000);
 
-  test("a tampered body with a recomputed hash fails the slip hash check", async () => {
+  test("an unknown escrow is not proof even when the chain holds the hash", async () => {
+    const { payment, jobId, terms } = await pay("1004");
+    const funded = await rail.settle(payment, payment.accepted);
+    expect(funded.success).toBe(true);
+
+    const draft = await slipFor(payment, jobId, terms, funded.transaction);
+    const released = await rail.escrow!.release(jobId, draft.hash, draft.sellerSig);
+    expect(released.success).toBe(true);
+    const slip: Slip = { ...draft, settlement: { transaction: released.transaction, network: "eip155:31337" } };
+
+    const verdict = await verifySlip(slip, { rpcUrl, knownEscrows: [] });
+    const escrow = verdict.findings.find((f) => f.check === "escrow");
+    expect(escrow).toBeDefined();
+    expect(escrow!.ok).toBe(false);
+    expect(escrow!.detail).toContain("unknown escrow");
+    expect(verdict.findings.find((f) => f.check === "onchain")?.ok).toBe(true);
+    expect(verdict.valid).toBe(false);
+  }, 30_000);
+
+  test("a tampered body with a recomputed hash fails the onchain check", async () => {
     const { payment, jobId, terms } = await pay("1002");
     const funded = await rail.settle(payment, payment.accepted);
     expect(funded.success).toBe(true);
@@ -245,9 +266,9 @@ describe("verifySlip on anvil", () => {
 
     const tamperedBody = { ...genuine.body, amount: (BigInt(genuine.body.amount) + 1n).toString(10) };
     const tampered: Slip = { ...genuine, body: tamperedBody, hash: slipCommitHash(tamperedBody) };
-    const verdict = await verifySlip(tampered, { rpcUrl });
+    const verdict = await verifySlip(tampered, { rpcUrl, knownEscrows });
     expect(verdict.valid).toBe(false);
-    const finding = verdict.findings.find((f) => f.check === "slip hash");
+    const finding = verdict.findings.find((f) => f.check === "onchain");
     expect(finding).toBeDefined();
     expect(finding!.ok).toBe(false);
     expect(finding!.detail).toContain("differs from the recomputed hash");
@@ -259,9 +280,9 @@ describe("verifySlip on anvil", () => {
     expect(funded.success).toBe(true);
 
     const slip = await slipFor(payment, jobId, terms, funded.transaction);
-    const verdict = await verifySlip(slip, { rpcUrl });
+    const verdict = await verifySlip(slip, { rpcUrl, knownEscrows });
     expect(verdict.valid).toBe(false);
-    const finding = verdict.findings.find((f) => f.check === "slip hash");
+    const finding = verdict.findings.find((f) => f.check === "onchain");
     expect(finding).toBeDefined();
     expect(finding!.ok).toBe(false);
     expect(finding!.detail).toContain("event missing");
