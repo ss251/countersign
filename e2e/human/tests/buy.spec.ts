@@ -41,7 +41,7 @@ import {
   transfer,
 } from "../lib/fund.ts";
 import { Keyring } from "../lib/keys.ts";
-import { REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
+import { compareSettlement, REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
 import { slipHashFromHref } from "../lib/slip.ts";
 import { installTestWallet, newTestAccount } from "../lib/wallet.ts";
 import {
@@ -70,6 +70,15 @@ class SkipRun extends Error {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** STEER-0300 C1: a wait between the review and Sign, from 0 to 600 whole seconds. */
+function signDelaySeconds(): number {
+  const signDelayS = Number(process.env.E2E_HUMAN_SIGN_DELAY_S ?? "0");
+  if (!Number.isInteger(signDelayS) || signDelayS < 0 || signDelayS > 600) {
+    throw new Error("E2E_HUMAN_SIGN_DELAY_S must be 0..600");
+  }
+  return signDelayS;
 }
 
 async function step<T>(
@@ -274,6 +283,7 @@ const runHuman = async (
   const project = testInfo.project.name;
   if (project !== "privy" && project !== "injected") test.skip(true, `unknown project ${project}`);
 
+  const signDelayS = signDelaySeconds();
   const runId = currentRunId();
   const rec = new Recorder(runId, project);
   const keys = new Keyring();
@@ -435,6 +445,12 @@ const runHuman = async (
       rec.note(`review job: ${review.job}`);
       await rec.screenshot(page, "05", "review");
 
+      if (signDelayS > 0) {
+        rec.note(`waited ${signDelayS} s between the review and Sign (STEER-0300 C1 stale case)`);
+        test.setTimeout(testInfo.timeout + signDelayS * 1000);
+        await page.waitForTimeout(signDelayS * 1000);
+      }
+
       await testId(page, "start-sign").click();
       await approveAndNote(rec, page);
       await approveAndNote(rec, page);
@@ -471,12 +487,6 @@ const runHuman = async (
       const slip = slipFieldsOf(parsed);
       if (slip.buyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
-      }
-      if (slip.jobId.toLowerCase() !== bought.review.job.toLowerCase()) {
-        throw new Error(`the review showed ${bought.review.job}, but the slip's jobId was ${slip.jobId}`);
-      }
-      if (slip.amount !== bought.review.amount) {
-        throw new Error(`the review showed ${bought.review.amount}, but the slip's amount was ${slip.amount}`);
       }
 
       const offerResponse = await fetch(`${hub}/offers/${slip.offerHash}`);
@@ -528,9 +538,12 @@ const runHuman = async (
       if (fundBuyer.toLowerCase() !== wallet.toLowerCase()) {
         throw new Error(`the Funded buyer is ${fundBuyer}, not ${wallet}`);
       }
-      if (fundPayee.toLowerCase() !== bought.review.payee.toLowerCase()) {
-        throw new Error(`the review showed ${bought.review.payee}, but the Funded payee was ${fundPayee}`);
-      }
+      const comparison = compareSettlement(
+        bought.review,
+        { payee: fundPayee, amount: slip.amount, job: slip.jobId },
+        signDelayS,
+      );
+      if (comparison.note) rec.note(comparison.note);
       if (fundAmount !== slip.amount) {
         throw new Error(`the Funded amount is ${fundAmount}, not the slip amount ${slip.amount}`);
       }
