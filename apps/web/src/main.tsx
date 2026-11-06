@@ -1,3 +1,5 @@
+// First, so Buffer exists before Privy's embedded wallet can sign (see polyfills.ts).
+import "./polyfills.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/tokens.css";
