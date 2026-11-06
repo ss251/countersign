@@ -60,6 +60,10 @@ export class State {
     return value as KnownRail[];
   }
 
+  loadSlip(hash: string): Slip {
+    return JSON.parse(readFileSync(this.slipPath(hash), "utf8")) as Slip;
+  }
+
   loadConsumedApprovals(): string[] {
     if (!existsSync(this.consumedApprovalsPath)) return [];
     const value = JSON.parse(readFileSync(this.consumedApprovalsPath, "utf8")) as unknown;

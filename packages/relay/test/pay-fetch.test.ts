@@ -12,9 +12,21 @@ import { authorizationFromWire } from "../src/eip3009.ts";
 import { createPayFetch, SpendLimitError } from "../src/pay-fetch.ts";
 import type { FetchLike, PaidResponse } from "../src/pay-fetch.ts";
 import type { PaymentPayload, PaymentRequirements } from "../src/exact.ts";
+import { PAYMENT_RETRY_HEADER } from "../src/paywall.ts";
 import { NOW, createTestRelay, makeRequirements } from "./support.ts";
 
 const RESOURCE = "http://shop.test/forecast";
+const RETRY_TOKEN = `0x${"ab".repeat(16)}`;
+
+function pending402(token: string): Response {
+  return new Response(JSON.stringify({ error: "Refused. settlement_pending" }), {
+    status: 402,
+    headers: {
+      "content-type": "application/json",
+      [PAYMENT_RETRY_HEADER]: token,
+    },
+  });
+}
 
 function challenge(requirements: PaymentRequirements): Response {
   const body = {
@@ -295,6 +307,82 @@ describe("createPayFetch", () => {
     expect(failed.status).toBe(500);
     await expect(pay(RESOURCE)).rejects.toBeInstanceOf(SpendLimitError);
     expect(signed).toBe(1);
+    expect(pay.spent()).toBe("0.05");
+  });
+
+  test("a pending payment is retried with the same signature and the token", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+    );
+    const signatures: string[] = [];
+    let paid = 0;
+    const fetch: FetchLike = async (_input, init) => {
+      const signature = new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER);
+      if (!signature) return challenge(requirements);
+      signatures.push(signature);
+      paid += 1;
+      if (paid === 1) return pending402(RETRY_TOKEN);
+      expect(new Headers(init?.headers).get(PAYMENT_RETRY_HEADER)).toBe(RETRY_TOKEN);
+      return settled();
+    };
+    const sleeps: number[] = [];
+    const pay = createPayFetch({
+      account: relay.buyer,
+      fetch,
+      now: () => NOW,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    const res = await pay(RESOURCE);
+    expect(res.status).toBe(200);
+    expect(res.payment).toEqual({ transaction: "0xabc", url: RESOURCE, amount: "50000" });
+    expect(signatures).toHaveLength(2);
+    expect(new Set(signatures).size).toBe(1);
+    expect(sleeps).toEqual([2000]);
+    expect(pay.spent()).toBe("0.05");
+  });
+
+  test("a pending payment stops after three retries", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+    );
+    const signatures: string[] = [];
+    let paid = 0;
+    const fetch: FetchLike = async (_input, init) => {
+      const signature = new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER);
+      if (!signature) return challenge(requirements);
+      signatures.push(signature);
+      paid += 1;
+      if (paid === 1) return pending402(RETRY_TOKEN);
+      expect(new Headers(init?.headers).get(PAYMENT_RETRY_HEADER)).toBe(RETRY_TOKEN);
+      return new Response(JSON.stringify({ error: "Refused. This payment is still settling." }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const sleeps: number[] = [];
+    const pay = createPayFetch({
+      account: relay.buyer,
+      fetch,
+      now: () => NOW,
+      retryDelayMs: 5,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    const res = await pay(RESOURCE);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Refused. This payment is still settling." });
+    expect(signatures).toHaveLength(4);
+    expect(new Set(signatures).size).toBe(1);
+    expect(sleeps).toEqual([5, 5, 5]);
     expect(pay.spent()).toBe("0.05");
   });
 

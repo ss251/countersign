@@ -14,6 +14,7 @@ import { NETWORK, USDT } from "./chain.ts";
 import { authorizationToWire, sameAddress, signAuthorization, tokenAbi } from "./eip3009.ts";
 import type { Authorization } from "./eip3009.ts";
 import type { PaymentPayload, PaymentRequirements, SettleResponse } from "./exact.ts";
+import { PAYMENT_RETRY_HEADER } from "./paywall.ts";
 import type { ChainReader } from "./ports.ts";
 
 export type FetchLike = (
@@ -33,6 +34,10 @@ export type PayFetchOptions = {
   reader?: Pick<ChainReader, "readContract">;
   /** Injectable for tests. Defaults to the global fetch at creation time. */
   fetch?: FetchLike;
+  /** Milliseconds to wait before each retry of a pending payment. Defaults to 2000. */
+  retryDelayMs?: number;
+  /** Injectable for tests. Defaults to a setTimeout promise. */
+  sleep?: (ms: number) => Promise<void>;
   /** Unix seconds. Defaults to the wall clock. */
   now?: () => number;
 };
@@ -80,6 +85,7 @@ type SignedAuthorization = {
 };
 
 const MAX_TIMEOUT_SECONDS = 300;
+const MAX_RETRIES = 3;
 
 export function createPayFetch(options: PayFetchOptions): PayFetch {
   const account = options.account;
@@ -89,6 +95,9 @@ export function createPayFetch(options: PayFetchOptions): PayFetch {
   const allowlist = options.payTo?.map((value) => getAddress(value)) ?? null;
   const reader = options.reader ?? null;
   const send = options.fetch ?? globalThis.fetch;
+  const retryDelayMs = options.retryDelayMs ?? 2000;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   let spentAtomic = 0n;
   const signed: SignedAuthorization[] = [];
@@ -159,18 +168,30 @@ export function createPayFetch(options: PayFetchOptions): PayFetch {
     };
     const url = resourceUrl(required, input);
 
-    const [retryInput, retryInit] = withSignature(input, init, toBase64Json(payment));
-    const second = await send(retryInput, retryInit);
-    const settle = readSettle(second);
+    const paymentHeader = toBase64Json(payment);
+    let [nextInput, nextInit] = withSignature(input, init, paymentHeader);
+    let answer = await send(nextInput, nextInit);
+    const retryToken = pendingToken(answer);
+    if (retryToken) {
+      // Only the requester whose payment went pending holds this token; retry the same
+      // authorisation, never a second one, while the transaction settles.
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
+        await sleep(retryDelayMs);
+        [nextInput, nextInit] = withSignature(nextInput, nextInit, paymentHeader, retryToken);
+        answer = await send(nextInput, nextInit);
+        if (answer.status !== 409) break;
+      }
+    }
+    const settle = readSettle(answer);
     const receipt =
-      second.ok && settle?.success === true && typeof settle.transaction === "string"
+      answer.ok && settle?.success === true && typeof settle.transaction === "string"
         ? {
             transaction: settle.transaction,
             url,
             amount: typeof settle.amount === "string" ? settle.amount : requirements.amount,
           }
         : undefined;
-    return wrap(second, receipt);
+    return wrap(answer, receipt);
   }) as PayFetch;
 
   pay.spent = () => formatUnits(spentAtomic, USDT.decimals);
@@ -255,6 +276,11 @@ function readSettle(response: Response): SettleResponse | null {
   }
 }
 
+function pendingToken(response: Response): string | null {
+  if (response.status !== 402) return null;
+  return response.headers.get(PAYMENT_RETRY_HEADER);
+}
+
 function resourceUrl(required: PaymentRequired, input: string | URL | Request): string {
   const url = required.resource?.url;
   if (typeof url === "string") return url;
@@ -265,16 +291,19 @@ function withSignature(
   input: string | URL | Request,
   init: RequestInit | undefined,
   header: string,
+  retryToken?: string,
 ): [string | URL | Request, RequestInit | undefined] {
   if (input instanceof Request) {
     const base = input.clone();
     const headers = new Headers(base.headers);
     for (const [key, value] of new Headers(init?.headers)) headers.set(key, value);
     headers.set(PAYMENT_SIGNATURE_HEADER, header);
+    if (retryToken !== undefined) headers.set(PAYMENT_RETRY_HEADER, retryToken);
     return [new Request(base, { ...(init ?? {}), headers }), undefined];
   }
   const headers = new Headers(init?.headers);
   headers.set(PAYMENT_SIGNATURE_HEADER, header);
+  if (retryToken !== undefined) headers.set(PAYMENT_RETRY_HEADER, retryToken);
   return [input, { ...(init ?? {}), headers }];
 }
 
