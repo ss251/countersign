@@ -24,6 +24,8 @@ import {
   approveIfPrompted,
   dialogVisible,
   openPrivy,
+  privySignatureNote,
+  recordPrivyConsole,
   recordPrivyRequestFailure,
   recordPrivyResponse,
   signIn,
@@ -181,6 +183,11 @@ function watchPrivy(page: Page, failures: string[]): void {
   });
 }
 
+async function approveAndNote(rec: Recorder, page: Page): Promise<void> {
+  const clicks = await approveIfPrompted(page);
+  if (clicks > 1) rec.note(privySignatureNote(clicks));
+}
+
 interface SlipFields {
   jobId: Hex;
   offerHash: Hex;
@@ -267,7 +274,12 @@ const runHuman = async (
   let failed = false;
   let failure: unknown;
 
-  if (project === "privy") watchPrivy(page, privyFailures);
+  if (project === "privy") {
+    const consoleFile = rec.file("console.log");
+    recordPrivyConsole(page, consoleFile);
+    rec.addArtifact(consoleFile);
+    watchPrivy(page, privyFailures);
+  }
 
   if (project === "privy" && (email === "" || otp === "")) {
     rec.record("00-open", "skip", 0, "no Privy test login");
@@ -396,8 +408,8 @@ const runHuman = async (
       await rec.screenshot(page, "05", "review");
 
       await testId(page, "start-sign").click();
-      await approveIfPrompted(page);
-      await approveIfPrompted(page);
+      await approveAndNote(rec, page);
+      await approveAndNote(rec, page);
 
       const hash = await waitResult(page, 120_000);
       await assertNoRefusal(page);

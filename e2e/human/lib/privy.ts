@@ -3,6 +3,8 @@
  * Callers take every screenshot, and none while the email or the code is in the page.
  */
 
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 
 async function firstVisible(candidates: Locator[], timeoutMs: number): Promise<Locator> {
@@ -128,20 +130,93 @@ export async function signIn(
   );
 }
 
-/** Approve a signature dialog if one appears within ten seconds; otherwise return. */
-export async function approveIfPrompted(page: Page, timeoutMs = 10_000): Promise<boolean> {
+/**
+ * Record every console message and page error in a local text artifact, one JSON line per entry.
+ * Only what the page logged, never a request or response body.
+ */
+export function recordPrivyConsole(page: Page, file: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, "");
+  const write = (type: string, text: string): void => {
+    appendFileSync(file, `${JSON.stringify({ type, text: text.slice(0, 500) })}\n`);
+  };
+  page.on("console", (message) => write(message.type(), message.text()));
+  page.on("pageerror", (error) => write("pageerror", error.message));
+}
+
+const SIGN_BUTTON = /^(sign|approve|confirm)/i;
+const SIGN_ERROR = /an error has occurred|please try again/i;
+const SIGN_CLICK_LIMIT = 3;
+const PROMPT_POLL_MS = 250;
+const PROMPT_OUTCOME_MS = 15_000;
+const SIGN_RETRY_MS = 2_000;
+
+export const PRIVY_SIGN_FAILURE =
+  'Privy could not sign: "An error has occurred, please try again" after 3 tries';
+
+export function privySignatureNote(clicks: number): string {
+  return `Privy's signature needed ${clicks} clicks: "An error has occurred, please try again" (UX gap, cs-ui)`;
+}
+
+async function visible(locator: Locator): Promise<boolean> {
+  return locator.isVisible().catch(() => false);
+}
+
+async function anyVisible(locator: Locator): Promise<boolean> {
+  const count = await locator.count();
+  for (let i = 0; i < count; i++) {
+    if (await visible(locator.nth(i))) return true;
+  }
+  return false;
+}
+
+async function visibleSignButton(page: Page): Promise<Locator | undefined> {
+  const buttons = page.getByRole("dialog").getByRole("button", { name: SIGN_BUTTON });
+  const count = await buttons.count();
+  for (let i = 0; i < count; i++) {
+    const button = buttons.nth(i);
+    if (await visible(button)) return button;
+  }
+  return undefined;
+}
+
+type PromptOutcome = "closed" | "error" | "open";
+
+/** Watch one prompt until it closes, shows Privy's error, or stays open for fifteen seconds. */
+async function waitForPromptOutcome(page: Page, box: Locator, button: Locator): Promise<PromptOutcome> {
+  const error = box.getByText(SIGN_ERROR);
+  for (let waited = 0; waited < PROMPT_OUTCOME_MS; waited += PROMPT_POLL_MS) {
+    if (!(await visible(button))) return "closed";
+    if (await anyVisible(error)) return "error";
+    await page.waitForTimeout(PROMPT_POLL_MS);
+  }
+  if (!(await visible(button))) return "closed";
+  return (await anyVisible(error)) ? "error" : "open";
+}
+
+/**
+ * Approve a signature dialog if one appears within ten seconds. Privy can leave its "An error has
+ * occurred, please try again" message over an active button, so retry that button twice more.
+ * Returns the number of clicks the prompt took, or zero when no prompt appeared.
+ */
+export async function approveIfPrompted(page: Page, timeoutMs = 10_000): Promise<number> {
   const deadline = Date.now() + timeoutMs;
+  const box = page.getByRole("dialog");
   while (Date.now() < deadline) {
-    const buttons = page.getByRole("dialog").getByRole("button", { name: /^(sign|approve|confirm)/i });
-    const count = await buttons.count();
-    for (let i = 0; i < count; i++) {
-      const button = buttons.nth(i);
-      if (await button.isVisible().catch(() => false)) {
+    const button = await visibleSignButton(page);
+    if (button) {
+      let clicks = 0;
+      for (;;) {
         await button.click();
-        return true;
+        clicks += 1;
+        const outcome = await waitForPromptOutcome(page, box, button);
+        if (outcome !== "error") return clicks;
+        if (clicks >= SIGN_CLICK_LIMIT) throw new Error(PRIVY_SIGN_FAILURE);
+        await page.waitForTimeout(SIGN_RETRY_MS);
+        if (!(await visible(button))) return clicks;
       }
     }
     await page.waitForTimeout(250);
   }
-  return false;
+  return 0;
 }
