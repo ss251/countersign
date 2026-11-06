@@ -31,6 +31,7 @@ import {
   type CountersignExtra,
   type CountersignPayload,
   isV2Terms,
+  jobIdOf,
   type Network,
   type Offer,
   offerHash,
@@ -92,7 +93,7 @@ export interface EscrowRailConfig {
   deadlineSkew?: number;
   /** How much longer than the offer's window a buyer may sign. Default 300. */
   maxExtraSeconds?: number;
-  /** How long to wait for a receipt before reporting the tx as pending. Default 60_000 ms. */
+  /** How long to wait for a receipt before a missing one is checked against the job, then reported pending. Default 60_000 ms. */
   receiptTimeoutMs?: number;
   now?: () => number;
   /** Injected clients, for tests. */
@@ -178,7 +179,12 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     return next;
   }
 
-  async function submit(label: string, write: () => Promise<Hex>, payer?: string): Promise<SettleResult> {
+  async function submit(
+    label: string,
+    write: () => Promise<Hex>,
+    payer?: string,
+    confirm?: () => Promise<boolean>,
+  ): Promise<SettleResult> {
     if (!wallet) return { success: false, errorReason: `This rail has no submitter; it cannot ${label}.`, transaction: "", network };
     let hash: Hex;
     try {
@@ -186,17 +192,36 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     } catch (e) {
       return { success: false, errorReason: `Refused. ${label} would revert: ${short(e)}`, transaction: "", network };
     }
+    const settled = (): SettleResult => ({ success: true, transaction: hash, network, ...(payer ? { payer } : {}) });
     let receipt: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>>;
     try {
       receipt = await pub.waitForTransactionReceipt({ hash, timeout: receiptTimeoutMs });
     } catch {
-      // Broadcast but not yet mined: the caller polls escrow.status(jobId) rather than assume either way.
+      // The receipt never arrived. One jobOf read: a job already in the state this call writes has landed.
+      let landed = false;
+      if (confirm) {
+        try {
+          landed = await confirm();
+        } catch {
+          landed = false;
+        }
+      }
+      if (landed) return settled();
       return { success: false, errorReason: "pending", transaction: hash, network };
     }
     if (receipt.status !== "success") {
       return { success: false, errorReason: `Refused. The chain reverted the ${label}.`, transaction: hash, network };
     }
-    return { success: true, transaction: hash, network, ...(payer ? { payer } : {}) };
+    return settled();
+  }
+
+  /** jobOf, once. True when the job is in a state this call leaves behind. */
+  function confirmJob(jobId: Hex, accept: (status: (typeof STATUS)[number]) => boolean): () => Promise<boolean> {
+    return async () => {
+      const job = await pub.readContract({ address: cfg.escrow, abi: escrowAbi, functionName: "jobOf", args: [jobId] });
+      const status = STATUS[job.status];
+      return status !== undefined && accept(status);
+    };
   }
 
   function challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
@@ -288,6 +313,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     if (!v.isValid) return { success: false, errorReason: v.invalidReason, transaction: "", network };
     const p = payment.payload as unknown as CountersignPayload;
     const extra = req.extra as unknown as CountersignExtra & { bond?: unknown };
+    const funded = confirmJob(jobIdOf(p.terms, cfg.chainId, cfg.escrow), (status) => status !== "none");
     if (version === 2) {
       return submit(
         "funding",
@@ -299,6 +325,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
             args: [...fundArgsV2(extra.offerHash, p), opts?.lockSig ?? "0x"],
           }),
         v.payer,
+        funded,
       );
     }
     const bond = atomicOrZero(extra.bond);
@@ -314,12 +341,14 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
             args: [args[0], args[1], bond],
           }),
         v.payer,
+        funded,
       );
     }
     return submit(
       "funding",
       () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "fund", args: fundArgs(extra.offerHash, p) }),
       v.payer,
+      funded,
     );
   }
 
@@ -374,19 +403,33 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
           network,
         });
       }
-      return submit("release", () =>
-        wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "release", args: [jobId, slipHash, sellerSig] }),
+      return submit(
+        "release",
+        () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "release", args: [jobId, slipHash, sellerSig] }),
+        undefined,
+        confirmJob(jobId, (status) => status === "released" || status === "delivered"),
       );
     },
     refund: (jobId) =>
-      submit("refund", () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "refund", args: [jobId] })),
+      submit(
+        "refund",
+        () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "refund", args: [jobId] }),
+        undefined,
+        confirmJob(jobId, (status) => status === "refunded"),
+      ),
     cancel: (jobId, sellerSig) =>
-      submit("cancel", () =>
-        wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "cancel", args: [jobId, sellerSig] }),
+      submit(
+        "cancel",
+        () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "cancel", args: [jobId, sellerSig] }),
+        undefined,
+        confirmJob(jobId, (status) => status === "refunded"),
       ),
     failDelivery: (jobId) =>
-      submit("delivery failure", () =>
-        wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "failDelivery", args: [jobId] }),
+      submit(
+        "delivery failure",
+        () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "failDelivery", args: [jobId] }),
+        undefined,
+        confirmJob(jobId, (status) => status === "failed"),
       ),
     bondOfPayee: (payee) => bondOfPayee(pub, cfg.escrow, payee),
     ...v2Ops,
