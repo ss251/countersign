@@ -105,11 +105,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         notify(order, entry.offer.title, false, reason);
         return fail(target, order, reason);
       }
-      const heldPayTo = entry.offer.payTo?.["hedera-scheduled"];
-      if (
-        heldPayTo !== undefined &&
-        (order.amount !== entry.offer.price || order.payTo !== heldPayTo)
-      ) {
+      if (order.amount !== entry.offer.price || order.payTo !== entry.offer.payTo?.["hedera-scheduled"]) {
         const reason = "Refused. The held order's terms differ from the served offer.";
         notify(order, entry.offer.title, false, reason);
         return fail(target, order, reason);

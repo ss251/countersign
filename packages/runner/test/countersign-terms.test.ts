@@ -179,6 +179,21 @@ describe("the runner refuses a held order whose terms differ from its offer", ()
     expect(seen).toHaveLength(0);
   });
 
+  test("an offer that declares no held payee is refused before any work", async () => {
+    const seen: JobOrder[] = [];
+    delete offer.payTo;
+    offerHash = hashOffer(offer);
+    await setup(async (order) => {
+      seen.push(order);
+      return "c2lnbmF0dXJl";
+    }, MISSING);
+
+    const reply = await sendJob(makeOrder());
+    if (reply.t !== "fail") throw new Error(`expected fail, got ${reply.t}`);
+    expect(reply.reason).toBe("Refused. The held order's terms differ from the served offer.");
+    expect(seen).toHaveLength(0);
+  });
+
   test("an order that matches the offer is countersigned as before", async () => {
     const seen: JobOrder[] = [];
     await setup(async (order) => {
