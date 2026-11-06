@@ -83,11 +83,7 @@ function EvidenceFrame({
       {shows(0) ? <Claim on={on(0)} onFocus={bring(0)} stats={stats} rails={rails} missing={missing} down={() => go(1)} /> : null}
       <div className="story__box">
         {shows(1) ? <h2 className={cx("story__line", on(1) && "is-on")}>{none ? "No payment has moved on this hub yet." : "Every payment here was real."}</h2> : null}
-        {shows(2) ? (
-          <h2 className={cx("story__line", on(2) && "is-on")}>
-            On {WORDS[n] ?? n} {n === 1 ? "rail" : "rails"}.
-          </h2>
-        ) : null}
+        {shows(2) ? <h2 className={cx("story__line", on(2) && "is-on")}>{`On ${WORDS[n] ?? n} ${n === 1 ? "rail" : "rails"}.`}</h2> : null}
         {shows(3) ? <h2 className={cx("story__line", on(3) && "is-on")}>Each one left a slip anyone can check.</h2> : null}
         {shows(4) ? <h2 className={cx("story__line", on(4) && "is-on")}>Ask for one.</h2> : null}
         {shows(1, 4) ? (
