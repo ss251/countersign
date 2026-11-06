@@ -6,7 +6,7 @@ import "./tree.css";
 
 /**
  * A receipt tree. When a seller buys from other sellers to serve a call, each purchase
- * gets its own slip, and the outer slip's body lists their hashes. The root commits its
+ * gets its own slip, and the outer slip’s body lists their hashes. The root commits its
  * children, so no purchase can be dropped or added after the seller signs.
  */
 export function ReceiptTree({ tree, current }: { tree: TreeView; current?: string }) {

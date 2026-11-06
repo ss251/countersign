@@ -105,3 +105,48 @@ export interface TreeView {
   root: Hex;
   nodes: Record<string, { slip: Slip; title: string; sellerName: string }>;
 }
+
+/** A seller as the hub's /sellers reports it: counts derived from its jobs and slips. */
+export interface SellerRecord {
+  address: string;
+  name: string | null;
+  payees: Partial<Record<RailId, string>>;
+  offers: Array<{ offerHash: string; title: string; price: string; rails: RailId[]; online: boolean }>;
+  calls: number;
+  released: number;
+  settled: number;
+  refunded: number;
+  failed: number;
+  /** Atomic sum of released and settled amounts. */
+  volume: string;
+  erc8004: { agentId: string; identityRegistry: string; reputation: null | { count: number; score: number } } | null;
+}
+
+/** One ranked result from the hub's offer search, with the hub's own reasons. */
+export interface SearchResult {
+  offerHash: string;
+  offer: Offer;
+  online: boolean;
+  score: number;
+  why: string[];
+}
+
+/** A release or a refund, as the overview lists it. */
+export interface Settlement {
+  jobId: string;
+  offerHash: string;
+  title: string;
+  seller: string;
+  /** Atomic. */
+  amount: string;
+  rail: RailId;
+  network: string;
+  /** released: an escrow paid the seller; settled: a direct rail paid; refunded: the money went back. */
+  kind: "released" | "settled" | "refunded";
+  tx: string;
+  /** Explorer link for tx, when the hub knows one. */
+  explorer?: string | null;
+  slipHash?: string | null;
+  /** Unix seconds. */
+  at: number;
+}

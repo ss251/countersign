@@ -45,164 +45,204 @@
   font-size: var(--t-13);
 }
 
-/* Offers, as ledger rows: what it is on the left, the facts in fixed columns on the right. */
-.offers {
+/* Totals: the money first, the failures counted right beside the successes. */
+.totals {
   display: grid;
-  border-top: var(--hair) solid var(--line);
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-10);
 }
 
-.offer-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--sp-4) var(--sp-8);
-  padding: var(--sp-5) 0;
+.totals__money {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-5);
+}
+
+.totals__label {
+  color: var(--slate);
+  font-size: var(--t-15);
+}
+
+.totals__line {
+  color: var(--ink);
+  font-size: var(--t-15);
+}
+
+.spark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 0;
+}
+
+.spark svg {
+  display: block;
+  overflow: visible;
+}
+
+.spark__base {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.spark__line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.spark__caption {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* The offers table: numbers right-aligned and tabular so the columns read down. */
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-14);
+}
+
+.ledger-table th,
+.ledger-table td {
+  padding: var(--sp-3) var(--sp-3);
   border-bottom: var(--hair) solid var(--line);
+  text-align: left;
+  vertical-align: top;
 }
 
-.offer-row__main {
-  display: grid;
-  gap: var(--sp-1);
-  min-width: 0;
+.ledger-table thead th {
+  padding-top: 0;
+  color: var(--slate);
+  font-size: var(--t-12);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.offer-row__title {
+.ledger-table th:first-child,
+.ledger-table td:first-child {
+  padding-left: 0;
+}
+
+.ledger-table th:last-child,
+.ledger-table td:last-child {
+  padding-right: 0;
+}
+
+.ledger-table .is-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ledger-table__offer {
+  font-weight: 400;
+}
+
+.ledger-table__title {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: var(--t-17);
+  font-size: var(--t-15);
   font-weight: 600;
 }
 
-.offer-row__title a {
+.ledger-table__title a {
   text-decoration-color: transparent;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .offer-row__title a:hover {
+  .ledger-table__title a:hover {
     text-decoration-color: currentColor;
   }
 }
 
-.offer-row__summary {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  max-width: 62ch;
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.offer-row__rails {
+.ledger-table__rails {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-1);
-  margin-top: var(--sp-1);
+  margin-top: var(--sp-2);
 }
 
-.offer-row__facts {
-  display: grid;
-  grid-template-columns: repeat(4, auto);
-  gap: var(--sp-6);
-  align-content: start;
-}
-
-.offer-row__facts div {
-  display: grid;
-  gap: 2px;
-  justify-items: end;
-}
-
-.offer-row__facts dt {
+.ledger-table__none,
+.ledger-table__runner.is-off,
+.ledger-table tr.is-delisted .ledger-table__title,
+.ledger-table tr.is-delisted .ledger-table__runner {
   color: var(--slate);
-  font-size: var(--t-12);
 }
 
-.offer-row__facts dd {
-  font-size: var(--t-14);
+.ledger-table__runner {
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.offer-row__runner {
-  font-weight: 600;
+/* On a phone each offer becomes a block: the name, then labelled facts in two columns. */
+@media (max-width: 720px) {
+  .ledger-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .ledger-table,
+  .ledger-table tbody,
+  .ledger-table tr,
+  .ledger-table th,
+  .ledger-table td {
+    display: block;
+  }
+  .ledger-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2) var(--sp-4);
+    padding: var(--sp-4) 0;
+    border-bottom: var(--hair) solid var(--line);
+  }
+  .ledger-table th,
+  .ledger-table td {
+    padding: 0;
+    border: 0;
+  }
+  .ledger-table__offer {
+    grid-column: 1 / -1;
+  }
+  .ledger-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--slate);
+    font-size: var(--t-12);
+  }
+  .ledger-table .is-num {
+    text-align: left;
+  }
 }
 
-.offer-row__runner--off,
-.offer-row--delisted .offer-row__title,
-.offer-row--delisted .offer-row__runner {
+.seller__sales {
+  margin-top: var(--sp-10);
+  max-width: 560px;
+}
+
+.seller__quiet {
   color: var(--slate);
+  font-size: var(--t-14);
 }
 
-@media (max-width: 1100px) {
-  .offer-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .offer-row__facts {
-    grid-template-columns: repeat(2, auto);
-    justify-content: start;
-    gap: var(--sp-3) var(--sp-8);
-  }
-  .offer-row__facts div {
-    justify-items: start;
-  }
-}
-
-/* Earnings rail */
-.seller__earned {
+/* The empty desk: one line, the real command, a way into the wizard. */
+.first-offer {
   display: grid;
-  gap: var(--sp-2);
-  padding: var(--sp-5);
-}
-
-.seller__totals {
-  display: grid;
-  gap: var(--sp-1);
-}
-
-.sales {
-  display: grid;
-  border-top: var(--hair) solid var(--line);
-}
-
-.sale {
-  display: flex;
-  justify-content: space-between;
   gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-bottom: var(--hair) solid var(--line);
-  color: var(--ink);
-  text-decoration: none;
+  max-width: 720px;
 }
 
-.sale__main,
-.sale__end {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
+.first-offer__title {
+  font-size: var(--t-20);
 }
 
-.sale__end {
-  justify-items: end;
-}
-
-.sale__title {
-  font-weight: 500;
-}
-
-.sale__when {
+.first-offer__body {
   color: var(--slate);
-  font-size: var(--t-12);
-}
-
-.sale__end .status {
-  font-size: var(--t-12);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .sale--link:hover .sale__title {
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
-  }
 }
 
 /* Publish wizard */
@@ -230,9 +270,7 @@
   color: var(--ink);
 }
 
-.steps__item.is-current {
-  font-weight: 700;
-}
+/* State by colour and the filled number, never by weight: weight changes reflow the row. */
 
 .steps__button {
   display: inline-flex;
@@ -350,17 +388,6 @@ button.steps__button {
 .wizard__commands {
   display: grid;
   gap: var(--sp-5);
-}
-
-.field__hint {
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-.field__error {
-  color: var(--seal);
-  font-size: var(--t-13);
-  font-weight: 500;
 }
 
 .input-suffix {
@@ -510,35 +537,4 @@ button.steps__button {
   .split-check__half--yours {
     border-top: var(--hair) solid var(--line);
   }
-}
-
-/* Code and commands */
-.code,
-.command__body {
-  margin: 0;
-  padding: var(--sp-4);
-  overflow: auto;
-  border-radius: var(--r-2);
-  background: var(--sunk);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre;
-}
-
-.command__body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.command {
-  display: grid;
-  gap: var(--sp-2);
-}
-
-.command__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
