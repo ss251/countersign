@@ -1,4 +1,4 @@
-import { HubError } from "../../lib/hub.ts";
+import { FOREIGN_HUB, HubError } from "../../lib/hub.ts";
 
 export type SessionPost = (path: string, body: unknown, headers: Record<string, string>) => Promise<unknown>;
 
@@ -34,6 +34,7 @@ export async function createSessionEnvelope(deps: {
     value = await deps.post("/envelopes/session", { agent: deps.agent }, { "x-privy-token": deps.privyToken });
   } catch (e) {
     if (e instanceof HubError) {
+      if (e.code === "foreign-hub") return { kind: "error", message: FOREIGN_HUB };
       if (e.status === 401) return { kind: "signed-out" };
       if (e.status === 0) return { kind: "error", message: "The hub did not answer. Try again in a moment." };
     }
