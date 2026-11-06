@@ -1,6 +1,7 @@
 // The mpp rail: Stripe Machine Payments Protocol. One rail id ("mpp") with two
-// methods: a card through Stripe and USDC on Tempo. The MPP challenge travels in
-// `extra.mpp.wwwAuthenticate`; credentials come back as `payload.credential`.
+// methods: a card through Stripe and pathUSD on Tempo Moderato. The MPP
+// challenge travels in `extra.mpp.wwwAuthenticate`; credentials come back as
+// `payload.credential`.
 import {
   offerHash,
   type Offer,
@@ -9,10 +10,9 @@ import {
   type SettleResult,
   type VerifyResult,
 } from "@countersign/core";
-import { Challenge, Credential, Receipt } from "mppx";
-import { Mppx, stripe } from "mppx/server";
+import { Challenge, Credential, Receipt, Store } from "mppx";
+import { Mppx, stripe, tempo } from "mppx/server";
 import { Methods as StripeMethods } from "mppx/stripe";
-import { Methods as TempoMethods } from "mppx/tempo";
 import type { ChallengeContext, Rail, RailDeclaration } from "../rail.ts";
 import {
   CARD_DECIMALS,
@@ -23,10 +23,22 @@ import {
   PLACEHOLDER_TEMPO_RECIPIENT,
   STABLECOIN_FLOOR,
   TEMPO_ASSET,
+  TEMPO_CHAIN_ID,
+  TEMPO_CURRENCY,
   TEMPO_DECIMALS,
-  TEMPO_USDC,
 } from "./constants.ts";
 import type { StripeClientLike } from "./types.ts";
+
+/**
+ * The Tempo method is Moderato-only. `testnet: true` pins the chain, pathUSD is
+ * the only accepted currency, and there is no option for a mainnet currency or
+ * chain id.
+ */
+const TEMPO_CHARGE = tempo.charge({
+  testnet: true,
+  currencies: [TEMPO_CURRENCY],
+  store: Store.memory(),
+})[0]!;
 
 export type MppRefusal =
   | "not_mpp"
@@ -37,6 +49,7 @@ export type MppRefusal =
   | "offer_mismatch"
   | "amount_mismatch"
   | "currency_mismatch"
+  | "chain_mismatch"
   | "expired"
   | "replay"
   | "tempo_verification_requires_rpc"
@@ -53,6 +66,7 @@ export const MPP_REFUSALS: Record<MppRefusal, string> = {
   offer_mismatch: "Refused. The payment was made for a different offer.",
   amount_mismatch: "Refused. The price moved after you paid.",
   currency_mismatch: "Refused. The payment is in the wrong currency.",
+  chain_mismatch: "Refused. The payment is for a different Tempo chain.",
   expired: "Refused. The payment challenge expired before it was settled.",
   replay: "Refused. This payment was already used.",
   tempo_verification_requires_rpc: "Not verified. Tempo payments need a live Tempo RPC.",
@@ -156,17 +170,18 @@ export function createMppRail(options: MppRailOptions): MppRail {
     method: "tempo" | "stripe",
   ): MppChallenge {
     if (method === "tempo") {
-      return Challenge.fromMethod(TempoMethods.charge, {
+      return Challenge.fromMethod(TEMPO_CHARGE, {
         realm,
         secretKey,
         expires,
         description: offer.title,
         request: {
           amount: toDecimal(price, TEMPO_DECIMALS),
-          currency: TEMPO_USDC,
+          currency: TEMPO_CURRENCY,
           decimals: TEMPO_DECIMALS,
           recipient: tempoRecipient,
           externalId: hash,
+          chainId: TEMPO_CHAIN_ID,
         },
       });
     }
@@ -245,8 +260,10 @@ export function createMppRail(options: MppRailOptions): MppRail {
       if (challenge.request.currency !== "usd") return { ok: false, reason: "currency_mismatch" };
       if (requirements.amount !== challenge.request.amount) return { ok: false, reason: "amount_mismatch" };
     } else {
-      if (requirements.asset !== TEMPO_USDC) return { ok: false, reason: "currency_mismatch" };
-      if (challenge.request.currency !== TEMPO_USDC) return { ok: false, reason: "currency_mismatch" };
+      if (requirements.asset !== TEMPO_CURRENCY) return { ok: false, reason: "currency_mismatch" };
+      if (challenge.request.currency !== TEMPO_CURRENCY) return { ok: false, reason: "currency_mismatch" };
+      const details = challenge.request.methodDetails as { chainId?: number } | undefined;
+      if (details?.chainId !== TEMPO_CHAIN_ID) return { ok: false, reason: "chain_mismatch" };
       if (challenge.request.recipient !== tempoRecipient) return { ok: false, reason: "offer_mismatch" };
       if (requirements.network === MPP_TEMPO && requirements.amount !== challenge.request.amount) {
         return { ok: false, reason: "amount_mismatch" };
@@ -279,7 +296,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
       const price = atomicPrice(offer.price);
       if (price < STABLECOIN_FLOOR) {
         throw new Error(
-          `offer price ${offer.price} is below the 0.01 USDC stablecoin floor (${STABLECOIN_FLOOR.toString()} atomic units)`,
+          `offer price ${offer.price} is below the 0.01 pathUSD stablecoin floor (${STABLECOIN_FLOOR.toString()} atomic units)`,
         );
       }
       // The card method needs a whole number of cents and at least 0.50 USD.
@@ -294,7 +311,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
         scheme: "exact",
         network: card ? MPP_STRIPE : MPP_TEMPO,
         amount: card ? (price / ATOMIC_PER_CENT).toString() : price.toString(),
-        asset: card ? "usd" : TEMPO_USDC,
+        asset: card ? "usd" : TEMPO_CURRENCY,
         payTo: card ? networkId : tempoRecipient,
         maxTimeoutSeconds,
         extra: {

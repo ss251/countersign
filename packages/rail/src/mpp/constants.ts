@@ -1,23 +1,31 @@
 import type { Asset, Network } from "@countersign/core";
+import { pathusd } from "viem/tokens";
 
 /** The card method's network id. */
 export const MPP_STRIPE: Network = "mpp:stripe";
 /** The stablecoin method's network id. */
 export const MPP_TEMPO: Network = "mpp:tempo";
 
-/** USDC.e on Tempo mainnet, the stablecoin the declaration describes. */
-export const TEMPO_USDC = "0x20c000000000000000000000b9537d11c60e8b50";
-export const TEMPO_DECIMALS = 6;
+/**
+ * Tempo Moderato, the testnet mppx resolves to for `chainId.testnet`. The rail
+ * builds the method with `testnet: true`; there is no mainnet configuration.
+ */
+export const TEMPO_CHAIN_ID = 42431;
+/** pathUSD, mppx's default currency on Moderato. */
+export const TEMPO_CURRENCY = pathusd.addresses[TEMPO_CHAIN_ID];
+export const TEMPO_SYMBOL = "pathUSD";
+export const TEMPO_DECIMALS = pathusd.decimals;
 export const CARD_DECIMALS = 2;
 
+/** The stablecoin declaration: pathUSD on Tempo Moderato. */
 export const TEMPO_ASSET: Asset = {
   network: MPP_TEMPO,
-  address: TEMPO_USDC,
-  symbol: "USDC",
+  address: TEMPO_CURRENCY,
+  symbol: TEMPO_SYMBOL,
   decimals: TEMPO_DECIMALS,
 };
 
-/** Atomic 6-decimal units of USD. 0.01 USDC is the stablecoin floor. */
+/** Atomic 6-decimal units of USD. 0.01 pathUSD is the stablecoin floor. */
 export const STABLECOIN_FLOOR = 10_000n;
 /** Atomic 6-decimal units of USD. 0.50 USD is the card floor. */
 export const CARD_FLOOR = 500_000n;

@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { offerHash, type Offer, type PaymentPayload, type PaymentRequirements } from "@countersign/core";
-import { Challenge, Credential, Receipt } from "mppx";
-import { CARD_FLOOR, STABLECOIN_FLOOR, TEMPO_USDC } from "../constants.ts";
+import { Challenge, Credential, Receipt, Store } from "mppx";
+import { tempo } from "mppx/server";
+import {
+  CARD_FLOOR,
+  STABLECOIN_FLOOR,
+  TEMPO_CHAIN_ID,
+  TEMPO_CURRENCY,
+  TEMPO_DECIMALS,
+  TEMPO_SYMBOL,
+} from "../constants.ts";
 import { mockStripeClient } from "../mock.ts";
 import { createMppRail } from "../rail.ts";
 
@@ -88,6 +98,45 @@ function paymentFor(requirements: PaymentRequirements, credential: string): Paym
   };
 }
 
+describe("declaration", () => {
+  test("declares pathUSD on Tempo Moderato", () => {
+    const rail = railWith();
+    expect(rail.declaration.network).toBe("mpp:tempo");
+    expect(rail.declaration.asset).toEqual({
+      network: "mpp:tempo",
+      address: "0x20c0000000000000000000000000000000000000",
+      symbol: "pathUSD",
+      decimals: 6,
+    });
+  });
+
+  test("keeps the constants on mppx's testnet defaults", () => {
+    expect(TEMPO_CHAIN_ID).toBe(42431);
+    expect(TEMPO_CURRENCY).toBe("0x20c0000000000000000000000000000000000000");
+    expect(TEMPO_SYMBOL).toBe("pathUSD");
+    expect(TEMPO_DECIMALS).toBe(6);
+  });
+
+  test("matches the chain and currency mppx resolves for testnet", async () => {
+    const method = tempo.charge({
+      testnet: true,
+      currencies: [TEMPO_CURRENCY],
+      store: Store.memory(),
+    })[0]!;
+    const resolved = await method.request!({
+      expires: new Date(Date.now() + 300_000).toISOString(),
+      request: {
+        amount: "10000",
+        currency: TEMPO_CURRENCY,
+        decimals: TEMPO_DECIMALS,
+        recipient: "0x0000000000000000000000000000000000000001",
+      },
+    });
+    expect(resolved.chainId).toBe(TEMPO_CHAIN_ID);
+    expect(resolved.currency).toBe(TEMPO_CURRENCY);
+  });
+});
+
 describe("challenge", () => {
   test("converts atomic USD to cents and offers both methods at 0.50", () => {
     const rail = railWith();
@@ -108,7 +157,8 @@ describe("challenge", () => {
     const tempo = challenges.find((c) => c.method === "tempo")!;
     const stripe = challenges.find((c) => c.method === "stripe")!;
     expect(tempo.request.amount).toBe("500000");
-    expect(tempo.request.currency).toBe(TEMPO_USDC);
+    expect(tempo.request.currency).toBe("0x20c0000000000000000000000000000000000000");
+    expect((tempo.request.methodDetails as { chainId?: number }).chainId).toBe(42431);
     expect(stripe.request.amount).toBe("50");
     expect(stripe.request.currency).toBe("usd");
     expect(stripe.request.externalId).toBe(offerHash(o));
@@ -120,12 +170,14 @@ describe("challenge", () => {
 
     expect(req.network).toBe("mpp:tempo");
     expect(req.amount).toBe("50000");
-    expect(req.asset).toBe(TEMPO_USDC);
+    expect(req.asset).toBe(TEMPO_CURRENCY);
     const mpp = req.extra?.mpp as { wwwAuthenticate: string; methods: string[] };
     expect(mpp.methods).toEqual(["tempo"]);
     const challenges = Challenge.deserializeList(mpp.wwwAuthenticate);
     expect(challenges).toHaveLength(1);
     expect(challenges[0]!.request.amount).toBe("50000");
+    expect(challenges[0]!.request.currency).toBe("0x20c0000000000000000000000000000000000000");
+    expect((challenges[0]!.request.methodDetails as { chainId?: number }).chainId).toBe(42431);
   });
 
   test("refuses a price under the 0.01 stablecoin floor", () => {
@@ -250,5 +302,30 @@ describe("settle", () => {
     expect(result.errorReason).toBe("payment_failed");
     expect(result.receipt).toBeUndefined();
     expect(client.calls).toHaveLength(1);
+  });
+});
+
+const MPP_SOURCE_DIR = join(import.meta.dir, "..");
+const FORBIDDEN_MARKERS = ["4217", "0x20c000000000000000000000b9537d11c60e8b50"];
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === "test" ? [] : sourceFiles(path);
+    if (!entry.isFile() || entry.name.includes(".test.")) return [];
+    return [path];
+  });
+}
+
+describe("testnet guard", () => {
+  test("no mainnet chain id or USDC.e address in the mpp sources", () => {
+    const files = sourceFiles(MPP_SOURCE_DIR);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8").toLowerCase();
+      for (const marker of FORBIDDEN_MARKERS) {
+        expect({ file, marker, found: text.includes(marker) }).toEqual({ file, marker, found: false });
+      }
+    }
   });
 });
