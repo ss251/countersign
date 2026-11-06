@@ -135,7 +135,7 @@ contract BondTest is Test {
         _deposit(bond);
         _terms(bond);
         cs = _cs(bond);
-        vm.prank(stranger); // anyone holding the countersignature may fund
+        vm.prank(arbiter); // the arbiter funds a bonded job
         jobId = escrow.fund(OFFER, cs);
     }
 
@@ -236,6 +236,7 @@ contract BondTest is Test {
         uint256 escrowWallet = token.balanceOf(address(escrow));
 
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BondMissing.selector, seller, BOND + 1, BOND));
+        vm.prank(arbiter);
         escrow.fund(OFFER, cs);
 
         assertEq(token.balanceOf(buyer), buyerWallet);
@@ -281,7 +282,9 @@ contract BondTest is Test {
         uint256 free = 300_000;
         _deposit(BOND + free);
         _terms(BOND);
-        bytes32 jobId = escrow.fund(OFFER, _cs(BOND));
+        ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
+        vm.prank(arbiter);
+        bytes32 jobId = escrow.fund(OFFER, cs);
         assertEq(escrow.bondOf(seller), free);
         assertEq(escrow.bondOfJob(jobId), BOND);
 

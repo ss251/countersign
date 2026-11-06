@@ -118,11 +118,11 @@ contract AcceptanceTest is Test {
         escrow.setTerms(OFFER, PRICE, BOND, window, 0);
     }
 
-    /// The buyer countersigns the offer's bond and window, and anyone holding that funds the job.
+    /// The buyer countersigns the offer's bond and window, and the arbiter funds the bonded job.
     function _fund() internal returns (bytes32 jobId) {
         _sellerPublishes(WINDOW);
         ICountersignedEscrow.Countersignature memory cs = _countersign(BOND, WINDOW);
-        vm.prank(stranger);
+        vm.prank(arbiter);
         jobId = escrow.fund(OFFER, cs);
     }
 
@@ -330,7 +330,9 @@ contract AcceptanceTest is Test {
 
     function test_a_window_of_zero_releases_at_once_as_in_v1() public {
         _sellerPublishes(0);
-        bytes32 jobId = escrow.fund(OFFER, _countersign(BOND, 0));
+        ICountersignedEscrow.Countersignature memory cs = _countersign(BOND, 0);
+        vm.prank(arbiter);
+        bytes32 jobId = escrow.fund(OFFER, cs);
 
         uint256 sellerBefore = token.balanceOf(seller);
         escrow.release(jobId, SLIP, _releaseSig(jobId));

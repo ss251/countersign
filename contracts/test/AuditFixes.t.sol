@@ -127,13 +127,13 @@ contract AuditFixesTest is EscrowSigning {
         return _countersignBy(buyerKey, OFFER, seller, PRICE, _deadline(), salt, bond, window);
     }
 
-    /// The seller deposits and registers (bond, window); the buyer countersigns them; a stranger funds.
+    /// The seller deposits and registers (bond, window); the buyer countersigns them; the arbiter funds.
     function _fundJob(uint256 salt, uint256 bond, uint64 window) internal returns (bytes32 jobId) {
         if (bond != 0) _deposit(bond);
         _publish(bond, window);
         ICountersignedEscrow.Countersignature memory cs;
         (cs, jobId) = _cs(salt, bond, window);
-        vm.prank(stranger);
+        vm.prank(arbiter);
         escrow.fund(OFFER, cs);
     }
 
@@ -213,6 +213,7 @@ contract AuditFixesTest is EscrowSigning {
         // The exact terms, with the deadline exactly minDuration away, fund.
         (cs, jobId) =
             _countersignBy(buyerKey, OFFER, seller, PRICE, uint64(block.timestamp + MIN_DURATION), 6, BOND, WINDOW);
+        vm.prank(arbiter);
         escrow.fund(OFFER, cs);
         assertEq(escrow.bondOfJob(jobId), BOND);
     }
@@ -265,6 +266,7 @@ contract AuditFixesTest is EscrowSigning {
 
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.BondLocked(jobId, seller, BOND);
+        vm.prank(arbiter);
         escrow.fund(OFFER, cs);
 
         assertEq(escrow.bondOf(seller), 300_000, "only the registered bond left the free balance");
@@ -308,7 +310,7 @@ contract AuditFixesTest is EscrowSigning {
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 expected) = _cs(1, BOND, WINDOW);
 
-        vm.prank(attacker);
+        vm.prank(arbiter);
         bytes32 jobId = escrow.fund(OFFER, cs);
 
         assertEq(jobId, expected, "the stranger opened exactly the signed job");
@@ -447,6 +449,7 @@ contract AuditFixesTest is EscrowSigning {
         bytes32[4] memory jobs;
         for (uint256 i; i < 4; ++i) {
             (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(i + 1, BOND, 0);
+            vm.prank(arbiter);
             escrow.fund(OFFER, cs);
             jobs[i] = jobId;
         }
@@ -616,6 +619,7 @@ contract ConservationHandler is EscrowSigning {
         if (bond != 0) _depositFor(sellerKey, bond, bytes32(salt));
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
             _countersignBy(buyerKey, offer, seller, PRICE, uint64(block.timestamp + 300), salt, bond, window);
+        if (bond != 0) vm.prank(arbiter);
         try escrow.fund(offer, cs) {
             jobs.push(jobId);
         } catch {}
