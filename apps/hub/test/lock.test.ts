@@ -32,6 +32,8 @@ import {
 
 /** The address that would submit fund. A payee's Lock names it. */
 const SUBMITTER = "0x6666666666666666666666666666666666666666" as Address;
+const BUYER = "0x7777777777777777777777777777777777777777" as Address;
+const SALT = "42";
 
 class RecordingRail extends FakeRail {
   readonly funder?: Address;
@@ -200,7 +202,16 @@ function termsPayment(
     accepted,
     payload: {
       authorization: { nonce },
-      terms: { deadline: NOW + 60, ...terms },
+      terms: {
+        buyer: BUYER,
+        payee: seller.address,
+        amount: "1000",
+        deadline: NOW + 60,
+        salt: SALT,
+        bond: "0",
+        reviewWindow: 0,
+        ...terms,
+      },
     },
   };
 }
@@ -262,6 +273,15 @@ describe("the hub's lock step", () => {
       chainId: CHAIN_ID,
       bond: "100",
       funder: SUBMITTER,
+      terms: {
+        buyer: BUYER,
+        payee: seller.address,
+        amount: "1000",
+        deadline: NOW + 60,
+        salt: SALT,
+        bond: "100",
+        reviewWindow: 300,
+      },
     });
     expect(rail.settleOpts).toEqual([{ lockSig: expected }]);
   });
