@@ -41,6 +41,7 @@ echo "building apps/web from $label"
   VITE_HUB_URL="${VITE_HUB_URL:-https://hub-production-e85e.up.railway.app}" \
   VITE_RELAY_URL="${VITE_RELAY_URL-/relay}" \
   VITE_MERCHANT_URL="${VITE_MERCHANT_URL-/merchant-api}" \
+  VITE_PRIVY_APP_ID="${VITE_PRIVY_APP_ID-$(railway variables --service "${RAILWAY_SERVICE:-web}" --kv 2>/dev/null | sed -n 's/^VITE_PRIVY_APP_ID=//p')}" \
     bunx --bun vite build --logLevel warn
 )
 
