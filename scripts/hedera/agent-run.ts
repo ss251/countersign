@@ -208,10 +208,16 @@ async function proveUndeliveredCall(listing: Listing): Promise<boolean> {
   const record = await getSchedule(hold.scheduleId).catch(() => null);
   const executed = record?.executedTimestamp != null;
   const after = await usdcBalance(agentId);
-  const entries = await readEntries(topicId);
-  const expired = [...entries].reverse().find(
+  let expired = [...(await readEntries(topicId))].reverse().find(
     (entry) => entry.entry.kind === "expired" && entry.entry.schedule === hold.scheduleId,
   );
+  const expiredDeadline = Date.now() + 60_000;
+  while (expired === undefined && Date.now() < expiredDeadline) {
+    await sleep(3_000);
+    expired = [...(await readEntries(topicId))].reverse().find(
+      (entry) => entry.entry.kind === "expired" && entry.entry.schedule === hold.scheduleId,
+    );
+  }
 
   evidence.push({ label: "executed", value: executed ? (record?.executedTimestamp ?? "yes") : "none" });
   evidence.push({ label: "release", value: release });
@@ -222,7 +228,14 @@ async function proveUndeliveredCall(listing: Listing): Promise<boolean> {
   say(`release  ${release}`);
   say(`balance  ${usdc(before.toString())} -> ${usdc(after.toString())} USDC`);
 
-  return outcome.status !== 200 && !outcome.charged && release === "released" && !executed && before === after;
+  return (
+    outcome.status !== 200 &&
+    !outcome.charged &&
+    release === "released" &&
+    !executed &&
+    before === after &&
+    expired !== undefined
+  );
 }
 
 function facilitatorName(feePayer: string): string {
