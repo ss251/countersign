@@ -53,7 +53,7 @@ function spends(env: RunEnv): Spend[] {
   const w = wallets(env.secrets);
   return [
     { wallet: w.hdAgentUsdc(), amount: MAX_PRICE, floor: units("0.10", 6) },
-    { wallet: w.hdAgentHbar(), amount: units("0.2", 8), floor: units("0.5", 8) },
+    { wallet: w.hdAgentHbar(), amount: units("0.17", 8), floor: units("0.5", 8) }, // measured: ScheduleCreate 0.146 + scheduled transfer 0.013 + HCS
   ];
 }
 

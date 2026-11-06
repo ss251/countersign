@@ -9,6 +9,7 @@ import type { EnvelopeView, Listing } from "../../lib/types.ts";
 import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
+import { NeedsSignature } from "../../ui/NeedsSignature.tsx";
 import { Amount, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
 import { rank, type Match } from "../buyer/assistant.ts";
 import { buyCommand } from "../offer/index.tsx";
@@ -255,7 +256,7 @@ export function Assistant({
                     ? `${envelope.reason ?? "Your envelope is not on this hub."} So the matches were not checked against it here; your agent checks its own envelope before it pays.`
                     : `Each match was checked against your envelope: ${answer.matches.length - refused} inside, ${refused} refused.`}
               </li>
-              <li>Nothing is signed until you hold to countersign, and the agent pays with its own key.</li>
+              <li>Holding here signs nothing. Your agent countersigns with its own key when it runs the command below.</li>
             </ol>
           </details>
 
@@ -490,9 +491,10 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         )}
       </div>
       <HoldToSign ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`} left={listing.seller.name} right="you" onSigned={() => setSigned(true)} />
+      <NeedsSignature />
       {signed ? (
         <div className="pcard__next" role="status">
-          <p className="pcard__next-title">Countersigned for {agent}.</p>
+          <p className="pcard__next-title">Ready for {agent}. Run this on its machine to countersign:</p>
           <p className="pcard__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
           <div className="command">
             <div className="command__head">
