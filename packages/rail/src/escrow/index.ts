@@ -74,8 +74,15 @@ export interface EscrowRailConfig {
   gasPaidBy: "hub" | "relayer";
   /** Sends fund, release, refund and cancel. Without one the rail can verify but not settle. */
   submitter?: LocalAccount;
-  /** Allowed gap in seconds between the signed deadline and now + offer.deadline. Default 120. */
-  deadlineSlack?: number;
+  /**
+   * Clock skew in seconds tolerated below now + offer.deadline. Default 15. The buyer may give the
+   * seller more time (up to maxExtraSeconds) but never less than the offer promises.
+   */
+  deadlineSkew?: number;
+  /** How much longer than the offer's window a buyer may sign. Default 300. */
+  maxExtraSeconds?: number;
+  /** How long to wait for a receipt before reporting the tx as pending. Default 60_000 ms. */
+  receiptTimeoutMs?: number;
   now?: () => number;
   /** Injected clients, for tests. */
   publicClient?: PublicClient<Transport, Chain>;
@@ -114,7 +121,9 @@ function isPayload(p: unknown): p is CountersignPayload {
 export function escrowRail(cfg: EscrowRailConfig): Rail {
   const network: Network = `eip155:${cfg.chainId}`;
   const now = cfg.now ?? (() => Math.floor(Date.now() / 1000));
-  const slack = cfg.deadlineSlack ?? 120;
+  const skew = cfg.deadlineSkew ?? 15;
+  const maxExtra = cfg.maxExtraSeconds ?? 300;
+  const receiptTimeoutMs = cfg.receiptTimeoutMs ?? 60_000;
   const chain = defineChain({
     id: cfg.chainId,
     name: network,
@@ -154,7 +163,13 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     } catch (e) {
       return { success: false, errorReason: `Refused. ${label} would revert: ${short(e)}`, transaction: "", network };
     }
-    const receipt = await pub.waitForTransactionReceipt({ hash });
+    let receipt: Awaited<ReturnType<typeof pub.waitForTransactionReceipt>>;
+    try {
+      receipt = await pub.waitForTransactionReceipt({ hash, timeout: receiptTimeoutMs });
+    } catch {
+      // Broadcast but not yet mined: the caller polls escrow.status(jobId) rather than assume either way.
+      return { success: false, errorReason: "pending", transaction: hash, network };
+    }
     if (receipt.status !== "success") {
       return { success: false, errorReason: `Refused. The chain reverted the ${label}.`, transaction: hash, network };
     }
@@ -197,9 +212,14 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     if (!isAddress(req.payTo) || getAddress(t.payee) !== getAddress(req.payTo)) {
       return { isValid: false, invalidReason: "Refused. The countersignature pays someone else." };
     }
+    // One-sided: the seller's window may never be shorter than the offer promises.
     const at = now();
-    if (t.deadline <= at + 10 || Math.abs(t.deadline - (at + extra.deadlineSeconds)) > slack) {
-      return { isValid: false, invalidReason: "Refused. The signed deadline does not match the offer." };
+    const promised = at + extra.deadlineSeconds;
+    if (t.deadline < promised - skew) {
+      return { isValid: false, invalidReason: "Refused. The signed deadline is shorter than the offer promises." };
+    }
+    if (t.deadline > promised + maxExtra) {
+      return { isValid: false, invalidReason: "Refused. The signed deadline is further out than this hub allows." };
     }
     const check = await checkCountersign(p, {
       chainId: cfg.chainId,
