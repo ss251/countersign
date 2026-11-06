@@ -4,17 +4,21 @@ Issue: #98. **Design: decided.** cs-wc wrote it on Opus against Rajdeep's v2 con
 
 This replaces the earlier wc-09, which followed a design the captain replaced at 19:40 IST: an arbiter-supplied bond in `fundBonded`, and a hub token on funding.
 
-## Starts only when both hold
+## Starts now, in parallel with #164 and the 1874 deploy
 
-1. **#164 is merged** into `cs/int`, with the v2 contract and option (d).
-2. **v2 is deployed on 1874.** cs-wc has deployed and verified it per `$M/wc/DEPLOY-1874-v2.md` and filled in the address below. Until then `<V2_ADDRESS>` is a placeholder; do not start.
+**Base:** `cs/int`. The fleet's `escrowV2Abi` on `cs/int` matches #164's ABI selector for selector, as orch-cs checked at 15:14Z. Option (d) changes no ABI.
+
+**The v2 escrow address is configuration, never a constant, in this packet.**
+- The relay reads it from `WC_ESCROW_V2`, and the hub from `WC_ESCROW_V2` as well.
+- Tests use any fixed test address.
+- After the 1874 deploy, cs-wc sets the real address as Railway config, and the pins' owners add the buyer and verifier pins (see "After the worker").
 
 **Decided by the captain at about 21:20 IST:**
 
 - **Production on v2: yes.** After the deploy, the live Whitechain path switches to v2. v1 is the one-step fallback.
 - **Option (d):** a bonded job (`cs.bond > 0`) funds only through the arbiter. That is the relay key, which already submits every fund on 1874.
 
-`WHITECHAIN_ESCROW_V2 = <V2_ADDRESS>`, with the relay key `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` as its arbiter.
+The 1874 v2 escrow is deployed with the relay key `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` as its arbiter.
 
 ## The contract you are wiring (v2, from `contracts/src/CountersignedEscrow.sol`)
 
@@ -35,9 +39,10 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 
 ### A. The rail: `packages/rail/src/whitechain/index.ts`
 
-1. **The v2 address.** Export `WHITECHAIN_ESCROW_V2: Address = getAddress("<V2_ADDRESS>")` next to `WHITECHAIN_ESCROW`.
+1. **No new constant.** `WHITECHAIN_ESCROW` (v1) stays as it is.
 2. **New options.** `WhitechainRailOptions` gains `version?: 1 | 2` (default 1) and `relayToken?: string`.
-   - `escrow` defaults to `WHITECHAIN_ESCROW` when the version is 1 and to `WHITECHAIN_ESCROW_V2` when it is 2.
+   - **Version 1:** `escrow` defaults to `WHITECHAIN_ESCROW`, as today.
+   - **Version 2:** `escrow` is **required**. Without it, throw `whitechain escrow v2 needs its escrow address`.
    - Pass `version` through to the base `escrowRail`, so its `challenge`, `verify`, `status` and `reviewOf` are v2.
 3. **The `escrow` ops object on version 2.** Next to today's `release`, `cancel`, `refund` and `status`, it gains:
 
@@ -54,25 +59,29 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 4. **The hub line.** `apps/hub/src/rails.ts` is orch-cs's file, and orch-cs agreed this one line:
 
    ```ts
-   whitechainRail({ relayUrl: env.WC_RELAY_URL, version: env.WC_ESCROW_VERSION === "2" ? 2 : 1, relayToken: env.WC_RELAY_TOKEN?.trim() || undefined })
+   whitechainRail({ relayUrl: env.WC_RELAY_URL, version: env.WC_ESCROW_VERSION === "2" ? 2 : 1, escrow: <v2 ? env.WC_ESCROW_V2 : undefined>, relayToken: env.WC_RELAY_TOKEN?.trim() || undefined })
    ```
 
-   If `apps/hub/src/network.ts` exists on your base (PR #97's guard), list `WC_ESCROW_VERSION` and `WC_RELAY_TOKEN` there as config of the `whitechain` rail. `WC_RELAY_TOKEN` is a secret. **Do not edit any test to make the guard pass.**
+   **A misconfigured v2.** When `WC_ESCROW_VERSION=2` but `WC_ESCROW_V2` is missing or is not an address, the whitechain rail stays **off**, with one log line, `[hub] rail whitechain is off: WC_ESCROW_VERSION=2 needs WC_ESCROW_V2`. The hub boots with the other rails. It never falls back to v1 silently. e2e's production-hub check, which requires whitechain, catches it.
 
-### A2. The buyer's pins and the one-step fallback
+   **PR #97's guard.** If `apps/hub/src/network.ts` exists on your base, list `WC_ESCROW_VERSION`, `WC_ESCROW_V2` and `WC_RELAY_TOKEN` there as config of the `whitechain` rail. `WC_RELAY_TOKEN` is a secret. **Do not edit any test to make the guard pass.**
 
-4b. **Pin both escrows.** In `packages/buyer/src/known-rails.ts`, add a 1874 v2 entry beside the existing v1 entry. Leave the v1 entry exactly as it is, so a buyer accepts whichever escrow the hub quotes. The v2 entry is:
+### A2. The one-step fallback (the buyer pins are not this worker's)
+
+4b. **Buyer pins come after the deploy.** They are constants by nature, so they are added once the address exists, and not in this packet. orch-cs, which owns the pins, adds a 1874 v2 entry to `packages/buyer/src/known-rails.ts` beside the unchanged v1 entry, so a buyer accepts whichever escrow the hub quotes. The entry is:
 
    ```ts
    { network: "eip155:1874", chainId: 1874, escrow: "<V2_ADDRESS>", token: "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7", tokenName: "Tether USD", tokenVersion: "1", rpcUrl: "https://rpc.ankr.com/whitechain_testnet", version: 2 }
    ```
+
+   cs-phone adds the matching `KNOWN_ESCROWS` entry.
 
 4c. **The fallback is one env change.** With `WC_ESCROW_VERSION` unset or `1`, the hub quotes v1 again. The relay keeps both escrows allowed and buyers keep both pins, so nothing else moves. Jobs already funded on v2 keep closing on v2, because every operation uses the job's own escrow (decision 10).
 
 ### B. The relay: `packages/relay`
 
 5. **Two escrows.**
-   - **Allowed escrows:** `allowedEscrows` is v1 (`RELAY_ESCROW` or `WHITECHAIN_ESCROW`) **and** v2 (env `WC_ESCROW_V2` or `WHITECHAIN_ESCROW_V2`).
+   - **Allowed escrows:** `allowedEscrows` is v1 (`RELAY_ESCROW` or `WHITECHAIN_ESCROW`) **plus** v2 when env `WC_ESCROW_V2` is set to an address. A set value that is not an address refuses to start. When it is unset, only v1 is allowed and the relay behaves exactly as today.
    - **Version by address:** add `escrowVersion(address): 1 | 2`.
    - **Startup reads:** `/status` and the toll read keep using v1 as the "first" escrow, and gain an `escrowV2` field.
 6. **The hub token.** Env `RELAY_HUB_TOKEN` is optional, and must be at least 24 characters when set; refuse to start otherwise.
@@ -139,7 +148,6 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 - `packages/relay/src/*` and `packages/relay/test/*`.
 - `packages/rail/src/whitechain/*` and `packages/rail/test/whitechain*.test.ts`.
 - `packages/rail/src/index.ts`, for exports only (`escrowV2Abi`, `fundArgsV2`).
-- `packages/buyer/src/known-rails.ts`, to add the 1874 v2 entry only (decision 4b), and its test.
 - `apps/hub/src/rails.ts`, the whitechain line only.
 - `apps/hub/src/network.ts`, to classify the two env names only, if it exists.
 
@@ -168,7 +176,7 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - `failDelivery` sends the bearer token, and is absent without `relayToken`.
    - `disputeWindowSeconds` is 600 on v2.
    - The version 1 rail is unchanged.
-7b. **The fallback.** A buyer with both 1874 pins accepts a v1 quote and a v2 quote. A v2 job's release, cancel and refund go to the v2 escrow, and a v1 job's go to v1.
+7b. **The fallback.** A v2 job's release, cancel and refund go to the v2 escrow, and a v1 job's go to v1, with both allowed. With `WC_ESCROW_V2` unset, the relay allows only v1 and every existing test passes as today. On the hub, `WC_ESCROW_VERSION=2` without `WC_ESCROW_V2` leaves the whitechain rail off with the log line.
 7c. **Option (d).** A bonded v2 settle funds through the relay. In the simulated chain, its account is the arbiter.
 8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (captain's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
 
