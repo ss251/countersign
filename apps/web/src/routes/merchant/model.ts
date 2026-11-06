@@ -7,10 +7,15 @@ export type OrderStatus =
   | "partially_refunded"
   | "refunded"
   | "refund_pending"
-  | "cancelled";
+  | "cancelled"
+  /** Escrow v2: delivered, with the buyer's review window running. Still held. */
+  | "in_review";
 
-/** How an escrow order closed: released to the merchant, cancelled by them, or refunded after the deadline. */
-export type CloseKind = "release" | "cancel" | "deadline_refund";
+/**
+ * How an escrow order closed: released to the merchant, cancelled by them, refunded after the
+ * deadline, refunded on the buyer's dispute, or refunded because the hub's check failed the delivery.
+ */
+export type CloseKind = "release" | "cancel" | "deadline_refund" | "dispute_refund" | "delivery_failed";
 
 /** Why money went back. The relay keeps it with the refund; it is optional everywhere. */
 export type RefundReason = "requested_by_customer" | "duplicate" | "not_delivered" | "other";
@@ -61,6 +66,17 @@ export interface Order {
   asset?: { symbol: string; decimals: number };
   /** Explorer base for this order's links. */
   explorer?: string;
+  /* Escrow v2 review, as the hub serves it (docs/spec/escrow.md, 'Escrow v2'). Times in ms. */
+  reviewWindow?: number | null;
+  deliveredAt?: number | null;
+  reviewEndsAt?: number | null;
+  acceptedAt?: number | null;
+  acceptTx?: string | null;
+  disputedAt?: number | null;
+  disputeTx?: string | null;
+  releasedAfterWindow?: boolean;
+  /** The seller's bond paid to the buyer when the hub's check failed the delivery; "0" when none. */
+  bondSlashed?: string;
 }
 
 export interface RefundRecord {
@@ -183,6 +199,8 @@ export function statusLabel(status: OrderStatus): string {
       return "Refund settling";
     case "cancelled":
       return "Cancelled";
+    case "in_review":
+      return "In review";
   }
 }
 
@@ -197,6 +215,7 @@ export function statusTone(status: OrderStatus): StatusTone {
       return "settled";
     case "pending":
     case "held":
+    case "in_review":
     case "refund_pending":
       return "money";
     case "partially_refunded":
@@ -206,8 +225,18 @@ export function statusTone(status: OrderStatus): StatusTone {
   }
 }
 
+/** Money still in the escrow that may yet be cancelled: held, or delivered and in review. */
+export function isEscrowOpen(status: OrderStatus): boolean {
+  return status === "held" || status === "in_review";
+}
+
 export function canRefund(order: Pick<Order, "status" | "refundable">): boolean {
-  if (order.status !== "held" && order.status !== "paid" && order.status !== "partially_refunded") {
+  if (
+    order.status !== "held" &&
+    order.status !== "in_review" &&
+    order.status !== "paid" &&
+    order.status !== "partially_refunded"
+  ) {
     return false;
   }
   return parseAtomic(order.refundable, "USDT") > 0n;
@@ -215,7 +244,7 @@ export function canRefund(order: Pick<Order, "status" | "refundable">): boolean 
 
 export function refundLabel(order: Pick<Order, "status" | "refundable">): string {
   const amount = formatUsdt(order.refundable);
-  return order.status === "held" ? `Cancel and refund ${amount}` : `Refund ${amount}`;
+  return isEscrowOpen(order.status) ? `Cancel and refund ${amount}` : `Refund ${amount}`;
 }
 
 /** True when the money of this order reached the merchant. */
@@ -231,7 +260,7 @@ export function totals(orders: readonly Order[]): Totals {
   let fees = 0n;
   for (const order of orders) {
     const amount = parseAtomic(order.amount, "USDT");
-    if (order.kind === "escrow" && order.status === "held") held += amount;
+    if (order.kind === "escrow" && isEscrowOpen(order.status)) held += amount;
     if (!wasReceived(order)) continue;
     received += amount;
     refunded += parseAtomic(order.refunded, "USDT");
@@ -421,7 +450,7 @@ export function matchesFilter(order: Pick<Order, "status">, filter: OrderFilter)
     case "paid":
       return order.status === "paid" || order.status === "partially_refunded";
     case "held":
-      return order.status === "held" || order.status === "pending";
+      return order.status === "held" || order.status === "in_review" || order.status === "pending";
     case "refunded":
       return order.status === "refunded" || order.status === "refund_pending" || order.status === "cancelled";
   }
@@ -441,6 +470,23 @@ export function shortHumanDate(ms: number): string {
   const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
   const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
   return `${day}, ${time}`;
+}
+
+/** Time left in a review window: "4:32", or "1:02:05" past an hour; "0:00" once it has ended. */
+export function countdown(ms: number): string {
+  if (ms <= 0) return "0:00";
+  const total = Math.ceil(ms / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours > 0 ? `${hours}:${pad2(minutes)}:${pad2(seconds)}` : `${minutes}:${pad2(seconds)}`;
+}
+
+/** 300 -> "5-minute"; 7200 -> "2-hour": how long a buyer has to review. */
+export function windowWords(seconds: number): string {
+  if (seconds < 120) return `${seconds}-second`;
+  if (seconds < 7200) return `${Math.round(seconds / 60)}-minute`;
+  return `${Math.round(seconds / 3600)}-hour`;
 }
 
 /**
@@ -464,6 +510,8 @@ export interface Equation {
   released: bigint;
   refunded: bigint;
   toll: bigint;
+  /** Seller bonds paid to buyers when the hub's check failed a delivery. */
+  bondLost: bigint;
   net: bigint;
   /** In escrow, releasing on delivery: shown, never counted. */
   held: bigint;
@@ -474,19 +522,34 @@ export function equation(orders: readonly Order[]): Equation {
   const released = BigInt(sums.received);
   const refunded = BigInt(sums.refunded);
   const toll = BigInt(sums.fees);
-  return { released, refunded, toll, net: released - refunded - toll, held: BigInt(sums.held) };
+  const bondLost = orders.reduce((sum, order) => sum + parseAtomic(order.bondSlashed ?? "0", "USDT"), 0n);
+  return {
+    released,
+    refunded,
+    toll,
+    bondLost,
+    net: released - refunded - toll - bondLost,
+    held: BigInt(sums.held),
+  };
 }
 
 /** True while an order's money is still in flight: held in escrow, or a payment settling. */
 export function isPending(order: Pick<Order, "kind" | "status">): boolean {
-  return order.status === "pending" || (order.kind === "escrow" && order.status === "held");
+  return order.status === "pending" || (order.kind === "escrow" && isEscrowOpen(order.status));
 }
 
-/** What one order adds to the balance: only money that reached the merchant, less toll and refunds. */
+/**
+ * What one order adds to the balance: money that reached the merchant, less toll and refunds, and
+ * less a bond the hub's check sent to the buyer.
+ */
 export function contribution(order: Order): bigint {
-  if (!wasReceived(order)) return 0n;
+  const lost = parseAtomic(order.bondSlashed ?? "0", "USDT");
+  if (!wasReceived(order)) return -lost;
   return (
-    parseAtomic(order.amount, "USDT") - parseAtomic(order.fee ?? "0", "USDT") - parseAtomic(order.refunded, "USDT")
+    parseAtomic(order.amount, "USDT") -
+    parseAtomic(order.fee ?? "0", "USDT") -
+    parseAtomic(order.refunded, "USDT") -
+    lost
   );
 }
 
@@ -512,18 +575,29 @@ export function ledger(orders: readonly Order[]): LedgerRow[] {
 }
 
 /** The lines under an amount that explain why the balance moved by less than it. */
+export type ReturnKind = "cancel" | "deadline_refund" | "dispute_refund" | "delivery_failed";
+
 export type Adjustment =
   | { kind: "toll"; amount: bigint }
   | { kind: "refunded"; amount: bigint }
-  | { kind: "returned"; amount: bigint; close: "cancel" | "deadline_refund" }
+  | { kind: "returned"; amount: bigint; close: ReturnKind }
+  | { kind: "bond"; amount: bigint }
+  | { kind: "review"; endsAt: number | null }
   | { kind: "held" }
   | { kind: "settling" };
 
 export function adjustments(order: Order): Adjustment[] {
   if (order.status === "pending") return [{ kind: "settling" }];
+  if (order.kind === "escrow" && order.status === "in_review") {
+    return [{ kind: "review", endsAt: order.reviewEndsAt ?? null }];
+  }
   if (order.kind === "escrow" && order.status === "held") return [{ kind: "held" }];
-  if (order.closeKind === "cancel" || order.closeKind === "deadline_refund") {
-    return [{ kind: "returned", amount: parseAtomic(order.amount, "USDT"), close: order.closeKind }];
+  const close = order.closeKind;
+  if (close === "cancel" || close === "deadline_refund" || close === "dispute_refund" || close === "delivery_failed") {
+    const lines: Adjustment[] = [{ kind: "returned", amount: parseAtomic(order.amount, "USDT"), close }];
+    const lost = parseAtomic(order.bondSlashed ?? "0", "USDT");
+    if (lost > 0n) lines.push({ kind: "bond", amount: lost });
+    return lines;
   }
   const lines: Adjustment[] = [];
   const fee = parseAtomic(order.fee ?? "0", "USDT");
@@ -629,13 +703,15 @@ export function timeline(
   if (order.kind === "escrow") {
     const deadline = order.deadline ? shortHumanDate(order.deadline) : null;
     const back = who === "merchant" ? "the customer" : "you";
+    const window = order.reviewWindow && order.reviewWindow > 0 ? order.reviewWindow : null;
+    const releases = window
+      ? `Releases after delivery and a ${windowWords(window)} review.`
+      : "Releases on delivery.";
     events.push({
       key: "fund",
       tone: "money",
       title: order.status === "pending" ? `Funding escrow with ${amount} ${unit}` : `${amount} ${unit} held in escrow`,
-      detail: deadline
-        ? `Releases on delivery. Returns to ${back} if not delivered by ${deadline}.`
-        : "Releases on delivery.",
+      detail: deadline ? `${releases} Returns to ${back} if not delivered by ${deadline}.` : releases,
       at: order.createdAt,
       txHash: order.settleTx,
     });
@@ -650,17 +726,56 @@ export function timeline(
     });
   }
 
+  // Escrow v2: delivery commits the slip and opens the buyer's review window.
+  const delivered = order.kind === "escrow" && (order.deliveredAt != null || order.status === "in_review");
+  if (delivered) {
+    const ends = order.reviewEndsAt ? shortHumanDate(order.reviewEndsAt) : null;
+    events.push({
+      key: "delivered",
+      tone: "money",
+      title: "Delivered. In review",
+      detail: ends
+        ? who === "merchant"
+          ? `The customer can dispute until ${ends}.`
+          : `Your agent can accept it now, or dispute it until ${ends}.`
+        : null,
+      at: order.deliveredAt ?? null,
+      slipHash: order.slipHash ?? null,
+    });
+  }
+
   const closedAt = order.closedAt ?? null;
   if (order.closeKind === "release") {
     const fee = parseAtomic(order.fee ?? "0", "USDT");
+    const accepted = order.acceptedAt != null || order.acceptTx != null;
+    if (accepted) {
+      events.push({
+        key: "accepted",
+        tone: "settled",
+        title: who === "merchant" ? "Accepted by the customer" : "You accepted the delivery",
+        at: order.acceptedAt ?? null,
+        txHash: order.acceptTx ?? null,
+      });
+    }
+    const afterWindow = order.releasedAfterWindow === true;
     events.push({
       key: "release",
       tone: "settled",
-      title: who === "merchant" ? "Released to you" : "Released to the merchant",
-      detail: fee > 0n ? `Toll ${formatUsdt(fee.toString())} ${unit}.` : null,
+      title: afterWindow
+        ? who === "merchant"
+          ? "Released to you after the review window"
+          : "Released to the merchant after the review window"
+        : who === "merchant"
+          ? "Released to you"
+          : "Released to the merchant",
+      detail:
+        [afterWindow ? "Nobody disputed in time." : null, fee > 0n ? `Toll ${formatUsdt(fee.toString())} ${unit}.` : null]
+          .filter(Boolean)
+          .join(" ") || null,
       at: order.receivedAt ?? closedAt,
-      txHash: order.closeTx ?? null,
-      slipHash: order.slipHash ?? null,
+      // Accepting releases in the same transaction: link it once, on the acceptance.
+      txHash: accepted && order.acceptTx && order.acceptTx === order.closeTx ? null : (order.closeTx ?? null),
+      slipHash: delivered ? null : (order.slipHash ?? null),
     });
   } else if (order.closeKind === "cancel") {
     events.push({
@@ -679,6 +794,35 @@ export function timeline(
       key: "deadline",
       tone: "neutral",
       title: `Not delivered in time. ${amount} ${unit} returned${who === "merchant" ? " to the customer" : " to you"}`,
+      at: closedAt,
+      txHash: order.closeTx ?? null,
+    });
+  } else if (order.closeKind === "dispute_refund") {
+    events.push({
+      key: "dispute",
+      tone: "refused",
+      title:
+        who === "merchant"
+          ? `Disputed by the customer. ${amount} ${unit} returned to them`
+          : `You disputed the delivery. ${amount} ${unit} returned to you`,
+      at: order.disputedAt ?? closedAt,
+      txHash: order.disputeTx ?? order.closeTx ?? null,
+    });
+  } else if (order.closeKind === "delivery_failed") {
+    const lost = parseAtomic(order.bondSlashed ?? "0", "USDT");
+    const bond = lost > 0n ? `${formatUsdt(lost.toString())} ${unit}` : null;
+    events.push({
+      key: "failed",
+      tone: "refused",
+      title:
+        who === "merchant"
+          ? `The hub's check failed the delivery. ${amount} ${unit} returned to the customer`
+          : `The delivery failed the hub's check. ${amount} ${unit} returned to you`,
+      detail: bond
+        ? who === "merchant"
+          ? `Your bond of ${bond} went to the customer.`
+          : `The seller's bond of ${bond} was paid to you.`
+        : null,
       at: closedAt,
       txHash: order.closeTx ?? null,
     });
@@ -733,6 +877,7 @@ const STATUSES: readonly OrderStatus[] = [
   "refunded",
   "refund_pending",
   "cancelled",
+  "in_review",
 ];
 
 function text(value: unknown): string | null {
@@ -757,6 +902,8 @@ function millis(value: unknown): number | null {
 function statusOf(value: unknown): OrderStatus | null {
   const raw = typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : "";
   if (raw === "released" || raw === "settled") return "paid";
+  // /jobs names the review state after the contract ("delivered"); /orders calls it in_review.
+  if (raw === "delivered" || raw === "in_review") return "in_review";
   if (raw === "partly_refunded") return "partially_refunded";
   return (STATUSES as readonly string[]).includes(raw) ? (raw as OrderStatus) : null;
 }
@@ -773,7 +920,14 @@ export function fromHubOrder(raw: unknown): Order | null {
   const status = statusOf(r.status);
   const amount = atomic(r.amount, "");
   if (!id || !status || amount === "") return null;
-  const closeKind = r.closeKind === "release" || r.closeKind === "cancel" || r.closeKind === "deadline_refund" ? r.closeKind : null;
+  const closeKind =
+    r.closeKind === "release" ||
+    r.closeKind === "cancel" ||
+    r.closeKind === "deadline_refund" ||
+    r.closeKind === "dispute_refund" ||
+    r.closeKind === "delivery_failed"
+      ? r.closeKind
+      : null;
   const asset =
     r.asset && typeof r.asset === "object" && text((r.asset as Record<string, unknown>).symbol)
       ? {
@@ -790,7 +944,7 @@ export function fromHubOrder(raw: unknown): Order | null {
     amount,
     fee: atomic(r.fee),
     refunded,
-    refundable: atomic(r.refundable, status === "held" || status === "paid" ? amount : "0"),
+    refundable: atomic(r.refundable, status === "held" || status === "in_review" || status === "paid" ? amount : "0"),
     status,
     closeKind: closeKind ?? (status === "paid" && r.kind !== "exact" ? "release" : null),
     createdAt: millis(r.createdAt) ?? 0,
@@ -809,6 +963,15 @@ export function fromHubOrder(raw: unknown): Order | null {
     networkName: text(r.networkName) ?? undefined,
     asset,
     explorer: text(r.explorer) ?? undefined,
+    reviewWindow: typeof r.reviewWindow === "number" && Number.isFinite(r.reviewWindow) ? r.reviewWindow : null,
+    deliveredAt: millis(r.deliveredAt),
+    reviewEndsAt: millis(r.reviewEndsAt),
+    acceptedAt: millis(r.acceptedAt),
+    acceptTx: text(r.acceptTx),
+    disputedAt: millis(r.disputedAt),
+    disputeTx: text(r.disputeTx),
+    releasedAfterWindow: r.releasedAfterWindow === true,
+    bondSlashed: atomic(r.bondSlashed),
   };
 }
 
