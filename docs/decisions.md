@@ -331,3 +331,14 @@ Its hooks are limited to an admin's whitelist, so our hook cannot be attached th
 **Trust and limits.**
 - The money sits in a contract whose proxy admin is a third party, who can upgrade it or change its fees. The fee guard covers fees, but nothing covers an upgrade.
 - The 8183 job's provider is the adapter, not the seller. The seller is named in the adapter's `Funded` and `Released` events.
+
+## D21, amended — a refund the core already paid out still reaches the buyer, and the core's refund opens only after the deadline (06 Nov; refs #24)
+
+The review of tr-06 found two gaps in D21.
+
+- **Anyone can call the core's `claimRefund`** once the job's `expiredAt` passes. If a stranger calls it directly, the core returns the budget to the adapter and marks the job `Expired`. The adapter's `refund` and `cancel` then called `reject` and `claimRefund`, and both revert on an `Expired` job, so the buyer's money would have stayed in the adapter.
+- **`expiredAt = deadline`** let the core's refund open in the same second as the last allowed `release`.
+
+**Now:**
+- `expiredAt = max(deadline + 1, block.timestamp + 6 minutes)`. The core's refund opens only after the release window has closed, as v1's own `refund` does.
+- `refund` and `cancel` read the core job first. If it is `Funded` or `Submitted`, they call the core as before and check that exactly `amount` came back. If it is `Expired` or `Rejected`, the core has already returned the budget to the adapter, so they pay the buyer from it, after checking that the adapter holds at least `amount`. Any other core status reverts `NotFunded`.
