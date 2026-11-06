@@ -45,6 +45,23 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 
 Flow 9 needs a browser, and a browser driver for it is cut ([decisions.md](decisions.md), D14): the firstmate's screenshot rounds check the screens by hand in a real browser at 390 and 1440 px, light and dark. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`: the seven routes, each at 390 and 1440 px, light and dark.
 
+## Escrow version
+
+Arc runs escrow v1 by default. Two variables switch the suite to v2, the same one-env change production Arc uses with v1 kept as the fallback (STEER-1950):
+
+- `E2E_ESCROW_VERSION=2` selects escrow v2 for Arc. Anything else, unset included, is v1.
+- `E2E_ARC_ESCROW_V2` is the v2 escrow address. It is required when the version is 2: importing `e2e/lib/chains.ts` without it throws `E2E_ESCROW_VERSION=2 needs E2E_ARC_ESCROW_V2`.
+
+With the switch on, `ARC.escrow` is the v2 address and `ARC.escrowVersion` is 2, so the hub, the seller's runner, the buyer pin and every chain read follow it. On v2:
+
+- the toll accrues in `tollAccrued()` and is paid to the treasury only by `sweepToll()`, instead of moving in the release transaction; `arc-spine` checks the accrual and the absence of a treasury transfer;
+- `refund` reverts `SettleWindowOpen` until `deadline + DISPUTE_WINDOW` (600 s); `arc-deadline-refund` waits that window and its early-refund check expects `SettleWindowOpen`;
+- for the same reason flows 3 (`arc-deadline-refund`) and 13 (`ratings`) are on demand on v2: run them with `--with arc-deadline-refund` or `--with ratings`;
+- every buyer state directory gets a `rails.json` pinning the Arc entry of `KNOWN_RAILS` at this suite's escrow with `version: 2`, before the first buyer call;
+- the standalone verifier has no pin flag, so it refuses the v2 escrow until `KNOWN_ESCROWS` names it. That red is expected until the address is promoted.
+
+The run summary's header records the escrow version and the Arc escrow address. Whitechain stays on v1 in this packet: its relay handles v1 only here, and cs-wc's wc-09 builds v2 there.
+
 ## What each flow asserts
 
 Each flow is a list of named steps. The first failed step ends the flow, names itself in the summary and keeps its artifacts. Processes the flow started are always stopped.
