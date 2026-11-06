@@ -499,7 +499,7 @@
 }
 
 .ledger__step--released.is-done .ledger__marker {
-  background: var(--settle);
+  background: var(--settle-fill);
 }
 
 .ledger__step.is-active .ledger__marker {

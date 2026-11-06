@@ -1,11 +1,9 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { Link, useLocation } from "./router.tsx";
-import { hasRoute, resolve, VIEWS } from "./routes.ts";
+import { hasRoute, resolve } from "./routes.ts";
 import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
-import { Wordmark } from "../ui/Mark.tsx";
 import { SiteFooter } from "./SiteFooter.tsx";
-import { SiteLinks } from "./SiteLinks.tsx";
-import { WalletButton } from "../ui/WalletButton.tsx";
+import { TopBar } from "./TopBar.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
 import "./nav.css";
@@ -40,7 +38,7 @@ export function App() {
       <a className="shell__skip" href="#main" onClick={(e) => skipToMain(e)}>
         Skip to content
       </a>
-      {surface === "desk" || surface === "story" ? <TopBar active={match?.name ?? ""} /> : null}
+      {surface === "desk" || surface === "story" ? <TopBar active={match?.name ?? ""} overlay={surface === "story"} /> : null}
       <main id="main" className="shell__main" tabIndex={-1}>
         <PageBoundary key={location.path}>
           {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}
@@ -56,61 +54,6 @@ function skipToMain(e: React.MouseEvent<HTMLAnchorElement>) {
   // The hash is the router, so move focus instead of following the link.
   e.preventDefault();
   document.getElementById("main")?.focus();
-}
-
-function TopBar({ active }: { active: string }) {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => setOpen(false), [active]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  const links = (className: string) =>
-    VIEWS.map((v) => (
-      <Link
-        key={v.name}
-        to={`/${v.name}`}
-        className={className}
-        aria-current={active === v.name ? "page" : undefined}
-        onClick={() => setOpen(false)}
-      >
-        {v.label}
-      </Link>
-    ));
-
-  return (
-    <header className="topbar">
-      <div className="topbar__inner">
-        <Link to="/" className="topbar__brand" aria-label="countersign, home">
-          <Wordmark />
-        </Link>
-        <nav className="topbar__nav" aria-label="Views">
-          {links("topbar__link")}
-          <SiteLinks.GitHub className="topbar__link" />
-        </nav>
-        <WalletButton />
-        <button
-          type="button"
-          className="topbar__menu"
-          aria-expanded={open}
-          aria-controls="topbar-sheet"
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? "Close" : "Views"}
-        </button>
-      </div>
-      {open ? (
-        <nav id="topbar-sheet" className="topbar__sheet" aria-label="Views">
-          {links("topbar__sheet-link")}
-          <WalletButton />
-        </nav>
-      ) : null}
-    </header>
-  );
 }
 
 function NotFound({ path }: { path: string }) {

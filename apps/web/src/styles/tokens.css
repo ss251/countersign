@@ -1,52 +1,62 @@
 /*
- * countersign tokens. PLAN §3, set as a clearing desk (DESIGN-NOTE, 06 Nov 17:00 IST).
+ * countersign tokens, v2 (raj/ui-revamp, 07 Nov).
  *
- * Colour is meaning only. One red, for refusal: an envelope refusal, a failed check, a chain
- * revert. One green, for settled: released, verified. Blue only where money moves: an amount in
- * flight, the countersign or pay action, a tx link. Everything else is ink at different weights.
- * No gradients, no glow, no glassmorphism, no decorative colour.
+ * Five colours: raisin #242124, lavender #D8DCFF, steel #437F97, green #84DD63, carmine #A31621.
+ * Colour still carries meaning: carmine for refusal, green for settled, steel where money moves
+ * and for the primary action. Everything else is ink at different weights.
  *
- * The seven PLAN §3 colours, unchanged, written in OKLCH so lightness can be compared and mixed.
+ * The exact hexes are for fills (`--*-fill`). The bare names (`--seal`, `--settle`, `--usdc`)
+ * are the text shade of each meaning for this theme, tuned so text on paper passes WCAG AA:
+ * carmine on raisin and green on lavender-white would not.
  */
 
 :root {
   color-scheme: light;
 
-  --paper: oklch(0.956 0.010 87.5); /* #f3f0e9 */
-  --ink: oklch(0.202 0.015 107.7); /* #17170f */
-  --slate: oklch(0.513 0.017 94.4); /* #6a675c */
-  --seal: oklch(0.495 0.156 33.4); /* #a8341c, refusal */
-  --settle: oklch(0.471 0.097 157.6); /* #1d6b45, settled */
-  --usdc: oklch(0.429 0.119 255.7); /* #1b4f8f, money moving */
-  --line: oklch(0.874 0.017 88.0); /* #dad5c9, the hairline */
+  --raisin: #242124;
+  --lavender: #d8dcff;
+  --steel: #437f97;
+  --green: #84dd63;
+  --carmine: #a31621;
 
-  /* A sheet lying on the paper, and a well pressed into it. */
-  --raised: oklch(0.979 0.007 88.6);
-  --sunk: oklch(0.928 0.014 88.7);
-  /* Text on something that cannot be used right now. Not an opacity: predictable on any surface. */
-  --muted: oklch(0.68 0.012 90);
+  --paper: #f4f5ff;
+  --ink: #242124;
+  --slate: #5f5b68;
+  --line: #dcdeee;
+  --raised: #ffffff;
+  --sunk: #e9ebfa;
+  --muted: #9c99a8;
 
-  /* A semantic hue at low strength, used only behind its own state. */
-  --seal-wash: color-mix(in oklab, var(--seal) 9%, var(--paper));
-  --settle-wash: color-mix(in oklab, var(--settle) 9%, var(--paper));
-  --usdc-wash: color-mix(in oklab, var(--usdc) 8%, var(--paper));
+  /* Text shades of each meaning (AA on --paper and --raised). */
+  --seal: #a31621;
+  --settle: #2f7a1f;
+  --usdc: #376a7e;
 
-  /*
-   * Nothing floats. A group that needs a container is a ruled box: the ring below stands in for a
-   * 1 px rule without moving layout. Only a modal sheet, which really sits above the page, casts.
-   */
+  /* The exact palette, for fills, dots, bars and the hero. */
+  --seal-fill: var(--carmine);
+  --settle-fill: var(--green);
+  --usdc-fill: var(--steel);
+  /* Text that sits on each fill. */
+  --on-seal: #ffffff;
+  --on-settle: #13240c;
+  --on-usdc: #ffffff;
+
+  --seal-wash: color-mix(in oklab, var(--carmine) 8%, var(--paper));
+  --settle-wash: color-mix(in oklab, var(--green) 16%, var(--paper));
+  --usdc-wash: color-mix(in oklab, var(--steel) 10%, var(--paper));
+
   --elev-1: 0 0 0 1px var(--line);
-  --elev-1-hover: 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 22%);
-
+  --elev-1-hover: 0 0 0 1px color-mix(in oklab, var(--line), var(--ink) 22%);
   --elev-2:
-    0 0 0 1px oklch(0.2 0.015 108 / 0.08),
-    0 2px 4px oklch(0.2 0.015 108 / 0.06),
-    0 24px 48px -16px oklch(0.2 0.015 108 / 0.28);
+    0 0 0 1px color-mix(in oklab, var(--raisin) 8%, transparent),
+    0 2px 4px color-mix(in oklab, var(--raisin) 6%, transparent),
+    0 24px 48px -16px color-mix(in oklab, var(--raisin) 28%, transparent);
 
-  /* Every rule on the desk: 1 px, low contrast. */
   --hair: 1px;
 
   --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* The house face: headings, the hero, the wordmark, nav, buttons and counters. Body stays on --sans. */
+  --display: "Countersign Display", var(--sans);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Type scale. 16 is body; 14 dense rows; 13 and 12 captions; 11 only under tab icons. */
@@ -61,6 +71,7 @@
   --t-24: 1.5rem;
   --t-32: 2rem;
   --t-44: 2.75rem;
+  --t-64: 4rem;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -72,10 +83,11 @@
   --sp-10: 40px;
   --sp-12: 48px;
   --sp-16: 64px;
+  --sp-24: 96px;
 
-  --r-1: 4px;
-  --r-2: 8px;
-  --r-3: 12px;
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 16px;
   --r-pill: 999px;
 
   /* Strong curves: entrances answer at once; on-screen moves accelerate and settle. */
@@ -89,56 +101,48 @@
 
   --phone: 390px;
   --content: 1180px;
-  --bar: 56px;
+  --bar: 60px;
 }
 
+/* Dark: the system's choice unless light is pinned, or dark pinned outright. Keep both blocks equal. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: oklch(0.181 0.004 106.8); /* #121210, near-black */
-    --ink: oklch(0.946 0.010 93.6); /* #efede6 */
-    --slate: oklch(0.709 0.015 88.7); /* #a5a197 */
-    --seal: oklch(0.621 0.169 33.8); /* #d9573b */
-    --settle: oklch(0.649 0.121 159.2); /* #3fa574 */
-    --usdc: oklch(0.661 0.105 249.7); /* #5e97d0 */
-    --line: oklch(0.296 0.009 97.6); /* #2e2d28 */
-    --raised: oklch(0.217 0.006 106.9);
-    --sunk: oklch(0.149 0.002 106.7);
-    --muted: oklch(0.5 0.01 95);
-    --seal-wash: color-mix(in oklab, var(--seal) 14%, var(--paper));
-    --settle-wash: color-mix(in oklab, var(--settle) 14%, var(--paper));
-    --usdc-wash: color-mix(in oklab, var(--usdc) 13%, var(--paper));
-    --elev-1: 0 0 0 1px var(--line);
-    --elev-1-hover: 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 18%);
-    --elev-2: 0 0 0 1px oklch(1 0 0 / 0.1), 0 24px 48px -16px oklch(0 0 0 / 0.6);
+    --paper: #242124;
+    --ink: #d8dcff;
+    --slate: #a3a4c4;
+    --line: #3a3640;
+    --raised: #2e2a2e;
+    --sunk: #1c1a1c;
+    --muted: #6e6b7e;
+    --seal: #ee6a72;
+    --settle: #84dd63;
+    --usdc: #7fb3c8;
+    --on-settle: #13240c;
+    --seal-wash: color-mix(in oklab, var(--carmine) 22%, var(--paper));
+    --settle-wash: color-mix(in oklab, var(--green) 12%, var(--paper));
+    --usdc-wash: color-mix(in oklab, var(--steel) 22%, var(--paper));
+    --elev-1-hover: 0 0 0 1px color-mix(in oklab, var(--line), var(--ink) 18%);
+    --elev-2: 0 0 0 1px color-mix(in oklab, var(--lavender) 10%, transparent), 0 24px 48px -16px rgb(0 0 0 / 0.6);
   }
 }
 
-/* The landing is dark by default (STEER-1815): the same dark tokens, scoped to it and to the shell's bar and footer around it, unless light is pinned. */
-:root[data-theme="dark"],
-:root:not([data-theme="light"]) .landing,
-:root:not([data-theme="light"]) .shell:has(.landing) {
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: oklch(0.181 0.004 106.8); /* #121210, near-black */
-  --ink: oklch(0.946 0.010 93.6); /* #efede6 */
-  --slate: oklch(0.709 0.015 88.7); /* #a5a197 */
-  --seal: oklch(0.621 0.169 33.8); /* #d9573b */
-  --settle: oklch(0.649 0.121 159.2); /* #3fa574 */
-  --usdc: oklch(0.661 0.105 249.7); /* #5e97d0 */
-  --line: oklch(0.296 0.009 97.6); /* #2e2d28 */
-  --raised: oklch(0.217 0.006 106.9);
-  --sunk: oklch(0.149 0.002 106.7);
-  --muted: oklch(0.5 0.01 95);
-  --seal-wash: color-mix(in oklab, var(--seal) 14%, var(--paper));
-  --settle-wash: color-mix(in oklab, var(--settle) 14%, var(--paper));
-  --usdc-wash: color-mix(in oklab, var(--usdc) 13%, var(--paper));
-  --elev-1: 0 0 0 1px var(--line);
-  --elev-1-hover: 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 18%);
-  --elev-2: 0 0 0 1px oklch(1 0 0 / 0.1), 0 24px 48px -16px oklch(0 0 0 / 0.6);
-}
-
-/* Under the landing the page itself is near-black too, so no light edge shows past it. */
-:root:not([data-theme="light"]):has(.landing),
-:root:not([data-theme="light"]):has(.landing) body {
-  background: oklch(0.181 0.004 106.8);
+  --paper: #242124;
+  --ink: #d8dcff;
+  --slate: #a3a4c4;
+  --line: #3a3640;
+  --raised: #2e2a2e;
+  --sunk: #1c1a1c;
+  --muted: #6e6b7e;
+  --seal: #ee6a72;
+  --settle: #84dd63;
+  --usdc: #7fb3c8;
+  --on-settle: #13240c;
+  --seal-wash: color-mix(in oklab, var(--carmine) 22%, var(--paper));
+  --settle-wash: color-mix(in oklab, var(--green) 12%, var(--paper));
+  --usdc-wash: color-mix(in oklab, var(--steel) 22%, var(--paper));
+  --elev-1-hover: 0 0 0 1px color-mix(in oklab, var(--line), var(--ink) 18%);
+  --elev-2: 0 0 0 1px color-mix(in oklab, var(--lavender) 10%, transparent), 0 24px 48px -16px rgb(0 0 0 / 0.6);
 }

@@ -88,15 +88,15 @@
 }
 
 .mx-dot--settled {
-  background: var(--settle);
+  background: var(--settle-fill);
 }
 
 .mx-dot--money {
-  background: var(--usdc);
+  background: var(--usdc-fill);
 }
 
 .mx-dot--refused {
-  background: var(--seal);
+  background: var(--seal-fill);
 }
 
 /* A transaction link is proof that money moved: blue, mono, underlined from the font's metrics. */
@@ -574,7 +574,7 @@
   inset-inline: 0;
   bottom: 0;
   height: 2px;
-  background: var(--usdc);
+  background: var(--usdc-fill);
   border-radius: 1px;
   transform-origin: left center;
   pointer-events: none;
@@ -815,15 +815,15 @@
 }
 
 .mx-tl__step--settled .mx-tl__dot {
-  background: var(--settle);
+  background: var(--settle-fill);
 }
 
 .mx-tl__step--money .mx-tl__dot {
-  background: var(--usdc);
+  background: var(--usdc-fill);
 }
 
 .mx-tl__step--refused .mx-tl__dot {
-  background: var(--seal);
+  background: var(--seal-fill);
 }
 
 .mx-tl__body {
