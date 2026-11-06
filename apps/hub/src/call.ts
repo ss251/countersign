@@ -71,6 +71,16 @@ export async function paidCall(
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
+  // Offer hashes this call is already inside, outermost first. Checked before the ENS lock,
+  // the input gates, any rail method and any 402, so a cycle never reaches a payment.
+  const lineage = hexList(call.lineage);
+  if (purchaseCycle(lineage, stored.offerHash)) {
+    return failure(
+      422,
+      "purchase-cycle",
+      "Refused. Paying this offer would repeat an offer hash already in the lineage. Nothing was charged.",
+    );
+  }
 
   if (lineageCycle(deps.store, stored, hexList(call.lineage))) {
     return failure(
@@ -303,7 +313,7 @@ export async function paidCall(
           },
         }
       : {}),
-    lineage: hexList(call.lineage),
+    lineage,
   });
 
   const deadlineMs = (deadline - now - 5) * 1000;
@@ -405,6 +415,7 @@ export async function paidCall(
 /** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
 export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
   for (const jobId of lineage) {
+    if (sameText(jobId, target.offerHash) || sameText(jobId, target.seller)) return true;
     const ancestor = store.getJob(jobId);
     if (ancestor === null) continue;
     if (ancestor.offerHash.toLowerCase() === target.offerHash.toLowerCase()) return true;
@@ -419,6 +430,21 @@ interface ReviewRecord {
   window: number;
   deliveredAt: number;
   endsAt: number;
+}
+
+/**
+ * True when `lineage` plus this offer hash contains the same hash twice.
+ * That is a direct cycle (the offer is already in the list) or a longer one
+ * (appending it repeats any hash the list already holds).
+ */
+function purchaseCycle(lineage: readonly string[], offerHash: string): boolean {
+  const seen = new Set<string>();
+  for (const hash of lineage) {
+    const key = hash.toLowerCase();
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return seen.has(offerHash.toLowerCase());
 }
 
 /** The countersigned review window: null for v1 terms, 0 for a v2 offer without one. */

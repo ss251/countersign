@@ -20,7 +20,7 @@ content-type: application/json
 {"input": <matches the offer's input schema>, "lineage": ["0x…"]}
 ```
 
-`lineage` is optional. It lists the job ids of the purchases this call is nested inside, outermost first, and the hub uses it to refuse cycles.
+`lineage` is optional. It lists the purchases this call is nested inside, outermost first, by offer hash (or by job id). Before payment, the hub refuses the call with 422 `purchase-cycle` when this offer's hash is already in that list or appending it would repeat any hash there, and with 409 `lineage-cycle` when an ancestor job it recorded bought this offer or one from its seller, or an entry names its seller ([terms.md](terms.md) §2).
 
 | Step | Request | Answer |
 |---|---|---|
