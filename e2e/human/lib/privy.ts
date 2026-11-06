@@ -28,6 +28,29 @@ function dialog(page: Page): Locator {
   return page.getByRole("dialog").filter({ visible: true }).first();
 }
 
+function privyHost(url: string): string | undefined {
+  try {
+    const host = new URL(url).hostname;
+    return host.endsWith("privy.io") ? host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Count a privy.io response only when it is a server error. */
+export function recordPrivyResponse(failures: string[], url: string, status: number): void {
+  if (status < 500) return;
+  const host = privyHost(url);
+  if (host) failures.push(`${host} ${status}`);
+}
+
+/** Count a failed privy.io request unless the browser aborted it itself. */
+export function recordPrivyRequestFailure(failures: string[], url: string, errorText: string | undefined): void {
+  if (errorText?.includes("ERR_ABORTED")) return;
+  const host = privyHost(url);
+  if (host) failures.push(`${host} ${errorText ?? "failed"}`);
+}
+
 export async function signIn(page: Page, email: string, otp: string): Promise<void> {
   const box = dialog(page);
   await expect(box).toBeVisible({ timeout: 30_000 });

@@ -56,6 +56,7 @@ export interface ProjectRun {
   wallet?: string;
   steps: StepResult[];
   txs: TxRef[];
+  notes?: string[];
   slip?: string;
   verifier?: string;
   ms?: number;
@@ -138,6 +139,7 @@ export function readProjectStates(runId: string, artifactsDir: string = ARTIFACT
 export class Recorder {
   readonly steps: StepResult[] = [];
   readonly txs: TxRef[] = [];
+  readonly notes: string[] = [];
   readonly artifacts: string[] = [];
   wallet?: string;
   slip?: string;
@@ -177,6 +179,10 @@ export class Recorder {
     this.txs.push({ label, hash });
   }
 
+  note(text: string): void {
+    this.notes.push(text.replace(/\s+/g, " ").slice(0, 600));
+  }
+
   get failedStep(): string | undefined {
     for (let i = this.steps.length - 1; i >= 0; i--) {
       const step = this.steps[i];
@@ -191,6 +197,7 @@ export class Recorder {
       status,
       steps: this.steps,
       txs: this.txs,
+      notes: this.notes,
       artifacts: this.artifacts,
       ms: Date.now() - this.startedAt,
       ...(extra.skipReason ? { skipReason: extra.skipReason } : {}),
@@ -254,6 +261,11 @@ export function renderReport(meta: RunMeta, projects: ProjectRun[]): string {
       for (const step of project.steps) {
         lines.push(`| \`${cell(step.name)}\` | ${stepStatus(step.status)} | ${secs(step.ms)} |`);
       }
+      lines.push("");
+    }
+    if (project.notes && project.notes.length > 0) {
+      lines.push("Notes", "");
+      for (const note of project.notes) lines.push(`- ${cell(note)}`);
       lines.push("");
     }
     if (project.txs.length > 0) {

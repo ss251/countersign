@@ -19,7 +19,8 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
-import { approveIfPrompted, signIn } from "../lib/privy.ts";
+import { raiseIfFailed } from "../lib/failure.ts";
+import { approveIfPrompted, recordPrivyRequestFailure, recordPrivyResponse, signIn } from "../lib/privy.ts";
 import {
   afterFunding,
   afterPurchase,
@@ -71,6 +72,26 @@ async function step<T>(
     } catch (error) {
       rec.record(`${nn}-${slug}`, error instanceof SkipRun ? "skip" : "fail", Date.now() - started, messageOf(error));
       throw error;
+    }
+  });
+}
+
+async function softStep(
+  rec: Recorder,
+  page: Page,
+  nn: string,
+  slug: string,
+  title: string,
+  body: () => Promise<void>,
+): Promise<void> {
+  const started = Date.now();
+  await test.step(`${nn} ${title}`, async () => {
+    try {
+      await rec.screenshot(page, nn, slug);
+      await body();
+      rec.record(`${nn}-${slug}`, "ok", Date.now() - started);
+    } catch (error) {
+      rec.note(`${nn}-${slug}: ${messageOf(error)}`);
     }
   });
 }
@@ -142,20 +163,10 @@ async function waitStateOrRefusal(page: Page, testid: string, state: string, tim
 
 function watchPrivy(page: Page, failures: string[]): void {
   page.on("response", (response) => {
-    try {
-      const host = new URL(response.url()).hostname;
-      if (host.endsWith("privy.io") && response.status() >= 500) failures.push(`${host} ${response.status()}`);
-    } catch {
-      // a response without a readable URL is not evidence
-    }
+    recordPrivyResponse(failures, response.url(), response.status());
   });
   page.on("requestfailed", (request) => {
-    try {
-      const host = new URL(request.url()).hostname;
-      if (host.endsWith("privy.io")) failures.push(`${host} ${request.failure()?.errorText ?? "failed"}`);
-    } catch {
-      // a request without a readable URL is not evidence
-    }
+    recordPrivyRequestFailure(failures, request.url(), request.failure()?.errorText);
   });
 }
 
@@ -204,6 +215,7 @@ const runHuman = async (
   let tracing = false;
   let status: ProjectStatus = "FAIL";
   let skipped: SkipRun | undefined;
+  let failed = false;
   let failure: unknown;
 
   if (project === "privy") watchPrivy(page, privyFailures);
@@ -240,11 +252,13 @@ const runHuman = async (
         .then(() => true)
         .catch(() => false);
       if (!offered) {
+        if (privyFailures.length > 0) throw new SkipRun(`Privy unavailable: ${privyFailures[0]}`);
         const reason = testId(page, "wallet-fallback-reason");
         const text = (await reason.isVisible().catch(() => false)) ? (await reason.innerText()).trim() : "";
         throw new Error(text ? `Privy not offered: ${text}` : "Privy not offered");
       }
 
+      privyFailures.length = 0;
       await option.click();
       await rec.screenshot(page, "01", "privy-modal");
       try {
@@ -394,18 +408,14 @@ const runHuman = async (
       rec.verifier = "VALID";
     });
 
-    await step(rec, page, "08", "return", "return the change", async () => {
+    await softStep(rec, page, "08", "return", "return the change", async () => {
       if (project !== "injected" || !injected) return;
-      try {
-        const remaining = await balanceOf(client, injected.address);
-        const amount = changeToReturn(remaining);
-        const funderKey = keys.funderKey();
-        if (amount > 0n && funderKey) {
-          const funder = privateKeyToAccount(funderKey);
-          await transfer(client, injected, funder.address, amount, RPC);
-        }
-      } catch {
-        // best effort: the change is not part of the proof
+      const remaining = await balanceOf(client, injected.address);
+      const amount = changeToReturn(remaining);
+      const funderKey = keys.funderKey();
+      if (amount > 0n && funderKey) {
+        const funder = privateKeyToAccount(funderKey);
+        await transfer(client, injected, funder.address, amount, RPC);
       }
     });
 
@@ -416,6 +426,7 @@ const runHuman = async (
       skipped = error;
     } else {
       status = "FAIL";
+      failed = true;
       failure = error;
     }
   } finally {
@@ -430,12 +441,12 @@ const runHuman = async (
     }
     rec.write(status, {
       ...(skipped ? { skipReason: skipped.reason } : {}),
-      ...(failure ? { error: messageOf(failure) } : {}),
+      ...(failed ? { error: messageOf(failure) } : {}),
     });
   }
 
   if (skipped) test.skip(true, skipped.reason);
-  if (failure) throw failure;
+  raiseIfFailed(failed, failure);
 };
 
 // `bun test e2e/human/test` also matches this directory by prefix; only Playwright registers.
