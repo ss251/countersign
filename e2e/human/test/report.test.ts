@@ -7,6 +7,7 @@ import { Secrets } from "../../lib/secrets.ts";
 import {
   finalizeReport,
   finalizeRun,
+  HumanReporter,
   renderReport,
   REPO_ROOT,
   type ProjectRun,
@@ -161,5 +162,21 @@ describe("the run report", () => {
     const run = spawnSync(process.execPath, [fixture, root], { encoding: "utf8", timeout: 60_000 });
     expect(run.status).toBe(1);
     expect(`${run.stderr}`).toContain("leak: ");
+  });
+
+  test("a listing writes no report when no test begins", () => {
+    const root = tempDir();
+    const artifactsDir = join(root, "artifacts");
+    const runsDir = join(root, "runs");
+    const reporter = new HumanReporter({
+      artifactsDir,
+      runsDir,
+      secrets: Secrets.fromEntries({}),
+    });
+
+    reporter.onBegin();
+    reporter.onEnd();
+
+    expect(existsSync(runsDir)).toBe(false);
   });
 });

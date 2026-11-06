@@ -80,9 +80,9 @@ export function createRunId(at: Date = new Date()): string {
   return `${stamp}-${randomBytes(2).toString("hex")}`;
 }
 
-export function writeRunId(runId: string): void {
-  mkdirSync(ARTIFACTS_DIR, { recursive: true });
-  writeFileSync(RUN_ID_FILE, `${runId}\n`);
+export function writeRunId(runId: string, artifactsDir: string = ARTIFACTS_DIR): void {
+  mkdirSync(artifactsDir, { recursive: true });
+  writeFileSync(join(artifactsDir, ".run-id"), `${runId}\n`);
 }
 
 /** The reporter writes this before the workers start; a test without one makes its own. */
@@ -408,20 +408,46 @@ export function finalizeRun(
   return finalizeReport({ meta, projects, secrets, artifactsDir, runsDir });
 }
 
-class HumanReporter {
+export interface HumanReporterOptions {
+  artifactsDir?: string;
+  runsDir?: string;
+  secrets?: Secrets;
+}
+
+export class HumanReporter {
   private runId = "";
   private startedAt = new Date();
+  private began = false;
+  private readonly artifactsDir: string;
+  private readonly runsDir: string;
+  private readonly secrets?: Secrets;
+
+  constructor(options: HumanReporterOptions = {}) {
+    this.artifactsDir = options.artifactsDir ?? ARTIFACTS_DIR;
+    this.runsDir = options.runsDir ?? RUNS_DIR;
+    this.secrets = options.secrets;
+  }
 
   onBegin(): void {
+    this.began = false;
     this.runId = createRunId();
     this.startedAt = new Date();
-    writeRunId(this.runId);
-    mkdirSync(join(ARTIFACTS_DIR, this.runId), { recursive: true });
+    writeRunId(this.runId, this.artifactsDir);
+    mkdirSync(join(this.artifactsDir, this.runId), { recursive: true });
+  }
+
+  onTestBegin(): void {
+    this.began = true;
   }
 
   onEnd(): void {
+    if (!this.began) return;
     const runId = this.runId || currentRunId();
-    const result = finalizeRun(runId, this.startedAt);
+    const result = finalizeRun(runId, this.startedAt, {
+      artifactsDir: this.artifactsDir,
+      runsDir: this.runsDir,
+      ...(this.secrets ? { secrets: this.secrets } : {}),
+    });
     console.log(`human report: ${result.path}${result.latest ? ` and ${result.latest}` : ""}`);
     if (result.exitCode !== 0) process.exit(1);
   }
