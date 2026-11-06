@@ -87,6 +87,7 @@ The relayer is the only wallet that ever gets WBT from outside, and it pays for 
 | 2026-11-06 09:27 | relayer receives 1.9 WBT | [`0xd41d2ecd…9779`](https://explorer.testnet.whitechain.io/tx/0xd41d2ecd6aa2a8bd5d173a51b331bddc8b46cf47c078a70a8b5f1c0703e97779) |
 | 2026-11-06 09:33 | relayer swaps 0.2 WBT for 14.664556 USDT, paid to the buyer (`BuyTestUsdt.s.sol`) | [`0x0c1bb12a…0301`](https://explorer.testnet.whitechain.io/tx/0x0c1bb12ac1af1e49f4285703a8c1f23b67391601857548c64484818226bb0301) |
 | 2026-11-06 09:34 | relayer sends 0.1 WBT to the deployer (`TopUpWbt.s.sol`) | [`0xdf4ab567…935b`](https://explorer.testnet.whitechain.io/tx/0xdf4ab567d18958c673c423ed9df7622e22ffd046d8640262ecf2808b20b8935b) |
+| 2026-11-06 09:54 | relayer swaps 0.02 WBT for 1.46572 USDT, paid to the merchant as a refund float. After release the merchant holds the price minus the 1% toll, but a full refund returns the whole price | [`0x5c7d0b07…c0e`](https://explorer.testnet.whitechain.io/tx/0x5c7d0b0709cb83bc1452278fdc789e02e9aa6de645d70ccf2c059c87437c8c0e) |
 
 Both scripts read keys from the environment through `vm.envUint`, so a key never appears in a command line:
 

@@ -46,6 +46,21 @@ Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.loc
 
 6. **Base URLs.** `VITE_MERCHANT_URL` defaults to `/merchant-api` and `VITE_RELAY_URL` to `/relay`. These are same-origin dev proxies; cs-ui adds them in `vite.config.ts`. A full URL in the env var still works.
 
+7. **Fixes from the visual review.** The firstmate reviewed the merchant screens in a real browser. Make these changes exactly:
+   - **(a) One colour rule: every USDT amount is `--usdc` blue**, in the figure cards, the table Amount column and the receipt. Order counts and labels stay ink. A row's state is shown only by its pill: green `paid`, blue `held`/`pending`, neutral `refunded`/`partially_refunded`/`cancelled`. Remove the per-tone amount colouring in the table.
+   - **(b) A refund result is neutral, never green.** That covers the inline `Refunded. … returned to …` line, the `Cancelled. …` line and the `Refunded <hash>` text in the action cell. Use `--slate` text on no background, and keep the tx link.
+   - **(c) Held money is not received money.**
+     - **Cards:** `Received` · `Held in escrow` · `Refunded` · `Net`, in that order. The order count moves to the table caption heading, shown as a visible `Orders · 5` label above the table in slate `--t-13`.
+     - **Escrow `closeKind`:** the relay's `Order` gains `closeKind: "release" | "cancel" | "deadline_refund" | null` for escrow orders and `null` for exact payments. It comes from the job's closing status: released → `release`, cancelled → `cancel`, refunded (the deadline passed) → `deadline_refund`.
+     - **The four totals:**
+       - `received` sums exact payments in any status except `pending`, plus escrow orders with `closeKind === "release"`;
+       - `held` sums escrow orders with status `held`;
+       - `refunded` sums transfer refunds only (`refunded` on orders). Cancels and deadline refunds were never received, so they do not count;
+       - `net = received - fees - refunded`, using the order `fee` field from wc-05 (treat a missing fee as 0). It may be negative; show a leading minus.
+     - **Tests:** cover every case in `totals`.
+   - **(d) The fixture never repeats a tx hash.** Every hash in `fixtures.ts` is distinct.
+   - **(e) Dates read like people write them.** The receipt shows `6 Nov 2026, 14:32 IST`. Use `Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" })` and accept whatever short zone name Intl gives. The desk's Time cell `title` uses the same format.
+
 ## Tests
 
 - **Refund reply normaliser:** both reply shapes.
