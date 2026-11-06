@@ -9,14 +9,16 @@ import {
   MIRROR_TESTNET,
   netFor,
   offerHashFromMemo,
+  scheduleStatus,
   toSdkTxId,
   type MirrorOptions,
+  type MirrorTransaction,
 } from "@countersign/rail/hedera";
 import { type Client, TopicMessageSubmitTransaction } from "@hiero-ledger/sdk";
 
 export interface SpendEntry {
   v: 1;
-  kind: "spend" | "refused";
+  kind: "spend" | "refused" | "schedule" | "expired";
   rail: "hedera";
   network: "hedera:testnet";
   offerHash: string;
@@ -27,10 +29,12 @@ export interface SpendEntry {
   asset: string;
   /** Atomic units of `asset`. */
   amount: string;
-  /** Hedera transaction id of the payment, or the schedule create transaction; spends only. */
+  /** Hedera transaction id of the payment, or the schedule create transaction; spends/schedules only. */
   tx?: string;
   /** Schedule id when the spend was a scheduled transfer; `tx` is then the create transaction id. */
   schedule?: string;
+  /** Unix seconds when the schedule stops being executable; schedule entries only. */
+  expiresAt?: number;
   /** Why the envelope said no; refusals only. */
   reason?: EnvelopeRefusal | string;
   /** Running total under the envelope after this entry, atomic. */
@@ -67,12 +71,24 @@ export async function appendEntry(client: Client, topicId: string, entry: SpendE
 
 function parseEntry(raw: unknown): SpendEntry | null {
   const e = raw as Partial<SpendEntry> | null;
-  if (!e || e.v !== 1 || (e.kind !== "spend" && e.kind !== "refused") || e.rail !== "hedera") return null;
+  if (
+    !e ||
+    e.v !== 1 ||
+    (e.kind !== "spend" && e.kind !== "refused" && e.kind !== "schedule" && e.kind !== "expired") ||
+    e.rail !== "hedera"
+  ) {
+    return null;
+  }
   for (const k of ["offerHash", "seller", "payTo", "asset", "amount", "total", "cap"] as const) {
     if (typeof e[k] !== "string") return null;
   }
   if (e.kind === "spend" && typeof e.tx !== "string") return null;
   if (e.schedule !== undefined && typeof e.schedule !== "string") return null;
+  if (e.expiresAt !== undefined && (typeof e.expiresAt !== "number" || !Number.isFinite(e.expiresAt))) return null;
+  if (e.kind === "schedule" || e.kind === "expired") {
+    if (typeof e.tx !== "string" || typeof e.schedule !== "string") return null;
+  }
+  if (e.kind === "schedule" && typeof e.expiresAt !== "number") return null;
   return e as SpendEntry;
 }
 
@@ -112,6 +128,23 @@ export interface Reconciliation {
   unbacked: { logged: LoggedEntry; why: string }[];
   /** Successful agent transfers of the asset that no spend entry mentions. */
   unlogged: string[];
+  /** Schedules whose create is logged and that are still pending on the mirror. */
+  pending: LoggedEntry[];
+  /** Schedules logged at create that expired or were deleted without executing. */
+  released: LoggedEntry[];
+}
+
+function executionProblem(tx: MirrorTransaction, entry: SpendEntry, agent: string): string | null {
+  const moved = tx.tokens[entry.asset] ?? [];
+  return tx.result !== "SUCCESS"
+    ? `result ${tx.result}`
+    : netFor(moved, entry.payTo) !== BigInt(entry.amount)
+      ? "payee credit differs"
+      : netFor(moved, agent) !== -BigInt(entry.amount)
+        ? "agent debit differs"
+        : offerHashFromMemo(tx.memo) !== entry.offerHash.toLowerCase()
+          ? "memo names another offer"
+          : null;
 }
 
 /**
@@ -128,39 +161,67 @@ export async function reconcile(
 ): Promise<Reconciliation> {
   const matched: LoggedEntry[] = [];
   const unbacked: Reconciliation["unbacked"] = [];
+  const pending: LoggedEntry[] = [];
+  const released: LoggedEntry[] = [];
   const loggedTx = new Set<string>();
   for (const logged of entries) {
     const e = logged.entry;
-    if (e.kind !== "spend" || !e.tx) continue;
-    loggedTx.add(toSdkTxId(e.tx));
-    const scheduled = typeof e.schedule === "string";
-    const tx = await getTransaction(e.tx, { ...opts, scheduled }).catch(() => null);
-    if (!tx) {
-      unbacked.push({ logged, why: scheduled ? "scheduled execution not found" : "transaction not found" });
+
+    if (e.kind === "spend") {
+      if (!e.tx) continue;
+      loggedTx.add(toSdkTxId(e.tx));
+      const scheduled = typeof e.schedule === "string";
+      const tx = await getTransaction(e.tx, { ...opts, scheduled }).catch(() => null);
+      if (!tx) {
+        unbacked.push({ logged, why: scheduled ? "scheduled execution not found" : "transaction not found" });
+        continue;
+      }
+      // A scheduled transfer executes under its own transaction id; both ids are backed by this entry.
+      if (scheduled) loggedTx.add(toSdkTxId(tx.id));
+      const why = executionProblem(tx, e, agent);
+      if (why) unbacked.push({ logged, why });
+      else matched.push(logged);
       continue;
     }
-    // A scheduled transfer executes under its own transaction id; both ids are backed by this entry.
-    if (scheduled) loggedTx.add(toSdkTxId(tx.id));
-    const moved = tx.tokens[e.asset] ?? [];
-    const why =
-      tx.result !== "SUCCESS"
-        ? `result ${tx.result}`
-        : netFor(moved, e.payTo) !== BigInt(e.amount)
-          ? "payee credit differs"
-          : netFor(moved, agent) !== -BigInt(e.amount)
-            ? "agent debit differs"
-            : offerHashFromMemo(tx.memo) !== e.offerHash.toLowerCase()
-              ? "memo names another offer"
-              : null;
-    if (why) unbacked.push({ logged, why });
-    else matched.push(logged);
+
+    if (e.kind === "schedule") {
+      if (!e.tx || !e.schedule) continue;
+      loggedTx.add(toSdkTxId(e.tx));
+      const tx = await getTransaction(e.tx, { ...opts, scheduled: true }).catch(() => null);
+      if (tx) {
+        // The create id and the execution id both point at this one logged schedule.
+        loggedTx.add(toSdkTxId(tx.id));
+        const why = executionProblem(tx, e, agent);
+        if (why) unbacked.push({ logged, why });
+        else matched.push(logged);
+        continue;
+      }
+      const status = await scheduleStatus(e.schedule, opts);
+      if (status === "pending") pending.push(logged);
+      else if (status === "expired" || status === "deleted") released.push(logged);
+      else unbacked.push({ logged, why: "scheduled execution not found" });
+      continue;
+    }
+
+    if (e.kind === "expired") {
+      if (!e.tx || !e.schedule) continue;
+      loggedTx.add(toSdkTxId(e.tx));
+      const tx = await getTransaction(e.tx, { ...opts, scheduled: true }).catch(() => null);
+      if (tx) loggedTx.add(toSdkTxId(tx.id));
+      const status = await scheduleStatus(e.schedule, opts);
+      if (tx || status === "executed") {
+        unbacked.push({ logged, why: "logged as expired, but the schedule executed" });
+      } else if (status === "pending") {
+        unbacked.push({ logged, why: "logged as expired, but the schedule is still pending" });
+      }
+    }
   }
 
   const f = opts.fetch ?? fetch;
   const base = opts.base ?? MIRROR_TESTNET;
   const unlogged: string[] = [];
   const since = opts.since ?? entries[0]?.consensusAt;
-  if (!since) return { matched, unbacked, unlogged };
+  if (!since) return { matched, unbacked, unlogged, pending, released };
   let next: string | null =
     `/api/v1/transactions?account.id=${agent}&transactiontype=CRYPTOTRANSFER&result=success&order=asc&limit=100` +
     `&timestamp=gte:${since}`;
@@ -179,5 +240,5 @@ export async function reconcile(
     }
     next = page.links?.next ?? null;
   }
-  return { matched, unbacked, unlogged };
+  return { matched, unbacked, unlogged, pending, released };
 }

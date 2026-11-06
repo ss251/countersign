@@ -2,12 +2,8 @@
 // create; the seller checks the scheduled body and adds the second signature. The transfer runs the
 // moment both keys have signed, or expires without moving anything. This module holds the seller's
 // check-before-signing and the mirror reads that make the schedule's state honest.
-import {
-  type Client,
-  ScheduleInfoQuery,
-  ScheduleSignTransaction,
-  TransferTransaction,
-} from "@hiero-ledger/sdk";
+import { proto } from "@hiero-ledger/proto";
+import { type Client, ScheduleSignTransaction } from "@hiero-ledger/sdk";
 import { HBAR, MIRROR_TESTNET } from "./constants.ts";
 import { InspectError, type InspectedTransfer, type TransferRefusal } from "./inspect.ts";
 import { offerHashFromMemo } from "./memo.ts";
@@ -161,173 +157,76 @@ export function checkScheduledTransfer(
   return { ok: true, payer: debit.account };
 }
 
-// A schedule's transaction_body is a SchedulableTransactionBody, not a full TransactionBody: its
-// transfer field is 9, its memo field is 2, and it carries no transaction id. Decode just enough of
-// the protobuf to check the transfer; the SDK has no public decoder for this body on its own.
-interface WireField {
-  no: number;
-  wire: number;
-  bytes?: Uint8Array;
-  number?: bigint;
-}
-
-function readFields(bytes: Uint8Array): WireField[] {
-  const fields: WireField[] = [];
-  let i = 0;
-  const varint = (): bigint => {
-    let value = 0n;
-    let shift = 0n;
-    for (;;) {
-      if (i >= bytes.length) throw new InspectError("scheduled body is truncated");
-      const byte = bytes[i++]!;
-      value |= BigInt(byte & 0x7f) << shift;
-      if ((byte & 0x80) === 0) return value;
-      shift += 7n;
-    }
-  };
-  while (i < bytes.length) {
-    const key = varint();
-    const no = Number(key >> 3n);
-    const wire = Number(key & 7n);
-    if (wire === 0) {
-      fields.push({ no, wire, number: varint() });
-    } else if (wire === 2) {
-      const length = Number(varint());
-      if (length < 0 || i + length > bytes.length) throw new InspectError("scheduled body is truncated");
-      fields.push({ no, wire, bytes: bytes.subarray(i, i + length) });
-      i += length;
-    } else if (wire === 1) {
-      i += 8;
-    } else if (wire === 5) {
-      i += 4;
-    } else {
-      throw new InspectError("scheduled body uses an unsupported protobuf wire type");
-    }
+function accountIdOf(id: proto.AccountID.$Properties | null | undefined): string {
+  if (!id) throw new InspectError("scheduled transfer has an amount without an account");
+  if (id.accountNum !== null && id.accountNum !== undefined) {
+    const shard = id.shardNum != null ? id.shardNum.toString() : "0";
+    const realm = id.realmNum != null ? id.realmNum.toString() : "0";
+    return `${shard}.${realm}.${id.accountNum.toString()}`;
   }
-  return fields;
-}
-
-function decodeAccount(fields: WireField[]): string {
-  let shard = 0n;
-  let realm = 0n;
-  let num: bigint | null = null;
-  let alias: Uint8Array | null = null;
-  for (const f of fields) {
-    if (f.wire === 0 && f.no === 1) shard = f.number!;
-    else if (f.wire === 0 && f.no === 2) realm = f.number!;
-    else if (f.wire === 0 && f.no === 3) num = f.number!;
-    else if (f.wire === 2 && f.no === 4) alias = f.bytes!;
-  }
-  if (num !== null) return `${shard}.${realm}.${num}`;
-  if (alias) return `0x${Buffer.from(alias).toString("hex")}`;
+  if (id.alias && id.alias.length > 0) return `0x${Buffer.from(id.alias).toString("hex")}`;
   throw new InspectError("scheduled transfer names an account without a number");
 }
 
-function decodeToken(fields: WireField[]): string {
-  let shard = 0n;
-  let realm = 0n;
-  let num: bigint | null = null;
-  for (const f of fields) {
-    if (f.wire === 0 && f.no === 1) shard = f.number!;
-    else if (f.wire === 0 && f.no === 2) realm = f.number!;
-    else if (f.wire === 0 && f.no === 3) num = f.number!;
-  }
-  if (num === null) throw new InspectError("scheduled transfer names a token without a number");
+function tokenIdOf(id: proto.TokenID.$Properties | null | undefined): string {
+  if (!id) throw new InspectError("scheduled transfer has token amounts without a token");
+  const shard = id.shardNum != null ? id.shardNum.toString() : "0";
+  const realm = id.realmNum != null ? id.realmNum.toString() : "0";
+  const num = id.tokenNum != null ? id.tokenNum.toString() : "0";
   return `${shard}.${realm}.${num}`;
 }
 
-function zigzag(value: bigint): bigint {
-  return (value >> 1n) ^ -(value & 1n);
-}
-
-interface AccountAmount {
-  account: string;
-  amount: bigint;
-}
-
-function decodeAccountAmounts(fields: WireField[]): AccountAmount[] {
-  let account: string | null = null;
-  let amount = 0n;
-  for (const f of fields) {
-    if (f.wire === 2 && f.no === 1) account = decodeAccount(readFields(f.bytes!));
-    else if (f.wire === 0 && f.no === 2) amount = zigzag(f.number!);
+function collectAmounts(
+  amounts: proto.AccountAmount.$Properties[],
+  output: { account: string; amount: bigint }[],
+): void {
+  for (const entry of amounts) {
+    if (entry.isApproval) throw new InspectError("allowance transfers are refused");
+    output.push({ account: accountIdOf(entry.accountID), amount: BigInt((entry.amount ?? 0).toString()) });
   }
-  if (!account) throw new InspectError("scheduled transfer has an amount without an account");
-  return [{ account, amount }];
 }
 
-function decodeTransferList(fields: WireField[]): AccountAmount[] {
-  return fields.filter((f) => f.wire === 2 && f.no === 1).flatMap((f) => decodeAccountAmounts(readFields(f.bytes!)));
-}
-
-interface DecodedTokenTransfers {
-  token: string;
-  amounts: AccountAmount[];
-  nftCount: number;
-}
-
-function decodeTokenTransfers(fields: WireField[]): DecodedTokenTransfers {
-  let token: string | null = null;
-  const amounts: AccountAmount[] = [];
-  let nftCount = 0;
-  for (const f of fields) {
-    if (f.wire === 2 && f.no === 1) token = decodeToken(readFields(f.bytes!));
-    else if (f.wire === 2 && f.no === 2) amounts.push(...decodeAccountAmounts(readFields(f.bytes!)));
-    else if (f.wire === 2 && f.no === 3) nftCount++;
-  }
-  if (!token) throw new InspectError("scheduled transfer has token amounts without a token");
-  return { token, amounts, nftCount };
-}
-
-/** Find the scheduled transfer body, also accepting a create transaction that still wraps it. */
-function transferBody(bytes: Uint8Array): Uint8Array {
-  const fields = readFields(bytes);
-  if (fields.some((f) => f.wire === 2 && f.no === 9)) return bytes;
-
-  // A TransactionBody or a ScheduleCreateTransactionBody still holding the scheduled transfer.
-  const fromCreate = (createBody: Uint8Array): Uint8Array | null => {
-    const scheduleCreate = readFields(createBody).find((f) => f.wire === 2 && f.no === 42)?.bytes;
-    const scheduled = readFields(scheduleCreate ?? createBody).find((f) => f.wire === 2 && f.no === 1)?.bytes;
-    return scheduled && readFields(scheduled).some((f) => f.wire === 2 && f.no === 9) ? scheduled : null;
-  };
-
-  // TransactionList -> Transaction -> SignedTransaction.bodyBytes -> TransactionBody.
-  const list = fields.find((f) => f.wire === 2 && f.no === 1)?.bytes;
-  if (list) {
-    const signed = readFields(list).find((f) => f.wire === 2 && f.no === 5)?.bytes;
-    const body = signed ? readFields(signed).find((f) => f.wire === 2 && f.no === 1)?.bytes : undefined;
-    const scheduled = body ? fromCreate(body) : null;
-    if (scheduled) return scheduled;
-  }
-
-  const scheduled = fromCreate(bytes);
-  if (scheduled) return scheduled;
-
-  throw new InspectError("scheduled body is not a TransferTransaction");
-}
-
-/** Decode the transfer inside a schedule's transaction_body, in the shape decodeTransfer returns. */
+/**
+ * Decode the transfer inside a schedule's transaction_body, in the shape decodeTransfer returns.
+ * The mirror returns SchedulableTransactionBody bytes; every other shape is refused.
+ */
 export function inspectScheduled(bodyBase64: string): InspectedTransfer {
   const raw = Buffer.from(bodyBase64, "base64");
   if (raw.length === 0) throw new InspectError("scheduled body is empty");
-  const bytes = transferBody(raw);
-  const fields = readFields(bytes);
-  const cryptoTransfer = fields.find((f) => f.wire === 2 && (f.no === 9 || f.no === 14))!;
-  const fullBody = cryptoTransfer.no === 14;
-  const memo = fields.find((f) => f.wire === 2 && f.no === (fullBody ? 6 : 2));
-  const body = readFields(cryptoTransfer.bytes!);
+
+  let decoded: proto.SchedulableTransactionBody;
+  try {
+    decoded = proto.SchedulableTransactionBody.decode(raw);
+  } catch {
+    throw new InspectError("scheduled body is not a SchedulableTransactionBody");
+  }
+
+  // Only an exact round trip proves the reader saw every byte: protobuf merges repeated message
+  // members and the network keeps fields this decoder drops, so a looser read could approve a body
+  // that executes something else.
+  const reencoded = proto.SchedulableTransactionBody.encode(decoded).finish();
+  if (!Buffer.from(reencoded).equals(raw)) {
+    throw new InspectError("scheduled body is not in canonical form");
+  }
+
+  const allowed = new Set(["maxCustomFees", "transactionFee", "memo", "cryptoTransfer"]);
+  for (const key of Object.keys(decoded)) {
+    if (!allowed.has(key)) throw new InspectError(`scheduled body carries an unexpected field: ${key}`);
+  }
+  if (decoded.maxCustomFees.length > 0) throw new InspectError("scheduled body carries custom fees");
+  if (decoded.data !== "cryptoTransfer" || !decoded.cryptoTransfer) {
+    throw new InspectError("scheduled body is not a token transfer");
+  }
 
   const hbar: InspectedTransfer["hbar"] = [];
-  for (const f of body) {
-    if (f.wire === 2 && f.no === 1) hbar.push(...decodeTransferList(readFields(f.bytes!)));
-  }
+  collectAmounts(decoded.cryptoTransfer.transfers?.accountAmounts ?? [], hbar);
+
   const tokens: InspectedTransfer["tokens"] = {};
   let nftCount = 0;
-  for (const f of body) {
-    if (f.wire !== 2 || f.no !== 2) continue;
-    const list = decodeTokenTransfers(readFields(f.bytes!));
-    (tokens[list.token] ??= []).push(...list.amounts);
-    nftCount += list.nftCount;
+  for (const list of decoded.cryptoTransfer.tokenTransfers ?? []) {
+    const token = tokenIdOf(list.token);
+    collectAmounts(list.transfers ?? [], (tokens[token] ??= []));
+    nftCount += (list.nftTransfers ?? []).length;
   }
 
   return {
@@ -336,34 +235,7 @@ export function inspectScheduled(bodyBase64: string): InspectedTransfer {
     feePayer: "",
     validStart: 0,
     validDurationSeconds: 0,
-    memo: memo?.bytes ? new TextDecoder().decode(memo.bytes) : "",
-    hbar,
-    tokens,
-    nftCount,
-    signerCount: 0,
-  };
-}
-
-function inspectScheduledTransaction(tx: TransferTransaction): InspectedTransfer {
-  const hbar = [...tx.hbarTransfers].map(([account, amount]) => ({
-    account: account.toString(),
-    amount: BigInt(amount.toTinybars().toString()),
-  }));
-  const tokens: InspectedTransfer["tokens"] = {};
-  for (const [token, byAccount] of tx.tokenTransfers) {
-    tokens[token.toString()] = [...byAccount].map(([account, amount]) => ({
-      account: account.toString(),
-      amount: BigInt(amount.toString()),
-    }));
-  }
-  let nftCount = 0;
-  for (const list of tx.nftTransfers.values()) nftCount += list.length;
-  return {
-    transactionId: "",
-    feePayer: "",
-    validStart: 0,
-    validDurationSeconds: 0,
-    memo: tx.transactionMemo,
+    memo: decoded.memo ?? "",
     hbar,
     tokens,
     nftCount,
@@ -374,7 +246,7 @@ function inspectScheduledTransaction(tx: TransferTransaction): InspectedTransfer
 export class ScheduleRefusedError extends Error {
   override name = "ScheduleRefusedError";
   constructor(
-    readonly reason: ScheduleStatus | "missing" | "mismatch" | "not_a_transfer",
+    readonly reason: ScheduleStatus | "not_found" | "mismatch",
     message: string,
     readonly refusal?: ScheduledRefusal,
   ) {
@@ -384,11 +256,34 @@ export class ScheduleRefusedError extends Error {
 
 export interface CountersignOptions extends MirrorOptions {
   now?: () => number;
+  /** How often to ask the mirror for a schedule that has not appeared yet. */
+  pollIntervalMs?: number;
+  /** How long to wait for the mirror to show the schedule before refusing. */
+  pollTimeoutMs?: number;
+}
+
+async function waitForMirrorSchedule(scheduleId: string, opts: CountersignOptions): Promise<MirrorSchedule> {
+  const interval = opts.pollIntervalMs ?? 1_500;
+  const timeout = opts.pollTimeoutMs ?? 20_000;
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const record = await getSchedule(scheduleId, opts);
+    if (record) return record;
+    if (Date.now() >= deadline) {
+      throw new ScheduleRefusedError(
+        "not_found",
+        "Refused. The schedule is not on the mirror node yet, so its body cannot be checked.",
+      );
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
 }
 
 /**
  * Check the schedule and, only when it is still pending and exactly the expected transfer, add the
- * seller's signature. Returns the ScheduleSign transaction id.
+ * seller's signature. Returns the ScheduleSign transaction id. The body is read from the mirror
+ * node only: the SDK's schedule query hands back an already-parsed transaction, so its raw bytes
+ * cannot be checked.
  */
 export async function countersignSchedule(
   sellerClient: Client,
@@ -397,31 +292,10 @@ export async function countersignSchedule(
   opts: CountersignOptions = {},
 ): Promise<string> {
   const now = (opts.now ?? (() => Math.floor(Date.now() / 1000)))();
-  const record = await getSchedule(scheduleId, opts);
-  let inspected: InspectedTransfer;
-
-  if (record) {
-    const status = statusOf(record, now);
-    if (status !== "pending") throw new ScheduleRefusedError(status, `Refused. The schedule is ${status}.`);
-    inspected = inspectScheduled(record.transactionBody);
-  } else {
-    // The mirror node can lag a fresh schedule; ask a node for the same facts.
-    const info = await new ScheduleInfoQuery().setScheduleId(scheduleId).execute(sellerClient);
-    const expires = info.expirationTime ? Number(info.expirationTime.seconds.toString()) : null;
-    const status: ScheduleStatus = info.deleted
-      ? "deleted"
-      : info.executed
-        ? "executed"
-        : expires !== null && now >= expires
-          ? "expired"
-          : "pending";
-    if (status !== "pending") throw new ScheduleRefusedError(status, `Refused. The schedule is ${status}.`);
-    const scheduled = info.scheduledTransaction;
-    if (!(scheduled instanceof TransferTransaction)) {
-      throw new ScheduleRefusedError("not_a_transfer", "Refused. The schedule does not hold a token transfer.");
-    }
-    inspected = inspectScheduledTransaction(scheduled);
-  }
+  const record = await waitForMirrorSchedule(scheduleId, opts);
+  const status = statusOf(record, now);
+  if (status !== "pending") throw new ScheduleRefusedError(status, `Refused. The schedule is ${status}.`);
+  const inspected = inspectScheduled(record.transactionBody);
 
   const check = checkScheduledTransfer(inspected, expected);
   if (!check.ok) throw new ScheduleRefusedError("mismatch", check.message, check.reason);

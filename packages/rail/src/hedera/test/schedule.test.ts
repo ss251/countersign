@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { proto } from "@hiero-ledger/proto";
 import {
   AccountId,
   Hbar,
@@ -7,12 +8,14 @@ import {
   TokenId,
   TransactionId,
   TransferTransaction,
+  type Client,
 } from "@hiero-ledger/sdk";
 import { USDC_TESTNET } from "../constants.ts";
 import { InspectError } from "../inspect.ts";
 import { offerMemo } from "../memo.ts";
 import {
   checkScheduledTransfer,
+  countersignSchedule,
   inspectScheduled,
   scheduleStatus,
   type ExpectedScheduledTransfer,
@@ -117,6 +120,30 @@ async function reason(b: Build = {}, w: Partial<ExpectedScheduledTransfer> = {})
   return result.ok ? "ok" : result.reason;
 }
 
+function bodyBytes(body: string): Uint8Array {
+  return new Uint8Array(Buffer.from(body, "base64"));
+}
+
+function field(no: number, payload: Uint8Array): Uint8Array {
+  if (payload.length >= 128) throw new Error("test helper only writes short fields");
+  return Uint8Array.from([(no << 3) | 2, payload.length, ...payload]);
+}
+
+function sub(bytes: Uint8Array, no: number): Uint8Array {
+  return readFields(bytes).find((f) => f.no === no)!.bytes!;
+}
+
+async function crafted(mutate: (body: proto.SchedulableTransactionBody) => void): Promise<string> {
+  const body = proto.SchedulableTransactionBody.decode(bodyBytes(await scheduledBody()));
+  mutate(body);
+  return Buffer.from(proto.SchedulableTransactionBody.encode(body).finish()).toString("base64");
+}
+
+function reasonOf(body: string): string {
+  const result = checkScheduledTransfer(inspectScheduled(body), want);
+  return result.ok ? "ok" : result.reason;
+}
+
 describe("inspectScheduled", () => {
   test("reads the transfer, its memo and its accounts from the scheduled body", async () => {
     const inspected = inspectScheduled(await scheduledBody());
@@ -136,6 +163,46 @@ describe("inspectScheduled", () => {
     expect(() => inspectScheduled(Buffer.from("garbage").toString("base64"))).toThrow(InspectError);
     const notATransfer = await transfer();
     expect(() => inspectScheduled(notATransfer.base64)).toThrow(InspectError);
+  });
+
+  test("refuses an unknown field appended inside cryptoTransfer", async () => {
+    const body = bodyBytes(await scheduledBody());
+    const transferBody = sub(body, 9);
+    const prefix = body.subarray(0, body.length - transferBody.length - 2);
+    const unknown = Uint8Array.from([0x3a, 0x02, 0x08, 0x01]);
+    const withUnknown = Uint8Array.from([...prefix, ...field(9, Uint8Array.from([...transferBody, ...unknown]))]);
+    expect(() => inspectScheduled(Buffer.from(withUnknown).toString("base64"))).toThrow(InspectError);
+  });
+
+  test("refuses an allowance transfer", async () => {
+    const body = await crafted((decoded) => {
+      for (const list of decoded.cryptoTransfer!.tokenTransfers ?? []) {
+        for (const amount of list.transfers ?? []) amount.isApproval = true;
+      }
+    });
+    expect(() => inspectScheduled(body)).toThrow("allowance transfers are refused");
+  });
+
+  test("refuses a second tokenTransfers entry", async () => {
+    const body = await crafted((decoded) => {
+      const lists = decoded.cryptoTransfer!.tokenTransfers ?? [];
+      lists.push(lists[0]!);
+      decoded.cryptoTransfer!.tokenTransfers = lists;
+    });
+    expect(reasonOf(body)).toBe("extra_transfers");
+  });
+
+  test("refuses a non-empty HBAR transfers list", async () => {
+    expect(await reason({ hbar: [{ account: PAYER, tinybars: -1n }, { account: PAYEE, tinybars: 1n }] })).toBe(
+      "extra_transfers",
+    );
+  });
+
+  test("refuses another top-level field", async () => {
+    const body = await crafted((decoded) => {
+      decoded.contractCall = proto.ContractCallTransactionBody.create({});
+    });
+    expect(() => inspectScheduled(body)).toThrow(InspectError);
   });
 });
 
@@ -210,6 +277,19 @@ function record(over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+describe("countersignSchedule", () => {
+  test("refuses when the mirror never shows the schedule and never signs", async () => {
+    const mirror = mirrorRecords({});
+    await expect(
+      countersignSchedule({} as Client, "0.0.599", want, {
+        ...mirror,
+        pollIntervalMs: 1,
+        pollTimeoutMs: 10,
+      }),
+    ).rejects.toMatchObject({ name: "ScheduleRefusedError", reason: "not_found" });
+  });
+});
 
 describe("scheduleStatus", () => {
   const records = {

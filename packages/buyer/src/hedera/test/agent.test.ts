@@ -15,8 +15,8 @@ import {
   type SettleResult,
 } from "@countersign/core";
 import { createHederaRail, decodeTransfer, HEDERA_TESTNET, USDC_TESTNET, type Facilitator } from "@countersign/rail/hedera";
-import { PrivateKey } from "@hiero-ledger/sdk";
-import { createHederaAgent, spentFromLog, type Listing } from "../agent.ts";
+import { PrivateKey, type Client } from "@hiero-ledger/sdk";
+import { createHederaAgent, spentFromLog, type HederaAgentOptions, type Listing } from "../agent.ts";
 import type { LoggedEntry, SpendEntry } from "../spendlog.ts";
 
 const PAYER = "0.0.11337064";
@@ -231,6 +231,47 @@ function spend(over: Partial<SpendEntry> = {}): SpendEntry {
 
 function logged(sequence: number, entry: SpendEntry): LoggedEntry {
   return { sequence, consensusAt: `17939570${sequence}.000000001`, entry };
+}
+
+function scheduleAgent(env: Envelope, entries: SpendEntry[], over: Partial<HederaAgentOptions> = {}) {
+  return createHederaAgent({
+    hub: "http://127.0.0.1:0",
+    payer,
+    envelope: env,
+    topicId: TOPIC,
+    appendLog: async (entry) => {
+      entries.push(entry);
+      return { sequence: entries.length };
+    },
+    now: () => 1793957000,
+    ...over,
+  });
+}
+
+function scheduleMirror(record: () => object | null) {
+  return {
+    base: "http://mirror.test",
+    fetch: (async () => {
+      const r = record();
+      return r ? Response.json(r) : new Response("{}", { status: 404 });
+    }) as unknown as typeof globalThis.fetch,
+  };
+}
+
+function scheduleRecord(over: Record<string, unknown> = {}) {
+  return {
+    schedule_id: "0.0.500",
+    creator_account_id: PAYER,
+    payer_account_id: PAYER,
+    memo: "",
+    executed_timestamp: null,
+    expiration_time: "9999999999.000000000",
+    deleted: false,
+    wait_for_expiry: false,
+    transaction_body: "",
+    signatures: [],
+    ...over,
+  };
 }
 
 describe("hedera agent", () => {
@@ -484,5 +525,168 @@ describe("hedera agent", () => {
       total: "30000",
       bySeller: { [SELLER]: "15000", [other]: "15000" },
     });
+  });
+
+  test("spentFromLog counts a schedule at create", () => {
+    const entries = [
+      logged(
+        1,
+        spend({
+          kind: "schedule",
+          tx: "0.0.11337064@1793957000.000000001",
+          schedule: "0.0.500",
+          expiresAt: 1793957300,
+          total: "10000",
+        }),
+      ),
+    ];
+    expect(spentFromLog(entries)).toEqual({ total: "10000", bySeller: { [SELLER]: "10000" } });
+  });
+
+  test("spentFromLog subtracts an expiry once and ignores the duplicate", () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const entries = [
+      logged(1, spend({ kind: "schedule", tx: createTx, schedule: "0.0.500", expiresAt: 1793957300, total: "10000" })),
+      logged(2, spend({ kind: "expired", tx: createTx, schedule: "0.0.500", total: "0" })),
+      logged(3, spend({ kind: "expired", tx: createTx, schedule: "0.0.500", total: "0" })),
+    ];
+    expect(spentFromLog(entries)).toEqual({ total: "0", bySeller: { [SELLER]: "0" } });
+  });
+
+  test("spentFromLog still counts a legacy spend that carries a schedule id", () => {
+    const entries = [logged(1, spend({ schedule: "0.0.500" }))];
+    expect(spentFromLog(entries).total).toBe("10000");
+  });
+
+  test("spentFromLog does not double count a spend that follows its schedule entry", () => {
+    const createTx = "0.0.11337064@1793957000.000000001";
+    const entries = [
+      logged(1, spend({ kind: "schedule", tx: createTx, schedule: "0.0.500", expiresAt: 1793957300, total: "10000" })),
+      logged(2, spend({ kind: "spend", tx: "0.0.11337064@1793958000.000000001", schedule: "0.0.500", total: "10000" })),
+    ];
+    expect(spentFromLog(entries)).toEqual({ total: "10000", bySeller: { [SELLER]: "10000" } });
+  });
+
+  test("the second of two back-to-back schedules is refused when together they exceed the cap", async () => {
+    const o = offer();
+    const target = { offer: o, offerHash: offerHash(o) };
+    const entries: SpendEntry[] = [];
+    let created = 0;
+    const agent = scheduleAgent(envelope({ cap: "10000", perMerchant: "10000" }), entries, {
+      createSchedule: async () => {
+        created++;
+        return { scheduleId: `0.0.${500 + created}`, createTxId: `0.0.11337064@17939570${created}.000000001` };
+      },
+    });
+    const first = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 });
+    expect(first.kind).toBe("scheduled");
+    const second = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 });
+    expect(second).toMatchObject({ kind: "refused", reason: "over-cap" });
+    expect(second.logSequence).toBe(2);
+    expect(entries.map((e) => e.kind)).toEqual(["schedule", "refused"]);
+    expect(agent.spent.total).toBe("10000");
+  });
+
+  test("a throwing create keeps the reservation held", async () => {
+    const o = offer();
+    const target = { offer: o, offerHash: offerHash(o) };
+    const entries: SpendEntry[] = [];
+    const agent = scheduleAgent(envelope({ cap: "10000", perMerchant: "10000" }), entries, {
+      createSchedule: async () => {
+        throw new Error("create failed");
+      },
+    });
+    await expect(agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 })).rejects.toThrow("create failed");
+    expect(entries).toHaveLength(0);
+    expect(agent.spent.total).toBe("0");
+    const again = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 });
+    expect(again).toMatchObject({ kind: "refused", reason: "over-cap" });
+  });
+
+  test("a schedule success logs exactly one schedule entry with its ids and expiry", async () => {
+    const o = offer();
+    const target = { offer: o, offerHash: offerHash(o) };
+    const entries: SpendEntry[] = [];
+    const agent = scheduleAgent(envelope(), entries, {
+      createSchedule: async (_client, _payer, req) => {
+        expect(req.amount).toBe(10000n);
+        expect(req.payTo).toBe(PAYEE);
+        return { scheduleId: "0.0.500", createTxId: "0.0.11337064@1793957000.000000001" };
+      },
+    });
+    const outcome = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 120 });
+    expect(outcome.kind).toBe("scheduled");
+    if (outcome.kind !== "scheduled") return;
+    expect(outcome.expiresAt).toBe(1793957120);
+    expect(outcome.hold).toEqual({
+      scheduleId: "0.0.500",
+      createTxId: "0.0.11337064@1793957000.000000001",
+      offerHash: offerHash(o),
+      seller: SELLER,
+      payTo: PAYEE,
+      asset: USDC_TESTNET,
+      amount: "10000",
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "schedule",
+      tx: outcome.createTxId,
+      schedule: outcome.scheduleId,
+      expiresAt: 1793957120,
+      offerHash: offerHash(o),
+      seller: SELLER,
+      payTo: PAYEE,
+      asset: USDC_TESTNET,
+      amount: "10000",
+      total: "10000",
+    });
+    expect(agent.spent.total).toBe("10000");
+  });
+
+  test("releaseExpired leaves an executed schedule alone", async () => {
+    const o = offer();
+    const target = { offer: o, offerHash: offerHash(o) };
+    const entries: SpendEntry[] = [];
+    const agent = scheduleAgent(envelope(), entries, {
+      createSchedule: async () => ({ scheduleId: "0.0.500", createTxId: "0.0.11337064@1793957000.000000001" }),
+      mirror: scheduleMirror(() => scheduleRecord({ executed_timestamp: "1793957001.000000001" })),
+    });
+    const outcome = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 });
+    expect(outcome.kind).toBe("scheduled");
+    if (outcome.kind !== "scheduled") return;
+    expect(await agent.releaseExpired(outcome.hold)).toBe("executed");
+    expect(entries.map((e) => e.kind)).toEqual(["schedule"]);
+    expect(agent.spent.total).toBe("10000");
+  });
+
+  test("releaseExpired logs one expired entry and lowers spent once", async () => {
+    const o = offer();
+    const target = { offer: o, offerHash: offerHash(o) };
+    const entries: SpendEntry[] = [];
+    const agent = scheduleAgent(envelope(), entries, {
+      createSchedule: async () => ({ scheduleId: "0.0.500", createTxId: "0.0.11337064@1793957000.000000001" }),
+      mirror: scheduleMirror(() => scheduleRecord({ expiration_time: "1.000000000" })),
+    });
+    const outcome = await agent.schedule(target, { client: {} as Client, expiresInSeconds: 300 });
+    expect(outcome.kind).toBe("scheduled");
+    if (outcome.kind !== "scheduled") return;
+
+    expect(await agent.releaseExpired(outcome.hold)).toBe("released");
+    expect(entries.map((e) => e.kind)).toEqual(["schedule", "expired"]);
+    expect(entries[1]).toMatchObject({
+      kind: "expired",
+      tx: outcome.createTxId,
+      schedule: outcome.scheduleId,
+      offerHash: offerHash(o),
+      seller: SELLER,
+      payTo: PAYEE,
+      asset: USDC_TESTNET,
+      amount: "10000",
+      total: "0",
+    });
+    expect(agent.spent.total).toBe("0");
+
+    expect(await agent.releaseExpired(outcome.hold)).toBe("released");
+    expect(entries).toHaveLength(2);
   });
 });
