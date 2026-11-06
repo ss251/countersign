@@ -128,9 +128,12 @@ async function checkTarget(ctx: FlowCtx, name: string, base: string, expectOffer
     }
   });
 
-  const online = listed.find((l) => (expectOffer ? l.offerHash.toLowerCase() === expectOffer.toLowerCase() : l.online));
+  // A skill offer takes the empty input; other adapters (an MCP tool) need their own arguments.
+  const online = expectOffer
+    ? listed.find((l) => l.offerHash.toLowerCase() === expectOffer.toLowerCase())
+    : listed.find((l) => l.online && l.offer.adapter === "skill");
   if (!online) {
-    ctx.note(`${name} hub has no online offer, so the unpaid-call check did not run there`);
+    ctx.note(`${name} hub has no online skill offer, so the unpaid-call check did not run there`);
     return;
   }
   await ctx.step(`${name} · unpaid call answers 402`, async () => {

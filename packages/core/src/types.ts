@@ -43,7 +43,7 @@ export interface Asset {
 /** A JSON Schema document (draft 2020-12 subset). Kept opaque here; validation lives in the runner and buyer. */
 export type JsonSchema = { [key: string]: unknown };
 
-/** The runner serves "skill" only today; "mcp" is in progress (cs/hd-09) and "openapi" is not built. */
+/** The runner serves "skill" and "mcp" (one MCP tool per offer, spawned per job, #42); "openapi" is not built. */
 export type AdapterKind = "skill" | "mcp" | "openapi";
 
 /**
@@ -65,7 +65,7 @@ export interface Offer {
   price: string;
   /** Seconds the seller has to deliver once the escrow is funded. */
   deadline: number;
-  /** Atomic amount the seller declares as bond. Declared only; no contract collects it yet. */
+  /** Atomic amount the seller puts up as bond. A supporting escrow collects and locks it at funding. */
   bond: string;
   /** Accepted rails, most preferred first. */
   rails: RailId[];
@@ -197,6 +197,17 @@ export interface SlipBody {
   chainId?: number;
 }
 
+/**
+ * The hub's record of how it picked the rail a call settled on. It sits outside SlipBody,
+ * like the settlement transaction, so the seller does not attest it and slipCommitHash
+ * never changes.
+ */
+export interface RouteTrace {
+  chosen: RailId;
+  reason: string;
+  attempts: Array<{ rail: RailId; outcome: "challenge-failed" | "settle-failed" | "settled"; at: number }>;
+}
+
 export interface Slip {
   body: SlipBody;
   hash: Hex;
@@ -205,7 +216,7 @@ export interface Slip {
   /** The buyer's payment exactly as it was sent. */
   payment: PaymentPayload;
   /** Where the money finished: release tx hash, transfer tx hash, Hedera tx id or Stripe payment reference. */
-  settlement: { transaction: string; network: Network; url?: string; receipt?: string };
+  settlement: { transaction: string; network: Network; url?: string; receipt?: string; route?: RouteTrace };
 }
 
 // ---------------------------------------------------------------------------

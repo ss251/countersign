@@ -37,7 +37,7 @@ try {
   const name = flag(args, "name") ?? "Countersign seller";
   const description = flag(args, "description") ?? `Paid capabilities sold by ${seller} through Countersign.`;
 
-  const agentURI = toDataUri(registrationFile({ name, description, hubUrl, seller, offers }));
+  const agentURI = toDataUri(registrationFile({ name, description, hubUrl, seller, offers, chainId: choice.chain.id }));
   const registered = await registerAgent(wallet, choice.publicClient, choice.registries.identity, agentURI);
   console.log(`agentId: ${registered.agentId}`);
   console.log(`registerTx: ${registered.tx}`);

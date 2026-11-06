@@ -14,7 +14,7 @@ For the README, in one line:
 - **Merchant:** sees every order at `#/merchant` as it settles. Refunds an order in one click: a held escrow order is cancelled, and a paid order is sent back as a gasless USDT transfer. Exports a CSV for the accountant. Never holds WBT.
 - **Business side of gas:** the relayer holds the WBT. Half of every escrow toll flows back to it through `FeeSplit`. The guards in [What stops the relayer being drained](#what-stops-the-relayer-being-drained) bound what anyone can make it spend.
 
-The merchant desk reads the merchant's own service (`packages/relay/src/merchant-server.ts`). That service runs on the merchant's machine and is not deployed publicly, so the public console's `#/merchant` shows no live orders yet ([#83](https://github.com/ss251/countersign/pull/83)). The payments, refunds and export below ran against it on the build machine.
+The merchant desk reads a seller's orders from the hub (`GET /orders?seller=`). When the hub does not serve that route or does not answer, it reads the Whitechain relay's records instead and says so on the page. Refunds go through the merchant's own service (`packages/relay/src/merchant-server.ts`), which runs on the merchant's machine. The public console has no merchant service or relay configured, so it shows orders but cannot refund them, and the production hub does not run the Whitechain rail. The payments, refunds and export below ran on the build machine.
 
 ## Network
 

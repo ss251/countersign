@@ -28,6 +28,8 @@ export interface RegistrationInput {
   hubUrl: string;
   seller: Address;
   offers: readonly Hex[];
+  /** The chain the identity lives on, for the agentWallet endpoint. Default: Arc testnet, 5042002. */
+  chainId?: number;
 }
 
 export function registrationFile(input: RegistrationInput): RegistrationFile {
@@ -37,7 +39,7 @@ export function registrationFile(input: RegistrationInput): RegistrationFile {
     description: input.description,
     endpoints: [
       { name: "A2A", endpoint: `${input.hubUrl}/.well-known/agent-card.json` },
-      { name: "agentWallet", endpoint: `eip155:5042002:${input.seller}` },
+      { name: "agentWallet", endpoint: `eip155:${input.chainId ?? 5042002}:${input.seller}` },
     ],
     supportedTrust: ["reputation"],
     offers: [...input.offers],

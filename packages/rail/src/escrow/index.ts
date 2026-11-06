@@ -2,9 +2,11 @@
  * The escrow rail: CountersignedEscrow on an EVM chain with an EIP-3009 stablecoin.
  * Arc (USDC) uses it as rail "escrow"; Whitechain (USDT) wraps it as rail "whitechain".
  *
- * settle() funds the escrow with the buyer's countersignature; the job then closes through
- * escrow.release (seller's slip), escrow.refund (anyone, after the deadline) or escrow.cancel
- * (the seller's early refund). The submitter pays gas; the buyer never does.
+ * settle() funds the escrow with the buyer's countersignature, locking the seller's bond when the
+ * offer declares one; the job then closes through escrow.release (seller's slip), escrow.refund
+ * (anyone, after the deadline), escrow.cancel (the seller's early refund) or escrow.failDelivery
+ * (the arbiter's verdict that the seller's delivery failed the hub's gate). The submitter pays
+ * gas; the buyer never does.
  */
 
 import {
@@ -73,6 +75,10 @@ export interface EscrowRailConfig {
   explorerTx: string;
   finality: string;
   gasPaidBy: "hub" | "relayer";
+  /** Seconds until the settlement is final. Defaults to 2 for Arc escrow. */
+  finalitySeconds?: number;
+  /** The rail's own cost. Defaults to a 1% toll, no fixed fee. */
+  cost?: { tollBps: number; fixed: string };
   /** Sends fund, release, refund and cancel. Without one the rail can verify but not settle. */
   submitter?: LocalAccount;
   /**
@@ -90,7 +96,7 @@ export interface EscrowRailConfig {
   walletClient?: WalletClient<Transport, Chain, LocalAccount>;
 }
 
-export const STATUS = ["none", "funded", "released", "refunded"] as const;
+export const STATUS = ["none", "funded", "released", "refunded", "failed"] as const;
 
 /** Offer prices are atomic 6-decimal USD; scale them to the token's decimals. */
 export function priceInToken(price: string, decimals: number): string {
@@ -146,6 +152,8 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     gasPaidBy: cfg.gasPaidBy,
     finality: cfg.finality,
     explorerTx: cfg.explorerTx,
+    finalitySeconds: cfg.finalitySeconds ?? 2,
+    cost: cfg.cost ?? { tollBps: 100, fixed: "0" },
   };
 
   // One sender, one queue: transactions go out in order so nonces never collide.
@@ -179,7 +187,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   }
 
   function challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
-    const extra: CountersignExtra = {
+    const extra: CountersignExtra & { bond: string } = {
       rail: cfg.id,
       escrow: getAddress(cfg.escrow),
       chainId: cfg.chainId,
@@ -187,6 +195,7 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
       deadlineSeconds: offer.deadline,
       tokenName: cfg.tokenName,
       tokenVersion: cfg.tokenVersion,
+      bond: offer.bond,
     };
     return {
       scheme: "countersign",
@@ -251,7 +260,22 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
     const v = await verify(payment, req);
     if (!v.isValid) return { success: false, errorReason: v.invalidReason, transaction: "", network };
     const p = payment.payload as unknown as CountersignPayload;
-    const extra = req.extra as unknown as CountersignExtra;
+    const extra = req.extra as unknown as CountersignExtra & { bond?: unknown };
+    const bond = atomicOrZero(extra.bond);
+    if (bond > 0n) {
+      const args = fundArgs(extra.offerHash, p);
+      return submit(
+        "funding",
+        () =>
+          wallet!.writeContract({
+            address: cfg.escrow,
+            abi: escrowAbi,
+            functionName: "fundBonded",
+            args: [args[0], args[1], bond],
+          }),
+        v.payer,
+      );
+    }
     return submit(
       "funding",
       () => wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "fund", args: fundArgs(extra.offerHash, p) }),
@@ -279,6 +303,11 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
       submit("cancel", () =>
         wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "cancel", args: [jobId, sellerSig] }),
       ),
+    failDelivery: (jobId) =>
+      submit("delivery failure", () =>
+        wallet!.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: "failDelivery", args: [jobId] }),
+      ),
+    bondOfPayee: (payee) => bondOfPayee(pub, cfg.escrow, payee),
     status: async (jobId) => {
       const job = await pub.readContract({ address: cfg.escrow, abi: escrowAbi, functionName: "jobOf", args: [jobId] });
       return STATUS[job.status] ?? "none";
@@ -292,6 +321,25 @@ export function escrowRail(cfg: EscrowRailConfig): Rail {
   };
 
   return { declaration, challenge, verify, settle, escrow };
+}
+
+/** The payee's free (unlocked) bond on an escrow, in atomic units. Exported for the hub and runner. */
+export async function bondOfPayee(
+  client: PublicClient<Transport, Chain>,
+  escrow: Address,
+  payee: Address,
+): Promise<string> {
+  const bond = await client.readContract({
+    address: escrow,
+    abi: escrowAbi,
+    functionName: "bondOf",
+    args: [payee],
+  });
+  return bond.toString(10);
+}
+
+function atomicOrZero(value: unknown): bigint {
+  return typeof value === "string" && /^\d+$/.test(value) ? BigInt(value) : 0n;
 }
 
 /** The contract's fund() arguments from a wire payload. Exported for the moved-price demo. */

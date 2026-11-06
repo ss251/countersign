@@ -39,8 +39,9 @@ export const publicHedera: Flow = {
       equal(res.status, 200, "offers status");
       const offers = (res.json as { offers?: { offerHash: string; offer: Offer; online: boolean; status: string }[] }).offers ?? [];
       // The agent buys the first listed, online Hedera offer it discovers; so does this check.
-      const l = offers.find((x) => x.online && x.status === "listed" && x.offer.rails.includes("hedera") && typeof x.offer.payTo?.hedera === "string");
-      check(l, `the public hub has no online offer payable on Hedera (it lists ${offers.length})`);
+      // A skill offer on the Hedera rail, paid with the empty input; the MCP offer has its own flow.
+      const l = offers.find((x) => x.online && x.status === "listed" && x.offer.adapter === "skill" && x.offer.rails.includes("hedera") && typeof x.offer.payTo?.hedera === "string");
+      check(l, `the public hub has no online skill offer payable on Hedera (it lists ${offers.length})`);
       check(BigInt(l.offer.price) <= MAX_PRICE, `the Hedera offer costs ${l.offer.price}, above the suite's 0.05 USDC`);
       sameHex(canonicalHash(l.offer), l.offerHash, "the offer hashes to its offerHash");
       ctx.note(`paid ${l.offer.title} ${l.offerHash.slice(0, 10)} to ${l.offer.payTo?.hedera}`);
@@ -66,7 +67,7 @@ export const publicHedera: Flow = {
     });
 
     const paid = await ctx.step("agent pays through the public hub, no human step", async () => {
-      const run = await agentRun(ctx, "public", base, OPEN_CAP);
+      const run = await agentRun(ctx, "public", base, OPEN_CAP, listing.offerHash);
       equal(run.code, 0, `agent exit code (stderr ${JSON.stringify(run.stderr.trim().slice(-300))})`);
       equal(run.ok, true, "agent evidence ok");
       sameHex(String(evidence(run.evidence, "offer").value), listing.offerHash, "the agent bought the live Hedera offer");
