@@ -3,9 +3,13 @@ import { cors } from "hono/cors";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { formatUnits } from "@countersign/core";
-import { NETWORK, WHITECHAIN_CHAIN_ID, txUrl, whitechainSepolia } from "./chain.ts";
+import { NETWORK, USDT, WHITECHAIN_CHAIN_ID, txUrl, whitechainSepolia } from "./chain.ts";
 import { SpendCeiling } from "./ceiling.ts";
 import { loadRelayConfig } from "./config.ts";
+import { settleCountersign, verifyCountersign } from "./countersign-scheme.ts";
+import type { CountersignContext } from "./countersign-scheme.ts";
+import { cancelJob, jobStatus, refundJob, releaseJob } from "./escrow-ops.ts";
+import type { EscrowOpResult } from "./escrow-ops.ts";
 import { settleExact, verifyExact } from "./exact.ts";
 import type { ExactClock, ExactContext, VerifyRequest } from "./exact.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
@@ -13,6 +17,7 @@ import { Ledger } from "./ledger.ts";
 import { refundPayment } from "./refund.ts";
 import { Relayer } from "./relayer.ts";
 import type { ChainReader } from "./ports.ts";
+import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 
 export type RelayAppConfig = {
   port?: number;
@@ -25,11 +30,14 @@ export type RelayAppOptions = {
   ledger: Ledger;
   now: ExactClock;
   config?: RelayAppConfig;
+  /** The client escrowRail reads through. Defaults to the reader. */
+  chainClient?: unknown;
 };
 
 export function createRelayApp(options: RelayAppOptions): Hono {
   const { reader, relayer, ledger, now } = options;
   const ctx: ExactContext = { reader, relayer, ledger, now };
+  const csCtx: CountersignContext = { chainClient: options.chainClient ?? reader, relayer, ledger, now };
   const app = new Hono();
 
   app.use("*", cors({ origin: "*" }));
@@ -44,12 +52,19 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       balanceWbt: formatUnits(status.balanceWei, 18),
       ceiling: jsonSafe(status.ceiling),
       policy: jsonSafe(status.policy),
+      escrow: relayer.allowedEscrows[0] ?? WHITECHAIN_ESCROW,
+      token: USDT.address,
+      network: NETWORK,
+      chainId: WHITECHAIN_CHAIN_ID,
     });
   });
 
   app.get("/supported", (c) =>
     c.json({
-      kinds: [{ x402Version: 2, scheme: "exact", network: NETWORK }],
+      kinds: [
+        { x402Version: 2, scheme: "exact", network: NETWORK },
+        { x402Version: 2, scheme: "countersign", network: NETWORK },
+      ],
       extensions: [],
       signers: { "eip155:*": [relayer.address] },
     }),
@@ -59,6 +74,9 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     const body = await readJson(c);
     if (!body.ok) {
       return c.json({ isValid: false, invalidReason: "invalid_payload" }, 400);
+    }
+    if (schemeOf(body.value) === "countersign") {
+      return c.json(await verifyCountersign(body.value, csCtx));
     }
     return c.json(await verifyExact(body.value as VerifyRequest, ctx));
   });
@@ -75,6 +93,9 @@ export function createRelayApp(options: RelayAppOptions): Hono {
         },
         400,
       );
+    }
+    if (schemeOf(body.value) === "countersign") {
+      return c.json(await settleCountersign(body.value, csCtx));
     }
     return c.json(await settleExact(body.value as VerifyRequest, ctx));
   });
@@ -140,6 +161,74 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     });
   });
 
+  const bad = (c: { json: (body: unknown, status: 400) => Response }) =>
+    c.json({ ok: false, reason: "invalid_payload" }, 400);
+  const replyOp = (c: { json: (body: unknown, status: 200 | 404 | 422) => Response }, result: EscrowOpResult) =>
+    c.json(result, result.ok ? 200 : result.reason === "job_not_found" ? 404 : 422);
+
+  app.post("/escrow/release", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId) || !isHex32(v.slipHash) || !isHexString(v.sellerSig)) return bad(c);
+    return replyOp(
+      c,
+      await releaseJob({ jobId: v.jobId, slipHash: v.slipHash, sellerSig: v.sellerSig }, csCtx),
+    );
+  });
+
+  app.post("/escrow/cancel", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId) || !isHexString(v.sellerSig)) return bad(c);
+    return replyOp(c, await cancelJob({ jobId: v.jobId, sellerSig: v.sellerSig }, csCtx));
+  });
+
+  app.post("/escrow/refund", async (c) => {
+    const body = await readJson(c);
+    const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
+    if (!v || !isHex32(v.jobId)) return bad(c);
+    return replyOp(c, await refundJob({ jobId: v.jobId }, csCtx));
+  });
+
+  app.get("/escrow/jobs/:jobId", async (c) => {
+    const view = await jobStatus(c.req.param("jobId"), csCtx);
+    if (!view) return c.json({ error: "not_found" }, 404);
+    return c.json(jsonSafe(view));
+  });
+
+  app.get("/orders", (c) => {
+    const orders = ledger.listOrders({
+      merchant: c.req.query("merchant"),
+      customer: c.req.query("customer"),
+    });
+    return c.json({ orders: jsonSafe(orders) });
+  });
+
+  app.get("/orders.csv", (c) => {
+    const merchant = c.req.query("merchant");
+    if (!merchant) {
+      return c.json({ error: "merchant_required" }, 400);
+    }
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", 'attachment; filename="orders.csv"');
+    return c.body(ledger.ordersCsv(merchant));
+  });
+
+  app.get("/orders/:id", (c) => {
+    const order = ledger.getOrder(c.req.param("id"));
+    if (!order) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const refunds = ledger.listRefunds(order.id);
+    return c.json({
+      ...(jsonSafe(order) as Record<string, unknown>),
+      refunds: jsonSafe(refunds),
+      settleTxUrl: txUrl(order.settleTx),
+      closeTxUrl: order.closeTx ? txUrl(order.closeTx) : null,
+      refundTxUrls: refunds.map((refund) => txUrl(refund.txHash)),
+    });
+  });
+
   return app;
 }
 
@@ -167,6 +256,19 @@ if (import.meta.main) {
   });
   Bun.serve({ port: config.port, fetch: app.fetch });
   console.log(`relay listening on ${config.port} as ${account.address}`);
+}
+
+function schemeOf(body: unknown): unknown {
+  const req = (body as { paymentRequirements?: { scheme?: unknown } } | null)?.paymentRequirements;
+  return req && typeof req === "object" ? req.scheme : undefined;
+}
+
+function isHexString(value: unknown): value is `0x${string}` {
+  return typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value);
+}
+
+function isHex32(value: unknown): value is `0x${string}` {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 async function readJson(

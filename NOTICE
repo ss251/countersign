@@ -1,0 +1,19 @@
+countersign
+Copyright (c) 2026 Countersign contributors. Licensed under the MIT License (see LICENSE).
+
+This repository reproduces third-party material, unmodified, as the catalogue the runner serves.
+Each item keeps its own licence.
+
+1. Circle skills
+   Source:  https://github.com/circlefin/skills
+   Commit:  1f23655cbc360f7783e6881e026dbd4568c40f1d
+   Licence: Apache License 2.0 (copy in examples/catalogue/circle/LICENSE)
+   Files:   examples/catalogue/circle/{use-arc,use-usdc,use-gateway,use-smart-contract-platform,bridge-tokens}/SKILL.md
+            from plugins/circle/skills/<name>/SKILL.md upstream.
+
+2. Whitechain skill
+   Source:  https://github.com/whitechain-labs/skills
+   Commit:  76d88a68350a23a22efb62110aa1874428a36c11
+   Licence: none published upstream at that commit. Reproduced verbatim with attribution;
+            all rights remain with Whitechain Labs.
+   Files:   examples/catalogue/whitechain/whitechain-dev/SKILL.md and references/*.md

@@ -5,17 +5,22 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
 import { parseAtomic } from "@countersign/core";
 import { loadMerchantConfig } from "./config.ts";
-import { signRefund } from "./merchant.ts";
+import { signCancel, signRefund } from "./merchant.ts";
+import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
+import type { Address, Hex } from "viem";
 
 export type MerchantAppOptions = {
   merchant: LocalAccount;
   relayUrl: string;
   now?: () => number;
+  /** The escrow whose jobs this merchant cancels. Defaults to the Whitechain deployment. */
+  escrow?: Address;
 };
 
 export function createMerchantApp(options: MerchantAppOptions): Hono {
   const { merchant, relayUrl } = options;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const escrow = options.escrow ?? WHITECHAIN_ESCROW;
   const app = new Hono();
 
   // The merchant view is served from another origin (vite in development, static hosting after).
@@ -29,6 +34,86 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
 
   app.get("/payments.csv", async (c) => {
     return proxy(`${relayUrl}/payments.csv?payTo=${encodeURIComponent(merchant.address)}`);
+  });
+
+  app.get("/orders", async () => {
+    return proxy(`${relayUrl}/orders?merchant=${encodeURIComponent(merchant.address)}`);
+  });
+
+  app.get("/orders.csv", async () => {
+    return proxy(`${relayUrl}/orders.csv?merchant=${encodeURIComponent(merchant.address)}`);
+  });
+
+  app.post("/orders/:id/refund", async (c) => {
+    const id = c.req.param("id");
+    let body: unknown = {};
+    const text = await c.req.text();
+    if (text.trim() !== "") {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        return c.json({ ok: false, reason: "invalid_payload" }, 400);
+      }
+    }
+    let amount: bigint | undefined;
+    if (body && typeof body === "object" && "amount" in body) {
+      const raw = (body as { amount: unknown }).amount;
+      if (raw !== undefined) {
+        if (typeof raw !== "string") return c.json({ ok: false, reason: "invalid_payload" }, 400);
+        try {
+          amount = parseAtomic(raw);
+        } catch {
+          return c.json({ ok: false, reason: "invalid_payload" }, 400);
+        }
+      }
+    }
+
+    const orderResponse = await fetch(`${relayUrl}/orders/${encodeURIComponent(id)}`);
+    if (!orderResponse.ok) {
+      return c.json({ ok: false, reason: "order_not_found" }, orderResponse.status === 404 ? 404 : 502);
+    }
+    const order = (await orderResponse.json()) as {
+      id?: string;
+      kind?: string;
+      status?: string;
+      customer?: string;
+      merchant?: string;
+      amount?: string;
+      refunded?: string;
+    };
+    if (!order.id || !order.merchant || !order.customer || !order.amount) {
+      return c.json({ ok: false, reason: "order_not_found" }, 502);
+    }
+    if (order.merchant.toLowerCase() !== merchant.address.toLowerCase()) {
+      return c.json({ ok: false, reason: "not_your_order" }, 403);
+    }
+
+    if (order.kind === "escrow" && order.status === "held") {
+      const sellerSig = await signCancel({ merchant, escrow, jobId: order.id as Hex });
+      return forward(`${relayUrl}/escrow/cancel`, { jobId: order.id, sellerSig });
+    }
+
+    if (order.status === "paid" || order.status === "partially_refunded") {
+      let signed;
+      try {
+        signed = await signRefund({
+          merchant,
+          payment: {
+            payer: getAddress(order.customer),
+            payTo: getAddress(order.merchant),
+            amount: parseAtomic(order.amount),
+            refunded: parseAtomic(order.refunded ?? "0"),
+          },
+          amount,
+          now: now(),
+        });
+      } catch {
+        return c.json({ ok: false, reason: "refund_not_possible" }, 400);
+      }
+      return forward(`${relayUrl}/refund`, { paymentId: order.id, ...signed });
+    }
+
+    return c.json({ ok: false, reason: "not_refundable" }, 409);
   });
 
   app.post("/refund/:paymentId", async (c) => {
@@ -116,6 +201,18 @@ if (import.meta.main) {
   const app = createMerchantApp({ merchant, relayUrl: config.relayUrl });
   Bun.serve({ port: config.port, fetch: app.fetch });
   console.log(`merchant listening on ${config.port} as ${merchant.address}`);
+}
+
+async function forward(url: string, payload: unknown): Promise<Response> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return new Response(await response.text(), {
+    status: response.status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 async function proxy(url: string): Promise<Response> {

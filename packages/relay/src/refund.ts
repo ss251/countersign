@@ -25,7 +25,7 @@ export async function refundPayment(
   input: RefundInput,
   ctx: ExactContext,
 ): Promise<RefundResult> {
-  const payment = ctx.ledger.getPayment(input.paymentId);
+  const payment = findRefundable(input.paymentId, ctx);
   if (!payment) return { ok: false, reason: "payment_not_found" };
   if (payment.status !== "settled") return { ok: false, reason: "payment_not_settled" };
 
@@ -114,6 +114,23 @@ export async function refundPayment(
     if (outcome.status === "reverted") return { ok: false, reason: "transaction_reverted" };
     return { ok: false, reason: outcome.reason };
   });
+}
+
+/** A direct payment, or an escrow job that has been released to the merchant. */
+function findRefundable(
+  id: string,
+  ctx: ExactContext,
+): { id: string; payTo: string; payer: string; status: "settled" | "pending" } | null {
+  const payment = ctx.ledger.getPayment(id);
+  if (payment) return payment;
+  const job = ctx.ledger.getJob(id);
+  if (!job) return null;
+  return {
+    id: job.jobId,
+    payTo: job.payee,
+    payer: job.buyer,
+    status: job.status === "released" ? "settled" : "pending",
+  };
 }
 
 function normalize(auth: Authorization | WireAuthorization): Authorization {

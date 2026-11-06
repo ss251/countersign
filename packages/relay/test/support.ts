@@ -7,6 +7,7 @@ import type { Authorization } from "../src/eip3009.ts";
 import type { ExactContext, PaymentRequirements, VerifyRequest } from "../src/exact.ts";
 import { Ledger } from "../src/ledger.ts";
 import type { ChainReader, ChainWriter, ContractCall, Receipt, SimulationCall, WriteCall } from "../src/ports.ts";
+import { WHITECHAIN_ESCROW } from "../src/whitechain-config.ts";
 import { Relayer } from "../src/relayer.ts";
 import type { RelayerPolicy } from "../src/relayer.ts";
 
@@ -32,6 +33,8 @@ function nonceKey(from: string, nonce: string): string {
 export class FakeChain implements ChainReader, ChainWriter {
   balances = new Map<string, bigint>();
   used = new Set<string>();
+  /** jobOf status per jobId (lowercase): 0 none, 1 funded, 2 released, 3 refunded. */
+  jobs = new Map<string, number>();
   wbt = 10n ** 18n;
   maxFeePerGas = 1_000_000_000n;
   maxPriorityFeePerGas = 100_000_000n;
@@ -44,6 +47,8 @@ export class FakeChain implements ChainReader, ChainWriter {
   timeoutReceipt = false;
   writeDelayMs = 0;
   writes: WriteCall[] = [];
+  /** Throws to fail a simulation selectively. */
+  simulateHook: ((call: SimulationCall) => void) | null = null;
   activeWrites = 0;
   maxConcurrentWrites = 0;
 
@@ -74,11 +79,15 @@ export class FakeChain implements ChainReader, ChainWriter {
       const nonce = args[1] as string;
       return this.isUsed(owner, nonce);
     }
+    if (call.functionName === "jobOf") {
+      return { status: this.jobs.get((args[0] as string).toLowerCase()) ?? 0 };
+    }
     throw new Error(`unexpected read: ${call.functionName}`);
   }
 
   async simulateContract(call: SimulationCall): Promise<unknown> {
     if (this.failSimulation) throw new Error("execution reverted");
+    this.simulateHook?.(call);
     return { request: call };
   }
 
@@ -164,6 +173,7 @@ export function createTestRelay(options: TestRelayOptions = {}) {
     gasHeadroomPct: 20,
     receiptTimeoutMs: 100,
     allowedTokens: [USDT.address],
+    allowedEscrows: [WHITECHAIN_ESCROW],
   };
   const relayer = new Relayer(chain, chain.writer, relayerAccount, policy, ceiling);
   const ctx: ExactContext = { reader: chain, relayer, ledger, now: () => NOW };
