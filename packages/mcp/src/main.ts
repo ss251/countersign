@@ -2,7 +2,7 @@ import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem/accounts";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { HubClient, Journal, State } from "@countersign/buyer";
+import { HubClient, Journal, remoteAccount, sessionFromEnv, State } from "@countersign/buyer";
 import { createCountersignMcpServer } from "./server.ts";
 
 const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
@@ -20,7 +20,7 @@ Options:
 Sign in once: npx -y @countersign-hub/cli login. Your agent's wallet is a Privy server wallet held for you;
 this server signs through the hub with your session, and no key is ever on this machine or in any config.
 
-Advanced, CI only: CS_BUYER_KEY overrides the session. CS_NETWORK must be unset or testnet.
+CS_NETWORK must be unset or testnet.
 
 Install: npm i -g @countersign-hub/cli, then countersign mcp (or npx -y @countersign-hub/cli mcp).
 The npm packages named @countersign/*, countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
@@ -76,23 +76,36 @@ function ciAccount(env: Record<string, string | undefined>): ResolvedAccount {
   try {
     return { account: privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex) };
   } catch {
-    return { problem: "CS_BUYER_KEY is not a valid key." };
+    return { problem: "The configured signer is not valid." };
   }
+}
+
+function sessionProblem(error: unknown): ResolvedAccount {
+  const message = error instanceof Error ? error.message : String(error);
+  const firstLine = message.split("\n")[0] ?? "";
+  return { problem: `Could not load the countersign session: ${firstLine}` };
 }
 
 export async function resolveAccount(
   options: MainOptions,
   env: Record<string, string | undefined>,
 ): Promise<ResolvedAccount> {
-  if (options.loadAccount === undefined) return ciAccount(env);
-  try {
-    const account = await options.loadAccount();
-    return account === undefined ? {} : { account };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const firstLine = message.split("\n")[0] ?? "";
-    return { problem: `Could not load the countersign session: ${firstLine}` };
+  if (options.loadAccount !== undefined) {
+    try {
+      const account = await options.loadAccount();
+      return account === undefined ? {} : { account };
+    } catch (error) {
+      return sessionProblem(error);
+    }
   }
+  let session: Awaited<ReturnType<typeof sessionFromEnv>>;
+  try {
+    session = await sessionFromEnv(env);
+  } catch (error) {
+    return sessionProblem(error);
+  }
+  if (session !== undefined) return { account: remoteAccount(session) };
+  return ciAccount(env);
 }
 
 export async function main(argv: string[], options: MainOptions = {}): Promise<void> {

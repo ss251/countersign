@@ -3,7 +3,7 @@ import type { TypedDataDefinition } from "viem";
 import { verifyTypedData } from "viem";
 import type { LocalAccount, PrivateKeyAccount } from "viem/accounts";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { NOT_SIGNED_IN, type RemoteSession, remoteAccount } from "@countersign/buyer";
+import { NOT_SIGNED_IN, type RemoteSession, remoteAccount, sessionFromEnv } from "@countersign/buyer";
 import { authorizationTypedData, type AuthorizationInput } from "@countersign/core";
 
 interface Field {
@@ -59,7 +59,7 @@ function hubStub(
       capture.body = body;
       if (send !== undefined) return send(body.typedData, capture);
       const signature = await signer.signTypedData(revive(body.typedData));
-      return Response.json({ signature });
+      return Response.json({ signature, address: `0x${signer.address.slice(2).toUpperCase()}` });
     },
     { preconnect: () => undefined },
   );
@@ -153,7 +153,7 @@ describe("the remote signer", () => {
         message: Record<string, unknown>;
       };
     };
-    expect(body.kind).toBe("evm");
+    expect(body.kind).toBe("typed-data");
     expect(body.typedData.primaryType).toBe("ReceiveWithAuthorization");
     expect(body.typedData.types.EIP712Domain).toBeUndefined();
     expect(body.typedData.message.value).toBe("10000");
@@ -180,6 +180,23 @@ describe("the remote signer", () => {
       fetch: statusStub(500, { code: "error", message: "Boom." }),
     });
     expect((await rejection(broken.signTypedData(typedData))).message).toBe("The hub could not sign (500).");
+
+    const privy = remoteAccount(sessionFor(signer, "t"), {
+      fetch: statusStub(502, { code: "privy-failed", message: "Privy said no." }),
+    });
+    expect((await rejection(privy.signTypedData(typedData))).message).toBe(
+      "The hub could not sign (privy-failed).",
+    );
+  });
+
+  test("a 200 signed by another wallet is refused", async () => {
+    const signer = privateKeyToAccount(generatePrivateKey());
+    const other = privateKeyToAccount(generatePrivateKey());
+    const typedData = authorizationTypedData(authorizationFor(signer));
+    const account = remoteAccount(sessionFor(signer, "t"), {
+      fetch: statusStub(200, { signature: `0x${"11".repeat(65)}`, address: other.address }),
+    });
+    expect((await rejection(account.signTypedData(typedData))).message).toBe("The hub signed with another wallet.");
   });
 
   test("an unreachable hub or a timeout says so", async () => {
@@ -238,5 +255,91 @@ describe("the remote signer", () => {
         )
       ).message,
     ).toBe("This wallet signs only through the hub's typed-data route.");
+  });
+});
+
+function jsonStub(status: number, body: unknown, onRequest?: (request: Request) => void): typeof fetch {
+  return Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      onRequest?.(new Request(input, init));
+      return Response.json(body, { status });
+    },
+    { preconnect: () => undefined },
+  );
+}
+
+describe("sessionFromEnv", () => {
+  test("a 200 gives the session and removes CS_SESSION from the env", async () => {
+    const address = privateKeyToAccount(generatePrivateKey()).address;
+    const env: Record<string, string | undefined> = {
+      CS_SESSION: "session-token",
+      CS_HUB: "http://hub.invalid",
+    };
+    let seen: Request | undefined;
+    const session = await sessionFromEnv(env, {
+      fetch: jsonStub(200, { address, expiresAt: 1_762_400_600 }, (request) => {
+        seen = request;
+      }),
+    });
+
+    expect(session).toEqual({ hub: "http://hub.invalid", token: "session-token", address });
+    expect(seen?.method).toBe("GET");
+    expect(seen?.url).toBe("http://hub.invalid/cli/session");
+    expect(seen?.headers.get("authorization")).toBe("Bearer session-token");
+    expect(env.CS_SESSION).toBeUndefined();
+  });
+
+  test("the hub falls back to the default when CS_HUB is unset", async () => {
+    const address = privateKeyToAccount(generatePrivateKey()).address;
+    let seen: Request | undefined;
+    const session = await sessionFromEnv(
+      { CS_SESSION: "token" },
+      {
+        fetch: jsonStub(200, { address }, (request) => {
+          seen = request;
+        }),
+      },
+    );
+
+    expect(session?.hub).toBe("https://hub-production-e85e.up.railway.app");
+    expect(seen?.url).toBe("https://hub-production-e85e.up.railway.app/cli/session");
+  });
+
+  test("a 401 gives undefined", async () => {
+    const env: Record<string, string | undefined> = {
+      CS_SESSION: "token",
+      CS_HUB: "http://hub.invalid",
+    };
+    expect(
+      await sessionFromEnv(env, {
+        fetch: jsonStub(401, { code: "not-signed-in", message: "No session." }),
+      }),
+    ).toBeUndefined();
+    expect(env.CS_SESSION).toBeUndefined();
+  });
+
+  test("without CS_SESSION it is undefined and makes no request", async () => {
+    let requests = 0;
+    const stub = jsonStub(200, {}, () => {
+      requests += 1;
+    });
+    expect(await sessionFromEnv({}, { fetch: stub })).toBeUndefined();
+    expect(await sessionFromEnv({ CS_HUB: "http://hub.invalid" }, { fetch: stub })).toBeUndefined();
+    expect(requests).toBe(0);
+  });
+
+  test("no error's message contains the session token", async () => {
+    const token = "super-secret-session-token";
+    const stubs: Array<[string, typeof fetch]> = [
+      ["500", jsonStub(500, { message: "Boom." })],
+      ["403", jsonStub(403, { message: "No." })],
+      ["offline", networkStub("reject")],
+    ];
+
+    for (const [name, stub] of stubs) {
+      const env: Record<string, string | undefined> = { CS_SESSION: token, CS_HUB: "http://hub.invalid" };
+      const error = await rejection(sessionFromEnv(env, { fetch: stub }));
+      expect(`${name}: ${error.message}`).not.toContain(token);
+    }
   });
 });

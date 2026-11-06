@@ -75,7 +75,7 @@ function searchText(offer: Offer): string {
 }
 
 export function createCountersignMcpServer(deps: McpDeps): McpServer {
-  const server = new McpServer({ name: "countersign", version: "0.1.0" });
+  const server = new McpServer({ name: "countersign", version: "0.1.1" });
   const clock = deps.now ?? (() => Math.floor(Date.now() / 1000));
   const verify = deps.verify ?? verifySlip;
 
@@ -170,7 +170,8 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
     "buy",
     {
       title: "Buy an offer",
-      description: "Buy an offer under the agent's envelope and return the seller's output and slip.",
+      description:
+        "Buy an offer under the agent's envelope and return the seller's output and slip. Requires sign-in: npx -y @countersign-hub/cli login.",
       inputSchema: {
         offerHash: z.string(),
         input: z.unknown(),

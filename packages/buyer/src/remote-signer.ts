@@ -12,6 +12,7 @@ export interface RemoteSession {
 
 const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
 const NOT_REACHED = "The hub could not be reached to sign.";
 const TYPED_DATA_ONLY = "This wallet signs only through the hub's typed-data route.";
 
@@ -55,7 +56,7 @@ export function remoteAccount(session: RemoteSession, opts: RemoteOptions = {}):
       if (name !== "EIP712Domain") types[name] = fields;
     }
     const requestBody = JSON.stringify({
-      kind: "evm",
+      kind: "typed-data",
       typedData: {
         domain: decimalStrings(typedData.domain),
         types: decimalStrings(types),
@@ -87,7 +88,14 @@ export function remoteAccount(session: RemoteSession, opts: RemoteOptions = {}):
     }
 
     if (status === 200) {
-      const signature = (body as { signature?: unknown } | undefined)?.signature;
+      const result = body as { signature?: unknown; address?: unknown } | undefined;
+      if (
+        typeof result?.address !== "string" ||
+        result.address.toLowerCase() !== session.address.toLowerCase()
+      ) {
+        throw new Error("The hub signed with another wallet.");
+      }
+      const signature = result.signature;
       if (typeof signature === "string" && SIGNATURE.test(signature)) return signature as Hex;
       throw new Error(`The hub could not sign (${status}).`);
     }
@@ -96,6 +104,7 @@ export function remoteAccount(session: RemoteSession, opts: RemoteOptions = {}):
       const message = messageOf(body) ?? "the hub refused the request.";
       throw new Error(`Refused by the hub: ${message}`);
     }
+    if (status === 502) throw new Error("The hub could not sign (privy-failed).");
     throw new Error(`The hub could not sign (${status}).`);
   };
 
@@ -110,4 +119,34 @@ export function remoteAccount(session: RemoteSession, opts: RemoteOptions = {}):
     signTypedData,
   };
   return toAccount(source);
+}
+
+export async function sessionFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  opts: { fetch?: typeof fetch } = {},
+): Promise<RemoteSession | undefined> {
+  const token = env.CS_SESSION;
+  if (token === undefined || token === "") return undefined;
+  const hub = env.CS_HUB ?? DEFAULT_HUB;
+  delete env.CS_SESSION;
+
+  const fetchImpl = opts.fetch ?? fetch;
+  let status: number;
+  let body: unknown;
+  try {
+    const response = await fetchImpl(`${hub.replace(/\/+$/, "")}/cli/session`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    status = response.status;
+    body = await response.json().catch(() => undefined);
+  } catch {
+    throw new Error("Could not read the countersign session (no response).");
+  }
+
+  if (status === 401) return undefined;
+  if (status !== 200) throw new Error(`Could not read the countersign session (${status}).`);
+  const address = (body as { address?: unknown } | undefined)?.address;
+  if (typeof address !== "string") throw new Error("Could not read the countersign session (200).");
+  return { hub, token, address: address as Address };
 }

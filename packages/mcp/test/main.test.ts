@@ -69,6 +69,41 @@ describe("resolveAccount", () => {
   test("a malformed CS_BUYER_KEY is a problem and does not exit", async () => {
     const resolved = await resolveAccount({}, { CS_BUYER_KEY: "nonsense" });
     expect(resolved.account).toBeUndefined();
-    expect(resolved.problem).toBe("CS_BUYER_KEY is not a valid key.");
+    expect(resolved.problem).toBe("The configured signer is not valid.");
+  });
+
+  test("with CS_SESSION it uses the hub's session", async () => {
+    const address = privateKeyToAccount(generatePrivateKey()).address;
+    const env: Record<string, string | undefined> = { CS_SESSION: "token", CS_HUB: "http://hub.invalid" };
+    const original = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ address, expiresAt: 1_762_400_600 }),
+      { preconnect: () => undefined },
+    );
+    try {
+      const resolved = await resolveAccount({}, env);
+      expect(resolved.problem).toBeUndefined();
+      expect(resolved.account?.address).toBe(address);
+      expect(env.CS_SESSION).toBeUndefined();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("a failing session read becomes a one-line problem", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ message: "Boom." }, { status: 500 }), {
+      preconnect: () => undefined,
+    });
+    try {
+      const resolved = await resolveAccount(
+        {},
+        { CS_SESSION: "token", CS_HUB: "http://hub.invalid" },
+      );
+      expect(resolved.account).toBeUndefined();
+      expect(resolved.problem).toBe("Could not load the countersign session: Could not read the countersign session (500).");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
