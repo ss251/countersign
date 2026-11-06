@@ -141,8 +141,8 @@ contract GrokFindingsTest is GrokEscrowSigning {
 
     function test_H1_a_bond_moves_only_with_the_payee_lock() public {
         _deposit(BOND);
-        _publish(BOND, 0);
-        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, 0);
+        _publish(BOND, WINDOW);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
 
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
         vm.prank(arbiter);
@@ -201,8 +201,8 @@ contract GrokFindingsTest is GrokEscrowSigning {
 
     function test_L_a_registered_bonded_offer_cannot_be_funded_with_bond_zero() public {
         _deposit(BOND);
-        _publish(BOND, 0);
-        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, 0, 0);
+        _publish(BOND, WINDOW);
+        (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, 0, WINDOW);
 
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
         vm.prank(stranger);

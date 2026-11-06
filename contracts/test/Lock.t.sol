@@ -24,6 +24,7 @@ contract LockTest is Test {
     uint256 internal constant PRICE = 1_500_000; // 1.50 USDC
     uint256 internal constant BOND = 500_000; // 0.50 USDC
     uint16 internal constant TOLL_BPS = 100; // 1%
+    uint64 internal constant REVIEW_WINDOW = 60;
 
     function setUp() public {
         vm.warp(1_762_400_000);
@@ -48,9 +49,11 @@ contract LockTest is Test {
         cs.deadline = deadline;
         cs.salt = salt;
         cs.bond = bond;
+        uint64 window = bond == 0 ? 0 : REVIEW_WINDOW;
+        cs.reviewWindow = window;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt, bond, 0);
+        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt, bond, window);
         (cs.v, cs.r, cs.s) = _authorizationSig(
             buyerKey, buyer, address(escrow), amount, cs.validAfter, cs.validBefore, jobId
         );
@@ -90,13 +93,14 @@ contract LockTest is Test {
     }
 
     function _jobId(uint256 bond) internal view returns (bytes32) {
-        return escrow.jobIdFor(OFFER, buyer, seller, PRICE, uint64(block.timestamp + 300), 1, bond, 0);
+        uint64 window = bond == 0 ? 0 : REVIEW_WINDOW;
+        return escrow.jobIdFor(OFFER, buyer, seller, PRICE, uint64(block.timestamp + 300), 1, bond, window);
     }
 
     /// The seller registers the offer's bond, as it does once at publish.
     function _terms(uint256 bond) internal {
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, bond, 0, 0);
+        escrow.setTerms(OFFER, PRICE, bond, bond == 0 ? 0 : REVIEW_WINDOW, 0);
     }
 
     function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {

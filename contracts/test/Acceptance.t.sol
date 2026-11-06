@@ -335,11 +335,12 @@ contract AcceptanceTest is Test {
     // ------------------------------------------------------------------ v1 behaviour is unchanged
 
     function test_a_window_of_zero_releases_at_once_as_in_v1() public {
-        _sellerPublishes(0);
-        ICountersignedEscrow.Countersignature memory cs = _countersign(BOND, 0);
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, 0);
+        vm.prank(seller);
+        escrow.setTerms(OFFER, PRICE, 0, 0, 0);
+        ICountersignedEscrow.Countersignature memory cs = _countersign(0, 0);
+        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, 0, 0);
         vm.prank(arbiter);
-        jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        jobId = escrow.fund(OFFER, cs, "");
 
         uint256 sellerBefore = token.balanceOf(seller);
         escrow.release(jobId, SLIP, _releaseSig(jobId));

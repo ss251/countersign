@@ -23,6 +23,7 @@ contract W1BondTest is Test {
     bytes32 internal constant OFFER = keccak256("offer: a bonded skill");
     uint256 internal constant PRICE = 1_500_000;
     uint256 internal constant BOND = 500_000;
+    uint64 internal constant REVIEW_WINDOW = 60;
 
     function setUp() public {
         vm.warp(1_762_400_000);
@@ -66,9 +67,11 @@ contract W1BondTest is Test {
         cs.deadline = deadline;
         cs.salt = salt;
         cs.bond = bond;
+        uint64 window = bond == 0 ? 0 : REVIEW_WINDOW;
+        cs.reviewWindow = window;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        jobId = escrow.jobIdFor(OFFER, from, seller, amount, deadline, salt, bond, 0);
+        jobId = escrow.jobIdFor(OFFER, from, seller, amount, deadline, salt, bond, window);
         (cs.v, cs.r, cs.s) = _authorization(key, from, amount, cs.validBefore, jobId);
     }
 
@@ -105,7 +108,7 @@ contract W1BondTest is Test {
     function test_W1_deploy_gate_a_stranger_cannot_lock_a_sellers_free_bond() public {
         _sellerDeposits(BOND);
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, BOND, 0, 0);
+        escrow.setTerms(OFFER, PRICE, BOND, REVIEW_WINDOW, 0);
         (ICountersignedEscrow.Countersignature memory junk,) =
             _countersign(strangerKey, stranger, 1, uint64(block.timestamp + 3650 days), 7, BOND);
 

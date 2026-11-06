@@ -234,7 +234,7 @@ contract AuditFixesTest is EscrowSigning {
 
         // A stranger writes only its own entry.
         vm.prank(attacker);
-        escrow.setTerms(OFFER, 1, 1, 0, 0);
+        escrow.setTerms(OFFER, 1, 1, WINDOW, 0);
         (uint256 price, uint256 bond, uint64 window, uint64 minDuration) = escrow.termsOf(attacker, OFFER);
         assertEq(price, 1);
         assertEq(bond, 1);
@@ -247,7 +247,7 @@ contract AuditFixesTest is EscrowSigning {
 
         // And the stranger's terms bind nothing of the seller's.
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
-            _countersignBy(attackerKey, OFFER, seller, 1, uint64(block.timestamp + 1 days), 1, 1, 0);
+            _countersignBy(attackerKey, OFFER, seller, 1, uint64(block.timestamp + 1 days), 1, 1, WINDOW);
         bytes memory lockSig = _lockSig(sellerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.TermsMismatch.selector, jobId));
         escrow.fund(OFFER, cs, lockSig);
@@ -461,13 +461,12 @@ contract AuditFixesTest is EscrowSigning {
     // ------------------------------------------------------------------ H1 and L3
 
     function test_H1_failDelivery_and_release_land_until_settleBy() public {
-        _deposit(4 * BOND);
-        _publish(BOND, 0);
+        _publish(0, 0);
         bytes32[4] memory jobs;
         for (uint256 i; i < 4; ++i) {
-            (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(i + 1, BOND, 0);
+            (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(i + 1, 0, 0);
             vm.prank(arbiter);
-            escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+            escrow.fund(OFFER, cs, "");
             jobs[i] = jobId;
         }
         uint256 settleBy = _settleBy(jobs[0]);
@@ -478,7 +477,6 @@ contract AuditFixesTest is EscrowSigning {
         vm.warp(settleBy);
         escrow.release(jobs[0], SLIP, late0);
         assertEq(_status(jobs[0]), uint8(ICountersignedEscrow.Status.Released));
-        assertEq(escrow.bondOf(seller), BOND, "an honest late release keeps the bond");
         vm.prank(arbiter);
         escrow.failDelivery(jobs[1]);
         assertEq(_status(jobs[1]), uint8(ICountersignedEscrow.Status.Failed));
@@ -569,13 +567,12 @@ contract AuditFixesTest is EscrowSigning {
 
     function test_L1_blocklisted_treasury_does_not_block_release() public {
         token.setBlocked(treasury, true);
-        bytes32 jobId = _fundJob(1, BOND, 0);
+        bytes32 jobId = _fundJob(1, 0, 0);
         uint256 sellerBefore = token.balanceOf(seller);
 
         escrow.release(jobId, SLIP, _releaseSig(jobId));
 
         assertEq(token.balanceOf(seller) - sellerBefore, PRICE - _toll(), "the seller is paid");
-        assertEq(escrow.bondOf(seller), BOND);
         assertEq(escrow.tollAccrued(), _toll(), "the toll waits in the escrow");
 
         vm.expectRevert(bytes("blocklisted"));
@@ -632,7 +629,7 @@ contract ConservationHandler is EscrowSigning {
         token.mint(seller, 1e15);
         vm.startPrank(seller);
         escrow.setTerms(WINDOWED, PRICE, BOND, WINDOW, 0);
-        escrow.setTerms(DIRECT, PRICE, BOND, 0, 0);
+        escrow.setTerms(DIRECT, PRICE, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -644,12 +641,12 @@ contract ConservationHandler is EscrowSigning {
         return jobs[i % jobs.length];
     }
 
-    /// kind 0: no bond, no window (needs no terms); 1: bonded, no window; 2: bonded and windowed.
+    /// kind 0 and 1: no bond, no window (needs no terms); 2: bonded and windowed.
     function fund(uint8 kind) external {
         kind = uint8(bound(kind, 0, 2));
         ++salt;
         bytes32 offer = kind == 2 ? WINDOWED : DIRECT;
-        uint256 bond = kind == 0 ? 0 : BOND;
+        uint256 bond = kind == 2 ? BOND : 0;
         uint64 window = kind == 2 ? WINDOW : 0;
         if (bond != 0) _depositFor(sellerKey, bond, bytes32(salt));
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
