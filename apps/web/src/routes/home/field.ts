@@ -55,6 +55,9 @@ export function newestOf(rows: Settlement[]): Settlement | undefined {
   return sorted[sorted.length - 1];
 }
 
+/** Said while the hub's first reads are out, in place of any claim that there is none (firstmate, 23:45 IST). */
+export const READING = "Reading this hub's payments…";
+
 /** The newest release on any rail. The landing's escrow claims follow escrowRelease, never this. */
 export function newestRelease(rows: Settlement[]): Settlement | undefined {
   return newestOf(rows.filter((s) => s.kind === "released"));

@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties, type RefObject } from "react";
+import { READING } from "./field.ts";
 import { Link } from "../../app/router.tsx";
 import { explorerTemplate, formatClock, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
 import type { EnvelopeView, Listing, Settlement } from "../../lib/types.ts";
@@ -29,6 +30,8 @@ export interface ClearsProps {
   release: Settlement | undefined;
   /** The other rails in plain words, from their declarations (otherRailsLines). */
   others: string[];
+  /** The hub's first reads are still out: say so, never "none yet". */
+  reading: boolean;
   pinned: boolean;
   narrow: boolean;
 }
@@ -66,6 +69,7 @@ function ClearsFrame({
   featured,
   release,
   others,
+  reading,
   narrow,
 }: ClearsProps & { beat: number; only: boolean; go: (beat: number) => void }) {
   const env = useRef<HTMLDivElement>(null);
@@ -88,7 +92,7 @@ function ClearsFrame({
         <div className="story__desk" style={{ "--env-h": `${envHeight}px` } as CSSProperties}>
           <Envelope view={envelope} back={beat >= 1} gone={beat >= EXIT} box={env} />
           {shows(1) ? <TryOut listing={featured} on={on(1)} onFocus={bring(1)} narrow={narrow} /> : null}
-          {shows(2) ? <Release s={release} others={others} on={on(2)} onFocus={bring(2)} narrow={narrow} /> : null}
+          {shows(2) ? <Release s={release} others={others} reading={reading} on={on(2)} onFocus={bring(2)} narrow={narrow} /> : null}
         </div>
       </div>
     </div>
@@ -240,12 +244,14 @@ function TryOut({ listing, on, onFocus, narrow }: { listing: Listing | undefined
 function Release({
   s,
   others,
+  reading,
   on,
   onFocus,
   narrow,
 }: {
   s: Settlement | undefined;
   others: string[];
+  reading: boolean;
   on: boolean;
   onFocus: () => void;
   narrow: boolean;
@@ -297,7 +303,9 @@ function Release({
           ) : null}
         </>
       ) : (
-        <p className="story__quiet">No escrow release on this hub yet. The first one lands here, with its slip.</p>
+        <p className="story__quiet" aria-busy={reading || undefined}>
+          {reading ? READING : "No escrow release on this hub yet. The first one lands here, with its slip."}
+        </p>
       )}
       {others.map((line) => (
         <p key={line} className="story__quiet">
