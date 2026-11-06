@@ -32,7 +32,7 @@ else
   src="$work"
   label="$ref ($(git -C "$root" rev-parse --short "$ref"))"
   echo "installing $label"
-  (cd "$src" && bun install --frozen-lockfile >/dev/null)
+  (cd "$src" && bun install --frozen-lockfile --linker hoisted >/dev/null)
 fi
 
 echo "building apps/web from $label"
