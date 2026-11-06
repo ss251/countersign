@@ -14,8 +14,15 @@ import type { ChallengeContext, Rail, RailDeclaration } from "../rail.ts";
 import { FACILITATORS, HASHSCAN_TESTNET, HEDERA_TESTNET, USDC_DECIMALS, USDC_TESTNET } from "./constants.ts";
 import { httpFacilitator, type Facilitator, type X402Payload, type X402Requirements } from "./facilitator.ts";
 import { checkTransfer, decodeTransfer, InspectError, type TransferRefusal } from "./inspect.ts";
-import { getTransaction, netFor, type MirrorOptions } from "./mirror.ts";
+import { getTransaction, netFor, type MirrorOptions, type MirrorTransaction } from "./mirror.ts";
 import { offerMemo } from "./memo.ts";
+import {
+  ACCOUNT,
+  checkWalletPayment,
+  WALLET_TX_ID,
+  walletPayloadOf,
+  type WalletPayload,
+} from "./wallet-paid.ts";
 
 const ACCOUNT_ID = /^0\.0\.\d+$/;
 const OFFER_HASH = /^0x[0-9a-f]{64}$/;
@@ -79,6 +86,10 @@ export interface HederaRailOptions {
   seen?: SettledStore;
   /** Seconds of clock slack when comparing a mirror consensus time with the attempt's start. */
   clockSkewSeconds?: number;
+  /** How long `verify` polls the mirror for a wallet payment. */
+  walletWaitMs?: number;
+  /** The interval between those polls. */
+  walletPollMs?: number;
 }
 
 function memoryStore(): SettledStore {
@@ -126,6 +137,8 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   const verifySig = opts.verifyPayerSignature ?? createHederaVerifyPayerSignature();
   const clockSkewSeconds = opts.clockSkewSeconds ?? 5;
+  const walletWaitMs = opts.walletWaitMs ?? 20_000;
+  const walletPollMs = opts.walletPollMs ?? 1_500;
   // Transaction ids already claimed. A claim is never released: a failed payment is re-signed, not retried.
   const seen = opts.seen ?? memoryStore();
   const byFeePayer = new Map<string, Facilitator>();
@@ -196,6 +209,30 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     return { ok: true, payer: result.payer, transaction, transactionId: inspected.transactionId, facilitator };
   }
 
+  /** The wallet id is well formed, its payer is an account, and the id's account is that payer. */
+  function walletShape(w: WalletPayload): boolean {
+    const id = w.walletTransactionId;
+    return WALLET_TX_ID.test(id) && ACCOUNT.test(w.payer) && id.split("@")[0] === w.payer;
+  }
+
+  /** A wallet has already moved the money: shape, replay, the mirror record, then the offer's terms. */
+  async function verifyWallet(w: WalletPayload, requirements: PaymentRequirements): Promise<VerifyResult> {
+    if (!walletShape(w)) return { isValid: false, invalidReason: "malformed", payer: w.payer };
+    if (await seen.has(w.walletTransactionId)) return { isValid: false, invalidReason: "replay", payer: w.payer };
+    const deadline = Date.now() + walletWaitMs;
+    let record: MirrorTransaction | null = null;
+    for (;;) {
+      record = await getTransaction(w.walletTransactionId, opts.mirror).catch(() => null);
+      if (record) break;
+      if (Date.now() >= deadline) break;
+      await new Promise((r) => setTimeout(r, walletPollMs));
+    }
+    if (!record) return { isValid: false, invalidReason: "payment_not_found", payer: w.payer };
+    const checked = checkWalletPayment(record, requirements, w.payer, now());
+    if (!checked.ok) return { isValid: false, invalidReason: checked.reason, payer: w.payer };
+    return { isValid: true, payer: w.payer };
+  }
+
   /** After a facilitator failed to answer, the chain decides whether this attempt landed the payment. */
   async function confirmOnChain(
     transactionId: string,
@@ -249,6 +286,8 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     },
 
     async verify(payment, requirements): Promise<VerifyResult> {
+      const w = walletPayloadOf(payment.payload);
+      if (w) return verifyWallet(w, requirements);
       const c = check(payment, requirements);
       if (!c.ok) return { isValid: false, invalidReason: c.reason, payer: c.payer };
       if (await seen.has(c.transactionId)) return { isValid: false, invalidReason: "replay", payer: c.payer };
@@ -270,6 +309,16 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     },
 
     async settle(payment, requirements): Promise<SettleResult> {
+      const w = walletPayloadOf(payment.payload);
+      if (w) {
+        if (!walletShape(w)) {
+          return { success: false, errorReason: "malformed", payer: w.payer, transaction: "", network: HEDERA_TESTNET };
+        }
+        if (!(await seen.claim(w.walletTransactionId))) {
+          return { success: false, errorReason: "replay", payer: w.payer, transaction: "", network: HEDERA_TESTNET };
+        }
+        return { success: true, payer: w.payer, transaction: w.walletTransactionId, network: HEDERA_TESTNET };
+      }
       const c = check(payment, requirements);
       if (!c.ok) return { success: false, errorReason: c.reason, payer: c.payer, transaction: "", network: HEDERA_TESTNET };
       const sig = await verifySig({ payer: c.payer, transaction: c.transaction, network: HEDERA_TESTNET }).catch(() => ({
