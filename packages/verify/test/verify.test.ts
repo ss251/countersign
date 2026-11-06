@@ -60,6 +60,8 @@ describe("verifySlip offline", () => {
     const v = await verifySlip(await makeSlip());
     expect(v.findings.filter((f) => !f.ok)).toEqual([]);
     expect(v.valid).toBe(true);
+    expect(v.findings.some((f) => f.check === "onchain")).toBe(false);
+    expect(v.skipped[0]).toContain("not checked");
   });
 
   test("a tampered amount is INVALID", async () => {
