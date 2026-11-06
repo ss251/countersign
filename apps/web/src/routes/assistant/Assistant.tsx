@@ -7,6 +7,7 @@ import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { envelopeChecklist } from "../../lib/checklist.ts";
 import { formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
+import { liveSplit, NOT_LIVE } from "../../lib/live.ts";
 import { usePurchase } from "../../lib/purchase.ts";
 import { deadlineWords, termsKind } from "../../lib/terms.ts";
 import type { EnvelopeView, Listing, RailId } from "../../lib/types.ts";
@@ -465,7 +466,9 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   // A connected wallet whose only obstacle is the chain gets the switch button.
   const chainOnly = why !== null && offer.rails.includes("escrow");
   const declared = (id: RailId) => rails.data?.find((d) => d.id === id);
-  const rail: RailId = wallet ? "escrow" : offer.rails[0]!;
+  const hubRailIds = rails.source === "hub" && rails.data ? rails.data.map((d) => d.id) : undefined;
+  const split = liveSplit(offer.rails, hubRailIds);
+  const rail: RailId = wallet ? "escrow" : (split?.live[0] ?? offer.rails[0]!);
   // The amount in the asset of the rail this card shows: Arc USDC whenever the wallet signs.
   const money = usd(offer.price, rail);
   const declaration = declared(rail);
@@ -505,7 +508,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         </div>
         <div>
           <dt className="label">Rail</dt>
-          <dd>{RAIL_LABEL[rail]}</dd>
+          <dd>{split && split.live.length === 0 ? `${RAIL_LABEL[offer.rails[0]!]}, ${NOT_LIVE}` : RAIL_LABEL[rail]}</dd>
         </div>
         <div>
           <dt className="label">Deadline</dt>
