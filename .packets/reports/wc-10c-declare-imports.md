@@ -87,7 +87,7 @@ bun test apps/web/test packages/relay/test examples/whitechain
 - the live fixture stays skipped: `bun test examples/whitechain` is `0 pass, 1 skip, 0 fail`
 
 Environment note: the first run of this command in `../wc-10c-iso` picked up
-`/Users/sailesh/node_modules/@types/node@20.14.2`, a directory above the worktree that is not part of
+`~/node_modules/@types/node@20.14.2`, a directory above the worktree that is not part of
 this repo. TypeScript walks upward when the isolated install has no root `@types/node`, and the old
 home copy produced `Buffer` assignability errors in `apps/hub`, `packages/rail`, `packages/relay`,
 `packages/runner`, and `scripts`. The same errors reproduce at the base commit `d71d2a6`, so they are
