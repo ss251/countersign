@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
-import { useWalletMode } from "../app/Providers.tsx";
+import { retryPrivy, useWalletMode, watchdogReason } from "../app/Providers.tsx";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
 
 function hasInjectedProvider(): boolean {
@@ -24,9 +24,11 @@ type WalletBodyProps = {
   connectBrowser: () => void;
   beforeDisconnect?: () => Promise<void>;
   reason: string | null;
+  /** Options after the browser wallet, e.g. another try at email sign-in. */
+  more?: MenuOption[];
 };
 
-function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason }: WalletBodyProps) {
+function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason, more = [] }: WalletBodyProps) {
   const account = useAccount();
   const connect = useConnect();
   const disconnect = useDisconnect();
@@ -88,6 +90,7 @@ function WalletBody({ signIn, connectBrowser, beforeDisconnect, reason }: Wallet
       href: "https://metamask.io/download/",
     });
   }
+  options.push(...more);
 
   return (
     <div className="wallet" aria-live="polite" ref={root}>
@@ -199,7 +202,13 @@ function InjectedWalletButton({ reason }: { reason: string | null }) {
     if (connector) connect.connect({ connector });
   };
 
-  return <WalletBody connectBrowser={connectBrowser} reason={reason} />;
+  // Only a failed start gets another try; with no app id there is nothing to retry.
+  const more: MenuOption[] =
+    reason === watchdogReason
+      ? [{ testId: "wallet-privy-retry", label: "Try email sign-in again", onSelect: retryPrivy }]
+      : [];
+
+  return <WalletBody connectBrowser={connectBrowser} reason={reason} more={more} />;
 }
 
 export function WalletButton() {

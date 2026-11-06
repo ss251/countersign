@@ -27,7 +27,17 @@ const privyWagmiConfig = createPrivyWagmiConfig({
 
 const failureKey = "countersign.privy-failed";
 const watchdogAfter = 8_000;
-const watchdogReason = "Email sign-in did not start on this page, so connect a browser wallet.";
+export const watchdogReason = "Email sign-in did not start on this page, so connect a browser wallet.";
+
+/** Forget this tab's Privy failure and load the page again, so email sign-in gets another try. */
+export function retryPrivy(): void {
+  try {
+    sessionStorage.removeItem(failureKey);
+  } catch {
+    // Private mode: nothing was kept.
+  }
+  window.location.reload();
+}
 
 export const WalletModeContext = createContext<WalletMode>({ privy: false, reason: null });
 
@@ -85,7 +95,9 @@ export function Providers({ children }: { children: ReactNode }) {
       appId={PRIVY_APP_ID}
       config={{
         loginMethods: ["email", "passkey", "wallet"],
-        embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
+        // showWalletUIs pinned on: the embedded wallet always shows its prompt before it signs, whatever the
+        // dashboard says, so no script on the page can sign a payment the person never saw (cs-w1, PR #190).
+        embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" }, showWalletUIs: true },
         defaultChain: arcTestnet,
         supportedChains: [arcTestnet, whitechainTestnet],
       }}
