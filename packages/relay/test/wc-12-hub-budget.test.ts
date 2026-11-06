@@ -12,7 +12,7 @@ import { loadRelayConfig } from "../src/config.ts";
 import { failDeliveryJob, releaseJob } from "../src/escrow-ops.ts";
 import type { EscrowContext } from "../src/escrow-ops.ts";
 import { Relayer } from "../src/relayer.ts";
-import { createRelayApp } from "../src/server.ts";
+import { createRelayApp, seedCeilings } from "../src/server.ts";
 import { WHITECHAIN_ESCROW } from "../src/whitechain-config.ts";
 import { createTestRelay, fakeHash, NOW } from "./support.ts";
 
@@ -316,5 +316,49 @@ describe("status and config", () => {
   test("the hub cap follows the shared cap when only RELAY_CAP_WEI_PER_HOUR is set", () => {
     const config = loadRelayConfig({ ...BASE_ENV, RELAY_CAP_WEI_PER_HOUR: "999" });
     expect(config.hubCeiling.capWei).toBe(999n);
+  });
+});
+
+describe("cs-audit's combined block", () => {
+  test("a buyer at 30/30 and a full 200/h shared hour together cannot block the hub's v2 release", async () => {
+    const { relay, ceilings, app } = setup({ v2: true });
+    const { jobId, buyer } = fundedJob(relay);
+    const at = Date.now();
+    ceilings.shared.seed([
+      ...Array.from({ length: 30 }, () => ({ payer: buyer, costWei: 1n, at })),
+      ...Array.from({ length: 170 }, (_, index) => ({
+        payer: `0x${(index + 1).toString(16).padStart(40, "0")}`,
+        costWei: 1n,
+        at,
+      })),
+    ]);
+    expect(ceilings.shared.snapshot().txCount).toBe(200);
+    expect(ceilings.shared.reserve({ payer: buyer, worstCaseWei: 1n }).ok).toBe(false);
+
+    const res = await release(app, jobId);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, status: "released" });
+    expect(relay.chain.writes.at(-1)!.functionName).toBe("release");
+    expect(ceilings.shared.snapshot().txCount).toBe(200);
+    expect(ceilings.hub.snapshot().txCount).toBe(1);
+  });
+});
+
+describe("a restart rebuilds both hours", () => {
+  test("the hub's own spends seed the hub ceiling, and every other spend the shared one", () => {
+    const { shared, hub } = budgets();
+    const at = Date.now();
+    seedCeilings(
+      [
+        { payer: "hub", costWei: 5n, at },
+        { payer: "hub", costWei: 7n, at },
+        { payer: OTHER_PAYER, costWei: 11n, at },
+      ],
+      shared,
+      hub,
+    );
+    expect(hub.snapshot().txCount).toBe(2);
+    expect(shared.snapshot().txCount).toBe(1);
   });
 });

@@ -9,6 +9,9 @@ import { WHITECHAIN_ESCROW, whitechainEscrowConfig } from "./whitechain-config.t
 
 export type EscrowContext = CountersignContext & { escrow?: Address };
 
+/** The payer the relay charges for the hub's own arbiter calls, on the hub's ceiling. */
+export const HUB_PAYER = "hub" as Address;
+
 export type CloseStatus = "released" | "cancelled" | "refunded" | "delivered" | "disputed" | "failed";
 
 export type EscrowOpResult =
@@ -99,7 +102,7 @@ async function close(
   // release stays on the shared ceiling, charged to the buyer, exactly as before.
   const outcome =
     options.fromHub === true && version === 2
-      ? await ctx.relayer.submit(call(escrow), "hub" as Address, { hub: true })
+      ? await ctx.relayer.submit(call(escrow), HUB_PAYER, { hub: true })
       : await ctx.relayer.submit(call(escrow), (known?.buyer ?? escrow) as Address);
   switch (outcome.status) {
     case "confirmed": {
@@ -174,7 +177,7 @@ async function closeV2(
     return { ok: false, reason: "job_not_open" };
   }
   const outcome = opts.hub
-    ? await ctx.relayer.submit(call(escrow), "hub" as Address, { hub: true })
+    ? await ctx.relayer.submit(call(escrow), HUB_PAYER, { hub: true })
     : await ctx.relayer.submit(call(escrow), known.buyer as Address);
   switch (outcome.status) {
     case "confirmed":
