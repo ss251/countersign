@@ -44,8 +44,23 @@ echo "building apps/web from $label"
     bunx --bun vite build --logLevel warn
 )
 
+# The phone page (apps/phone, cs-phone's lane) is hosted at /phone/ once the ref carries it. It dials the
+# hub's websocket directly, so the console needs no proxy for it; both VITE_ values are public URLs.
+if [ -f "$src/apps/phone/package.json" ]; then
+  echo "building apps/phone from $label"
+  (
+    cd "$src/apps/phone"
+    VITE_HUB_URL="${VITE_HUB_URL:-https://hub-production-e85e.up.railway.app}" VITE_CONSOLE_URL=../ \
+      bunx --bun vite build --logLevel warn
+  )
+fi
+
 cp -R "$src/apps/web/dist" "$stage/dist"
 rm -f "$stage"/dist/assets/*.map
+if [ -d "$src/apps/phone/dist" ]; then
+  cp -R "$src/apps/phone/dist" "$stage/dist/phone"
+  rm -f "$stage"/dist/phone/assets/*.map
+fi
 cp "$src/apps/web/server.ts" "$stage/server.ts"
 cp "$here/deploy/Dockerfile" "$stage/Dockerfile"
 echo "staged $(du -sh "$stage" | cut -f1)"

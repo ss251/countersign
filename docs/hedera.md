@@ -160,6 +160,69 @@ Every value below was read back from Hedera testnet on 06 Nov.
   - The agent's balance stayed at 19.75 USDC before and after. Audit: released 1, unbacked 0.
 
   "Expired. Nothing moved."
+- **Expiry run after the release margin (#128).** Since #105's review, a hold is released only 60 s after the schedule's expiration, so the demo now waits that long.
+  - The agent created [`0.0.11337064@1793972401.951725298`](https://hashscan.io/testnet/transaction/0.0.11337064@1793972401.951725298), which made schedule [`0.0.11339869`](https://hashscan.io/testnet/schedule/0.0.11339869) and logged entry [#42](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/42) (`schedule`).
+  - It expired at `1793972469.578`. Entry [#43](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/43) (`expired`) landed at `1793972532.954`, 63 s later.
+  - There was no execution record, and the agent held 19.52 USDC before and after. Audit: released 1, unbacked 0, unlogged 0.
+
+## The Hedera Agent Kit as a metered offer
+
+The runner's `mcp` adapter sells one tool of an MCP server as an offer. For each paid job, the runner:
+
+1. spawns the server over stdio, inside the same scrubbed child as every other adapter (its own `PATH` and a temporary `HOME`);
+2. calls the tool once with the buyer's input;
+3. closes the server.
+
+The output is the call record `{tool, server, package, inputHash, result}`, and the slip's `outputHash` commits to it.
+
+The first such offer is the Hedera Agent Kit's `transfer_hbar_tool`, from `@hashgraph/hedera-agent-kit-mcp` 1.2.0 with `@hashgraph/hedera-agent-kit` 4.2.0.
+
+- **The seller holds no Hedera key.** The server runs in `RETURN_BYTES` mode on a testnet client with no operator. It builds the transfer and returns the unsigned bytes, and it cannot sign or submit anything.
+- **The bytes are built for the buyer.** The offer's server arguments include `--account-id {buyer}`.
+  - The runner replaces an argument that is exactly `{buyer}` with the paying account.
+  - It refuses the job unless that account is a Hedera id (`0.0.N`) or an EVM address.
+  - So the transaction id names the account that has to sign it.
+- **Whole HBAR only.** The offer's input schema is the tool's own, with `number` tightened to `integer`.
+  - A fractional amount is refused with `422` before any payment: `/transfers/0/amount must be integer`.
+  - The hub's canonical-JSON gate also refuses non-integer numbers in any offer's input.
+- **The result is untrusted.** A buyer decodes and checks the bytes before signing them. `scripts/hedera/agent-run.ts --offer <hash> --input <json>` prints the decoded transaction next to the slip.
+
+### Traced live on the public hub
+
+Every value below was read back from Hedera testnet and the production hub on 06 Nov.
+
+- **Offer.** [`0xa59402d5…d04f`](https://hub-production-e85e.up.railway.app/offers/0xa59402d532082839c3d8a1cf0c185037dea70197779d1f1303feb8a74725d04f), "Hedera Agent Kit: an HBAR transfer, built for you to sign".
+  - 0.03 USDC on the hedera rail, payTo `0.0.11337065`, seller `0xE4eBF122…B5fE`.
+  - A runner on the seller's machine serves it.
+- **Payment.** The agent `0.0.11337064` paid with no human step: [`0.0.9185802@1793969029.758994311`](https://hashscan.io/testnet/transaction/0.0.9185802@1793969029.758994311).
+  - `SUCCESS` at `1793969038.017472348`, memo `cs1:a59402d5…`.
+  - The agent was debited 0.03 USDC and the seller credited 0.03 USDC.
+  - Spend entry [#36](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/36).
+- **Slip.** `0x825642a40fe978d5ad3a06883491639913e6e2349074ea4cfd85eaa8ab49b11b`, served at `/slips/<hash>`.
+  - Rail `hedera`, buyer `0.0.11337064`.
+  - inputHash `0x3aaa17cb…e072`, outputHash `0xf1291b96…7e22`.
+- **Result.** A `TransferTransaction` whose transaction id names `0.0.11337064`.
+  - It moves 1 HBAR from `0.0.11337064` to `0.0.11337065`, with memo `countersign mcp demo`.
+  - Nobody signed or submitted it.
+- **A paid call that delivered nothing.** The first live call went to the earlier listing `0x201414ee…` and asked for 0.01 HBAR.
+  - The payment settled: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251), entry [#34](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/34).
+  - The runner could not hash the fractional input canonically, so no slip was signed.
+  - The hedera rail has no escrow, so nothing refunded the 0.03 USDC.
+  - That call is why amounts are whole HBAR, and why the hub refuses such input before any payment.
+  - The same listing then served a whole amount: [`0.0.9185802@1793968558.322770641`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968558.322770641), entry [#35](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/35), slip `0xfe05bd21…d75f`.
+
+## ERC-8004 identity
+
+The Hedera seller has an on-chain identity in the ERC-8004 Identity Registry on Hedera testnet's EVM (chain 296): [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://hashscan.io/testnet/contract/0.0.7919997) (`0.0.7919997`).
+
+- **Agent `158`.** The seller account `0.0.11337065` registered it. Its EVM address is `0xE4eBF122a912BeF5FeC9C56e003FD4Af2CBDB5fE`.
+  - Registration: [`0xfd8d8683…8235`](https://testnet.mirrornode.hedera.com/api/v1/contracts/results/0xfd8d86838f04ac5fa5791565ac4a53412cbf92105fe5135d079ceb85e92c8235), block 42739726, `SUCCESS`.
+  - `ownerOf(158)` on `https://testnet.hashio.io/api` returns that address.
+- **The registration file.** It is stored on chain as a `data:` URI of type `registration-v1`, named "Countersign Hedera seller". It lists two endpoints:
+  - `A2A`: the hub's agent card;
+  - `agentWallet`: `eip155:296:0xE4eBF122a912BeF5FeC9C56e003FD4Af2CBDB5fE`.
+- **One correction.** The first file gave the wallet on Arc's chain (`eip155:5042002`). `setAgentURI` moved it to chain 296: [`0xce2a510d…f12b`](https://testnet.mirrornode.hedera.com/api/v1/contracts/results/0xce2a510d6fc7047092c045e02bf4cb7a060113535786af7fc4ab6fa8174cf12b), block 42739948, `SUCCESS`.
+- **Not on the hub yet.** The production `/sellers` reads Arc's registry only, so it shows `erc8004: null` for this seller.
 
 ## Setup
 
@@ -198,3 +261,8 @@ scripts/hedera/beat --hub http://127.0.0.1:8811
 - The `@x402/fetch` client refuses non-default assets by default; the agent allow-lists `0.0.429274` with a per-payment cap through `spendControls`.
 - A signed payload names one facilitator's fee payer in its transaction id, so it can only settle through that facilitator. Failover happens when the challenge is issued, never mid-settlement, and the same payment can never land twice.
 - Testnet fees observed: creating an account or associating a token costs about 0.8 HBAR at the testnet exchange rate. An HCS message costs about 0.01 HBAR, and the facilitator pays the transfer fee.
+- Scheduled checkout fees, from the mirror's charged fees on the traced main run:
+  - the agent paid 0.146 HBAR for `ScheduleCreate` and 0.013 HBAR for the scheduled transfer;
+  - the seller-sign account paid 0.015 HBAR for `ScheduleSign`.
+
+  The agent pays its own fees here, because no facilitator is in the path.
