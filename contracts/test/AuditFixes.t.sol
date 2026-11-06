@@ -310,10 +310,15 @@ contract AuditFixesTest is EscrowSigning {
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 expected) = _cs(1, BOND, WINDOW);
 
+        vm.prank(attacker);
+        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
+        escrow.fund(OFFER, cs);
+        assertEq(uint8(escrow.jobOf(expected).status), uint8(ICountersignedEscrow.Status.None), "the front-run opened nothing");
+
         vm.prank(arbiter);
         bytes32 jobId = escrow.fund(OFFER, cs);
 
-        assertEq(jobId, expected, "the stranger opened exactly the signed job");
+        assertEq(jobId, expected, "the arbiter opened exactly the signed job");
         ICountersignedEscrow.Job memory job = escrow.jobOf(jobId);
         assertEq(job.buyer, buyer);
         assertEq(job.payee, seller);
