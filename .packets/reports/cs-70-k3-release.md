@@ -491,3 +491,138 @@ $ grep -c 'Bun\.' .release/stage/relay/dist/*.js
 .release/stage/relay/dist/pay-fetch.js:0
 .release/stage/relay/dist/paywall.js:0
 ```
+
+## cs-70d: a packed tarball carries no build paths and no source maps
+
+### The change
+
+`scripts/release/leaks.ts` adds the release leak check. `findLeaks(files, environment)` is pure:
+it takes the extracted files and the environment strings and returns `{ file, line, kind }`
+records. The module also owns the readers: `readTarball` extracts the packed `.tgz` into
+`mkdtempSync(join(os.tmpdir(), "countersign-leaks-"))`, and `readDist` reads the staged
+`dist/`. Both feed the one `checkFiles` function, so the early and the post-pack checks cannot
+drift apart.
+
+The rules:
+
+- Allowed paths are `package.json`, `README*`, `LICENSE*`, and `dist/**` ending in `.js`,
+  `.mjs`, `.cjs`, `.d.ts` or `.json`. Any other file fails as `not an allowed file`.
+- A file ending `.map` fails as `source map`. Any file whose text holds `sourceMappingURL`
+  fails on that line.
+- Environment strings: the home directory, the user name, the host name, the repository root
+  and `os.tmpdir()` are compared case-sensitively, except the host name, which is
+  case-insensitive. The literal fragments `/Users/`, `/home/`, `/private/var`, `/Volumes/`
+  and `C:\Users` are always checked. An empty or sub-three-character named string is skipped.
+- The failure names the artifact, the file inside it and the line, and prints only the kind.
+  It never prints the matched text or the matched line.
+
+`build.ts` calls `checkFiles` once on `stage/<short>/dist` after the Node guard and before
+`npm pack`, and once on the real tarball after `npm pack`. The second call prints
+`relay: packed files clean (4 files)` with the inspected count.
+
+### Maps: written during the build, removed before packing
+
+`Bun.build` still runs with `sourcemap: "external"` because the Node guard reads the `.map`
+files to attribute a violation to its original source. Bun writes them next to the emitted
+bundles in `.release/stage/<short>/.bundle/`, never in `dist/`. `moveOutputs` moves only the
+`.js` outputs into `dist/`, and the build deletes the whole `.bundle/` tree before `npm pack`.
+So the maps are kept in the stage directory only for the guard and are gone by packing time.
+The tarball would fail even if that deletion regressed: `files: ["dist"]` keeps `.bundle/`
+out, and the allow-list plus the `.map` rule reject a map if one ever reached `dist/`.
+
+### Gate 1: install, typecheck, tests
+
+```
+$ bun install --linker hoisted && bun run typecheck
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [493.00ms]
+$ tsc -p tsconfig.json
+
+$ bun test scripts/release
+bun test v1.3.14 (0d9b296a)
+
+ 63 pass
+ 0 fail
+ 115 expect() calls
+Ran 63 tests across 9 files. [161.00ms]
+```
+
+The 54 existing tests are unchanged and still pass. Nine new tests cover the clean tarball,
+a `.map` file, a `sourceMappingURL` comment, the home directory (the message contains
+`home directory` and not `os.homedir()`), `/Users/`, the host name in upper case, `notes.txt`,
+`.env`, and empty or one-character user names. The fixtures are real `tar` archives under
+`os.tmpdir()` and make no network calls.
+
+### Gate 2: the relay, packed and checked
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: packed files clean (4 files)
+relay: .release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+The tarball path is shortened above; the build printed the absolute path under the output
+directory. The four packed files match the allow-list and hold no leak string.
+
+### Gate 3: smoke on the installed Node and Node 20
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 9s
+node 20 --version: v20.20.2
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+### Gate 4: the negative proof
+
+A throw-away copy of the tarball under `os.tmpdir()` gained `dist/leaked.js` holding the home
+directory. The one-line check rejected it:
+
+```
+$ TARBALL="$tmp/proof.tgz" bun -e 'import { buildEnvironment, checkFiles, readTarball } from "./scripts/release/leaks.ts"; try { checkFiles(process.env.TARBALL, readTarball(process.env.TARBALL), buildEnvironment()); } catch (error) { console.log(error.message); process.exit(1); }'
+release leak check failed for /var/folders/.../countersign-leak-proof-XXXXXX/proof.tgz:
+  dist/leaked.js:1: home directory
+  dist/leaked.js:1: user name
+  dist/leaked.js:1: /Users/
+exit=1
+```
+
+The message names the kinds and the file and line, and does not contain the path. The copy and
+its directory were deleted.
+
+### Gate 5: missing lanes still fail
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release-req
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+`.release-req` was removed afterwards.
+
+### Files
+
+Only `scripts/release/leaks.ts`, `scripts/release/build.ts` and
+`scripts/release/test/leaks.test.ts` changed. No package source, root `package.json`,
+`bun.lock`, `tsconfig.json`, `.gitignore`, key or env file was touched.
