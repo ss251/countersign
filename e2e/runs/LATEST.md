@@ -1,0 +1,122 @@
+<!-- the latest full run; its own file is 20261106-104949-7656.md -->
+# e2e run 20261106-104949-7656
+
+| | |
+|---|---|
+| commit | `5f28c15` on `cs/e2e` |
+| started | 2026-11-06 10:49:49 UTC (16:19 IST) |
+| duration | 74.6 s |
+| scope | full run, every flow |
+| result | 5 pass · 1 fail · 0 skipped · 4 not run |
+
+| # | Flow | Status | Time | Failed step |
+|---|---|---|---|---|
+| 1 | `arc-spine` | PASS | 15.2 s |  |
+| 2 | `arc-wrong-amount` | PASS | 2.7 s |  |
+| 3 | `arc-deadline-refund` | PASS | 48.5 s |  |
+| 4a | `slip-onchain-arc` | PASS | 2.2 s |  |
+| 5 | `whitechain` | NOT RUN (relay not in this branch yet) |  |  |
+| 4b | `slip-onchain-whitechain` | NOT RUN (needs whitechain) |  |  |
+| 6 | `hedera` | FAIL | 1.7 s | `seller lists an offer paid on Hedera` |
+| 7 | `merchant` | NOT RUN (relay not in this branch yet) |  |  |
+| 8 | `discovery` | PASS | 3.7 s |  |
+| 9 | `web` | NOT RUN (browser rule) |  |  |
+
+## Transactions
+
+**arc-spine**
+
+- fund: [`0x0539279c…91ab33`](https://explorer.testnet.arc.io/tx/0x0539279c2c0f126d3a6c0e05c8bc93a77a43d922c420baf9f5df1b381791ab33)
+- release: [`0x2e7bba61…46e76b`](https://explorer.testnet.arc.io/tx/0x2e7bba61118e789797fbe6aa1d43e368fc6b798b169cbe9c047afa0f5546e76b)
+
+**arc-wrong-amount**
+
+- fund at twice the signed price (reverted, as expected): [`0x568864bb…c2b4ca`](https://explorer.testnet.arc.io/tx/0x568864bb4225c86bb2231bc6b2f4c3183a604915064ce900bab47a677fc2b4ca)
+
+**arc-deadline-refund**
+
+- fund: [`0xa4bef632…763a26`](https://explorer.testnet.arc.io/tx/0xa4bef632a597fa1a0c3d8e2459c8428102cce2df3486e9fb5f7b1bfa9c763a26)
+- refund by a stranger: [`0x13fd5a6e…020fbe`](https://explorer.testnet.arc.io/tx/0x13fd5a6e025668cf194773c18392c98b14692f219b12047718b1f8ebb1020fbe)
+
+**slip-onchain-arc**
+
+- release: [`0x2e7bba61…46e76b`](https://explorer.testnet.arc.io/tx/0x2e7bba61118e789797fbe6aa1d43e368fc6b798b169cbe9c047afa0f5546e76b)
+
+## Failures
+
+**hedera** · step `seller lists an offer paid on Hedera` · owner cs-hd
+
+> runner exited before printing /published (0x[0-9a-fA-F]{64})/; last output: "Unknown argument --pay-to."
+
+## Steps
+
+**arc-spine**
+
+- ok · hub up · 406 ms
+- ok · seller publishes use-arc · 244 ms
+- ok · buyer discovers · 89 ms
+- ok · envelope approves · 97 ms
+- ok · seller balance before · 190 ms
+- ok · countersign, fund, deliver, release · 10.9 s
+- ok · hub job record · 1 ms
+- ok · chain agrees · 1.3 s
+- ok · slip names its rail · 683 ms
+- ok · hub stopped · 8 ms
+- ok · verifier VALID with the hub stopped · 1.2 s
+
+**arc-wrong-amount**
+
+- ok · hub up · 467 ms
+- ok · seller publishes use-arc · 238 ms
+- ok · 402 challenge · 3 ms
+- ok · buyer countersigns the listed price · 4 ms
+- ok · hub refuses a moved price · 180 ms
+- ok · chain refuses a moved price · 1.6 s
+- ok · the signature holds at the signed price · 184 ms
+
+**arc-deadline-refund**
+
+- ok · hub up · 369 ms
+- ok · seller publishes use-arc with a 45 s deadline · 156 ms
+- ok · envelope approves · 112 ms
+- ok · buyer pays, seller cannot deliver · 1.8 s
+- ok · escrow holds the money · 373 ms
+- ok · hub stopped · 8 ms
+- ok · a refund before the deadline is refused · 361 ms
+- ok · chain passes the deadline · 43.8 s
+- ok · a stranger refunds · 1.3 s
+- ok · the refund is final · 203 ms
+
+**slip-onchain-arc**
+
+- ok · the slip agrees with itself · 0 ms
+- ok · Released carries the slip hash · 352 ms
+- ok · the escrow stores the slip hash · 181 ms
+- ok · the genuine slip verifies · 952 ms
+- ok · a tampered slip fails on chain · 738 ms
+
+**hedera**
+
+- ok · hub up with the Hedera rail · 1.6 s
+- FAIL · seller lists an offer paid on Hedera · 118 ms · runner exited before printing /published (0x[0-9a-fA-F]{64})/; last output: "Unknown argument --pay-to."
+
+**discovery**
+
+- ok · local hub up · 385 ms
+- ok · seller publishes use-arc · 226 ms
+- ok · local · healthz · 1 ms
+- ok · local · offer list · 1 ms
+- ok · local · A2A agent card · 4 ms
+- ok · local · skills index · 1 ms
+- ok · local · OpenAPI · 1 ms
+- ok · local · Bazaar list · 1 ms
+- ok · local · unpaid call answers 402 · 2 ms
+- ok · public · healthz · 425 ms
+- ok · public · offer list · 307 ms
+- ok · public · A2A agent card · 1.2 s
+- ok · public · skills index · 309 ms
+- ok · public · OpenAPI · 303 ms
+- ok · public · Bazaar list · 301 ms
+- ok · public · unpaid call answers 402 · 286 ms
+
+Artifacts for this run (bodies, logs, slips) stay on the build machine under `e2e/artifacts/20261106-104949-7656/`.

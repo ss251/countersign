@@ -6,6 +6,7 @@ import { discovery } from "./discovery.flow.ts";
 import { hedera } from "./hedera.flow.ts";
 import { slipOnchainArc, slipOnchainWhitechain } from "./slip-onchain.flow.ts";
 import { web } from "./web.flow.ts";
+import { merchant, whitechain } from "./whitechain.flow.ts";
 
 /** The coverage matrix, in run order. Numbers match issue #39. */
 export const MATRIX: Array<{ n: string; flow: Flow }> = [
@@ -13,8 +14,10 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "2", flow: arcWrongAmount },
   { n: "3", flow: arcDeadlineRefund },
   { n: "4a", flow: slipOnchainArc },
+  { n: "5", flow: whitechain },
   { n: "4b", flow: slipOnchainWhitechain },
   { n: "6", flow: hedera },
+  { n: "7", flow: merchant },
   { n: "8", flow: discovery },
   { n: "9", flow: web },
 ];
