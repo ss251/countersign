@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
@@ -17,6 +18,9 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const app = new Hono();
 
+  // The merchant view is served from another origin (vite in development, static hosting after).
+  app.use("*", cors({ origin: "*" }));
+
   app.get("/me", (c) => c.json({ address: merchant.address }));
 
   app.get("/payments", async (c) => {
@@ -29,11 +33,15 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
 
   app.post("/refund/:paymentId", async (c) => {
     const paymentId = c.req.param("paymentId");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ ok: false, reason: "invalid_payload" }, 400);
+    // One click sends no body: refund whatever is still refundable.
+    let body: unknown = {};
+    const text = await c.req.text();
+    if (text.trim() !== "") {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        return c.json({ ok: false, reason: "invalid_payload" }, 400);
+      }
     }
 
     let amount: bigint | undefined;

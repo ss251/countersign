@@ -148,7 +148,7 @@ export class Relayer {
         ...toContractCall(call),
         account: this.account,
         chain: whitechainSepolia,
-        gas: simulation.gas,
+        gas: gasWithHeadroom,
         maxFeePerGas,
         maxPriorityFeePerGas,
       });

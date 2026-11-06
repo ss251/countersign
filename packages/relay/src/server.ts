@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { formatUnits } from "@countersign/core";
-import { NETWORK, txUrl, whitechainSepolia } from "./chain.ts";
+import { NETWORK, WHITECHAIN_CHAIN_ID, txUrl, whitechainSepolia } from "./chain.ts";
 import { SpendCeiling } from "./ceiling.ts";
 import { loadRelayConfig } from "./config.ts";
 import { settleExact, verifyExact } from "./exact.ts";
@@ -148,6 +148,12 @@ if (import.meta.main) {
   const account = privateKeyToAccount(config.relayerPrivateKey);
   const transport = http(config.rpcUrl);
   const publicClient = createPublicClient({ chain: whitechainSepolia, transport });
+  // Fail closed on the wrong chain: rpc-testnet.whitechain.io answers as chain 2625 with zero balances.
+  const chainId = await publicClient.getChainId();
+  if (chainId !== WHITECHAIN_CHAIN_ID) {
+    console.error(`relay refuses to start: ${config.rpcUrl} is chain ${chainId}, not ${WHITECHAIN_CHAIN_ID}`);
+    process.exit(1);
+  }
   const walletClient = createWalletClient({ chain: whitechainSepolia, transport, account });
   const ledger = new Ledger(config.dbPath);
   const ceiling = new SpendCeiling(config.ceiling);

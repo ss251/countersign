@@ -30,7 +30,7 @@ export type PaymentRequirements = {
 
 export type PaymentPayload = {
   x402Version: number;
-  resource?: string;
+  resource?: string | { url?: string; description?: string; mimeType?: string };
   accepted: PaymentRequirements;
   payload: {
     signature: string;
@@ -234,13 +234,13 @@ export async function settleExact(
       id: outcome.txHash,
       network: NETWORK,
       payer,
-      payTo: requirements.payTo,
+      payTo: auth.to,
       amount: auth.value,
       nonce: auth.nonce,
       txHash: outcome.txHash,
       blockNumber: outcome.blockNumber,
       settledAt: readNow(ctx.now) * 1000,
-      resource: typeof input.paymentPayload.resource === "string" ? input.paymentPayload.resource : null,
+      resource: resourceUrl(input.paymentPayload.resource),
     });
     return {
       success: true,
@@ -256,13 +256,13 @@ export async function settleExact(
       id: outcome.txHash,
       network: NETWORK,
       payer,
-      payTo: requirements.payTo,
+      payTo: auth.to,
       amount: auth.value,
       nonce: auth.nonce,
       txHash: outcome.txHash,
       blockNumber: 0n,
       settledAt: readNow(ctx.now) * 1000,
-      resource: typeof input.paymentPayload.resource === "string" ? input.paymentPayload.resource : null,
+      resource: resourceUrl(input.paymentPayload.resource),
     });
     return {
       success: false,
@@ -344,4 +344,11 @@ function refusalReason(reason: RelayRefusalReason): string {
     case "not_allowed":
       return "invalid_payload";
   }
+}
+
+/** x402 v2 sends `resource` as a ResourceInfo object; older clients sent the bare URL. */
+function resourceUrl(resource: PaymentPayload["resource"]): string | null {
+  if (typeof resource === "string") return resource;
+  if (resource && typeof resource === "object" && typeof resource.url === "string") return resource.url;
+  return null;
 }

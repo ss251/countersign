@@ -76,6 +76,13 @@ describe("relayer settlement", () => {
     expect(relay.ceiling.snapshot().txCount).toBe(1);
   });
 
+  test("sends the gas limit with headroom, not the bare estimate", async () => {
+    const relay = createTestRelay();
+    await relay.relayer.submit(await transfer(relay), relay.buyer.address);
+    expect(relay.chain.writes).toHaveLength(1);
+    expect(relay.chain.writes[0]?.gas).toBe((relay.chain.gasEstimate * 120n) / 100n);
+  });
+
   test("receipt timeout is pending and keeps the reservation", async () => {
     const relay = createTestRelay();
     relay.chain.timeoutReceipt = true;
