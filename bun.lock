@@ -26,6 +26,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@countersign/core": "workspace:*",
+        "@countersign/rail": "workspace:*",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
       },
