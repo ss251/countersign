@@ -1,169 +1,132 @@
-import { useEffect, useState } from "react";
-import { Link } from "../../app/router.tsx";
+import { useId, useMemo } from "react";
+import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, formatDuration, usd } from "../../lib/format.ts";
+import { formatDuration, formatTime, formatDay, shortHex, usd } from "../../lib/format.ts";
 import type { Listing, Purchase } from "../../lib/types.ts";
-import { Amount, Button, Card, cx, Empty, FixtureNote, RailTag, Status, Tag } from "../../ui/primitives.tsx";
-import { releaseTotals, type ReleaseTotal } from "./logic.ts";
+import { Amount, Empty, FixtureNote, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
+import { releaseTotals } from "./logic.ts";
 
-/** The seller's own desk: what each offer has done, and what it has earned. */
+/**
+ * A seller's desk: one seller at a time. What each offer charges and accepts, whether its
+ * runner is connected, what it has released, and the latest sales with their slips.
+ */
 export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const listings = useResource(() => api.listings(), []);
   const purchases = useResource(() => api.purchases(), []);
-  const fromQuery = query.get("seller") ?? "";
-  const [filter, setFilter] = useState(fromQuery);
+  const pickerId = useId();
 
-  useEffect(() => {
-    setFilter(fromQuery);
-  }, [fromQuery]);
+  const sellers = useMemo(() => sellersOf(listings.data ?? []), [listings.data]);
+  const asked = query.get("seller")?.toLowerCase();
+  const seller = sellers.find((s) => s.address === asked) ?? sellers[0];
+  const fixtures = listings.source === "fixtures" || purchases.source === "fixtures";
 
   if (listings.loading && !listings.data) return <div className="page" aria-busy="true" />;
-  if (listings.error && !listings.data) {
+  if (listings.error) {
     return (
       <div className="page">
-        <Empty title="The offers could not be read.">
-          <Button variant="secondary" onClick={listings.reload}>
-            Try again
-          </Button>
+        <Empty title="The hub did not answer.">
+          Check that it is running, or open this page without <span className="mono">?hub</span> to see fixtures.
         </Empty>
       </div>
     );
   }
 
-  const all = listings.data ?? [];
-  const needle = filter.trim().toLowerCase();
-  const visible = needle ? all.filter((listing) => listing.offer.seller.toLowerCase() === needle) : all;
-  const sales = (purchases.data ?? []).filter(
-    (purchase) => !needle || purchase.seller.address.toLowerCase() === needle,
-  );
-  const recent = [...sales].sort((a, b) => b.at - a.at).slice(0, 5);
+  const offers = (listings.data ?? []).filter((l) => seller && l.offer.seller.toLowerCase() === seller.address);
+  const sales = (purchases.data ?? []).filter((p) => seller && p.seller.address.toLowerCase() === seller.address);
   const totals = releaseTotals(sales);
-  const fixtures = listings.source === "fixtures" || purchases.source === "fixtures";
-  const groups = groupBySeller(visible);
+  const released = sales.filter((p) => p.status === "released").length;
+  const refunded = sales.filter((p) => p.status === "refunded").length;
+  const recent = [...sales].sort((a, b) => b.at - a.at).slice(0, 6);
 
   return (
-    <div className="page">
-      <header className="page__head seller__head">
-        <div className="seller__head-row">
-          <p className="page__eyebrow">Seller</p>
-          <FixtureNote show={fixtures} />
+    <div className="page seller">
+      <header className="seller__head">
+        <div className="seller__head-text">
+          <p className="page__eyebrow">
+            Seller <FixtureNote show={fixtures} />
+          </p>
+          <h1 className="page__title">{seller ? seller.name : "No sellers yet"}</h1>
+          <p className="page__lede">Your code, prompts and keys stay on your machine. The hub only ever sees the schema and the price.</p>
         </div>
-        <div className="seller__head-row">
-          <h1 className="page__title">Your offers</h1>
+        <div className="seller__head-actions">
+          {sellers.length > 1 ? (
+            <div className="field seller__picker">
+              <label className="field__label" htmlFor={pickerId}>
+                Seller
+              </label>
+              <select
+                id={pickerId}
+                className="input"
+                value={seller?.address ?? ""}
+                onChange={(e) => navigate(`/seller?seller=${e.target.value}`)}
+              >
+                {sellers.map((s) => (
+                  <option key={s.address} value={s.address}>
+                    {s.name} · {shortHex(s.address)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <Link to="/seller/publish" className="btn btn--primary">
             Publish a skill
           </Link>
         </div>
-        <p className="page__lede">Code, prompts and keys stay on your machine. Only the schema and the price are published.</p>
       </header>
 
-      <div className="field seller__filter">
-        <label className="field__label" htmlFor="seller-address">
-          Seller address
-        </label>
-        <input
-          id="seller-address"
-          className="input mono"
-          type="text"
-          value={filter}
-          placeholder="0x…"
-          autoComplete="off"
-          spellCheck={false}
-          aria-describedby="seller-address-hint"
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <p id="seller-address-hint" className="seller__hint">
-          Leave it empty to show every seller.
-        </p>
-      </div>
-
-      <div className="page__split">
+      <div className="page__split seller__split">
         <section className="section" aria-labelledby="offers-title">
-          <h2 id="offers-title" className="section__title">
-            Offers
-          </h2>
-          {visible.length === 0 ? (
-            <Empty title={needle ? "No offers from this address." : "No offers yet."}>
+          <div className="seller__section-head">
+            <h2 id="offers-title" className="section__title">
+              Offers
+            </h2>
+            <p className="seller__count num">{offers.length === 1 ? "1 offer" : `${offers.length} offers`}</p>
+          </div>
+          {offers.length === 0 ? (
+            <Empty title="Nothing published yet.">
+              Publish a SKILL.md and it appears here with its price, its rails and every sale.{" "}
               <Link to="/seller/publish">Publish a skill</Link>
             </Empty>
           ) : (
-            <div className="seller-table-wrap">
-              <table className="seller-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Offer</th>
-                    <th scope="col">Price</th>
-                    <th scope="col">Rails</th>
-                    <th scope="col">Deadline</th>
-                    <th scope="col">Runner</th>
-                    <th scope="col" className="seller-table__count">
-                      Released
-                    </th>
-                    <th scope="col" className="seller-table__count">
-                      Refunded
-                    </th>
-                    <th scope="col">Status</th>
-                  </tr>
-                </thead>
-                {groups.map((group) => (
-                  <tbody key={group.name}>
-                    {needle ? null : (
-                      <tr className="seller-table__group">
-                        <th scope="colgroup" colSpan={8}>
-                          {group.name}
-                        </th>
-                      </tr>
-                    )}
-                    {group.listings.map((listing) => (
-                      <OfferRow key={listing.hash} listing={listing} />
-                    ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
+            <ul className="offers">
+              {offers.map((l) => (
+                <OfferRow key={l.hash} listing={l} />
+              ))}
+            </ul>
           )}
         </section>
 
-        <aside className="page__rail" aria-label="Earnings">
-          <Card className="seller-earn">
-            <h2 className="section__title">Earned</h2>
-            {totals.length > 0 ? (
-              <div className="seller-earn__totals">
-                {totals.map((total) => (
-                  <Amount key={total.symbol} money={moneyFor(total)} size="lg" />
+        <aside className="page__rail seller__rail" aria-label="Earnings">
+          <section className="card seller__earned">
+            <h2 className="section__title">Released to you</h2>
+            {totals.length === 0 ? (
+              <p className="seller__none">No releases yet. Money arrives here when a buyer's escrow releases.</p>
+            ) : (
+              <div className="seller__totals">
+                {totals.map((t) => (
+                  <Amount key={t.symbol} money={{ amount: t.atomic, asset: { symbol: t.symbol, decimals: 6 } }} size="lg" />
                 ))}
               </div>
-            ) : (
-              <p className="seller-muted">Nothing released yet.</p>
             )}
-            <dl className="seller-counts">
-              <div>
-                <dt>Released</dt>
-                <dd className="num">{count(sales, "released")}</dd>
-              </div>
-              <div>
-                <dt>Refunded</dt>
-                <dd className="num">{count(sales, "refunded")}</dd>
-              </div>
-            </dl>
-          </Card>
+            <p className="seller__record num">
+              {released} released · {refunded} refunded
+            </p>
+          </section>
 
-          <Card className="seller-recent">
-            <h2 className="section__title">Recent sales</h2>
-            {purchases.error ? (
-              <p className="seller-muted">Recent sales could not be read.</p>
-            ) : recent.length === 0 ? (
-              <p className="seller-muted">No sales yet.</p>
+          <section className="section" aria-labelledby="sales-title">
+            <h2 id="sales-title" className="section__title">
+              Latest sales
+            </h2>
+            {recent.length === 0 ? (
+              <p className="seller__none">Each paid call lands here with its slip.</p>
             ) : (
-              <ul className="seller-sales">
-                {recent.map((purchase) => (
-                  <li key={purchase.jobId}>
-                    <SaleRow purchase={purchase} />
-                  </li>
+              <ul className="sales">
+                {recent.map((p) => (
+                  <SaleRow key={p.jobId} p={p} />
                 ))}
               </ul>
             )}
-          </Card>
+          </section>
         </aside>
       </div>
     </div>
@@ -171,85 +134,86 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
 }
 
 function OfferRow({ listing }: { listing: Listing }) {
-  const offer = listing.offer;
+  const { offer, stats, status, online, reason } = listing;
+  const delisted = status === "delisted";
   return (
-    <tr>
-      <td>
-        <span className="seller-offer">
-          <Link to={`/offer/${listing.hash}`} className="seller-offer__title">
-            {offer.title}
-          </Link>
+    <li className={cx("offer-row", delisted && "offer-row--delisted")}>
+      <div className="offer-row__main">
+        <p className="offer-row__title">
+          <Link to={`/offer/${listing.hash}`}>{offer.title}</Link>
           <Tag>{offer.adapter}</Tag>
-        </span>
-      </td>
-      <td>
-        <Amount money={usd(offer.price, offer.rails[0])} size="sm" />
-      </td>
-      <td>
-        <span className="seller-rail-list">
-          {offer.rails.map((rail) => (
-            <RailTag key={rail} rail={rail} />
+        </p>
+        <p className="offer-row__summary">{offer.summary}</p>
+        <p className="offer-row__rails">
+          {offer.rails.map((r) => (
+            <RailTag key={r} rail={r} />
           ))}
-        </span>
-      </td>
-      <td className="num">{formatDuration(offer.deadline)}</td>
-      <td>
-        <span className={cx("seller-runner", listing.online ? "seller-runner--online" : "seller-runner--offline")}>
-          {listing.online ? "Online" : "Offline"}
-        </span>
-      </td>
-      <td className="num seller-table__count">{listing.stats ? listing.stats.released : "—"}</td>
-      <td className="num seller-table__count">{listing.stats ? listing.stats.refunded : "—"}</td>
-      <td>
-        {listing.status === "listed" ? (
-          <span className="seller-state seller-state--listed">listed</span>
-        ) : (
-          <span className="seller-state seller-state--delisted">
-            delisted
-            {listing.reason ? <span className="seller-state__reason"> · {listing.reason}</span> : null}
-          </span>
-        )}
-      </td>
-    </tr>
+        </p>
+      </div>
+      <dl className="offer-row__facts">
+        <div>
+          <dt>Price</dt>
+          <dd>
+            <Amount money={usd(offer.price, offer.rails[0])} size="md" />
+          </dd>
+        </div>
+        <div>
+          <dt>Deadline</dt>
+          <dd className="num">{formatDuration(offer.deadline)}</dd>
+        </div>
+        <div>
+          <dt>Record</dt>
+          <dd className="num">{stats ? `${stats.released} released · ${stats.refunded} refunded` : "No calls yet"}</dd>
+        </div>
+        <div>
+          <dt>Runner</dt>
+          <dd className={cx("offer-row__runner", online === false && "offer-row__runner--off")}>
+            {delisted ? `Delisted${reason ? `: ${reason}` : ""}` : online === undefined ? "Not reported" : online ? "Online" : "Offline"}
+          </dd>
+        </div>
+      </dl>
+    </li>
   );
 }
 
-function SaleRow({ purchase }: { purchase: Purchase }) {
+function SaleRow({ p }: { p: Purchase }) {
   const body = (
     <>
-      <span className="seller-sale__main">
-        <span className="seller-sale__title">{purchase.title}</span>
-        <span className="seller-sale__time">{formatDateTime(purchase.at)}</span>
+      <span className="sale__main">
+        <span className="sale__title">{p.title}</span>
+        <span className="sale__when num">
+          {formatDay(p.at)}, {formatTime(p.at)}
+        </span>
       </span>
-      <span className="seller-sale__end">
-        <Amount money={usd(purchase.amount, purchase.rail)} size="sm" />
-        <Status status={purchase.status} />
+      <span className="sale__end">
+        <Amount money={usd(p.amount, p.rail)} size="sm" className={p.status === "released" ? undefined : "amount--void"} />
+        <Status status={p.status} />
       </span>
     </>
   );
-  return purchase.slipHash ? (
-    <Link to={`/slip/${purchase.slipHash}`} className="seller-sale seller-sale--link">
-      {body}
-    </Link>
-  ) : (
-    <div className="seller-sale">{body}</div>
+  return (
+    <li>
+      {p.slipHash ? (
+        <Link to={`/slip/${p.slipHash}`} className="sale sale--link">
+          {body}
+        </Link>
+      ) : (
+        <div className="sale">{body}</div>
+      )}
+    </li>
   );
 }
 
-function moneyFor(total: ReleaseTotal) {
-  return usd(total.atomic, total.symbol === "USDT" ? "whitechain" : "escrow");
+interface SellerRef {
+  address: string;
+  name: string;
 }
 
-function count(purchases: Purchase[], status: Purchase["status"]): number {
-  return purchases.filter((purchase) => purchase.status === status).length;
-}
-
-function groupBySeller(listings: Listing[]): Array<{ name: string; listings: Listing[] }> {
-  const groups = new Map<string, Listing[]>();
-  for (const listing of listings) {
-    const group = groups.get(listing.seller.name);
-    if (group) group.push(listing);
-    else groups.set(listing.seller.name, [listing]);
+function sellersOf(listings: Listing[]): SellerRef[] {
+  const seen = new Map<string, SellerRef>();
+  for (const l of listings) {
+    const address = l.offer.seller.toLowerCase();
+    if (!seen.has(address)) seen.set(address, { address, name: l.seller.name });
   }
-  return [...groups].map(([name, items]) => ({ name, listings: items }));
+  return [...seen.values()];
 }
