@@ -59,3 +59,14 @@
 .developers .mx-snippet__code {
   overflow-x: auto;
 }
+
+/*
+ * Long unbroken strings in the guide's own text (bare URLs, an explorer tx/<hash>, a file path) break
+ * where they must instead of widening the page at phone width (firstmate 23:27:47Z).
+ */
+.gs__text,
+.gs__text code,
+.gs__list,
+.gs__list code {
+  overflow-wrap: anywhere;
+}
