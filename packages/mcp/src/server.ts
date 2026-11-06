@@ -40,6 +40,11 @@ export interface McpDeps {
 
 const HASH_MISMATCH = "Refused. The hub served an offer that does not match the hash asked for.";
 const NO_KEY = "Set CS_BUYER_KEY to the agent's private key.";
+const HASH = /^0x[0-9a-fA-F]{64}$/;
+
+function assertHash(value: string, what: string): void {
+  if (!HASH.test(value)) throw new Error(`Refused. ${what} must be 0x followed by 64 hex characters.`);
+}
 
 /** JSON text for the protocol. Bigints travel as decimal strings. */
 function json(value: unknown): string {
@@ -100,16 +105,24 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
           needle === undefined ? listings : listings.filter((entry) => searchText(entry.offer).includes(needle));
         const count = Math.min(Math.max(limit ?? 20, 0), 100);
         return text(
-          matching.slice(0, count).map((entry) => ({
-            offerHash: entry.offerHash,
-            title: entry.offer.title,
-            price: entry.offer.price,
-            priceUsdc: formatUnits(BigInt(entry.offer.price), 6),
-            rails: entry.offer.rails,
-            online: entry.online,
-            status: entry.status,
-            seller: entry.offer.seller,
-          })),
+          matching.slice(0, count).map((entry) => {
+            let priceUsdc: string | null;
+            try {
+              priceUsdc = formatUnits(BigInt(entry.offer.price), 6);
+            } catch {
+              priceUsdc = null;
+            }
+            return {
+              offerHash: entry.offerHash,
+              title: entry.offer.title,
+              price: entry.offer.price,
+              priceUsdc,
+              rails: entry.offer.rails,
+              online: entry.online,
+              status: entry.status,
+              seller: entry.offer.seller,
+            };
+          }),
         );
       } catch (error) {
         return failure(error);
@@ -128,6 +141,7 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
     },
     async ({ offerHash }) => {
       try {
+        assertHash(offerHash, "offerHash");
         const listing = await deps.hub.getOffer(offerHash);
         if (canonicalHash(listing.offer).toLowerCase() !== offerHash.toLowerCase()) throw new Error(HASH_MISMATCH);
         return text({
@@ -161,6 +175,7 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
         return failure(new Error(`Unknown rail ${rail}.`));
       }
       try {
+        assertHash(offerHash, "offerHash");
         const result = await buy({
           hub: deps.hub,
           offerHash: offerHash as Hex,
@@ -205,6 +220,7 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
         return failure(new Error("Pass exactly one of slip or slipHash."));
       }
       try {
+        if (slipHash !== undefined) assertHash(slipHash, "slipHash");
         const value = slip !== undefined ? (slip as unknown as Slip) : await loadSlip(slipHash as string);
         return text(await verify(value, { rpcUrl: deps.rpcUrl }));
       } catch (error) {

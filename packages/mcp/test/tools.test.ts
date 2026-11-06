@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { HubClient } from "@countersign/buyer";
 import type { Slip } from "@countersign/core";
 import type { Hex } from "viem";
 import { createCountersignMcpServer, type McpDeps } from "../src/index.ts";
@@ -12,7 +14,9 @@ import {
   OTHER_HASH,
   PRICE,
   depsFor,
+  hubState,
   makeVerifySlip,
+  offer,
   spyAccount,
   stopHub,
   slips,
@@ -46,6 +50,16 @@ function textOf(result: CallToolResult): string {
 
 function bodyOf(result: CallToolResult): unknown {
   return JSON.parse(textOf(result)) as unknown;
+}
+
+function stubFetch(body: unknown, onRequest?: () => void): typeof fetch {
+  return Object.assign(
+    async () => {
+      onRequest?.();
+      return Response.json(body);
+    },
+    { preconnect: () => undefined },
+  );
 }
 
 describe("the MCP tools", () => {
@@ -142,6 +156,75 @@ describe("the MCP tools", () => {
     });
   });
 
+  test("buy holds an amount above askAbove without signing anything", async () => {
+    const paidBefore = hubState.paid;
+    const spy = spyAccount();
+    await withClient(depsFor({ account: spy.account, envelope: { askAbove: "100000" } }), async (client) => {
+      const result = await call(client, "buy", { offerHash: OFFER_HASH, input: { q: "hi" } });
+      expect(result.isError).toBe(true);
+      expect(textOf(result).startsWith("Held.")).toBe(true);
+      expect(spy.signatures()).toBe(0);
+      expect(hubState.paid).toBe(paidBefore);
+    });
+
+    const extraSpy = spyAccount();
+    await withClient(
+      depsFor({ account: extraSpy.account, envelope: { askAbove: "100000" } }),
+      async (client) => {
+        const result = await call(client, "buy", {
+          offerHash: OFFER_HASH,
+          input: { q: "hi" },
+          approve: true,
+          approvals: "hub",
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result).startsWith("Held.")).toBe(true);
+        expect(extraSpy.signatures()).toBe(0);
+        expect(hubState.paid).toBe(paidBefore);
+      },
+    );
+  });
+
+  test("get_offer refuses a non-hash before asking the hub", async () => {
+    let requests = 0;
+    const hub = new HubClient(
+      "http://hub.invalid",
+      stubFetch({}, () => {
+        requests += 1;
+      }),
+    );
+    const deps = depsFor();
+    deps.hub = hub;
+    await withClient(deps, async (client) => {
+      const result = await call(client, "get_offer", { offerHash: "../offers" });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toBe("Refused. offerHash must be 0x followed by 64 hex characters.");
+      expect(requests).toBe(0);
+    });
+  });
+
+  test("search_offers keeps a listing whose price is not a number", async () => {
+    const hub = new HubClient(
+      "http://hub.invalid",
+      stubFetch({
+        offers: [
+          { offerHash: OFFER_HASH, offer, online: true, status: "listed" },
+          { offerHash: OTHER_HASH, offer: { ...offer, price: "not-a-number" }, online: true, status: "listed" },
+        ],
+      }),
+    );
+    const deps = depsFor();
+    deps.hub = hub;
+    await withClient(deps, async (client) => {
+      const result = await call(client, "search_offers");
+      expect(result.isError).toBeUndefined();
+      const items = bodyOf(result) as Array<{ offerHash: string; priceUsdc: string | null }>;
+      expect(items).toHaveLength(2);
+      expect(items.find((item) => item.offerHash === OFFER_HASH)?.priceUsdc).toBe("0.25");
+      expect(items.find((item) => item.offerHash === OTHER_HASH)?.priceUsdc).toBeNull();
+    });
+  });
+
   test("verify_slip accepts one slip and rejects both or neither", async () => {
     const slip = await makeVerifySlip();
     await withClient(depsFor(), async (client) => {
@@ -172,6 +255,19 @@ describe("the MCP tools", () => {
     await withClient(depsFor(), async (client) => {
       const remote = await call(client, "verify_slip", { slipHash: slip.hash });
       expect((bodyOf(remote) as { valid: boolean }).valid).toBe(true);
+    });
+  });
+
+  test("verify_slip refuses a slipHash that escapes the slips directory", async () => {
+    const deps = depsFor();
+    writeFileSync(join(deps.state.dir, "outside.json"), JSON.stringify({ hash: "SENTINEL" }));
+    await withClient(deps, async (client) => {
+      const result = await call(client, "verify_slip", { slipHash: "../outside" });
+      expect(result.isError).toBe(true);
+      const message = textOf(result);
+      expect(message).not.toContain("SENTINEL");
+      expect(message).not.toContain("is not an object");
+      expect(message).toBe("Refused. slipHash must be 0x followed by 64 hex characters.");
     });
   });
 
