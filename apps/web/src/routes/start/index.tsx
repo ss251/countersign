@@ -307,14 +307,15 @@ export default function StartPage(_props: PageProps) {
 
             {outcome?.kind === "paid" ? (
               <div className="start__paid" role="status">
-                <p className="start__text">The escrow holds your payment until the output checks out.</p>
-                <div data-testid="start-fund-result">
+                <p className="start__text">The output checked out, and the escrow released your payment to the seller.</p>
+                {/* On escrow rails the hub answers 200 only after the release, and PAYMENT-RESPONSE carries that release. */}
+                <div data-testid="start-fund-result" data-value={outcome.transaction ?? ""} data-kind="release">
                   {outcome.transaction ? (
                     <Hash
                       value={outcome.transaction}
                       href={`${ARCSCAN_TX}${outcome.transaction}`}
                       tx
-                      label="transaction"
+                      label="release transaction"
                     />
                   ) : (
                     <span className="start__text">The hub did not name a transaction.</span>
