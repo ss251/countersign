@@ -99,16 +99,21 @@ contract BondTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, slipHash)));
     }
 
-    function _deposit(uint256 amount) internal {
-        _depositWithNonce(amount, keccak256("bond deposit"));
+    function _depositNonce(uint256 amount, bytes32 salt) internal view returns (bytes32) {
+        return keccak256(abi.encode(escrow.BOND_DEPOSIT_TYPEHASH(), seller, amount, salt));
     }
 
-    function _depositWithNonce(uint256 amount, bytes32 nonce) internal {
+    function _deposit(uint256 amount) internal {
+        _depositWithSalt(amount, keccak256("bond deposit"));
+    }
+
+    function _depositWithSalt(uint256 amount, bytes32 salt) internal {
         uint256 validAfter = 0;
         uint256 validBefore = block.timestamp + 600;
+        bytes32 nonce = _depositNonce(amount, salt);
         (uint8 v, bytes32 r, bytes32 s) =
             _authorizationSig(sellerKey, seller, address(escrow), amount, validAfter, validBefore, nonce);
-        escrow.depositBond(seller, amount, validAfter, validBefore, nonce, v, r, s);
+        escrow.depositBond(seller, amount, validAfter, validBefore, salt, v, r, s);
     }
 
     function _fundBonded(uint256 bond)
@@ -117,6 +122,7 @@ contract BondTest is Test {
     {
         _deposit(bond);
         cs = _cs();
+        vm.prank(arbiter);
         jobId = escrow.fundBonded(OFFER, cs, bond);
     }
 
@@ -211,6 +217,7 @@ contract BondTest is Test {
         uint256 buyerWallet = token.balanceOf(buyer);
         uint256 escrowWallet = token.balanceOf(address(escrow));
 
+        vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BondMissing.selector, seller, BOND + 1, BOND));
         escrow.fundBonded(OFFER, cs, BOND + 1);
 
@@ -256,6 +263,7 @@ contract BondTest is Test {
         uint256 free = 300_000;
         _deposit(BOND + free);
         ICountersignedEscrow.Countersignature memory cs = _cs();
+        vm.prank(arbiter);
         bytes32 jobId = escrow.fundBonded(OFFER, cs, BOND);
         assertEq(escrow.bondOf(seller), free);
         assertEq(escrow.bondOfJob(jobId), BOND);
@@ -270,19 +278,40 @@ contract BondTest is Test {
         escrow.withdrawBond(1);
     }
 
-    function test_a_replayed_deposit_authorization_credits_nothing_twice() public {
-        bytes32 nonce = keccak256("one deposit");
-        _depositWithNonce(BOND, nonce);
+    function test_a_deposit_uses_the_computed_bond_nonce() public {
+        bytes32 salt = keccak256("one deposit");
+        _depositWithSalt(BOND, salt);
+
+        assertEq(escrow.bondOf(seller), BOND);
+        assertTrue(token.authorizationState(seller, _depositNonce(BOND, salt)));
+    }
+
+    function test_a_deposit_replayed_with_the_same_salt_reverts_in_the_token() public {
+        bytes32 salt = keccak256("one deposit");
+        _depositWithSalt(BOND, salt);
         uint256 credited = escrow.bondOf(seller);
         uint256 validAfter = 0;
         uint256 validBefore = block.timestamp + 600;
         (uint8 v, bytes32 r, bytes32 s) =
-            _authorizationSig(sellerKey, seller, address(escrow), BOND, validAfter, validBefore, nonce);
+            _authorizationSig(sellerKey, seller, address(escrow), BOND, validAfter, validBefore, _depositNonce(BOND, salt));
 
         vm.expectRevert(bytes("authorization is used"));
-        escrow.depositBond(seller, BOND, validAfter, validBefore, nonce, v, r, s);
+        escrow.depositBond(seller, BOND, validAfter, validBefore, salt, v, r, s);
 
         assertEq(escrow.bondOf(seller), credited);
+    }
+
+    function test_fund_bonded_is_arbiter_only() public {
+        _deposit(BOND);
+        ICountersignedEscrow.Countersignature memory cs = _cs();
+        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt);
+
+        vm.prank(stranger);
+        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
+        escrow.fundBonded(OFFER, cs, BOND);
+
+        assertEq(escrow.bondOf(seller), BOND);
+        assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.None));
     }
 
     function test_deposit_bond_refuses_zero_and_the_zero_payee() public {

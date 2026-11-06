@@ -24,6 +24,9 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
+    /// @dev The deposit nonce is derived from this typehash, so it can never equal a jobId.
+    bytes32 public constant BOND_DEPOSIT_TYPEHASH =
+        keccak256("BondDeposit(address payee,uint256 amount,bytes32 salt)");
     uint16 public constant MAX_TOLL_BPS = 1_000;
 
     IERC20 public immutable token;
@@ -56,6 +59,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         nonReentrant
         returns (bytes32 jobId)
     {
+        if (msg.sender != arbiter) revert NotArbiter();
         return _fund(offerHash, cs, bond);
     }
 
@@ -65,7 +69,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         uint256 amount,
         uint256 validAfter,
         uint256 validBefore,
-        bytes32 nonce,
+        bytes32 salt,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -73,6 +77,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         if (payee == address(0)) revert ZeroAddress();
 
+        bytes32 nonce = keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH, payee, amount, salt));
         uint256 before = token.balanceOf(address(this));
         IERC3009(address(token)).receiveWithAuthorization(
             payee, address(this), amount, validAfter, validBefore, nonce, v, r, s

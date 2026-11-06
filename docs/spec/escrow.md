@@ -13,7 +13,7 @@
 ```solidity
 fund(bytes32 offerHash, Countersignature cs) returns (bytes32 jobId)
 fundBonded(bytes32 offerHash, Countersignature cs, uint256 bond) returns (bytes32 jobId)
-depositBond(address payee, uint256 amount, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)
+depositBond(address payee, uint256 amount, uint256 validAfter, uint256 validBefore, bytes32 salt, uint8 v, bytes32 r, bytes32 s)
 withdrawBond(uint256 amount)
 release(bytes32 jobId, bytes32 slipHash, bytes sellerSig)
 refund(bytes32 jobId)
@@ -22,8 +22,8 @@ failDelivery(bytes32 jobId)
 ```
 
 - **fund**: derives `jobId` from the terms, checks the buyer's signature, then pulls `amount` from the buyer with the token's EIP-3009 `receiveWithAuthorization`. Anyone may submit it: the hub, a relayer, or the buyer. The buyer pays no gas. It locks no bond.
-- **fundBonded**: the same path as `fund`, plus it moves `bond` from the payee's free bond into the job. It reverts `BondMissing(payee, bond, available)` when the free bond is short.
-- **depositBond**: credits a payee's free bond from an EIP-3009 authorisation signed by that payee. Anyone may submit it; the escrow checks the exact balance delta. A zero amount reverts `ZeroAmount`.
+- **fundBonded**: arbiter-only. The same path as `fund`, plus it moves `bond` from the payee's free bond into the job. It reverts `NotArbiter()` for any other caller and `BondMissing(payee, bond, available)` when the free bond is short.
+- **depositBond**: credits a payee's free bond from an EIP-3009 authorisation signed by that payee. The token nonce is not caller-supplied: the escrow derives it as `keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH, payee, amount, salt))`, with `BondDeposit(address payee,uint256 amount,bytes32 salt)`. A jobId is an EIP-712 digest, so it can never equal a deposit nonce, and a buyer's countersignature can never be spent as a deposit. Anyone may submit a deposit; the escrow checks the exact balance delta. A zero amount reverts `ZeroAmount`.
 - **withdrawBond**: the caller takes back from its own free bond, and only that. Asking for more reverts `BondMissing(payee, amount, available)`.
 - **release**: allowed until the deadline, inclusive. It needs the payee's EIP-712 `Release(jobId, slipHash)` signature, through ECDSA or ERC-1271, and anyone may submit it. It pays `amount - toll` to the payee and `toll` to the treasury, and returns the job's bond to the payee's free bond.
 - **refund**: allowed only after the deadline, and anyone may call it. It returns the full amount to the buyer and the job's bond to the payee's free bond.
@@ -64,6 +64,8 @@ An offer's `bond` becomes real on a rail whose escrow supports it. The payee dep
 ## Trust and limits
 
 The hub's delivery gate decides whether a delivery failed, and only the escrow's `arbiter` — the hub's relayer — may call `failDelivery`. A dishonest hub could therefore slash a bond by failing an honest delivery; the bond is only as strong as that gate. The seller keeps the stronger protection for silence: when no delivery is made, `refund` after the deadline is permissionless and returns the bond to the seller, so a failing seller is worse off than a silent one by exactly the bond. The escrow never pays a toll on `failDelivery`, and a bond is locked at funding, not at the buyer's word.
+
+The arbiter is also the only caller that can fund a bonded job, so a leaked hub key can lock and slash any seller's free bond. The bond is exactly as safe as the hub's key: keep bonds small. Seller-signed locks are a later revision.
 
 ## Events
 
