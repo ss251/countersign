@@ -85,7 +85,7 @@ function networkStub(reason: "reject" | "hang"): typeof fetch {
 }
 
 function sessionFor(signer: PrivateKeyAccount, token: string): RemoteSession {
-  return { hub: "http://hub.invalid", token, address: signer.address };
+  return { hub: "http://127.0.0.1:8787", token, address: signer.address };
 }
 
 function authorizationFor(buyer: LocalAccount): AuthorizationInput {
@@ -199,6 +199,24 @@ describe("the remote signer", () => {
     expect((await rejection(account.signTypedData(typedData))).message).toBe("The hub signed with another wallet.");
   });
 
+  test("a 200 whose signature recovers to another wallet is refused", async () => {
+    const signer = privateKeyToAccount(generatePrivateKey());
+    const other = privateKeyToAccount(generatePrivateKey());
+    const typedData = authorizationTypedData(authorizationFor(signer));
+    const signature = await other.signTypedData(typedData);
+    const account = remoteAccount(sessionFor(signer, "t"), {
+      fetch: statusStub(200, { signature, address: signer.address }),
+    });
+    expect((await rejection(account.signTypedData(typedData))).message).toBe("The hub signed with another wallet.");
+  });
+
+  test("a non-local http hub is refused at construction", () => {
+    const signer = privateKeyToAccount(generatePrivateKey());
+    expect(() =>
+      remoteAccount({ hub: "http://evil.example", token: "t", address: signer.address }),
+    ).toThrow("Refused: the countersign hub must be https.");
+  });
+
   test("an unreachable hub or a timeout says so", async () => {
     const signer = privateKeyToAccount(generatePrivateKey());
     const typedData = authorizationTypedData(authorizationFor(signer));
@@ -273,7 +291,7 @@ describe("sessionFromEnv", () => {
     const address = privateKeyToAccount(generatePrivateKey()).address;
     const env: Record<string, string | undefined> = {
       CS_SESSION: "session-token",
-      CS_HUB: "http://hub.invalid",
+      CS_HUB: "https://hub.invalid",
     };
     let seen: Request | undefined;
     const session = await sessionFromEnv(env, {
@@ -282,9 +300,9 @@ describe("sessionFromEnv", () => {
       }),
     });
 
-    expect(session).toEqual({ hub: "http://hub.invalid", token: "session-token", address });
+    expect(session).toEqual({ hub: "https://hub.invalid", token: "session-token", address });
     expect(seen?.method).toBe("GET");
-    expect(seen?.url).toBe("http://hub.invalid/cli/session");
+    expect(seen?.url).toBe("https://hub.invalid/cli/session");
     expect(seen?.headers.get("authorization")).toBe("Bearer session-token");
     expect(env.CS_SESSION).toBeUndefined();
   });
@@ -308,7 +326,7 @@ describe("sessionFromEnv", () => {
   test("a 401 gives undefined", async () => {
     const env: Record<string, string | undefined> = {
       CS_SESSION: "token",
-      CS_HUB: "http://hub.invalid",
+      CS_HUB: "https://hub.invalid",
     };
     expect(
       await sessionFromEnv(env, {
@@ -324,8 +342,43 @@ describe("sessionFromEnv", () => {
       requests += 1;
     });
     expect(await sessionFromEnv({}, { fetch: stub })).toBeUndefined();
-    expect(await sessionFromEnv({ CS_HUB: "http://hub.invalid" }, { fetch: stub })).toBeUndefined();
+    expect(await sessionFromEnv({ CS_HUB: "https://hub.invalid" }, { fetch: stub })).toBeUndefined();
     expect(requests).toBe(0);
+  });
+
+  test("a non-local http hub is refused before any fetch", async () => {
+    let requests = 0;
+    const stub = jsonStub(200, {}, () => {
+      requests += 1;
+    });
+    const env: Record<string, string | undefined> = { CS_SESSION: "token", CS_HUB: "http://evil.example" };
+    expect((await rejection(sessionFromEnv(env, { fetch: stub }))).message).toBe(
+      "Refused: the countersign hub must be https.",
+    );
+    expect(requests).toBe(0);
+  });
+
+  test("a loopback http hub is allowed", async () => {
+    const address = privateKeyToAccount(generatePrivateKey()).address;
+    let seen: Request | undefined;
+    const session = await sessionFromEnv(
+      { CS_SESSION: "token", CS_HUB: "http://127.0.0.1:8787" },
+      {
+        fetch: jsonStub(200, { address }, (request) => {
+          seen = request;
+        }),
+      },
+    );
+
+    expect(session).toEqual({ hub: "http://127.0.0.1:8787", token: "token", address });
+    expect(seen?.url).toBe("http://127.0.0.1:8787/cli/session");
+  });
+
+  test("an address that is not a real one is refused", async () => {
+    const env: Record<string, string | undefined> = { CS_SESSION: "token", CS_HUB: "https://hub.invalid" };
+    expect(
+      (await rejection(sessionFromEnv(env, { fetch: jsonStub(200, { address: "nope" }) }))).message,
+    ).toBe("The hub returned no valid wallet address.");
   });
 
   test("no error's message contains the session token", async () => {
@@ -337,7 +390,7 @@ describe("sessionFromEnv", () => {
     ];
 
     for (const [name, stub] of stubs) {
-      const env: Record<string, string | undefined> = { CS_SESSION: token, CS_HUB: "http://hub.invalid" };
+      const env: Record<string, string | undefined> = { CS_SESSION: token, CS_HUB: "https://hub.invalid" };
       const error = await rejection(sessionFromEnv(env, { fetch: stub }));
       expect(`${name}: ${error.message}`).not.toContain(token);
     }

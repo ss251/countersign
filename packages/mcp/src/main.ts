@@ -17,7 +17,7 @@ Options:
   --rpc <url>    The RPC verify_slip reads the chain from (env CS_RPC_URL), e.g. https://rpc.testnet.arc.network
   --help         Print this usage and exit
 
-Sign in once: npx -y @countersign-hub/cli login. Your agent's wallet is a Privy server wallet held for you;
+Sign in once: npx -y @countersign-hub/cli login. Your agent's wallet is a Privy server wallet that the countersign app controls;
 this server signs through the hub with your session, and no key is ever on this machine or in any config.
 
 CS_NETWORK must be unset or testnet.
@@ -90,6 +90,8 @@ export async function resolveAccount(
   options: MainOptions,
   env: Record<string, string | undefined>,
 ): Promise<ResolvedAccount> {
+  const sessionEnv = { CS_SESSION: env.CS_SESSION, CS_HUB: env.CS_HUB };
+  delete env.CS_SESSION;
   if (options.loadAccount !== undefined) {
     try {
       const account = await options.loadAccount();
@@ -100,7 +102,7 @@ export async function resolveAccount(
   }
   let session: Awaited<ReturnType<typeof sessionFromEnv>>;
   try {
-    session = await sessionFromEnv(env);
+    session = await sessionFromEnv(sessionEnv);
   } catch (error) {
     return sessionProblem(error);
   }

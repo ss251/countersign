@@ -42,6 +42,16 @@ describe("resolveAccount", () => {
     expect(await resolveAccount({ loadAccount: async () => account }, {})).toEqual({ account });
   });
 
+  test("a loader is given and CS_SESSION still does not linger in the env", async () => {
+    const account = privateKeyToAccount(generatePrivateKey());
+    const env: Record<string, string | undefined> = {
+      CS_SESSION: "token",
+      CS_HUB: "https://hub.invalid",
+    };
+    expect(await resolveAccount({ loadAccount: async () => account }, env)).toEqual({ account });
+    expect(env.CS_SESSION).toBeUndefined();
+  });
+
   test("a loader returning undefined leaves no account and no problem", async () => {
     expect(await resolveAccount({ loadAccount: async () => undefined }, {})).toEqual({});
   });
@@ -74,7 +84,7 @@ describe("resolveAccount", () => {
 
   test("with CS_SESSION it uses the hub's session", async () => {
     const address = privateKeyToAccount(generatePrivateKey()).address;
-    const env: Record<string, string | undefined> = { CS_SESSION: "token", CS_HUB: "http://hub.invalid" };
+    const env: Record<string, string | undefined> = { CS_SESSION: "token", CS_HUB: "https://hub.invalid" };
     const original = globalThis.fetch;
     globalThis.fetch = Object.assign(
       async () => Response.json({ address, expiresAt: 1_762_400_600 }),
@@ -98,7 +108,7 @@ describe("resolveAccount", () => {
     try {
       const resolved = await resolveAccount(
         {},
-        { CS_SESSION: "token", CS_HUB: "http://hub.invalid" },
+        { CS_SESSION: "token", CS_HUB: "https://hub.invalid" },
       );
       expect(resolved.account).toBeUndefined();
       expect(resolved.problem).toBe("Could not load the countersign session: Could not read the countersign session (500).");
