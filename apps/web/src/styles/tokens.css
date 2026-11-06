@@ -114,7 +114,9 @@
   }
 }
 
-:root[data-theme="dark"] {
+/* The landing is dark by default (STEER-1815): the same dark tokens, scoped to it, unless light is pinned. */
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) .landing {
   color-scheme: dark;
   --paper: oklch(0.181 0.004 106.8); /* #121210, near-black */
   --ink: oklch(0.946 0.010 93.6); /* #efede6 */
@@ -132,4 +134,10 @@
   --elev-1: 0 0 0 1px var(--line);
   --elev-1-hover: 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 18%);
   --elev-2: 0 0 0 1px oklch(1 0 0 / 0.1), 0 24px 48px -16px oklch(0 0 0 / 0.6);
+}
+
+/* Under the landing the page itself is near-black too, so no light edge shows past it. */
+:root:not([data-theme="light"]):has(.landing),
+:root:not([data-theme="light"]):has(.landing) body {
+  background: oklch(0.181 0.004 106.8);
 }

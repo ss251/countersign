@@ -45,6 +45,19 @@ export const CANCEL_TYPES = {
   Cancel: [{ name: "jobId", type: "bytes32" }],
 } as const;
 
+/** Escrow v2: the buyer accepts a delivered job, paying the seller before the review window ends. */
+export const ACCEPT_TYPES = {
+  Accept: [
+    { name: "jobId", type: "bytes32" },
+    { name: "slipHash", type: "bytes32" },
+  ],
+} as const;
+
+/** Escrow v2: the buyer disputes a funded or delivered job, refunding itself at once. */
+export const DISPUTE_TYPES = {
+  Dispute: [{ name: "jobId", type: "bytes32" }],
+} as const;
+
 export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
   ReceiveWithAuthorization: [
     { name: "from", type: "address" },
@@ -194,6 +207,32 @@ export function cancelTypedData(chainId: number, escrow: Address, jobId: Hex) {
     domain: escrowDomain(chainId, escrow),
     types: CANCEL_TYPES,
     primaryType: "Cancel" as const,
+    message: { jobId },
+  };
+}
+
+/**
+ * Typed data the buyer signs to accept a delivered job against the slip it received.
+ * Escrow v2. Sign it under the escrow of a pinned rail, never one a hub names.
+ */
+export function acceptTypedData(chainId: number, escrow: Address, jobId: Hex, slipHash: Hex) {
+  return {
+    domain: escrowDomain(chainId, escrow),
+    types: ACCEPT_TYPES,
+    primaryType: "Accept" as const,
+    message: { jobId, slipHash },
+  };
+}
+
+/**
+ * Typed data the buyer signs to dispute a job: before delivery up to the deadline, or
+ * while its review window is open. Escrow v2. Sign it under the escrow of a pinned rail.
+ */
+export function disputeTypedData(chainId: number, escrow: Address, jobId: Hex) {
+  return {
+    domain: escrowDomain(chainId, escrow),
+    types: DISPUTE_TYPES,
+    primaryType: "Dispute" as const,
     message: { jobId },
   };
 }
