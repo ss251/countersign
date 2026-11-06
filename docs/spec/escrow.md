@@ -100,7 +100,7 @@ event DeliveryFailed(bytes32 indexed jobId, address indexed buyer, uint256 amoun
 
 ## Escrow v2: seller bond, delivery review and dispute (design, 06 Nov)
 
-This section is a design, not deployed code. The bond is built on a branch ([#93](https://github.com/ss251/countersign/issues/93)) and not merged. Review and dispute have no code yet ([#98](https://github.com/ss251/countersign/issues/98)). The plan is to ship both as one contract and one testnet deployment on Arc (through Studio) and Whitechain (forge). The v1 deployments in the table above stay listed, so slips minted on them still verify. v2 keeps the `Job` struct, `jobOf` and the `Released` event exactly as they are, so the verifier reads both versions the same way.
+This section is a design, and none of it is deployed. The bond is merged (PR [#118](https://github.com/ss251/countersign/pull/118), [#93](https://github.com/ss251/countersign/issues/93)): `contracts/src/CountersignedEscrow.sol` holds it and `contracts/test/Bond.t.sol` tests it, but no deployed escrow has it yet. Review and dispute have no code yet ([#98](https://github.com/ss251/countersign/issues/98)). The plan is to ship both as one contract and one testnet deployment on Arc (through Studio) and Whitechain (forge). The v1 deployments in the table above stay listed, so slips minted on them still verify. v2 keeps the `Job` struct, `jobOf` and the `Released` event exactly as they are, so the verifier reads both versions the same way.
 
 ### Terms of a job
 

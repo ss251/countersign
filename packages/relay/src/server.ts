@@ -15,7 +15,8 @@ import type { EscrowOpResult } from "./escrow-ops.ts";
 import { settleExact, verifyExact } from "./exact.ts";
 import type { ExactClock, ExactContext, VerifyRequest } from "./exact.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
-import { Ledger } from "./ledger.ts";
+import { isRefundReason, Ledger } from "./ledger.ts";
+import type { RefundReason } from "./ledger.ts";
 import { reconcileOrder } from "./reconcile.ts";
 import { refundPayment } from "./refund.ts";
 import { Relayer } from "./relayer.ts";
@@ -120,6 +121,7 @@ export function createRelayApp(options: RelayAppOptions): Hono {
       paymentId?: unknown;
       authorization?: unknown;
       signature?: unknown;
+      reason?: unknown;
     };
     if (
       !input ||
@@ -129,11 +131,19 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     ) {
       return c.json({ ok: false, reason: "invalid_payload" }, 400);
     }
+    let reason: RefundReason | undefined;
+    if (input.reason !== undefined) {
+      if (!isRefundReason(input.reason)) {
+        return c.json({ ok: false, reason: "invalid_payload" }, 400);
+      }
+      reason = input.reason;
+    }
     const result = await refundPayment(
       {
         paymentId: input.paymentId,
         authorization: input.authorization as Authorization | WireAuthorization,
         signature: input.signature as `0x${string}`,
+        reason,
       },
       ctx,
     );
@@ -193,7 +203,15 @@ export function createRelayApp(options: RelayAppOptions): Hono {
     const body = await readJson(c);
     const v = body.ok ? (body.value as Record<string, unknown> | null) : null;
     if (!v || !isHex32(v.jobId) || !isHexString(v.sellerSig)) return bad(c);
-    return replyOp(c, await cancelJob({ jobId: v.jobId, sellerSig: v.sellerSig }, csCtx));
+    let reason: RefundReason | undefined;
+    if (v.reason !== undefined) {
+      if (!isRefundReason(v.reason)) return bad(c);
+      reason = v.reason;
+    }
+    return replyOp(
+      c,
+      await cancelJob({ jobId: v.jobId, sellerSig: v.sellerSig, reason }, csCtx),
+    );
   });
 
   app.post("/escrow/refund", async (c) => {

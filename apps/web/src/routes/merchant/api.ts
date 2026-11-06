@@ -1,5 +1,5 @@
 import { hubBase } from "../../lib/hub.ts";
-import type { Order, ReceiptOrder, RefundReply, RelayStatus } from "./model.ts";
+import type { Order, ReceiptOrder, RefundReason, RefundReply, RelayStatus } from "./model.ts";
 import { fromHubOrder, fromHubRecord, normalizeRefundReply } from "./model.ts";
 
 interface MerchantEnv {
@@ -222,6 +222,8 @@ export interface RefundRequest {
    * signs that amount or refuses, and never "whatever the relay says is left".
    */
   amount: bigint;
+  /** Why the money goes back; the relay stores it with the refund. */
+  reason?: RefundReason;
 }
 
 const MAY_HAVE_GONE = "The merchant service did not confirm in time, so the refund may have gone through.";
@@ -237,7 +239,10 @@ export async function refundOrder(id: string, request: RefundRequest): Promise<R
     response = await fetch(`${MERCHANT_URL}/orders/${encodeURIComponent(id)}/refund`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ amount: request.amount.toString() }),
+      body: JSON.stringify({
+        amount: request.amount.toString(),
+        ...(request.reason ? { reason: request.reason } : {}),
+      }),
     });
   } catch {
     // The request may have reached the service before the connection failed: never call it refused.
