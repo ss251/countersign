@@ -26,6 +26,7 @@ import {
   HEDERA_TESTNET,
   httpFacilitator,
   netFor,
+  secondsOf,
   toSdkTxId,
   USDC_TESTNET,
   type MirrorOptions,
@@ -435,7 +436,7 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       const record = await getSchedule(hold.scheduleId, opts.mirror);
       if (!record) return "pending";
       if (record.executedTimestamp) return "executed";
-      const expirationSeconds = record.expirationTime === null ? null : Number(record.expirationTime.split(".")[0]);
+      const expirationSeconds = secondsOf(record.expirationTime);
       const expired =
         record.deleted || (expirationSeconds !== null && now() >= expirationSeconds + RELEASE_MARGIN_SECONDS);
       if (!expired) return "pending";

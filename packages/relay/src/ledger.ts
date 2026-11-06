@@ -23,6 +23,20 @@ export type PaymentRecord = {
 
 export type RefundStatus = "pending" | "confirmed";
 
+/** Why money went back. Optional everywhere; older rows carry null. */
+export const REFUND_REASONS = [
+  "requested_by_customer",
+  "duplicate",
+  "not_delivered",
+  "other",
+] as const;
+
+export type RefundReason = (typeof REFUND_REASONS)[number];
+
+export function isRefundReason(value: unknown): value is RefundReason {
+  return typeof value === "string" && (REFUND_REASONS as readonly string[]).includes(value);
+}
+
 export type RefundRecord = {
   paymentId: string;
   amount: bigint;
@@ -31,15 +45,27 @@ export type RefundRecord = {
   nonce: string;
   status: RefundStatus;
   validBefore: number;
+  reason: RefundReason | null;
+  /** When the refund was sent, in ms; null for rows from before the column. */
+  at: number | null;
 };
 
-export type NewRefund = Omit<RefundRecord, "status" | "validBefore">;
+export type NewRefund = {
+  paymentId: string;
+  amount: bigint;
+  txHash: string;
+  blockNumber: bigint;
+  nonce: string;
+  reason?: RefundReason | null;
+  at?: number | null;
+};
 
 export type NewPendingRefund = {
   paymentId: string;
   amount: bigint;
   txHash: string;
   nonce: string;
+  reason?: RefundReason | null;
 };
 
 export type SpendRecord = {
@@ -76,6 +102,7 @@ export type JobRecord = {
   fundBlock: bigint;
   status: JobStatus;
   closeTx: string | null;
+  closeReason: RefundReason | null;
   slipHash: string | null;
   createdAt: number;
   closedAt: number | null;
@@ -125,12 +152,17 @@ export type Order = {
   refundable: bigint;
   status: OrderStatus;
   closeKind: CloseKind | null;
+  closeReason: RefundReason | null;
   createdAt: number;
   /** When the merchant could use the money, in ms; null for held, pending, cancelled or deadline-refunded escrow orders. */
   receivedAt: number | null;
   settleTx: string;
   closeTx: string | null;
   refundTxs: string[];
+  /** The slip hash the escrow emitted on release; null for direct payments and unclosed jobs. */
+  slipHash: string | null;
+  /** When an escrow job closed, in ms; null for direct payments and open jobs. */
+  closedAt: number | null;
   offerHash?: string;
   deadline?: number;
   resource?: string | null;
@@ -153,6 +185,7 @@ type JobRow = {
   fund_block: string;
   status: string;
   close_tx: string | null;
+  close_reason: string | null;
   slip_hash: string | null;
   created_at: number;
   closed_at: number | null;
@@ -188,6 +221,8 @@ type RefundRow = {
   nonce: string;
   status: string;
   valid_before: number;
+  reason: string | null;
+  created_at: number | null;
 };
 
 type SpendRow = {
@@ -221,7 +256,9 @@ const SCHEMA = `
     block_number TEXT NOT NULL,
     nonce TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'confirmed',
-    valid_before INTEGER NOT NULL DEFAULT 0
+    valid_before INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    created_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS refunds_payment
     ON refunds (payment_id);
@@ -236,6 +273,7 @@ const SCHEMA = `
     fund_block TEXT NOT NULL,
     status TEXT NOT NULL,
     close_tx TEXT,
+    close_reason TEXT,
     slip_hash TEXT,
     created_at INTEGER NOT NULL,
     closed_at INTEGER,
@@ -254,7 +292,7 @@ const SCHEMA = `
 `;
 
 const ORDERS_CSV_HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls,refund_reasons";
 
 const CSV_HEADER =
   "date_utc,payment_id,payer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,refund_tx_urls";
@@ -370,8 +408,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO refunds
-          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before)
-         VALUES (?, ?, ?, ?, ?, 'confirmed', 0)`,
+          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before, reason, created_at)
+         VALUES (?, ?, ?, ?, ?, 'confirmed', 0, ?, ?)`,
       )
       .run(
         refund.paymentId,
@@ -379,6 +417,8 @@ export class Ledger {
         refund.txHash,
         refund.blockNumber.toString(),
         refund.nonce,
+        refund.reason ?? null,
+        refund.at ?? Date.now(),
       );
   }
 
@@ -386,8 +426,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO refunds
-          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before)
-         VALUES (?, ?, ?, '0', ?, 'pending', ?)`,
+          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before, reason, created_at)
+         VALUES (?, ?, ?, '0', ?, 'pending', ?, ?, ?)`,
       )
       .run(
         refund.paymentId,
@@ -395,6 +435,8 @@ export class Ledger {
         refund.txHash,
         refund.nonce,
         validBefore,
+        refund.reason ?? null,
+        Date.now(),
       );
   }
 
@@ -477,13 +519,14 @@ export class Ledger {
     closeTx: string,
     slipHash?: string,
     closedAt: number = Date.now(),
+    closeReason?: RefundReason | null,
   ): boolean {
     const result = this.db
       .query(
-        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?
+        `UPDATE jobs SET status = ?, close_tx = ?, slip_hash = ?, closed_at = ?, close_reason = ?
          WHERE LOWER(job_id) = LOWER(?) AND status = 'funded'`,
       )
-      .run(status, closeTx, slipHash ?? null, closedAt, jobId);
+      .run(status, closeTx, slipHash ?? null, closedAt, closeReason ?? null, jobId);
     return result.changes > 0;
   }
 
@@ -544,6 +587,10 @@ export class Ledger {
           txUrl(order.settleTx),
           order.closeTx ? txUrl(order.closeTx) : "",
           order.refundTxs.map((tx) => txUrl(tx)).join(" "),
+          this.listRefunds(order.id)
+            .map((refund) => refund.reason)
+            .filter((reason): reason is RefundReason => reason !== null)
+            .join(" "),
         ]
           .map(csvField)
           .join(","),
@@ -571,11 +618,14 @@ export class Ledger {
             ? "refund_pending"
             : transferStatus(payment.amount, payment.refunded),
       closeKind: null,
+      closeReason: null,
       createdAt: payment.settledAt,
       receivedAt: payment.status === "pending" ? null : payment.settledAt,
       settleTx: payment.txHash,
       closeTx: null,
       refundTxs: refunds.map((refund) => refund.txHash),
+      slipHash: null,
+      closedAt: null,
       resource: payment.resource,
       description: payment.description,
     };
@@ -614,11 +664,14 @@ export class Ledger {
       refundable: this.refundable(job.jobId),
       status,
       closeKind: closeKindOf(job.status),
+      closeReason: job.closeReason,
       createdAt: job.createdAt,
       receivedAt: job.status === "released" ? job.closedAt : null,
       settleTx: job.fundTx,
       closeTx: job.closeTx,
       refundTxs: refunds.map((refund) => refund.txHash),
+      slipHash: job.slipHash,
+      closedAt: job.closedAt,
       offerHash: job.offerHash,
       deadline: job.deadline,
       resource: job.resource,
@@ -640,6 +693,8 @@ export class Ledger {
       nonce: row.nonce,
       status: row.status === "pending" ? "pending" : "confirmed",
       validBefore: row.valid_before,
+      reason: reasonOf(row.reason),
+      at: row.created_at,
     }));
   }
 
@@ -750,6 +805,12 @@ export class Ledger {
     if (!names.has("valid_before")) {
       this.db.exec("ALTER TABLE refunds ADD COLUMN valid_before INTEGER NOT NULL DEFAULT 0");
     }
+    if (!names.has("reason")) {
+      this.db.exec("ALTER TABLE refunds ADD COLUMN reason TEXT");
+    }
+    if (!names.has("created_at")) {
+      this.db.exec("ALTER TABLE refunds ADD COLUMN created_at INTEGER");
+    }
     for (const table of ["payments", "jobs"] as const) {
       const existing = this.db
         .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
@@ -757,6 +818,12 @@ export class Ledger {
       if (!existing.some((column) => column.name === "description")) {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN description TEXT`);
       }
+    }
+    const jobColumns = this.db
+      .query<{ name: string }, []>("PRAGMA table_info(jobs)")
+      .all();
+    if (!jobColumns.some((column) => column.name === "close_reason")) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN close_reason TEXT");
     }
   }
 }
@@ -795,12 +862,17 @@ function toJob(row: JobRow): JobRecord {
     fundBlock: BigInt(row.fund_block),
     status: status ?? "pending",
     closeTx: row.close_tx,
+    closeReason: reasonOf(row.close_reason),
     slipHash: row.slip_hash,
     createdAt: row.created_at,
     closedAt: row.closed_at,
     resource: row.resource,
     description: row.description,
   };
+}
+
+function reasonOf(value: string | null): RefundReason | null {
+  return isRefundReason(value) ? value : null;
 }
 
 function formatSigned(value: bigint): string {

@@ -114,6 +114,129 @@ describe("merchant one-click refund", () => {
     expect(relay.ledger.getOrder(id)!.status).toBe("partially_refunded");
   });
 
+  test("a refund reason round-trips through the relay", async () => {
+    const { relay, refund } = boot();
+    const id = fakeHash();
+    relay.ledger.recordPayment({
+      id,
+      network: NETWORK,
+      payer: "0x1111111111111111111111111111111111111111",
+      payTo: relay.merchant.address,
+      amount: 2_000_000n,
+      nonce: fakeNonce(),
+      txHash: id,
+      blockNumber: 3n,
+      settledAt: NOW * 1000,
+    });
+    const res = await refund(id, { reason: "duplicate" });
+    expect(res.status).toBe(200);
+    const [record] = relay.ledger.listRefunds(id);
+    expect(record!.reason).toBe("duplicate");
+    expect(record!.at).toBe(NOW * 1000);
+  });
+
+  test("a cancel reason round-trips through the relay", async () => {
+    const { relay, refund } = boot();
+    const job = jobFor(relay.merchant.address);
+    relay.ledger.recordJob(job);
+    const res = await refund(job.jobId, { reason: "requested_by_customer" });
+    expect(res.status).toBe(200);
+    expect(relay.ledger.getJob(job.jobId)!.closeReason).toBe("requested_by_customer");
+    expect(relay.ledger.getOrder(job.jobId)!.closeReason).toBe("requested_by_customer");
+  });
+
+  test("a reason outside the accepted values is refused before anything is signed", async () => {
+    const { relay, refund } = boot();
+    const job = jobFor(relay.merchant.address);
+    relay.ledger.recordJob(job);
+    const res = await refund(job.jobId, { reason: "because" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, reason: "invalid_payload" });
+    expect(relay.chain.writes).toHaveLength(0);
+  });
+
+  test("a held order cancels only when the whole amount is named", async () => {
+    const { relay, refund } = boot();
+    const job = jobFor(relay.merchant.address);
+    relay.ledger.recordJob(job);
+
+    const partial = await refund(job.jobId, { amount: "750000" });
+    expect(partial.status).toBe(400);
+    expect(await partial.json()).toEqual({
+      ok: false,
+      reason: "partial_cancel_not_possible",
+    });
+    expect(relay.chain.writes).toHaveLength(0);
+    expect(relay.ledger.getJob(job.jobId)!.status).toBe("funded");
+
+    const whole = await refund(job.jobId, { amount: job.amount.toString() });
+    expect(whole.status).toBe(200);
+    expect(relay.chain.writes.map((write) => write.functionName)).toEqual(["cancel"]);
+    expect(relay.ledger.getJob(job.jobId)!.status).toBe("cancelled");
+  });
+
+  test("an in_review order cancels only when the whole amount is named", async () => {
+    const relay = createTestRelay();
+    const jobId = fakeNonce();
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith(`/orders/${jobId}`)) {
+        return new Response(
+          JSON.stringify({
+            id: jobId,
+            kind: "escrow",
+            status: "in_review",
+            customer: "0x1111111111111111111111111111111111111111",
+            merchant: relay.merchant.address,
+            amount: "1500000",
+            refunded: "0",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, status: "cancelled" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const app = createMerchantApp({
+        merchant: relay.merchant,
+        relayUrl: "http://relay.test",
+        now: () => NOW,
+        token: TOKEN,
+      });
+      const call = (body: unknown) =>
+        app.request(`/orders/${jobId}/refund`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify(body),
+        });
+
+      const partial = await call({ amount: "750000" });
+      expect(partial.status).toBe(400);
+      expect(await partial.json()).toEqual({
+        ok: false,
+        reason: "partial_cancel_not_possible",
+      });
+      expect(calls.some((entry) => entry.startsWith("POST http://relay.test/escrow/cancel"))).toBe(
+        false,
+      );
+
+      const whole = await call({ amount: "1500000", reason: "not_delivered" });
+      expect(whole.status).toBe(200);
+      expect(calls.some((entry) => entry.startsWith("POST http://relay.test/escrow/cancel"))).toBe(
+        true,
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   test("a cancelled order is not refundable", async () => {
     const { relay, refund } = boot();
     const job = jobFor(relay.merchant.address);
