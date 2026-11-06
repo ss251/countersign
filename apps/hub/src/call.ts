@@ -17,6 +17,7 @@ import {
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
+import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, challengeOptions, firstLine, resourceFor } from "./discovery.ts";
 import type { RunnerLink } from "./runners.ts";
@@ -203,7 +204,8 @@ export async function paidCall(
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    return failedDelivery(deps, jobId, railId, "seller");
+    const gate = await failOnGate(match.rail, jobId, deps.store);
+    return failedDelivery(deps, jobId, railId, "seller", gate ?? undefined);
   }
 
   let closeTx = settle.transaction;
@@ -213,7 +215,8 @@ export async function paidCall(
   if (escrow) {
     const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
     if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
-      return failedDelivery(deps, jobId, railId, "seller");
+      const gate = await failOnGate(match.rail, jobId, deps.store);
+      return failedDelivery(deps, jobId, railId, "seller", gate ?? undefined);
     }
     const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
@@ -263,14 +266,15 @@ function dispatchFault(result: { fail: string; byRunner?: true }, hubCutShort: b
   return "hub";
 }
 
-function failedDelivery(deps: CallDeps, jobId: Hex, railId: string, fault: Fault): CallOutcome {
+function failedDelivery(
+  deps: CallDeps,
+  jobId: Hex,
+  railId: string,
+  fault: Fault,
+  message = "Refused. The seller's output does not match the offer. Your money returns at the deadline.",
+): CallOutcome {
   deps.store.updateJob(jobId, { status: "failed", fault });
-  return failure(
-    502,
-    "failed-delivery",
-    "Refused. The seller's output does not match the offer. Your money returns at the deadline.",
-    railId,
-  );
+  return failure(502, "failed-delivery", message, railId);
 }
 
 function duplicatePayment(railId: string): CallOutcome {
