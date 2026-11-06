@@ -1,13 +1,31 @@
 # gitleaks configuration for this repository: the default rules, plus an allowlist of exact
-# public values that are not secrets.
+# public values that are not secrets. Each address is one exact string, matched in any letter
+# case because the code writes both checksummed and lowercase forms. No broad pattern, no path.
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Public contract addresses (not secrets)"
+description = "Public contract and account addresses (not secrets)"
 regexes = [
-  # Tether USD on Whitechain Sepolia, chain 1874
-  '''(?i)0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7''',
+  # Arc testnet (5042002)
+  '''(?i)0x3600000000000000000000000000000000000000''', # USDC
+  '''(?i)0x19c27d770969291e6a0a305dc1be1a845e7c1b76''', # CountersignedEscrow v1 (Arc Studio)
+  '''(?i)0x44d11b8909485e3f575F6628b689383E4420f54a''', # CountersignedEscrow v1 (forge)
+  '''(?i)0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE''', # CountersignedEscrow v2
+  '''(?i)0xbf9de410d4a17781df0d9d3dd160018aceb3fe87''', # FeeSplit, the escrow treasury (Studio v1 and v2)
+  '''(?i)0x69831d0AAD960e88b62983F3568A1E67d40581b1''', # FeeSplit (forge v1)
+  '''(?i)0xE37F64A73225f5eA06BABcb1cc5440F01446C267''', # the hub submitter, Arc v2 arbiter
+  '''(?i)0xA7C448C92aB52Cf4F14c75F0439033232E938380''', # fee operator
+  '''(?i)0x052301a8093ac74E833952d8a1095d5694a906A2''', # fee protocol, the deployer
+  # Whitechain Sepolia (1874)
+  '''(?i)0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7''', # Tether USD
+  '''(?i)0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4''', # CountersignedEscrow v1
+  '''(?i)0x55b3d98C17Ba0878DC93fB1521c76c9a10778391''', # CountersignedEscrow v2
+  '''(?i)0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F''', # FeeSplit v1
+  '''(?i)0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c''', # FeeSplit v2
+  '''(?i)0xa2EEfc657138eE5367291F8e2Ac45BAC28486006''', # the relayer, 1874 v2 arbiter
+  '''(?i)0xca4Fde0786758681d083E6515C7E3584BE75D11C''', # the 1874 deployer, a relay payee
+  '''(?i)0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c''', # the demo merchant
   # anvil's published development keys #0-#4 (test fixtures only; they hold nothing anywhere)
   '''ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
   '''59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d''',
