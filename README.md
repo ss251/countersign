@@ -154,21 +154,7 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 
 The seller's runner dials out to the hub and publishes signed offers. The buyer agent finds an offer, checks it against its envelope and its pinned rail table, and countersigns. The hub verifies and settles through the rail named in the payment, sends the call to the runner, checks the output against the offer's schema, and on an escrow rail releases with the seller's signature over the slip hash. The buyer keeps the slip, and anyone can verify it against the chain.
 
-```
- human ── envelope ──▶ buyer agent ◀──────── slip ────────┐
-                          │                                 │
-           GET /offers, 402, countersignature               │
-                          ▼                                 │
- seller runner ◀── call / output, Release sig ──▶ hub ──────┘
-   (dials out,                                     │
-    signs offers)                                  │ verify, settle, release
-                                                   ▼
-                                                 rail ── Arc         CountersignedEscrow, USDC
-                                                      ── Whitechain  CountersignedEscrow, USDT
-                                                      ── Hedera      x402 facilitator, HTS USDC
-
- slip ──▶ packages/verify ──▶ Released(jobId, slipHash) read from the chain
-```
+![countersign architecture](docs/architecture.svg)
 
 ## Safety limits
 
