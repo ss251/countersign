@@ -21,6 +21,7 @@ import {
 } from "@countersign/core";
 import {
   FACILITATORS,
+  FEE_PAYER_LOOKUP_TIMEOUT_MS,
   feePayerWithRetry,
   getSchedule,
   getTransaction,
@@ -200,7 +201,9 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       const found = new Set<string>();
       await Promise.all(
         FACILITATORS.map(async ({ name, url }) => {
-          const { feePayer } = await feePayerWithRetry(httpFacilitator(name, url));
+          const { feePayer } = await feePayerWithRetry(
+            httpFacilitator(name, url, FEE_PAYER_LOOKUP_TIMEOUT_MS),
+          );
           if (feePayer) found.add(feePayer);
         }),
       );

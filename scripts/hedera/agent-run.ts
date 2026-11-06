@@ -19,6 +19,7 @@ import {
 import { readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
 import {
   FACILITATORS,
+  FEE_PAYER_LOOKUP_TIMEOUT_MS,
   feePayerWithRetry,
   getSchedule,
   HASHSCAN_TESTNET,
@@ -108,7 +109,9 @@ const trustedFeePayers = new Set<string>([operatorId]);
 const facilitatorNames = new Map<string, string>();
 await Promise.all(
   FACILITATORS.map(async ({ name, url }) => {
-    const { feePayer, error } = await feePayerWithRetry(httpFacilitator(name, url));
+    const { feePayer, error } = await feePayerWithRetry(
+      httpFacilitator(name, url, FEE_PAYER_LOOKUP_TIMEOUT_MS),
+    );
     if (feePayer) {
       trustedFeePayers.add(feePayer);
       facilitatorNames.set(feePayer, name);

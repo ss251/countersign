@@ -21,6 +21,7 @@ import { readEntries, reconcile, type LoggedEntry } from "../../packages/buyer/s
 import {
   createHederaRail,
   FACILITATORS,
+  FEE_PAYER_LOOKUP_TIMEOUT_MS,
   feePayerWithRetry,
   hashscanAccount,
   hashscanTopic,
@@ -219,7 +220,9 @@ try {
   }
   await Promise.all(
     FACILITATORS.map(async ({ name, url }) => {
-      const { feePayer, error } = await feePayerWithRetry(httpFacilitator(name, url));
+      const { feePayer, error } = await feePayerWithRetry(
+        httpFacilitator(name, url, FEE_PAYER_LOOKUP_TIMEOUT_MS),
+      );
       if (feePayer) {
         trustedFeePayers.add(feePayer);
         facilitatorNames.set(feePayer, name);

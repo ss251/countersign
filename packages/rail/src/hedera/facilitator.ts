@@ -29,6 +29,9 @@ export interface Facilitator {
   settle(payment: X402Payload, requirements: X402Requirements): Promise<SettleResponse>;
 }
 
+/** Per-attempt timeout for reading a facilitator's fee payer: /supported answers in well under a second. */
+export const FEE_PAYER_LOOKUP_TIMEOUT_MS = 10_000;
+
 export function httpFacilitator(name: string, url: string, timeoutMs = 30_000): Facilitator {
   const client = new HTTPFacilitatorClient({ url, timeoutMs });
   return {
