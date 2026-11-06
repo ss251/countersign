@@ -1105,3 +1105,168 @@ button.landing__figures::after {
   transform: none;
   transition: none;
 }
+
+/*
+ * The plate (STEER-0115): monumental, slow, deep blacks, wide framing, fine grain, restraint. It keeps its
+ * own blacks in either theme, and the page around it follows the theme. Letterboxed at 2.39:1 (4:5 on a
+ * phone), the thread running lower left to upper right, one line of type in the empty top left.
+ */
+.plate {
+  --plate-ink: #0a0a09; /* the letterbox and the scrim */
+  --plate-type: #efede6; /* 9.6:1 over the brightest pixel behind the line, through the scrim */
+  --plate-bar: clamp(28px, 6vh, 72px);
+  position: relative;
+  padding-block: var(--plate-bar);
+  background: var(--plate-ink);
+  color: var(--plate-type);
+}
+
+.plate__frame {
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: 2.39 / 1;
+  max-height: calc(100svh - var(--bar, 56px) - 2 * var(--plate-bar));
+  overflow: hidden;
+  background: var(--plate-ink);
+}
+
+.plate__poster,
+.plate__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+}
+
+/* The loop arrives slowly over its own first frame; it never moves anything but its opacity. */
+.plate__video {
+  opacity: 0;
+  transition: opacity 1600ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.plate__video.is-playing {
+  opacity: 1;
+}
+
+/* A flat ink scrim: no gradient. 30% takes the brightest pixel behind the line from rgb(80,80,78) to 59. */
+.plate__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--plate-ink);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* A very fine static grain, CSS only: never animated, never a video, never under the pointer. */
+.grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+}
+
+/* One line of type, in the empty top left, at the plate's own display scale. */
+.plate__line {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 11%;
+  inset-inline-start: clamp(16px, 5vw, 80px);
+  margin: 0;
+  color: var(--plate-type);
+  /* One line inside the left 62% of the frame, where the 9.6:1 was measured: 2.9vw, at most 3.5rem. */
+  font-size: clamp(1.75rem, 2.9vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .plate__line {
+    inset-inline-end: 16px;
+    font-size: clamp(1.75rem, 7.4vw, 2.5rem);
+    white-space: normal;
+    text-wrap: balance;
+  }
+}
+
+@media (max-width: 720px) {
+  .plate__frame {
+    aspect-ratio: 4 / 5;
+  }
+
+  /* The left of the frame: the thread rises through the lower half, the top stays empty for the line. */
+  .plate__poster,
+  .plate__video {
+    object-position: 0% 50%;
+  }
+
+  .plate__line {
+    inset-block-start: 8%;
+  }
+}
+
+/* The two rail stings: beats of their own, each a letterboxed plate that plays once and rests on its poster. */
+.stings {
+  display: grid;
+  gap: clamp(56px, 12vh, 144px);
+  padding: clamp(64px, 14vh, 168px) var(--side);
+  background: var(--paper);
+}
+
+.sting {
+  display: grid;
+  gap: var(--sp-4);
+  margin: 0;
+}
+
+.sting__frame {
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: 2.39 / 1;
+  overflow: hidden;
+  background: #0a0a09;
+}
+
+.sting__poster,
+.sting__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sting__video {
+  opacity: 0;
+  transition: opacity 900ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sting__video.is-playing {
+  opacity: 1;
+}
+
+/* After its one play the clip fades back to the poster it started from. */
+.sting__video.is-done {
+  opacity: 0;
+  transition-duration: 1200ms;
+}
+
+.sting__line {
+  max-width: 52ch;
+  color: var(--ink);
+  font-size: var(--t-17);
+  text-wrap: pretty;
+}
+
+@media (max-width: 720px) {
+  .sting__frame {
+    aspect-ratio: 16 / 9;
+  }
+}

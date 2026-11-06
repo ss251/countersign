@@ -8,6 +8,8 @@ import { ClearsStage } from "./Clears.tsx";
 import { EvidenceStage } from "./Evidence.tsx";
 import { escrowRelease, otherRailsLines } from "./field.ts";
 import { LifecycleStage } from "./Lifecycle.tsx";
+import { HeroPlate } from "./Plate.tsx";
+import { RailSting } from "./Sting.tsx";
 import { useNarrow, useReducedMotion } from "./stage.ts";
 import "./home.css";
 import "./landing.css";
@@ -54,6 +56,8 @@ export default function Landing(_props: PageProps) {
 
   return (
     <div className="landing">
+      <HeroPlate reduced={!pinned} />
+
       <EvidenceStage
         stats={goodStats.current}
         missing={missing}
@@ -64,6 +68,12 @@ export default function Landing(_props: PageProps) {
         pinned={pinned}
         narrow={narrow}
       />
+
+      {/* Two rails as beats of their own: each clip plays once on arrival, then rests on its poster (STEER-0115). */}
+      <section className="stings" aria-label="Two of the rails">
+        <RailSting rail="arc" line="On Arc, an escrow contract holds the payment until the output checks out." reduced={!pinned} />
+        <RailSting rail="whitechain" line="On Whitechain, the customer pays in USDT and the relay pays the gas." reduced={!pinned} />
+      </section>
 
       <ClearsStage
         envelope={envelope.source === "hub" && envelope.data ? envelope.data : undefined}
