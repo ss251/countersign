@@ -142,7 +142,7 @@ Each status, with its evidence: [docs/status.md](docs/status.md).
 
 ## Hedera payment flow
 
-An agent pays on Hedera testnet over x402 v2, through a hosted facilitator, with no human in the loop. Traced through one real payment, from [docs/hedera.md](docs/hedera.md):
+An agent pays on Hedera testnet over x402 v2, through a hosted facilitator, with no human in the loop. Traced through one real payment, from [docs/hedera.md](docs/hedera.md). It ran before settle-after-delivery, so it settles at step 6 and delivers at step 7; production now delivers and checks the output first, then settles ([docs/hedera.md](docs/hedera.md#plain-x402-settled-after-delivery)):
 
 The agent `0.0.11337064` bought one call to Circle's `use-usdc` skill (Apache-2.0) for 0.05 USDC through the countersign hub, with no human approving. The seller's runner served the skill and was paid on Hedera at `0.0.11337065`. Every value below was read back from Hedera testnet.
 

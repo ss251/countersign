@@ -94,6 +94,8 @@ bun scripts/hedera/agent-run.ts <hub> --exact ...                               
 
 ## Payment flow, traced through one real payment
 
+This payment ran before settle-after-delivery, so it settles at step 6 and delivers at step 7. Production now runs the seller and checks the output first, then settles ([above](#plain-x402-settled-after-delivery)).
+
 The agent `0.0.11337064` bought one call to Circle's `use-usdc` skill (Apache-2.0) for 0.05 USDC through the countersign hub, with no human approving. The seller's runner served the skill and was paid on Hedera at `0.0.11337065`. Every value below was read back from Hedera testnet.
 
 1. **Discover.** The agent lists offers with `GET /offers` on the hub and picks the one that settles on the `hedera` rail: offer `0xfd440a4a…22fc`. The seller's runner published it with `--rails hedera --pay-to hedera=0.0.11337065`.
