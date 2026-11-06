@@ -19,6 +19,7 @@ import {
 import { readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
 import {
   FACILITATORS,
+  feePayerWithRetry,
   getSchedule,
   HASHSCAN_TESTNET,
   HEDERA_TESTNET,
@@ -107,14 +108,12 @@ const trustedFeePayers = new Set<string>([operatorId]);
 const facilitatorNames = new Map<string, string>();
 await Promise.all(
   FACILITATORS.map(async ({ name, url }) => {
-    try {
-      const feePayer = await httpFacilitator(name, url).feePayer();
-      if (feePayer) {
-        trustedFeePayers.add(feePayer);
-        facilitatorNames.set(feePayer, name);
-      }
-    } catch {
-      // A facilitator that cannot answer is not trusted for this run.
+    const { feePayer, error } = await feePayerWithRetry(httpFacilitator(name, url));
+    if (feePayer) {
+      trustedFeePayers.add(feePayer);
+      facilitatorNames.set(feePayer, name);
+    } else {
+      console.error(`! facilitator ${name} did not answer: ${error}`);
     }
   }),
 );

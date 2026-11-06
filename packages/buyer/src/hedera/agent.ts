@@ -21,6 +21,7 @@ import {
 } from "@countersign/core";
 import {
   FACILITATORS,
+  feePayerWithRetry,
   getSchedule,
   getTransaction,
   HEDERA_TESTNET,
@@ -199,12 +200,8 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       const found = new Set<string>();
       await Promise.all(
         FACILITATORS.map(async ({ name, url }) => {
-          try {
-            const feePayer = await httpFacilitator(name, url).feePayer();
-            if (feePayer) found.add(feePayer);
-          } catch {
-            // An unreachable facilitator contributes no fee payer.
-          }
+          const { feePayer } = await feePayerWithRetry(httpFacilitator(name, url));
+          if (feePayer) found.add(feePayer);
         }),
       );
       trusted = found;

@@ -47,6 +47,31 @@ export function httpFacilitator(name: string, url: string, timeoutMs = 30_000): 
 }
 
 /**
+ * A facilitator's fee payer, retried across a transient failure. The last error's first line says
+ * why when every attempt fails; a facilitator that lists no fee payer is not an error.
+ */
+export async function feePayerWithRetry(
+  facilitator: Pick<Facilitator, "feePayer">,
+  opts?: { attempts?: number; delayMs?: number; sleep?: (ms: number) => Promise<void> },
+): Promise<{ feePayer: string | null; error?: string }> {
+  const attempts = opts?.attempts ?? 3;
+  const delayMs = opts?.delayMs ?? 1_000;
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const feePayer = await facilitator.feePayer();
+      if (feePayer) return { feePayer };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = message.split("\n")[0] ?? message;
+    }
+    if (attempt < attempts) await sleep(delayMs * attempt);
+  }
+  return { feePayer: null, error: lastError ?? "no fee payer listed" };
+}
+
+/**
  * Our own operator account as fee payer, running the x402 reference `exact` facilitator in process.
  * It refuses payees that are bare aliases, so a payment can never pay for creating an account.
  */
