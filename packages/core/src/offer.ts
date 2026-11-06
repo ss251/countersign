@@ -33,6 +33,12 @@ export function assertOffer(value: unknown): asserts value is Offer {
     if (e instanceof OfferError) throw e;
     fail("offer.price and offer.bond must be atomic digit strings");
   }
+  if (
+    o!.reviewWindow !== undefined &&
+    (!Number.isSafeInteger(o!.reviewWindow) || o!.reviewWindow < 0 || o!.reviewWindow > 86_400)
+  ) {
+    fail("offer.reviewWindow must be 0 to 86400 seconds");
+  }
   if (!Number.isSafeInteger(o!.deadline) || o!.deadline! < 10 || o!.deadline! > 7 * 24 * 3600) {
     fail("offer.deadline must be 10 s to 7 days");
   }

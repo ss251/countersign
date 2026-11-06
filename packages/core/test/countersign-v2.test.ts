@@ -116,3 +116,28 @@ describe("escrow v2 countersign terms (D16)", () => {
     expect(refused.ok).toBe(false);
   });
 });
+
+describe("offer.reviewWindow (D16)", () => {
+  test("is optional, bounded to 0..86400, and absent leaves the offer hash unchanged", async () => {
+    const { assertOffer, offerHash } = await import("../src/index.ts");
+    const base = {
+      v: 1 as const,
+      seller: buyer.address,
+      title: "t",
+      summary: "",
+      adapter: "skill" as const,
+      input: { type: "object" },
+      output: { type: "object" },
+      price: "10000",
+      deadline: 60,
+      bond: "0",
+      rails: ["escrow" as const],
+      issuedAt: 1_800_000_000,
+    };
+    expect(() => assertOffer(base)).not.toThrow();
+    expect(() => assertOffer({ ...base, reviewWindow: 600 })).not.toThrow();
+    expect(() => assertOffer({ ...base, reviewWindow: 86_401 })).toThrow();
+    expect(() => assertOffer({ ...base, reviewWindow: -1 })).toThrow();
+    expect(offerHash({ ...base, reviewWindow: 600 })).not.toBe(offerHash(base));
+  });
+});
