@@ -1,10 +1,30 @@
 {
   "name": "@countersign/relay",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "USDT paywall and paying fetch for Whitechain.",
+  "license": "MIT",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "files": [
+    "dist",
+    "types",
+    "README.md"
+  ],
+  "exports": {
+    "./paywall": {
+      "types": "./types/paywall.d.ts",
+      "import": "./dist/paywall.js",
+      "default": "./dist/paywall.js"
+    },
+    "./pay-fetch": {
+      "types": "./types/pay-fetch.d.ts",
+      "import": "./dist/pay-fetch.js",
+      "default": "./dist/pay-fetch.js"
+    }
+  },
   "scripts": {
+    "build": "bun run scripts/build.ts",
+    "prepack": "bun run scripts/prepare-pack.ts",
+    "postpack": "bun run scripts/restore-pack.ts",
     "start": "bun run src/server.ts",
     "merchant": "bun run src/merchant-server.ts"
   },
