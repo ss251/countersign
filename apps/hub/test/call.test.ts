@@ -86,6 +86,24 @@ describe("paid calls", () => {
     expect(hub.rail.settleCalls).toHaveLength(0);
   });
 
+  test("an input canonical JSON refuses is refused before any rail method runs", async () => {
+    const hash = await publishOk(
+      hub,
+      makeOffer({ input: { type: "object", properties: { q: { type: "number" } }, required: ["q"] } }),
+    );
+
+    const response = await call(hub, hash, { q: 1.5 });
+    expect(response.status).toBe(422);
+
+    const body = (await response.json()) as ErrorBody & { errors: string[] };
+    expect(body.code).toBe("bad-input");
+    expect(body.message).toContain("cannot hash");
+    expect(body.message).toContain("Nothing was charged.");
+    expect(hub.rail.challengeCalls).toBe(0);
+    expect(hub.rail.verifyCalls).toHaveLength(0);
+    expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
   test("an offline seller is refused with 503", async () => {
     const hash = await publishOk(hub, makeOffer());
 

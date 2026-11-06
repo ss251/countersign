@@ -91,6 +91,7 @@ beforeAll(async () => {
     token,
     "0x000000000000000000000000000000000000dEaD",
     100,
+    deployer.address,
   ]);
   await pub.waitForTransactionReceipt({
     hash: await wallet.writeContract({
