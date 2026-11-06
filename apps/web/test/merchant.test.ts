@@ -570,6 +570,15 @@ describe("where the desk reads (STEER-1730)", () => {
     globalThis.fetch = realFetch;
   });
 
+  test("a hub that is away also falls back, and the page says the hub did not answer", async () => {
+    serve({
+      "/hub/orders": () => new Response("Bad Gateway", { status: 502 }),
+      "/relay/orders?merchant=": () => answer(200, { orders: fixtureOrders }),
+    });
+    expect((await fetchOrders(merchant)).source).toEqual({ kind: "relay", base: "/relay", why: "down" });
+    globalThis.fetch = realFetch;
+  });
+
   test("with neither, an honest error: never fixtures, never zeros", async () => {
     serve({ "/hub/orders": () => new Response("404 Not Found", { status: 404 }) });
     await expect(fetchOrders(merchant)).rejects.toThrow(NOT_SERVED);

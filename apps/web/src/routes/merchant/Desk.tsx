@@ -848,7 +848,12 @@ function SourceLine({ offline, source }: { offline: boolean; source: OrdersSourc
   }
   if (!source) return null;
   if (source.kind === "hub") return <p className="mx-note">Live from {hubLabel(source.base)}.</p>;
-  return <p className="mx-note">Live from the Whitechain relay: this hub does not serve merchant orders yet.</p>;
+  return (
+    <p className="mx-note">
+      Live from the Whitechain relay:{" "}
+      {source.why === "down" ? "the hub did not answer." : "this hub does not serve merchant orders yet."}
+    </p>
+  );
 }
 
 /**

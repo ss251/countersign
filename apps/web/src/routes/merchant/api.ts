@@ -117,9 +117,20 @@ export function deskHub(): string {
 }
 
 /** Where the desk's orders came from, said on the page so nobody mistakes one source for another. */
-export type OrdersSource = { kind: "hub"; base: string } | { kind: "relay"; base: string };
+export type OrdersSource =
+  | { kind: "hub"; base: string }
+  /** The hub could not give orders (`why`), so the Whitechain relay's own live records were read. */
+  | { kind: "relay"; base: string; why: "not_served" | "down" };
 
 export const NOT_SERVED = "This hub does not serve merchant orders yet.";
+export const HUB_DOWN = "The hub did not answer.";
+
+/** A hub without the route answers 404; a hub that is away answers nothing, or its gateway does. */
+function hubCannotSay(status: number): "not_served" | "down" | null {
+  if (status === 404) return "not_served";
+  if (status === 0 || status === 502 || status === 503 || status === 504) return "down";
+  return null;
+}
 
 async function getJson(url: string): Promise<{ status: number; body: unknown }> {
   let response: Response;
@@ -147,12 +158,15 @@ export async function fetchOrders(merchant: string): Promise<{ orders: Order[]; 
   const seller = encodeURIComponent(merchant);
   const fromHub = await getJson(`${hub}/orders?seller=${seller}&limit=200`);
   if (fromHub.status === 200) return { orders: listOf(fromHub.body), source: { kind: "hub", base: hub } };
-  if (fromHub.status === 404) {
+  const why = hubCannotSay(fromHub.status);
+  if (why) {
     const fromRelay = await getJson(`${RELAY_URL}/orders?merchant=${seller}`);
-    if (fromRelay.status === 200) return { orders: listOf(fromRelay.body), source: { kind: "relay", base: RELAY_URL } };
-    throw new Error(NOT_SERVED);
+    if (fromRelay.status === 200) {
+      return { orders: listOf(fromRelay.body), source: { kind: "relay", base: RELAY_URL, why } };
+    }
+    throw new Error(why === "down" ? HUB_DOWN : NOT_SERVED);
   }
-  throw new Error(fromHub.status === 0 ? "The hub did not answer." : `The hub answered ${fromHub.status}.`);
+  throw new Error(`The hub answered ${fromHub.status}.`);
 }
 
 /** One order with its refunds: the receipt anyone can check. Null when no such order exists. */
@@ -163,13 +177,14 @@ export async function fetchOrder(id: string): Promise<ReceiptOrder | null> {
   if (fromHub.status === 200) return fromHubRecord(fromHub.body);
   const code = (fromHub.body as { code?: unknown } | null)?.code;
   if (fromHub.status === 404 && code === "not_found") return null;
-  if (fromHub.status === 404) {
+  const why = hubCannotSay(fromHub.status);
+  if (why) {
     const fromRelay = await getJson(`${RELAY_URL}/orders/${key}`);
     if (fromRelay.status === 200) return fromHubRecord(fromRelay.body);
     if (fromRelay.status === 404) return null;
-    throw new Error(NOT_SERVED);
+    throw new Error(why === "down" ? HUB_DOWN : NOT_SERVED);
   }
-  throw new Error(fromHub.status === 0 ? "The hub did not answer." : `The hub answered ${fromHub.status}.`);
+  throw new Error(`The hub answered ${fromHub.status}.`);
 }
 
 /** The Whitechain relayer's gas, read from the relay when this console can reach it. */
