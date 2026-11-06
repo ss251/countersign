@@ -6,14 +6,14 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f3f0e9" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#121210" media="(prefers-color-scheme: dark)" />
-    <meta name="description" content="Checkout for software that sells itself. Every call countersigned. Every call provable." />
+    <meta name="description" content="Checkout for software that sells itself. Every call countersigned, inside limits you sign. Every settled call leaves a slip anyone can check." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- Link previews. Absolute, because unfurlers need it; the production domain never changes. -->
+    <!-- Link previews. Absolute, because unfurlers need it: the origin is a build value (VITE_PUBLIC_ORIGIN in .env, or the deploy's), so a custom domain is one variable. -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="countersign" />
-    <meta property="og:description" content="Checkout for software that sells itself. One countersignature per purchase, escrow until the output checks out, and a slip anyone can verify." />
-    <meta property="og:image" content="https://web-production-a58de.up.railway.app/og.png" />
+    <meta property="og:description" content="Checkout for software that sells itself. One countersignature per purchase, inside limits you sign, and a slip anyone can verify for every settled call." />
+    <meta property="og:image" content="%VITE_PUBLIC_ORIGIN%/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
