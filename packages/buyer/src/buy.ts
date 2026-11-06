@@ -159,7 +159,13 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     throw e;
   }
   const { payment, jobId } = signed;
-  journal.append({ ...base, kind: "signed", reservationId, jobId });
+  journal.append({
+    ...base,
+    kind: "signed",
+    reservationId,
+    jobId,
+    ...(rail !== undefined ? { escrow: rail.escrow, chainId: rail.chainId } : {}),
+  });
 
   const paid = await hub.call(offerHash, input, payment, a.lineage);
   if (paid.kind !== "paid") {

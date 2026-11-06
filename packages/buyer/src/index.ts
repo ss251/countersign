@@ -5,5 +5,6 @@ export * from "./journal.ts";
 export * from "./known-rails.ts";
 export * from "./payer.ts";
 export * from "./resume.ts";
+export * from "./review.ts";
 export * from "./state.ts";
 export * from "./terms.ts";

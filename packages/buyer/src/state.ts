@@ -45,6 +45,10 @@ export class State {
     return value as KnownRail[];
   }
 
+  loadSlip(hash: string): Slip {
+    return JSON.parse(readFileSync(this.slipPath(hash), "utf8")) as Slip;
+  }
+
   saveSlip(slip: Slip): void {
     mkdirSync(join(this.dir, "slips"), { recursive: true });
     writeFileSync(this.slipPath(slip.hash), `${JSON.stringify(slip, null, 2)}\n`);
