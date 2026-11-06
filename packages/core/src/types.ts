@@ -24,7 +24,7 @@ export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" |
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
  * - mpp:        Machine Payments Protocol: Tempo testnet first, Stripe's card method behind a flag; the slip carries the MPP receipt id (in progress, #84)
  */
-export const RAIL_IDS = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "mpp"] as const;
+export const RAIL_IDS = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "hedera-scheduled", "mpp"] as const;
 
 /** Derived from RAIL_IDS, so any list built by mapping RAIL_IDS is exhaustive by construction. */
 export type RailId = (typeof RAIL_IDS)[number];

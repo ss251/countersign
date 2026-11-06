@@ -59,6 +59,8 @@ export interface JobOrder {
   deadline: number;
   escrow?: Address;
   chainId?: number;
+  /** A held payment: the buyer's schedule and the transaction that created it. */
+  schedule?: { id: string; createTx: string };
   /** jobIds of the purchases this call is nested inside, outermost first. Used to refuse cycles. */
   lineage: Hex[];
 }
@@ -72,7 +74,14 @@ export type HubToRunner =
 
 export type RunnerToHub =
   | { t: "hello"; seller: Address; offers: Hex[]; nonce: string; sig: Hex }
-  | { t: "result"; jobId: Hex; output: unknown; slip: Pick<Slip, "body" | "hash" | "sellerSig"> }
+  /** `countersign` is the seller's signed ScheduleSign bytes (base64) on a held rail. */
+  | {
+      t: "result";
+      jobId: Hex;
+      output: unknown;
+      slip: Pick<Slip, "body" | "hash" | "sellerSig">;
+      countersign?: string;
+    }
   | { t: "fail"; jobId: Hex; reason: string }
   | { t: "pong"; ts: number };
 
