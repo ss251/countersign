@@ -11,11 +11,14 @@ import {
   offerHash,
   publishMessage,
   slipSigner,
+  type JobOrder,
   type Offer,
   type PaymentRequired,
   type Slip,
 } from "@countersign/core";
 import { call, NOW, paymentFor, startHub, type TestHub } from "../../hub/test/support.ts";
+import { BUYER, CHAIN_ID, ESCROW } from "../../hub/test/fake-rail.ts";
+import { fundingRefusal, STATUS, UNPAID, type ChainJob } from "../src/runner/funding.ts";
 import { JobRefusal, RunnerLink, type LinkStatus, type PhoneJob, type ServedSkill } from "../src/runner/link.ts";
 import { signerFromKey } from "../src/runner/signer.ts";
 import { fromBase64, locationOutput, offerFor, photoOutput, sha256Hex } from "../src/runner/skills.ts";
@@ -58,6 +61,38 @@ function until(read: () => boolean, ms = 3_000): Promise<void> {
   });
 }
 
+/**
+ * A stand-in chain for the test rail's escrow: the jobs this test says were funded, read the way
+ * the phone reads Arc. The phone runs its real funding check against it.
+ */
+function ledger(seller: ReturnType<typeof signerFromKey>) {
+  const jobs = new Map<string, ChainJob>();
+  return {
+    fund(jobId: Hex, offerHash: Hex, amount: bigint): void {
+      jobs.set(jobId.toLowerCase(), {
+        buyer: BUYER as Hex,
+        deadline: BigInt(NOW + 60),
+        status: STATUS.Funded,
+        payee: seller.address,
+        amount,
+        offerHash,
+        slipHash: `0x${"00".repeat(32)}`,
+      });
+    },
+    checkOrder: (order: JobOrder, offer: Offer) =>
+      fundingRefusal(order, offer, {
+        seller: seller.address,
+        now: NOW,
+        known: [{ chainId: CHAIN_ID, escrow: ESCROW }],
+        read: async (_chainId, _escrow, jobId) => {
+          const job = jobs.get(jobId.toLowerCase());
+          if (!job) throw new Error("no such job");
+          return job;
+        },
+      }),
+  };
+}
+
 /** Pay for one call the way the hub's own tests do: read the 402, answer with that entry. */
 async function buy(target: TestHub, hash: Hex, input: unknown, nonce: Hex): Promise<Response> {
   const challenge = await call(target, hash, input);
@@ -75,11 +110,13 @@ describe("phone runner link on the hub", () => {
     const offer = offerFor("phone-location", signer.address, NOW);
     const hash = await publishAs(hub, signer, offer);
 
+    const chain = ledger(signer);
     const statuses: LinkStatus[] = [];
     const skill: ServedSkill = { offer, hash, serve: async () => locationOutput(FIX) };
     link = new RunnerLink({
       hubUrl: hub.url,
       signer,
+      checkOrder: chain.checkOrder,
       skills: () => [skill],
       now: () => NOW,
       onStatus: (s) => statuses.push(s),
@@ -90,7 +127,9 @@ describe("phone runner link on the hub", () => {
     expect(statuses.map((s) => s.phase)).toEqual(["dialing", "proving", "registered"]);
     expect(hub.runners.isOnline(hash)).toBe(true);
 
-    const response = await buy(hub, hash, { reason: "is the courier at the gate" }, `0x${"21".repeat(32)}`);
+    const nonce: Hex = `0x${"21".repeat(32)}`;
+    chain.fund(nonce, hash, BigInt(offer.price));
+    const response = await buy(hub, hash, { reason: "is the courier at the gate" }, nonce);
     expect(response.status).toBe(200);
     const { output, slip } = (await response.json()) as { output: unknown; slip: Slip };
 
@@ -111,10 +150,12 @@ describe("phone runner link on the hub", () => {
     const offer = offerFor("phone-photo", signer.address, NOW);
     const hash = await publishAs(hub, signer, offer);
 
+    const chain = ledger(signer);
     const seen: PhoneJob[] = [];
     link = new RunnerLink({
       hubUrl: hub.url,
       signer,
+      checkOrder: chain.checkOrder,
       now: () => NOW,
       skills: () => [
         {
@@ -130,7 +171,9 @@ describe("phone runner link on the hub", () => {
     link.start();
     await until(() => link?.status.phase === "registered");
 
-    const response = await buy(hub, hash, { prompt: "the parcel on the doorstep" }, `0x${"22".repeat(32)}`);
+    const nonce: Hex = `0x${"22".repeat(32)}`;
+    chain.fund(nonce, hash, BigInt(offer.price));
+    const response = await buy(hub, hash, { prompt: "the parcel on the doorstep" }, nonce);
     expect(response.status).toBe(200);
     const { output, slip } = (await response.json()) as {
       output: { sha256: string; data: string; bytes: number };
@@ -157,10 +200,12 @@ describe("phone runner link on the hub", () => {
     const offer = offerFor("phone-photo", signer.address, NOW);
     const hash = await publishAs(hub, signer, offer);
     const refusals: string[] = [];
+    const chain = ledger(signer);
 
     link = new RunnerLink({
       hubUrl: hub.url,
       signer,
+      checkOrder: chain.checkOrder,
       now: () => NOW,
       skills: () => [
         {
@@ -179,6 +224,7 @@ describe("phone runner link on the hub", () => {
     await until(() => link?.status.phase === "registered");
 
     const nonce: Hex = `0x${"23".repeat(32)}`;
+    chain.fund(nonce, hash, BigInt(offer.price));
     const response = await buy(hub, hash, {}, nonce);
     expect(response.status).toBe(502);
     expect(refusals).toEqual(["Refused. The phone's owner declined."]);
@@ -192,10 +238,12 @@ describe("phone runner link on the hub", () => {
     const offer = offerFor("phone-photo", signer.address, NOW);
     const hash = await publishAs(hub, signer, offer);
     const refusals: string[] = [];
+    const chain = ledger(signer);
 
     link = new RunnerLink({
       hubUrl: hub.url,
       signer,
+      checkOrder: chain.checkOrder,
       now: () => NOW,
       hubWaitSeconds: 1,
       skills: () => [
@@ -216,9 +264,53 @@ describe("phone runner link on the hub", () => {
     link.start();
     await until(() => link?.status.phase === "registered");
 
-    const response = await buy(hub, hash, {}, `0x${"24".repeat(32)}`);
+    const nonce: Hex = `0x${"24".repeat(32)}`;
+    chain.fund(nonce, hash, BigInt(offer.price));
+    const response = await buy(hub, hash, {}, nonce);
     expect(response.status).toBe(502);
     expect(refusals).toEqual(["Refused. Nobody took the photo in time."]);
+    expect(hub.rail.releaseCalls).toHaveLength(0);
+  });
+
+  test("a hub that funds one unit but orders the full price gets nothing read and nothing signed", async () => {
+    hub = startHub();
+    const signer = signerFromKey(generatePrivateKey());
+    const offer = offerFor("phone-location", signer.address, NOW);
+    const hash = await publishAs(hub, signer, offer);
+    const chain = ledger(signer);
+    const refusals: string[] = [];
+    let reads = 0;
+
+    link = new RunnerLink({
+      hubUrl: hub.url,
+      signer,
+      checkOrder: chain.checkOrder,
+      now: () => NOW,
+      skills: () => [
+        {
+          offer,
+          hash,
+          serve: async () => {
+            reads += 1;
+            return locationOutput(FIX);
+          },
+        },
+      ],
+      onJob: (update) => {
+        if (update.kind === "refused") refusals.push(update.reason);
+      },
+    });
+    link.start();
+    await until(() => link?.status.phase === "registered");
+
+    const underfunded: Hex = `0x${"25".repeat(32)}`;
+    chain.fund(underfunded, hash, 1n);
+    expect((await buy(hub, hash, {}, underfunded)).status).toBe(502);
+    const missing: Hex = `0x${"26".repeat(32)}`;
+    expect((await buy(hub, hash, {}, missing)).status).toBe(502);
+
+    expect(refusals).toEqual([UNPAID.amount, UNPAID.unread]);
+    expect(reads).toBe(0);
     expect(hub.rail.releaseCalls).toHaveLength(0);
   });
 
@@ -234,7 +326,7 @@ describe("phone runner link on the hub", () => {
       { offer: location, hash: locationHash, serve: async () => locationOutput(FIX) },
       { offer: photo, hash: photoHash, serve: async () => photoOutput(JPEG, 1, 1, NOW) },
     ];
-    link = new RunnerLink({ hubUrl: hub.url, signer, now: () => NOW, skills: () => on });
+    link = new RunnerLink({ hubUrl: hub.url, signer, checkOrder: ledger(signer).checkOrder, now: () => NOW, skills: () => on });
     link.start();
     await until(() => link?.status.phase === "registered");
     expect(new Set(link.status.accepted)).toEqual(new Set([locationHash, photoHash]));
@@ -262,6 +354,7 @@ describe("phone runner link on the hub", () => {
     link = new RunnerLink({
       hubUrl: hub.url,
       signer: phone,
+      checkOrder: ledger(phone).checkOrder,
       now: () => NOW,
       skills: () => [{ offer: theirs, hash: theirHash, serve: async () => locationOutput(FIX) }],
     });
