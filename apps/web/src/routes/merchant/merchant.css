@@ -239,10 +239,32 @@
 
 /* --------------------------------------------------- the balance equation */
 
-/* One ruled band: released + held = total, − refunded − toll = net. */
+/* One ruled band: released − refunded − toll = net, and held beside it, pending. */
 .mx-eq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-8);
   border-block: var(--hair) solid var(--line);
   padding: var(--sp-4) 0;
+}
+
+/* Held money is shown, not counted: set apart from the sum by a rule. */
+.mx-eq__held {
+  margin: 0;
+  padding-inline-start: var(--sp-6);
+  border-inline-start: var(--hair) solid var(--line);
+}
+
+.mx-eq__held .mx-eq__term {
+  padding-inline-start: 0;
+}
+
+.mx-eq__note {
+  margin: 0;
+  color: var(--slate);
+  font-size: var(--t-12);
 }
 
 .mx-eq__terms {
@@ -1258,10 +1280,25 @@
 
   /* The equation turns into a statement, one term a line, totals under a rule. */
   .mx-eq {
+    display: grid;
+    gap: 0;
     padding: var(--sp-2) 0;
   }
   .mx-eq__terms {
     display: grid;
+  }
+  .mx-eq__held {
+    padding: var(--sp-1) 0 0;
+    border-inline-start: 0;
+    border-top: var(--hair) solid var(--line);
+  }
+  .mx-eq__held .mx-eq__term {
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  }
+  .mx-eq__term .mx-eq__note {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    font-size: var(--t-12);
   }
   .mx-eq__term,
   .mx-eq__term:first-child {

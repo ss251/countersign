@@ -583,7 +583,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
           ) : orders.length > 0 ? (
             <table className="mx-table">
               <caption className="sr-only">
-                Orders, newest first. Balance is the running total once each order is counted, held money included.
+                Orders, newest first. Balance is the running total of money that reached you; held and settling orders are pending and not counted.
               </caption>
               <thead>
                 <tr>
@@ -611,7 +611,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
                 </tr>
               </thead>
               <tbody>
-                {visible.map(({ order, balance }) => {
+                {visible.map(({ order, balance, pending }) => {
                   const row = rows[order.id];
                   const item = titleOf(order);
                   const isOpen = order.id === selectedId;
@@ -663,10 +663,16 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
                           <Adjustments order={order} />
                         </td>
                         <td className="mx-col-balance mx-num">
-                          <span className="mono">
-                            {formatFixed(balance, balancePlaces)}
-                            <Unit />
-                          </span>
+                          {pending ? (
+                            <span className="mx-quiet" title="Not counted until the money reaches you.">
+                              Pending
+                            </span>
+                          ) : (
+                            <span className="mono">
+                              {formatFixed(balance, balancePlaces)}
+                              <Unit />
+                            </span>
+                          )}
                         </td>
                         <td className="mx-col-actions">
                           <RowAction
@@ -729,36 +735,48 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
 }
 
 /**
- * Released + held = total, then − refunded − toll = net, ruled like the top of a statement. Until the
- * ledger loads, the figures hold their place with dashes rather than flash a row of zeros.
+ * Released − refunded − toll = net, ruled like the top of a statement. Held escrow stands beside the
+ * sum as pending, because it is not the merchant's until delivery releases it. Until the ledger
+ * loads, the figures hold their place with dashes rather than flash a row of zeros.
  */
 function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
-  const places = decimalsFor([sums.released, sums.held, sums.total, sums.refunded, sums.toll, sums.net]);
+  const places = decimalsFor([sums.released, sums.refunded, sums.toll, sums.net, sums.held]);
+  const show = (value: bigint) => (ready ? formatFixed(value, places) : "—");
   const terms = [
-    { label: "Released", value: sums.released, op: null, tone: "" },
-    { label: "Held", value: sums.held, op: "+", tone: " mx-money" },
-    { label: "Total", value: sums.total, op: "=", tone: "" },
-    { label: "Refunded", value: sums.refunded, op: "−", tone: "" },
-    { label: "Toll", value: sums.toll, op: "−", tone: "" },
-    { label: "Net", value: sums.net, op: "=", tone: " mx-eq__term--net" },
+    { label: "Released", value: sums.released, op: null },
+    { label: "Refunded", value: sums.refunded, op: "−" },
+    { label: "Toll", value: sums.toll, op: "−" },
+    { label: "Net", value: sums.net, op: "=" },
   ] as const;
   return (
     <section className="mx-eq" aria-label="Balance">
       <dl className="mx-eq__terms">
         {terms.map((term) => (
           <div
-            className={`mx-eq__term${term.op === "=" ? " mx-eq__term--sum" : ""}${term.label === "Net" ? " mx-eq__term--net" : ""}`}
+            className={`mx-eq__term${term.op === "=" ? " mx-eq__term--sum mx-eq__term--net" : ""}`}
             data-op={term.op ?? undefined}
             key={term.label}
           >
             <dt className="mx-label">{term.label}</dt>
-            <dd className={`mx-eq__value mono${term.tone}`}>
-              {ready ? formatFixed(term.value, places) : "—"}
+            <dd className="mx-eq__value mono">
+              {show(term.value)}
               <Unit />
             </dd>
           </div>
         ))}
       </dl>
+      {ready && sums.held === 0n ? null : (
+        <dl className="mx-eq__held">
+          <div className="mx-eq__term">
+            <dt className="mx-label">Held</dt>
+            <dd className="mx-eq__value mono mx-money">
+              {show(sums.held)}
+              <Unit />
+            </dd>
+            <dd className="mx-eq__note">Pending. Releases on delivery.</dd>
+          </div>
+        </dl>
+      )}
     </section>
   );
 }

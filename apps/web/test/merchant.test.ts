@@ -291,23 +291,22 @@ describe("the clearing desk's arithmetic", () => {
   const base = fixtureOrders[0]!;
   const order = (patch: Partial<Order>): Order => ({ ...base, ...patch });
 
-  test("released + held = total, then total − refunded − toll = net", () => {
+  test("released − refunded − toll = net; held stands beside it, never in it", () => {
     const sums = equation(fixtureOrders);
     expect(sums).toEqual({
       released: 1_350_000n,
-      held: 400_000n,
-      total: 1_750_000n,
       refunded: 500_000n,
       toll: 500n,
-      net: 1_249_500n,
+      net: 849_500n,
+      held: 400_000n,
     });
-    expect(sums.released + sums.held).toBe(sums.total);
-    expect(sums.total - sums.refunded - sums.toll).toBe(sums.net);
+    expect(sums.released - sums.refunded - sums.toll).toBe(sums.net);
   });
 
   test("the running balance ends at the header's net, newest first", () => {
     const rows = ledger(fixtureOrders);
-    expect(rows[0]!.balance).toBe(equation(fixtureOrders).net);
+    const counted = rows.filter((row) => !row.pending);
+    expect(counted[0]!.balance).toBe(equation(fixtureOrders).net);
     const times = rows.map((row) => row.order.createdAt);
     expect(times).toEqual([...times].sort((a, b) => b - a));
     // Each step moves by exactly what the row's amount and its adjustments say.
@@ -316,10 +315,12 @@ describe("the clearing desk's arithmetic", () => {
     }
   });
 
-  test("a filter never changes a balance: it is the ledger's, not the view's", () => {
-    const held = ledger(fixtureOrders).filter((row) => row.order.status === "held");
-    expect(held).toHaveLength(1);
-    expect(held[0]!.balance).not.toBe(400_000n);
+  test("the held row is pending and does not move the balance", () => {
+    const rows = ledger(fixtureOrders);
+    const index = rows.findIndex((row) => row.order.status === "held");
+    expect(rows[index]!.pending).toBe(true);
+    expect(rows[index]!.balance).toBe(rows[index + 1]!.balance);
+    expect(rows.filter((row) => row.pending)).toHaveLength(1);
   });
 
   test("each row explains why the balance moved by less than its amount", () => {
@@ -337,9 +338,12 @@ describe("the clearing desk's arithmetic", () => {
     expect(adjustments(order({}))).toEqual([]);
   });
 
-  test("a cancelled order adds nothing; a held one adds all of it", () => {
+  test("cancelled and held orders add nothing; a released one adds its amount less toll and refunds", () => {
     expect(contribution(order({ kind: "escrow", status: "cancelled", closeKind: "cancel", amount: "300000" }))).toBe(0n);
-    expect(contribution(order({ kind: "escrow", status: "held", closeKind: null, amount: "400000" }))).toBe(400_000n);
+    expect(contribution(order({ kind: "escrow", status: "held", closeKind: null, amount: "400000" }))).toBe(0n);
+    expect(
+      contribution(order({ kind: "escrow", status: "paid", closeKind: "release", amount: "50000", fee: "500", refunded: "0" })),
+    ).toBe(49_500n);
   });
 });
 

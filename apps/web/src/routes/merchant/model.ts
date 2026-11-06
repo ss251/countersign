@@ -396,41 +396,49 @@ export function receivedAt(order: Pick<Order, "kind" | "status" | "closeKind" | 
 
 /* ------------------------------------------------------------ the desk's arithmetic */
 
-/** The header: released + held = total, then total − refunded − toll = net. Atomic USDT. */
+/**
+ * The header: released − refunded − toll = net. Held escrow is not the merchant's until it
+ * releases, so it stands beside the sum as pending and never enters it. Atomic USDT.
+ */
 export interface Equation {
   released: bigint;
-  held: bigint;
-  total: bigint;
   refunded: bigint;
   toll: bigint;
   net: bigint;
+  /** In escrow, releasing on delivery: shown, never counted. */
+  held: bigint;
 }
 
 export function equation(orders: readonly Order[]): Equation {
   const sums = totals(orders);
   const released = BigInt(sums.received);
-  const held = BigInt(sums.held);
   const refunded = BigInt(sums.refunded);
   const toll = BigInt(sums.fees);
-  const total = released + held;
-  return { released, held, total, refunded, toll, net: total - refunded - toll };
+  return { released, refunded, toll, net: released - refunded - toll, held: BigInt(sums.held) };
 }
 
-/** What one order adds to the balance. Held money counts, exactly as it does in the header's Net. */
+/** True while an order's money is still in flight: held in escrow, or a payment settling. */
+export function isPending(order: Pick<Order, "kind" | "status">): boolean {
+  return order.status === "pending" || (order.kind === "escrow" && order.status === "held");
+}
+
+/** What one order adds to the balance: only money that reached the merchant, less toll and refunds. */
 export function contribution(order: Order): bigint {
-  const amount = parseAtomic(order.amount, "USDT");
-  if (order.kind === "escrow" && order.status === "held") return amount;
   if (!wasReceived(order)) return 0n;
-  return amount - parseAtomic(order.fee ?? "0", "USDT") - parseAtomic(order.refunded, "USDT");
+  return (
+    parseAtomic(order.amount, "USDT") - parseAtomic(order.fee ?? "0", "USDT") - parseAtomic(order.refunded, "USDT")
+  );
 }
 
 export interface LedgerRow {
   order: Order;
   /** The running balance once this order is counted, oldest first. */
   balance: bigint;
+  /** Held or settling: the row shows "Pending" in place of a balance, and adds nothing to it. */
+  pending: boolean;
 }
 
-/** Every order with its running balance, newest first. The top row's balance is the header's Net. */
+/** Every order with its running balance, newest first. The newest counted balance is the header's Net. */
 export function ledger(orders: readonly Order[]): LedgerRow[] {
   const oldestFirst = [...orders].sort(
     (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
@@ -438,7 +446,7 @@ export function ledger(orders: readonly Order[]): LedgerRow[] {
   let balance = 0n;
   const rows = oldestFirst.map((order) => {
     balance += contribution(order);
-    return { order, balance };
+    return { order, balance, pending: isPending(order) };
   });
   return rows.reverse();
 }
