@@ -28,9 +28,11 @@ contract DeployWhitechain is Script {
         uint16 tollBps = uint16(vm.envOr("WC_TOLL_BPS", uint256(100)));
         (address[] memory payees, uint16[] memory shares) = _split(deployer);
 
+        address arbiter = vm.envOr("WC_ARBITER_ADDRESS", payees[0]);
+
         vm.startBroadcast(key);
         split = new FeeSplit(payees, shares);
-        escrow = new CountersignedEscrow(USDT, address(split), tollBps);
+        escrow = new CountersignedEscrow(USDT, address(split), tollBps, arbiter);
         vm.stopBroadcast();
 
         require(address(escrow.token()) == USDT, "token");
