@@ -1,0 +1,1261 @@
+{
+ "generatedAt": 1793958047,
+ "note": "Fixture data. Signed with throwaway keys that were never stored.",
+ "listings": [
+  {
+   "hash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+   "offer": {
+    "v": 1,
+    "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+    "title": "use-arc",
+    "summary": "Build on Arc: chain facts, USDC as gas, deploy and verify.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/circlefin/skills",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "50000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "escrow",
+     "gateway"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "circle-skills"
+   },
+   "stats": {
+    "calls": 42,
+    "released": 41,
+    "refunded": 1
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+   "offer": {
+    "v": 1,
+    "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+    "title": "use-usdc",
+    "summary": "Move USDC correctly: transfers, approvals, authorisations.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/circlefin/skills",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "50000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "escrow",
+     "gateway"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "circle-skills"
+   },
+   "stats": {
+    "calls": 18,
+    "released": 18,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0x9c783aa092aac7ca5200ac66101161b62903265ccfb49e166d91acd302beeef5",
+   "offer": {
+    "v": 1,
+    "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+    "title": "use-gateway",
+    "summary": "Circle Gateway: deposit once, spend on any chain.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/circlefin/skills",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "40000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "escrow",
+     "gateway"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "circle-skills"
+   },
+   "stats": {
+    "calls": 10,
+    "released": 9,
+    "refunded": 1
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0x148537f81edd60b587aa3a3b0483c4294c711be52cda5274555aadf3b541ef59",
+   "offer": {
+    "v": 1,
+    "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+    "title": "use-smart-contract-platform",
+    "summary": "Deploy and call contracts through Circle's platform.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/circlefin/skills",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "60000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "escrow"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "circle-skills"
+   },
+   "stats": {
+    "calls": 0,
+    "released": 0,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0x252ce6f4c6e09d22b1b040edcd7d55e9a2468921c8c5458270a691f4633de1f4",
+   "offer": {
+    "v": 1,
+    "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+    "title": "bridge-stablecoin",
+    "summary": "Bridge USDC between chains with CCTP.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/circlefin/skills",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "50000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "escrow"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "circle-skills"
+   },
+   "stats": {
+    "calls": 0,
+    "released": 0,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0xe573252b95034384a22279744d3b1d294d97702a7e00f9688d8971a83841956c",
+   "offer": {
+    "v": 1,
+    "seller": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80",
+    "title": "whitechain-dev",
+    "summary": "Build on Whitechain: network facts, tokens, deploy and verify.",
+    "adapter": "skill",
+    "upstream": {
+     "url": "https://github.com/whitechain-labs/skills",
+     "licence": "None published; reproduced verbatim, see NOTICE"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "50000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "whitechain"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "whitechain-skills"
+   },
+   "stats": {
+    "calls": 6,
+    "released": 6,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0x119886bc5333f197f8bf62f469b6b3f37573c7de6c8ac8910be18a8d409dce4f",
+   "offer": {
+    "v": 1,
+    "seller": "0x5820000d5d799A90e7De10a6D585887C88ec865f",
+    "title": "hedera-agent-kit",
+    "summary": "Hedera tools over MCP, returning unsigned transaction bytes.",
+    "adapter": "mcp",
+    "upstream": {
+     "url": "https://www.npmjs.com/package/@hashgraph/hedera-agent-kit-mcp",
+     "licence": "Apache-2.0"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "10000",
+    "deadline": 30,
+    "bond": "1000000",
+    "rails": [
+     "hedera"
+    ],
+    "payTo": {
+     "hedera": "0.0.11337065"
+    },
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "hedera-tools"
+   },
+   "stats": {
+    "calls": 12,
+    "released": 12,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0xdae497eec9b89e6925e7d286ddc1865018bf7c314e6bb158b8d3e02c94fb2b5b",
+   "offer": {
+    "v": 1,
+    "seller": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+    "title": "circle-codegen",
+    "summary": "Circle's codegen MCP server, metered per call.",
+    "adapter": "mcp",
+    "upstream": {
+     "url": "https://api.circle.com/v1/codegen/mcp",
+     "licence": "n/a"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "20000",
+    "deadline": 45,
+    "bond": "1000000",
+    "rails": [
+     "gateway"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "codegen-proxy"
+   },
+   "stats": {
+    "calls": 7,
+    "released": 7,
+    "refunded": 0
+   },
+   "status": "listed"
+  },
+  {
+   "hash": "0xb3b3c9960806efcd56651f346be068e3c3bac9aa8706829ff56691add381db58",
+   "offer": {
+    "v": 1,
+    "seller": "0x0323Da4968c059B4aaaD89a11244cDF01cFD7359",
+    "title": "merchant-invoice",
+    "summary": "Issue an invoice and refund it in one call.",
+    "adapter": "openapi",
+    "upstream": {
+     "url": "https://opensource.org/license/mit",
+     "licence": "MIT"
+    },
+    "input": {
+     "type": "object",
+     "required": [
+      "task"
+     ],
+     "properties": {
+      "task": {
+       "type": "string",
+       "description": "What the agent is trying to do"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "required": [
+      "guidance"
+     ],
+     "properties": {
+      "guidance": {
+       "type": "string",
+       "description": "Guidance text from SKILL.md"
+      }
+     }
+    },
+    "price": "100000",
+    "deadline": 60,
+    "bond": "1000000",
+    "rails": [
+     "whitechain",
+     "escrow"
+    ],
+    "issuedAt": 1793940047
+   },
+   "seller": {
+    "name": "merchant-desk"
+   },
+   "stats": {
+    "calls": 0,
+    "released": 0,
+    "refunded": 0
+   },
+   "status": "listed"
+  }
+ ],
+ "envelope": {
+  "envelope": {
+   "v": 1,
+   "agent": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+   "cap": "5000000",
+   "perMerchant": "1000000",
+   "allowlist": [
+    "0x196768e381490a9849d44bd8427784e9fd3acd07",
+    "0x5820000d5d799a90e7de10a6d585887c88ec865f",
+    "0xf9e1bdf64525dc74ea018e949f93e86f7855ac80",
+    "0x81d3c4b8b15551a7bb3919b1c23bd4080e41260f"
+   ],
+   "revoked": false
+  },
+  "spent": {
+   "total": "420000",
+   "bySeller": {
+    "0x196768e381490a9849d44bd8427784e9fd3acd07": "150000"
+   }
+  },
+  "agentName": "research-agent",
+  "askAbove": "40000",
+  "names": {
+   "0x196768e381490a9849d44bd8427784e9fd3acd07": "circle-skills",
+   "0xf9e1bdf64525dc74ea018e949f93e86f7855ac80": "whitechain-skills",
+   "0x5820000d5d799a90e7de10a6d585887c88ec865f": "hedera-tools",
+   "0x81d3c4b8b15551a7bb3919b1c23bd4080e41260f": "codegen-proxy",
+   "0x0323da4968c059b4aaad89a11244cdf01cfd7359": "merchant-desk"
+  },
+  "gatewayBalance": "4580000"
+ },
+ "approvals": [
+  {
+   "id": "ap-1",
+   "agentName": "research-agent",
+   "listingHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+   "amount": "50000",
+   "rail": "escrow",
+   "discoveredVia": "circle",
+   "requestedAt": 1793957987
+  }
+ ],
+ "purchases": [
+  {
+   "jobId": "0xa662f9767e71604000a2d8df9e24830adfaea9481611028b17debe2c525499cb",
+   "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+   "title": "use-arc",
+   "adapter": "skill",
+   "seller": {
+    "name": "circle-skills",
+    "address": "0x196768E381490a9849d44bd8427784e9fD3aCd07"
+   },
+   "amount": "50000",
+   "rail": "escrow",
+   "status": "refused",
+   "at": 1793957867,
+   "approvedBy": "you",
+   "reason": "Refused. The price moved after you signed."
+  },
+  {
+   "jobId": "0x4e1082a57e2c1c07d7e8de3e9b31bde8e411ce2932313d2f3659b58dfbb4b9b5",
+   "offerHash": "0x119886bc5333f197f8bf62f469b6b3f37573c7de6c8ac8910be18a8d409dce4f",
+   "title": "hedera-agent-kit",
+   "adapter": "mcp",
+   "seller": {
+    "name": "hedera-tools",
+    "address": "0x5820000d5d799A90e7De10a6D585887C88ec865f"
+   },
+   "amount": "10000",
+   "rail": "hedera",
+   "status": "released",
+   "at": 1793957507,
+   "slipHash": "0xda5f5a43714fbe2b95dcdb9e8f015e0001dc17251a0013c71e7bd92b47502ae1",
+   "approvedBy": "envelope"
+  },
+  {
+   "jobId": "0xbf36ffef0fbde56e7317215521397dc7db288dc827f0479923743066b39a457c",
+   "offerHash": "0xdae497eec9b89e6925e7d286ddc1865018bf7c314e6bb158b8d3e02c94fb2b5b",
+   "title": "circle-codegen",
+   "adapter": "mcp",
+   "seller": {
+    "name": "codegen-proxy",
+    "address": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F"
+   },
+   "amount": "20000",
+   "rail": "gateway",
+   "status": "released",
+   "at": 1793957207,
+   "slipHash": "0xe93b458352a62db12e289d08d8dd3e3d235a0d2532b6cc4cb2ed1ec797828bbf",
+   "approvedBy": "envelope"
+  },
+  {
+   "jobId": "0x2124f65c624bb68300568530647d89cb7586531fac261a1248bde957c3be5f21",
+   "offerHash": "0x9c783aa092aac7ca5200ac66101161b62903265ccfb49e166d91acd302beeef5",
+   "title": "use-gateway",
+   "adapter": "skill",
+   "seller": {
+    "name": "circle-skills",
+    "address": "0x196768E381490a9849d44bd8427784e9fD3aCd07"
+   },
+   "amount": "40000",
+   "rail": "escrow",
+   "status": "refunded",
+   "at": 1793956487,
+   "approvedBy": "envelope",
+   "reason": "Refunded. The deadline passed."
+  },
+  {
+   "jobId": "0x42c88800b5d2fa0be911c9c08054160a1ee816fdb85ea3207e83b765ff6a3325",
+   "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+   "title": "use-usdc",
+   "adapter": "skill",
+   "seller": {
+    "name": "circle-skills",
+    "address": "0x196768E381490a9849d44bd8427784e9fD3aCd07"
+   },
+   "amount": "50000",
+   "rail": "escrow",
+   "status": "released",
+   "at": 1793955587,
+   "slipHash": "0x78af0bb49e793ff04f4147e84ceb05fcda112b80bfa5f5a480f2c6375c1b642c",
+   "approvedBy": "you"
+  },
+  {
+   "jobId": "0x30433120464b0e8dfc7bc144034147fda4d5c227af9df50bfdab5f844b5af53a",
+   "offerHash": "0xe573252b95034384a22279744d3b1d294d97702a7e00f9688d8971a83841956c",
+   "title": "whitechain-dev",
+   "adapter": "skill",
+   "seller": {
+    "name": "whitechain-skills",
+    "address": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80"
+   },
+   "amount": "50000",
+   "rail": "whitechain",
+   "status": "released",
+   "at": 1793953847,
+   "slipHash": "0xa66cadcb05ac2a7df697e823b14882be16d53109b9a26284f219427a00230161",
+   "approvedBy": "envelope"
+  },
+  {
+   "jobId": "0x21ea9208f87c130be22098041ce30b0f9aa9700e347075ad9bcdcf28d8f8d30a",
+   "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+   "title": "use-arc",
+   "adapter": "skill",
+   "seller": {
+    "name": "circle-skills",
+    "address": "0x196768E381490a9849d44bd8427784e9fD3aCd07"
+   },
+   "amount": "50000",
+   "rail": "escrow",
+   "status": "released",
+   "at": 1793864447,
+   "slipHash": "0x9ab2f4a6dc7573eace1694aa8e6eb961acf9d9934f4cacb0aeb0859dc41051ef",
+   "approvedBy": "envelope"
+  },
+  {
+   "jobId": "0xe95827293be111adb191cb901d209d8f566bd7d7f630c5e8858b32b55c769c31",
+   "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+   "title": "use-usdc",
+   "adapter": "skill",
+   "seller": {
+    "name": "circle-skills",
+    "address": "0x196768E381490a9849d44bd8427784e9fD3aCd07"
+   },
+   "amount": "50000",
+   "rail": "escrow",
+   "status": "released",
+   "at": 1793860847,
+   "slipHash": "0xb51336e31db125fa5b6b82a9574ee6afcd716c164e67c62864d77df81936e476",
+   "approvedBy": "envelope"
+  }
+ ],
+ "slips": [
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "hedera",
+     "network": "hedera:testnet",
+     "offerHash": "0x119886bc5333f197f8bf62f469b6b3f37573c7de6c8ac8910be18a8d409dce4f",
+     "jobId": "0x4e1082a57e2c1c07d7e8de3e9b31bde8e411ce2932313d2f3659b58dfbb4b9b5",
+     "buyer": "0.0.11337064",
+     "seller": "0x5820000d5d799A90e7De10a6D585887C88ec865f",
+     "payTo": "0.0.11337065",
+     "asset": "0.0.429274",
+     "amount": "10000",
+     "inputHash": "0x4436ee09b29260df73b58d2186088715d66fb0b8d2fe206802b8b02b620e7254",
+     "outputHash": "0x85b562d3c40a4fe66c370ff43d980cc4f4f735e770552cb78dd429f06298c677",
+     "deliveredAt": 1793957505,
+     "children": []
+    },
+    "hash": "0xda5f5a43714fbe2b95dcdb9e8f015e0001dc17251a0013c71e7bd92b47502ae1",
+    "sellerSig": "0xabc4b9f744db566c17d55a4fe758795fb49e8c1b4dfa31253ca85cf65d722a5015e534279dd17d26921e00ccc1b2aef9c16e6b67a2edbebed66b4703e6adc2f31b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "exact",
+      "network": "hedera:testnet",
+      "amount": "10000",
+      "asset": "0.0.429274",
+      "payTo": "0.0.11337065",
+      "maxTimeoutSeconds": 30
+     },
+     "payload": {
+      "nonce": "0x4e1082a57e2c1c07d7e8de3e9b31bde8e411ce2932313d2f3659b58dfbb4b9b5",
+      "from": "0.0.11337064"
+     }
+    },
+    "settlement": {
+     "transaction": "0.0.9185802@1793957141.182486461",
+     "network": "hedera:testnet"
+    }
+   },
+   "title": "hedera-agent-kit",
+   "sellerName": "hedera-tools"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "gateway",
+     "network": "eip155:5042002",
+     "offerHash": "0xdae497eec9b89e6925e7d286ddc1865018bf7c314e6bb158b8d3e02c94fb2b5b",
+     "jobId": "0xbf36ffef0fbde56e7317215521397dc7db288dc827f0479923743066b39a457c",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+     "payTo": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "20000",
+     "inputHash": "0x8cd6fe05c96bccb9c282c090ac309ed4ea803f1a8da3d7edf9795b3bb54382d1",
+     "outputHash": "0x6296218bb5ce62e078650e4e3b872159b738341557c152cd8e86046b1236a39a",
+     "deliveredAt": 1793957205,
+     "children": [
+      "0x17f369adbee57f1dd220da67e04ad1e8c8dae924c6817feede4ea8185132997b",
+      "0x136dd22493258a829ce5fabbb8debadf6be30bc76e3dfc4b6edf02cab5dcd375"
+     ]
+    },
+    "hash": "0xe93b458352a62db12e289d08d8dd3e3d235a0d2532b6cc4cb2ed1ec797828bbf",
+    "sellerSig": "0x661f9f0c3a6ce9fe368d967c4359470c3cdd93a86074eb83b2aa256e33be06eb73fbe4da4fb94e06f6aee10de25acd14716ab727f4c6485129188171ba3ba9c41b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "exact",
+      "network": "eip155:5042002",
+      "amount": "20000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+      "maxTimeoutSeconds": 45
+     },
+     "payload": {
+      "nonce": "0xbf36ffef0fbde56e7317215521397dc7db288dc827f0479923743066b39a457c",
+      "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+     }
+    },
+    "settlement": {
+     "transaction": "0x3b237972132631858d645ed039e3c43b9d3b6ed31f827b8c90dc1b2f80593929",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "circle-codegen",
+   "sellerName": "codegen-proxy"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "escrow",
+     "network": "eip155:5042002",
+     "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+     "jobId": "0x42c88800b5d2fa0be911c9c08054160a1ee816fdb85ea3207e83b765ff6a3325",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "50000",
+     "inputHash": "0x996a9db654249863f57499c259933714097448125a061ae46b89674cacf8a99a",
+     "outputHash": "0xe02857e3e17010515cf7e78074c53fa57a24210f20fc4140e7785dfd4a511db2",
+     "deliveredAt": 1793955585,
+     "children": [],
+     "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+     "chainId": 5042002
+    },
+    "hash": "0x78af0bb49e793ff04f4147e84ceb05fcda112b80bfa5f5a480f2c6375c1b642c",
+    "sellerSig": "0xfafebecab63f2b2d2d0c02cfa295952286c5ed4dc59bff4ab4251c82851a84fc248d7ecd92dfdb79026f129e08461320776aaabc936f8041ec488eb86bc02e7a1c",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "countersign",
+      "network": "eip155:5042002",
+      "amount": "50000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "maxTimeoutSeconds": 60,
+      "extra": {
+       "rail": "escrow",
+       "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+       "chainId": 5042002,
+       "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+       "deadlineSeconds": 60,
+       "tokenName": "USDC",
+       "tokenVersion": "2"
+      }
+     },
+     "payload": {
+      "terms": {
+       "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+       "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "payee": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+       "amount": "50000",
+       "deadline": 1793955647,
+       "salt": "4"
+      },
+      "authorization": {
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "to": "0x7A3b6C1d9E8f0a2B4c6d8E0f1A3B5C7D9E1F2a4B",
+       "value": "50000",
+       "validAfter": "1793955557",
+       "validBefore": "1793956187",
+       "nonce": "0x42c88800b5d2fa0be911c9c08054160a1ee816fdb85ea3207e83b765ff6a3325"
+      },
+      "signature": "0x7efeb6b7c7683f9729b9a266ba16c57e393688b3d57101fdc90d37eaa6a0b18f72247c77850a9671c8d5b5dec922d24c4dabbbca355611a078ad67eb64ebf58f1b"
+     }
+    },
+    "settlement": {
+     "transaction": "0xc2933ca05d68ddac1aaf121db0103c99c65eeddfd87ce88d16baf0a591176018",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "use-usdc",
+   "sellerName": "circle-skills"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "whitechain",
+     "network": "eip155:1874",
+     "offerHash": "0xe573252b95034384a22279744d3b1d294d97702a7e00f9688d8971a83841956c",
+     "jobId": "0x30433120464b0e8dfc7bc144034147fda4d5c227af9df50bfdab5f844b5af53a",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80",
+     "payTo": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80",
+     "asset": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
+     "amount": "50000",
+     "inputHash": "0x638c97c15fb59ba5f0ad46e3209b86e8aff978fe5d65c57dab4acbcfd31cc77f",
+     "outputHash": "0x040c3c1325a9064809c10a68108dc5a1f387335032cb4f48f2a037fecbe65175",
+     "deliveredAt": 1793953845,
+     "children": [],
+     "escrow": "0x2c4e6a8b0d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c",
+     "chainId": 1874
+    },
+    "hash": "0xa66cadcb05ac2a7df697e823b14882be16d53109b9a26284f219427a00230161",
+    "sellerSig": "0xae35b3defb58492158c43805251c77e16183c826cb3921955cff824cd615175b1bb902c2f78460c6dfd78bef5518d66d0e1eef17dc487a9bffe559da72dc966b1c",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "countersign",
+      "network": "eip155:1874",
+      "amount": "50000",
+      "asset": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
+      "payTo": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80",
+      "maxTimeoutSeconds": 60,
+      "extra": {
+       "rail": "whitechain",
+       "escrow": "0x2c4e6a8b0d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c",
+       "chainId": 1874,
+       "offerHash": "0xe573252b95034384a22279744d3b1d294d97702a7e00f9688d8971a83841956c",
+       "deadlineSeconds": 60,
+       "tokenName": "Tether USD",
+       "tokenVersion": "1"
+      }
+     },
+     "payload": {
+      "terms": {
+       "offerHash": "0xe573252b95034384a22279744d3b1d294d97702a7e00f9688d8971a83841956c",
+       "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "payee": "0xf9e1bdF64525dc74Ea018E949F93E86F7855aC80",
+       "amount": "50000",
+       "deadline": 1793953907,
+       "salt": "3"
+      },
+      "authorization": {
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "to": "0x2C4E6a8b0d1f3a5c7e9B1d3F5a7c9e1b3D5F7a9c",
+       "value": "50000",
+       "validAfter": "1793953817",
+       "validBefore": "1793954447",
+       "nonce": "0x30433120464b0e8dfc7bc144034147fda4d5c227af9df50bfdab5f844b5af53a"
+      },
+      "signature": "0xd209f5019757a2b090b7b15d6310945699f2014014b98fee4b1263094a682daf7a55b904315ce1939d2277c4aa0b8505f4ba5d83e8c4bfa362dbb03ca881c26c1b"
+     }
+    },
+    "settlement": {
+     "transaction": "0x60eb90252b68103311097c64fabfee713a9ba4a36176904f8b6d353775a89656",
+     "network": "eip155:1874"
+    }
+   },
+   "title": "whitechain-dev",
+   "sellerName": "whitechain-skills"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "escrow",
+     "network": "eip155:5042002",
+     "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+     "jobId": "0x21ea9208f87c130be22098041ce30b0f9aa9700e347075ad9bcdcf28d8f8d30a",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "50000",
+     "inputHash": "0x82975a0030b59053c276eac250c296efe2b9b965d92d52ce038db26ba73f3f51",
+     "outputHash": "0x180c5780f0f1d3b54c9e47194ee42ee8d8058fd7981d461a2c1e38d98609884f",
+     "deliveredAt": 1793864445,
+     "children": [],
+     "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+     "chainId": 5042002
+    },
+    "hash": "0x9ab2f4a6dc7573eace1694aa8e6eb961acf9d9934f4cacb0aeb0859dc41051ef",
+    "sellerSig": "0xc57254051b945905b552e1efe465de6e9945735f087384d7a6698387b2d445437c051a415884276cd82c574f1ce89e1c1db1693003b16bd224d22dc8ef4f6a1f1b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "countersign",
+      "network": "eip155:5042002",
+      "amount": "50000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "maxTimeoutSeconds": 60,
+      "extra": {
+       "rail": "escrow",
+       "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+       "chainId": 5042002,
+       "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+       "deadlineSeconds": 60,
+       "tokenName": "USDC",
+       "tokenVersion": "2"
+      }
+     },
+     "payload": {
+      "terms": {
+       "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+       "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "payee": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+       "amount": "50000",
+       "deadline": 1793864507,
+       "salt": "2"
+      },
+      "authorization": {
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "to": "0x7A3b6C1d9E8f0a2B4c6d8E0f1A3B5C7D9E1F2a4B",
+       "value": "50000",
+       "validAfter": "1793864417",
+       "validBefore": "1793865047",
+       "nonce": "0x21ea9208f87c130be22098041ce30b0f9aa9700e347075ad9bcdcf28d8f8d30a"
+      },
+      "signature": "0x248f5bc61ef9cb7817739de157d44a097abcae9e0110a8494921a84138aa2db162eef9b131c59b0f54a003a89310eddb25187dba92da860d6f6aab1d834159ab1b"
+     }
+    },
+    "settlement": {
+     "transaction": "0x500ad5cf9c25e8f2d3a5212a24fe796da4d5610c9faa49721be50de88a60e937",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "use-arc",
+   "sellerName": "circle-skills"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "escrow",
+     "network": "eip155:5042002",
+     "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+     "jobId": "0xe95827293be111adb191cb901d209d8f566bd7d7f630c5e8858b32b55c769c31",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "50000",
+     "inputHash": "0x54b1d62e856ac81cf8d419c9c095b3bc95c0733cfbe4bc8c487e09655d66cc3b",
+     "outputHash": "0xfb1975fb99fb1a7414063302dc537ede184cd044581f6299a8bacf17cca7b67c",
+     "deliveredAt": 1793860845,
+     "children": [],
+     "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+     "chainId": 5042002
+    },
+    "hash": "0xb51336e31db125fa5b6b82a9574ee6afcd716c164e67c62864d77df81936e476",
+    "sellerSig": "0x8f9977bbec5e1e4dc11da2839c79e7e1d88a576d1bb0a97fad5ccf73e808e95c32abaac6d316275af37498b2f6283c48b7d8c2c034a2fc1ec2045736a4df1c8b1b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "countersign",
+      "network": "eip155:5042002",
+      "amount": "50000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "maxTimeoutSeconds": 60,
+      "extra": {
+       "rail": "escrow",
+       "escrow": "0x7a3b6c1d9e8f0a2b4c6d8e0f1a3b5c7d9e1f2a4b",
+       "chainId": 5042002,
+       "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+       "deadlineSeconds": 60,
+       "tokenName": "USDC",
+       "tokenVersion": "2"
+      }
+     },
+     "payload": {
+      "terms": {
+       "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+       "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "payee": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+       "amount": "50000",
+       "deadline": 1793860907,
+       "salt": "1"
+      },
+      "authorization": {
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+       "to": "0x7A3b6C1d9E8f0a2B4c6d8E0f1A3B5C7D9E1F2a4B",
+       "value": "50000",
+       "validAfter": "1793860817",
+       "validBefore": "1793861447",
+       "nonce": "0xe95827293be111adb191cb901d209d8f566bd7d7f630c5e8858b32b55c769c31"
+      },
+      "signature": "0x7f58aeaabc89b4c6cc66df4e9e8ee3b24400947217440a0a99487f7578fa043d72b97991eec6dad8e85ad825bceee1b3f697c2d4a0eb34607e34fc2b66c7b6fc1c"
+     }
+    },
+    "settlement": {
+     "transaction": "0xa1979ac06076b6412c21f7882e00bcf0baf3f790ea4db800ac36b70aeeb5289e",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "use-usdc",
+   "sellerName": "circle-skills"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "gateway",
+     "network": "eip155:5042002",
+     "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+     "jobId": "0x5b7740a7f968d993c6794f26004f2181c08e71dbd2dcbc7a1e6e571bac40aadc",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "5000",
+     "inputHash": "0x91e724221f8ac57e45107df57966f7815bbb7400e5ff2aa4722d69bf65e4add1",
+     "outputHash": "0x6ec035705596679ed341f396793cb26f8d278f6ad3e5dddc1ffe68b3d02a16a6",
+     "deliveredAt": 1793957205,
+     "children": []
+    },
+    "hash": "0x17f369adbee57f1dd220da67e04ad1e8c8dae924c6817feede4ea8185132997b",
+    "sellerSig": "0xa506b18b725125a71bf8d471ef32837416b6daad9aef5a1711128ce9c3aa50a538df3a76b29d37ab4c8c92758d2ea0571e7f54fbb8f016528fe760221f5ce7ff1b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "exact",
+      "network": "eip155:5042002",
+      "amount": "5000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "maxTimeoutSeconds": 60
+     },
+     "payload": {
+      "nonce": "0x5b7740a7f968d993c6794f26004f2181c08e71dbd2dcbc7a1e6e571bac40aadc",
+      "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+     }
+    },
+    "settlement": {
+     "transaction": "0xecae2297b3566b2d1e4252d153b71427d5e1c1a18621d4917a4ce1f98dba3666",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "use-arc",
+   "sellerName": "circle-skills"
+  },
+  {
+   "slip": {
+    "body": {
+     "v": 1,
+     "rail": "gateway",
+     "network": "eip155:5042002",
+     "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+     "jobId": "0xa2eee6b70b604073440d620a9904d2a57855c8a4bc4b4945f41629210e2ffceb",
+     "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+     "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+     "asset": "0x3600000000000000000000000000000000000000",
+     "amount": "5000",
+     "inputHash": "0xc0a2478be423bb69982e676f114c4607085717ab19311d09d1385f52299985fe",
+     "outputHash": "0x0d376a8f96c20540d06d8a98aac1658edc68c28182df27f521cd111a3b5394de",
+     "deliveredAt": 1793957205,
+     "children": []
+    },
+    "hash": "0x136dd22493258a829ce5fabbb8debadf6be30bc76e3dfc4b6edf02cab5dcd375",
+    "sellerSig": "0x54f7b4ba90d965c09a11520b88c84a1580cfc8084b94aa00b42815a12af8603c04e95408521d7b83f57668d5a3e4b114c60dd058cb56f35f5f8101273ee81f031b",
+    "payment": {
+     "x402Version": 2,
+     "accepted": {
+      "scheme": "exact",
+      "network": "eip155:5042002",
+      "amount": "5000",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "maxTimeoutSeconds": 60
+     },
+     "payload": {
+      "nonce": "0xa2eee6b70b604073440d620a9904d2a57855c8a4bc4b4945f41629210e2ffceb",
+      "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+     }
+    },
+    "settlement": {
+     "transaction": "0xeac3f8065f292a22524bd106a54127bec76a9068356ed44d4c94c5ddd25c088e",
+     "network": "eip155:5042002"
+    }
+   },
+   "title": "use-usdc",
+   "sellerName": "circle-skills"
+  }
+ ],
+ "tree": {
+  "root": "0xe93b458352a62db12e289d08d8dd3e3d235a0d2532b6cc4cb2ed1ec797828bbf",
+  "nodes": {
+   "0xe93b458352a62db12e289d08d8dd3e3d235a0d2532b6cc4cb2ed1ec797828bbf": {
+    "slip": {
+     "body": {
+      "v": 1,
+      "rail": "gateway",
+      "network": "eip155:5042002",
+      "offerHash": "0xdae497eec9b89e6925e7d286ddc1865018bf7c314e6bb158b8d3e02c94fb2b5b",
+      "jobId": "0xbf36ffef0fbde56e7317215521397dc7db288dc827f0479923743066b39a457c",
+      "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+      "seller": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+      "payTo": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "amount": "20000",
+      "inputHash": "0x8cd6fe05c96bccb9c282c090ac309ed4ea803f1a8da3d7edf9795b3bb54382d1",
+      "outputHash": "0x6296218bb5ce62e078650e4e3b872159b738341557c152cd8e86046b1236a39a",
+      "deliveredAt": 1793957205,
+      "children": [
+       "0x17f369adbee57f1dd220da67e04ad1e8c8dae924c6817feede4ea8185132997b",
+       "0x136dd22493258a829ce5fabbb8debadf6be30bc76e3dfc4b6edf02cab5dcd375"
+      ]
+     },
+     "hash": "0xe93b458352a62db12e289d08d8dd3e3d235a0d2532b6cc4cb2ed1ec797828bbf",
+     "sellerSig": "0x661f9f0c3a6ce9fe368d967c4359470c3cdd93a86074eb83b2aa256e33be06eb73fbe4da4fb94e06f6aee10de25acd14716ab727f4c6485129188171ba3ba9c41b",
+     "payment": {
+      "x402Version": 2,
+      "accepted": {
+       "scheme": "exact",
+       "network": "eip155:5042002",
+       "amount": "20000",
+       "asset": "0x3600000000000000000000000000000000000000",
+       "payTo": "0x81D3c4B8b15551a7bB3919b1C23Bd4080e41260F",
+       "maxTimeoutSeconds": 45
+      },
+      "payload": {
+       "nonce": "0xbf36ffef0fbde56e7317215521397dc7db288dc827f0479923743066b39a457c",
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+      }
+     },
+     "settlement": {
+      "transaction": "0x3b237972132631858d645ed039e3c43b9d3b6ed31f827b8c90dc1b2f80593929",
+      "network": "eip155:5042002"
+     }
+    },
+    "title": "circle-codegen",
+    "sellerName": "codegen-proxy"
+   },
+   "0x17f369adbee57f1dd220da67e04ad1e8c8dae924c6817feede4ea8185132997b": {
+    "slip": {
+     "body": {
+      "v": 1,
+      "rail": "gateway",
+      "network": "eip155:5042002",
+      "offerHash": "0xb1eef1aa59e096cb27fd4a7d3ab2531f7fddfd73bc39de5411fcde0f594e2a20",
+      "jobId": "0x5b7740a7f968d993c6794f26004f2181c08e71dbd2dcbc7a1e6e571bac40aadc",
+      "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+      "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "amount": "5000",
+      "inputHash": "0x91e724221f8ac57e45107df57966f7815bbb7400e5ff2aa4722d69bf65e4add1",
+      "outputHash": "0x6ec035705596679ed341f396793cb26f8d278f6ad3e5dddc1ffe68b3d02a16a6",
+      "deliveredAt": 1793957205,
+      "children": []
+     },
+     "hash": "0x17f369adbee57f1dd220da67e04ad1e8c8dae924c6817feede4ea8185132997b",
+     "sellerSig": "0xa506b18b725125a71bf8d471ef32837416b6daad9aef5a1711128ce9c3aa50a538df3a76b29d37ab4c8c92758d2ea0571e7f54fbb8f016528fe760221f5ce7ff1b",
+     "payment": {
+      "x402Version": 2,
+      "accepted": {
+       "scheme": "exact",
+       "network": "eip155:5042002",
+       "amount": "5000",
+       "asset": "0x3600000000000000000000000000000000000000",
+       "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+       "maxTimeoutSeconds": 60
+      },
+      "payload": {
+       "nonce": "0x5b7740a7f968d993c6794f26004f2181c08e71dbd2dcbc7a1e6e571bac40aadc",
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+      }
+     },
+     "settlement": {
+      "transaction": "0xecae2297b3566b2d1e4252d153b71427d5e1c1a18621d4917a4ce1f98dba3666",
+      "network": "eip155:5042002"
+     }
+    },
+    "title": "use-arc",
+    "sellerName": "circle-skills"
+   },
+   "0x136dd22493258a829ce5fabbb8debadf6be30bc76e3dfc4b6edf02cab5dcd375": {
+    "slip": {
+     "body": {
+      "v": 1,
+      "rail": "gateway",
+      "network": "eip155:5042002",
+      "offerHash": "0xdabe46ac8abb04f4cb202f21bccd0800b6766fea35c5e497d8a7a7479b3afe13",
+      "jobId": "0xa2eee6b70b604073440d620a9904d2a57855c8a4bc4b4945f41629210e2ffceb",
+      "buyer": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee",
+      "seller": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+      "asset": "0x3600000000000000000000000000000000000000",
+      "amount": "5000",
+      "inputHash": "0xc0a2478be423bb69982e676f114c4607085717ab19311d09d1385f52299985fe",
+      "outputHash": "0x0d376a8f96c20540d06d8a98aac1658edc68c28182df27f521cd111a3b5394de",
+      "deliveredAt": 1793957205,
+      "children": []
+     },
+     "hash": "0x136dd22493258a829ce5fabbb8debadf6be30bc76e3dfc4b6edf02cab5dcd375",
+     "sellerSig": "0x54f7b4ba90d965c09a11520b88c84a1580cfc8084b94aa00b42815a12af8603c04e95408521d7b83f57668d5a3e4b114c60dd058cb56f35f5f8101273ee81f031b",
+     "payment": {
+      "x402Version": 2,
+      "accepted": {
+       "scheme": "exact",
+       "network": "eip155:5042002",
+       "amount": "5000",
+       "asset": "0x3600000000000000000000000000000000000000",
+       "payTo": "0x196768E381490a9849d44bd8427784e9fD3aCd07",
+       "maxTimeoutSeconds": 60
+      },
+      "payload": {
+       "nonce": "0xa2eee6b70b604073440d620a9904d2a57855c8a4bc4b4945f41629210e2ffceb",
+       "from": "0x93682A6f1259f1920bC5205FC4045B531Df39Aee"
+      }
+     },
+     "settlement": {
+      "transaction": "0xeac3f8065f292a22524bd106a54127bec76a9068356ed44d4c94c5ddd25c088e",
+      "network": "eip155:5042002"
+     }
+    },
+    "title": "use-usdc",
+    "sellerName": "circle-skills"
+   }
+  }
+ }
+}
