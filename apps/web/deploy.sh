@@ -61,7 +61,7 @@ if [ -d "$src/apps/phone/dist" ]; then
   cp -R "$src/apps/phone/dist" "$stage/dist/phone"
   rm -f "$stage"/dist/phone/assets/*.map
 fi
-cp "$src/apps/web/server.ts" "$stage/server.ts"
+(cd "$src" && bun build apps/web/server.ts --target bun --outfile "$stage/server.js")
 cp "$here/deploy/Dockerfile" "$stage/Dockerfile"
 echo "staged $(du -sh "$stage" | cut -f1)"
 
