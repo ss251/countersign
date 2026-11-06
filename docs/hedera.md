@@ -19,7 +19,7 @@ On production: a purchase settled at [`0.0.9185802@1794006014.352007822`](https:
 
 - **A failed delivery charges nothing.** The transfer is never submitted. The hub answers `502` "Not delivered. Nothing was charged", and the transfer expires unused.
 - **A failed settle withholds the output.** If the seller delivered but the transfer does not settle, the hub answers `502`, keeps the output back, and names the transfer and the time after which it cannot land, so the buyer checks it before paying again.
-- **One transfer buys one call.** The job is keyed on the signed transfer itself, so sending it again is refused with `409`.
+- **One transfer buys one call.** The job is keyed on the signed transfer itself, so sending it again is refused: `409` while the first call runs or after it failed, and `402` as a replay once it has settled.
 - **A wallet that pays first is not held.** If the buyer's own wallet has already sent the payment, the hub verifies it on the mirror node and the call runs settled-first, as on a direct rail. No client in this repository pays that way.
 
 ## Held by default: nothing moves until the seller countersigns
