@@ -31,7 +31,6 @@ The buyer MCP server over stdio:
 
 Start here: countersign login, then fund the printed address, then buy or sell.
 The default hub is ${DEFAULT_HUB}.
-Advanced (CI only): CS_BUYER_KEY and CS_SELLER_KEY sign locally instead.
 `;
 
 export const COMMAND_USAGE: Record<string, string> = {
@@ -71,7 +70,8 @@ export function useSession(env: Record<string, string | undefined> = process.env
   const session = loadSession();
   if (session === null) return false;
   env.CS_SESSION = session.token;
-  if (env.CS_HUB === undefined) env.CS_HUB = session.hub;
+  // The token goes only to the hub that issued it, whatever CS_HUB said before.
+  env.CS_HUB = session.hub;
   return true;
 }
 

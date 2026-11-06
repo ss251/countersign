@@ -344,7 +344,7 @@ describe("whoami", () => {
 });
 
 describe("useSession", () => {
-  test("sets CS_SESSION and CS_HUB from a stored session, keeps an existing CS_HUB, and is false with neither", () => {
+  test("sets CS_SESSION and CS_HUB from a stored session, binds CS_HUB to the session's own hub, and is false with neither", () => {
     // os.homedir() is fixed when the process starts, so the session lives in a child whose HOME is the temp dir.
     const script = `
       import { fileSessionBackend } from ${JSON.stringify(join(import.meta.dir, "../src/session.ts"))};
@@ -363,7 +363,7 @@ describe("useSession", () => {
       const kept = { CS_HUB: "https://other.test" };
       if (useSession(kept) !== true) process.exit(6);
       if (kept.CS_SESSION !== session.token) process.exit(7);
-      if (kept.CS_HUB !== "https://other.test") process.exit(8);
+      if (kept.CS_HUB !== session.hub) process.exit(8);
 
       process.stdout.write("ok");
     `;
