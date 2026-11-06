@@ -154,21 +154,6 @@
   pointer-events: auto;
 }
 
-/* The captain's loop sits behind the claim, muted; a poster until it loads; nothing until it exists. */
-.landing__loop {
-  position: absolute;
-  inset: 0;
-  opacity: 0.42;
-  background: url("/media/hero-poster.jpg") center / cover no-repeat;
-  pointer-events: none;
-}
-
-.landing__loop video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .landing__first-inner {
   position: relative;
   display: grid;

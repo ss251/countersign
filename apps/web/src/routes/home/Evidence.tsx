@@ -104,7 +104,7 @@ function EvidenceFrame({
   );
 }
 
-/* Beat 0: the claim, unchanged from round 2, over the poster slot for the captain's loop. */
+/* Beat 0: the claim, unchanged from round 2, on the plain field: the story ships with CSS only. */
 
 function Claim({
   on,
@@ -123,7 +123,6 @@ function Claim({
 }) {
   return (
     <div className={cx("story__claim", on && "is-on")} onFocus={onFocus}>
-      <HeroLoop live={on} />
       <div className="landing__first-inner">
         <h1 id="statement" className="landing__statement">
           payments that only move when the work lands.
@@ -481,32 +480,3 @@ export function Tick({ value }: { value: string }) {
   );
 }
 
-/*
- * The captain's loop, when it exists: decoration that drops in later. A poster first, the video
- * only after first paint, only if the file is there, only while the claim is on screen, and never
- * under reduced motion. The page never waits on it.
- */
-function HeroLoop({ live }: { live: boolean }) {
-  const [video, setVideo] = useState(false);
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let alive = true;
-    const id = window.setTimeout(() => {
-      fetch("/media/hero.mp4", { method: "HEAD" }).then(
-        (r) => {
-          if (alive && r.ok && (r.headers.get("content-type") ?? "").startsWith("video/")) setVideo(true);
-        },
-        () => undefined,
-      );
-    }, 800);
-    return () => {
-      alive = false;
-      window.clearTimeout(id);
-    };
-  }, []);
-  return (
-    <div className="landing__loop" aria-hidden="true">
-      {video && live ? <video src="/media/hero.mp4" poster="/media/hero-poster.jpg" autoPlay muted loop playsInline preload="none" /> : null}
-    </div>
-  );
-}
