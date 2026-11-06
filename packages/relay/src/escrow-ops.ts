@@ -83,10 +83,15 @@ async function close(
   }
 }
 
+const ZERO_SLIP_HASH = /^0x0{64}$/i;
+
 export function releaseJob(
   input: { jobId: string; slipHash: Hex; sellerSig: Hex },
   ctx: EscrowContext,
 ): Promise<EscrowOpResult> {
+  if (ZERO_SLIP_HASH.test(input.slipHash)) {
+    return Promise.resolve({ ok: false, reason: "zero_slip_hash" });
+  }
   return close(
     input.jobId,
     "released",
