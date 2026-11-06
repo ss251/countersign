@@ -15,8 +15,20 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
  *                                               facilitator; the hub holds no Hedera key)
  * Rails from other lanes are added here as they integrate.
+ *
+ * Gateway and Hedera ask their facilitator what it supports while they start. If a facilitator is
+ * unreachable then, that rail stays off with one log line and the hub boots with the rest.
  */
-export async function railsFromEnv(env: Record<string, string | undefined>): Promise<Rail[]> {
+export interface RailMakers {
+  gateway?: () => Promise<Rail>;
+  hedera?: () => Promise<Rail>;
+}
+
+export async function railsFromEnv(
+  env: Record<string, string | undefined>,
+  makers: RailMakers = {},
+  log: (line: string) => void = (line) => console.error(line),
+): Promise<Rail[]> {
   const rails: Rail[] = [];
   if (env.ARC_ESCROW && env.ARC_RPC_URL) {
     rails.push(
@@ -41,10 +53,24 @@ export async function railsFromEnv(env: Record<string, string | undefined>): Pro
     rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));
   }
   if (env.GATEWAY_RAIL === "1") {
-    rails.push(await gatewayRail({}));
+    await startOptional(rails, "gateway", makers.gateway ?? (() => gatewayRail({})), log);
   }
   if (env.HEDERA_RAIL === "1") {
-    rails.push(await createHederaRail());
+    await startOptional(rails, "hedera", makers.hedera ?? (() => createHederaRail()), log);
   }
   return rails;
+}
+
+async function startOptional(
+  rails: Rail[],
+  id: string,
+  make: () => Promise<Rail>,
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    rails.push(await make());
+  } catch (error) {
+    const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error);
+    log(`[hub] rail ${id} is off: ${reason}`);
+  }
 }
