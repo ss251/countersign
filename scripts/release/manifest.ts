@@ -302,6 +302,33 @@ export type StagedManifestInput = {
   surface?: PublishSurface;
 };
 
+const REPOSITORY_URL = "https://github.com/ss251/countersign";
+
+const DESCRIPTIONS: Record<string, string> = {
+  cli: "Countersign command line: buy, sell and verify agent work with receipts anyone can check.",
+  mcp: "Countersign buyer MCP server: let Claude, Cursor or any MCP client hire tools and verify receipts.",
+  relay: "Countersign relay: charge for your own API in USDT with a paywall and a pay-fetch client.",
+};
+
+const KEYWORDS: Record<string, readonly string[]> = {
+  cli: ["countersign", "agents", "mcp", "x402", "receipts", "usdc"],
+  mcp: ["countersign", "mcp", "model-context-protocol", "agents", "receipts"],
+  relay: ["countersign", "paywall", "x402", "usdt", "payments", "receipts"],
+};
+
+/** Discovery metadata that the npm page shows; derived from the short name. */
+export function discoveryMetadata(short: string): JsonObject {
+  const metadata: JsonObject = {
+    repository: { type: "git", url: `git+${REPOSITORY_URL}.git`, directory: `packages/${short}` },
+    homepage: `${REPOSITORY_URL}/tree/main/packages/${short}#readme`,
+    bugs: { url: `${REPOSITORY_URL}/issues` },
+    keywords: [...(KEYWORDS[short] ?? ["countersign"])],
+  };
+  const description = DESCRIPTIONS[short];
+  if (description !== undefined) metadata.description = description;
+  return metadata;
+}
+
 /**
  * The generated package.json that goes into the tarball. The repository
  * manifest is only read: name, version, bin and exports are rewritten for the
@@ -329,9 +356,10 @@ export function stagedManifest(input: StagedManifestInput): JsonObject {
     version: manifest.version,
     type: "module",
     license: "MIT",
+    ...discoveryMetadata(short),
     publishConfig: { access: "public" },
     engines: { node: nodeEngine(manifest) },
-    files: ["dist"],
+    files: ["dist", "README.md", "LICENSE"],
     dependencies: sortedDependencies(publishedDependencies),
   };
   if (manifest.bin !== undefined) staged.bin = rewriteBin(manifest.bin, targets);

@@ -106,6 +106,30 @@ export function hubRails(): Promise<RailDeclaration[]> {
   return railsCache;
 }
 
+/** The wallet the person signed in with on this page, not one this device remembered. */
+let signedIn: string | null = null;
+
+/** Follow the wallet the person signed in with; anything that is not an address signs it out. */
+export function setSignedInAgent(address: string | null): void {
+  signedIn = address && /^0x[0-9a-fA-F]{40}$/.test(address) ? address : null;
+}
+
+export function signedInAgent(): string | null {
+  return signedIn;
+}
+
+/** The agent named in this page's own URL (?agent=), never the one this device remembered. */
+export function linkAgent(): string | null {
+  try {
+    const hash = window.location.hash;
+    const fromHash = new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "");
+    const asked = fromHash.get("agent") ?? new URLSearchParams(window.location.search).get("agent");
+    return asked && /^0x[0-9a-fA-F]{40}$/.test(asked) ? asked : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The buyer agent the phone follows: ?agent=0x… remembers one; otherwise the hub's latest buyer. */
 const AGENT_KEY = "countersign.agent";
 export function chosenAgent(): string | null {

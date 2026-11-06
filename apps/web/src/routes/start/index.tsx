@@ -34,7 +34,7 @@ export default function StartPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
   const account = useAccount();
   const { switchChain } = useSwitchChain();
-  const { phase, pending, signature, outcome, note, buy, confirm, cancel } = usePurchase();
+  const { phase, pending, signature, signer, outcome, note, buy, confirm, cancel } = usePurchase();
 
   const listing = pickListing(listings.data ?? []);
   const onArc = account.status === "connected" && account.chainId === ARC_CHAIN_ID;
@@ -141,7 +141,7 @@ export default function StartPage(_props: PageProps) {
                 testIdPrefix="start"
               />
             ) : null}
-            <PurchaseResult signature={signature} note={note} outcome={outcome} testIdPrefix="start" />
+            <PurchaseResult signature={signature} signer={signer} note={note} outcome={outcome} testIdPrefix="start" />
           </>
         )}
       </section>
