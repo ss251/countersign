@@ -29,6 +29,8 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
 | 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
 | 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
+| 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
+| 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
@@ -151,6 +153,13 @@ Each case uses a fresh buyer state and must end with a refusal in the journal an
 3. **stats**: `/stats` agrees, with three calls on the escrow rail.
 4. **janitor**: after the deadline the hub refunds the failed call itself; the `Refunded` event returns the full price.
 5. **rating follows**: the failed call now counts as refunded.
+
+### 14a, 14b · production smoke
+
+Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
+
+1. **console**: the index and every module script it loads are fetched as text. The default bundle must contain the production hub's URL. It must also contain none of the fixture-only values: addresses and hashes found in the fixture files and nowhere else in the repository, collected fresh on each run.
+2. **hub**: every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, and the approval decision passes CORS preflight with an `authorization` header. One failure message lists every endpoint that fails.
 
 ## Results
 

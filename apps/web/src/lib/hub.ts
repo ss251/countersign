@@ -1,10 +1,10 @@
 import type { Offer, RailDeclaration, Slip } from "./types.ts";
 
 /**
- * The hub, when one is chosen. Choosing is explicit: "?hub=<url>" after any route
- * remembers that hub, "?hub=local" means the /hub proxy of this server, and
- * "?hub=off" goes back to fixtures. With no hub chosen the screens read fixtures and
- * say so. A chosen hub that does not answer is shown as down, never papered over.
+ * The hub. Live is the default: the build names the production hub in VITE_HUB_URL. "?hub=<url>"
+ * after any route remembers another hub, "?hub=local" means this server's /hub proxy, "?hub=off"
+ * is the one way to the labelled fixtures, and "?hub=default" forgets any choice. A hub that does
+ * not answer, or does not serve a read yet, is shown as exactly that, never papered over.
  */
 
 const KEY = "countersign.hub";
@@ -26,23 +26,24 @@ export function hubBase(): string | null {
     const q = new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : window.location.search);
     const asked = q.get("hub");
     if (asked !== null) {
-      if (asked === "" || asked === "off") window.localStorage.removeItem(KEY);
-      else window.localStorage.setItem(KEY, asked === "local" ? "/hub" : asked.replace(/\/+$/, ""));
+      if (asked === "" || asked === "default") window.localStorage.removeItem(KEY);
+      else window.localStorage.setItem(KEY, asked === "local" ? "/hub" : asked === "off" ? "off" : asked.replace(/\/+$/, ""));
     }
-    return window.localStorage.getItem(KEY) ?? import.meta.env.VITE_HUB_URL ?? null;
+    const chosen = window.localStorage.getItem(KEY) ?? import.meta.env.VITE_HUB_URL ?? null;
+    return chosen === "off" ? null : chosen;
   } catch {
     return import.meta.env.VITE_HUB_URL ?? null;
   }
 }
 
-export async function hubGet<T>(path: string, timeoutMs = 5000): Promise<T> {
+export async function hubGet<T>(path: string, timeoutMs = 5000, headers: Record<string, string> = {}): Promise<T> {
   const base = hubBase();
   if (!base) throw new HubError(0, "No hub is chosen.");
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(`${base}${path}`, { signal: controller.signal, headers: { accept: "application/json" } });
+    res = await fetch(`${base}${path}`, { signal: controller.signal, headers: { accept: "application/json", ...headers } });
   } catch {
     throw new HubError(0, "The hub did not answer.");
   } finally {
