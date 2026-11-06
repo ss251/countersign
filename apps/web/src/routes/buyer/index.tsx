@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { recordSpend } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
@@ -12,6 +12,7 @@ import { Approvals } from "./Approvals.tsx";
 import { AskTab } from "./AskTab.tsx";
 import { EnvelopeTab } from "./EnvelopeTab.tsx";
 import { HistoryTab } from "./HistoryTab.tsx";
+import { mergeApprovals } from "./queue.ts";
 import "./buyer.css";
 
 type Tab = "approvals" | "ask" | "envelope" | "history";
@@ -36,12 +37,43 @@ export default function BuyerPage({ query }: PageProps) {
   const fixtures = [envelope, approvals, purchases].some((r) => r.source === "fixtures");
   const waiting = (approvals.data ?? []).filter((a) => !signed.includes(a.id)).length;
 
+  /*
+   * A live agent waits on its request for a short while, so the phone keeps asking the hub for new
+   * ones. Requests already countersigned stay while their job runs; requests closed here stay gone.
+   */
+  const latest = useRef({ data: approvals.data, signed, closed: new Set<string>() });
+  latest.current.data = approvals.data;
+  latest.current.signed = signed;
+  const setApprovals = approvals.set;
+  const polling = approvals.source === "hub";
+  useEffect(() => {
+    if (!polling) return;
+    let alive = true;
+    const id = window.setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      const r = await api.approvals().catch(() => null);
+      if (!alive || !r || r.source !== "hub") return;
+      const { data, signed: keep, closed } = latest.current;
+      setApprovals(mergeApprovals(data ?? [], r.data, new Set(keep), closed));
+    }, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [polling, setApprovals]);
+
   const view = envelope.data;
   const left = view ? usd(remainingAtomic(view.envelope.cap, view.spent.total)) : undefined;
   const revoked = view?.envelope.revoked ?? false;
 
   /** A countersigned call has finished: list it, and count it against the envelope if it released. */
   const settle = (a: Approval, job: JobView) => {
+    if (a.agent !== undefined) {
+      // A live call: the hub has the job and the agent signs its new spend, so read both again.
+      purchases.reload();
+      if (envelope.source === "hub") envelope.reload();
+      return;
+    }
     const status = job.step === "released" ? "released" : job.step === "refunded" ? "refunded" : "refused";
     const purchase: Purchase = {
       jobId: (job.fundTx ?? `0x${a.id}`) as Purchase["jobId"],
@@ -154,7 +186,10 @@ export default function BuyerPage({ query }: PageProps) {
             query={query}
             onSigned={(a) => setSigned((s) => [...s, a.id])}
             onSettled={settle}
-            onClose={(a) => approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id))}
+            onClose={(a) => {
+              latest.current.closed.add(a.id);
+              approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id));
+            }}
           />
         ) : null}
         {tab === "ask" ? <AskTab envelope={envelope} /> : null}

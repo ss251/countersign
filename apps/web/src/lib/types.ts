@@ -51,6 +51,8 @@ export type DiscoverySource = "circle" | "registry";
 /** A call above the envelope's ask threshold, held for the human. */
 export interface Approval {
   id: string;
+  /** The agent's address, when the request came through the hub. Fixture approvals have none. */
+  agent?: string;
   agentName: string;
   listing: Listing;
   /** Atomic amount the agent proposes to countersign. */
@@ -85,12 +87,17 @@ export interface EnvelopeView {
   envelope: Envelope;
   spent: EnvelopeSpend;
   agentName: string;
-  /** Atomic. Calls above it wait for the human's hold. */
-  askAbove: string;
+  /** Atomic. Calls above it wait for the human's hold; null when the agent never asks. */
+  askAbove: string | null;
   /** Seller address (lowercase) to display name. */
   names: Record<string, string>;
   /** Circle Gateway deposit that nanopayments draw from. */
   gatewayBalance?: string;
+  /**
+   * Set when this is the agent's signed mirror on the hub. The limits are then read-only here:
+   * they live on the agent's machine, and nothing on the hub can loosen them.
+   */
+  mirror?: { signedAt: number; agent: string };
 }
 
 /** A slip with the offer title the hub knows for it. */
