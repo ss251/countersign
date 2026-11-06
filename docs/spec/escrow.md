@@ -125,17 +125,26 @@ The v1 deployments in the table above stay listed, so slips minted on them still
 | **C1, critical** | `fundBonded` debits `bondOf[payee]` with only the buyer's signature. The arbiter, with a buyer key it controls, can open a job naming any bonded payee, then `failDelivery` it and take amount plus bond. The payee signed nothing. | The payee signs `LockBond(bytes32 jobId,uint256 bond,uint64 reviewWindow)` under the escrow's domain. `fundBonded` checks that signature (ECDSA or ERC-1271) before it debits anything. The bond is capped at the job's amount. |
 | **C2, critical** | `_refund` returns the bond to the payee, so a seller who never delivers keeps it, and silence is the cheapest strategy. | A deadline default pays the bond to the buyer. The bond goes back to the payee only on the payee's own cancel by the deadline, a buyer's dispute, or a release. |
 | **H1, high** | `failDelivery` reverts after the deadline, so the arbiter loses jurisdiction exactly when a default becomes provable. | Add `DISPUTE_WINDOW` (the audit's name): a constant 600 seconds after the deadline. `failDelivery` and `release` may land until `settleBy = deadline + DISPUTE_WINDOW`, and `refund` opens only after it. |
-| **M1, medium** | The bond is not in the countersigned terms, and `fund` is permissionless. Anyone can front-run `fundBonded` with `fund` and open the same `jobId` with bond 0. | `fund` becomes arbiter-only, like `fundBonded`. Today only the would-be arbiters submit `fund` (see below), so nothing in production breaks. Binding bond and window into `Countersign` would change `jobId` and every client's derivation, so it waits for a later revision. |
+| **M1, medium** | The bond is not in the countersigned terms, and `fund` is permissionless. Anyone can front-run `fundBonded` with `fund` and open the same `jobId` with bond 0. | `fund` becomes arbiter-only, like `fundBonded`. Production keeps working only if the arbiter is the production hub's relayer; the other hubs that fund today stay on the v1 escrows (see below). Binding bond and window into `Countersign` would change `jobId` and every client's derivation, so it waits for a later revision. |
 | **L1** | A token that blocklists the treasury bricks every release. | The toll accrues in `tollAccrued`, and anyone may call `sweepToll()` to pay it to the treasury. A blocklisted treasury then stalls only the sweep. |
 | **L2** | `payee == address(this)` can never withdraw. | `fund`, `fundBonded` and `depositBond` reject it with `BadPayee(payee)`. |
 | **L3** | The deadline comparisons differ from call to call. | One rule for every boundary, below. |
 
-**Who submits `fund` today (M1).** Only the two keys that become the arbiters:
+**Who submits `fund` today (M1).** Hubs only, through the escrow rail's `settle` (`packages/rail/src/escrow/index.ts`) or the Whitechain relay (`packages/relay/src/relayer.ts`). There are three kinds of hub, checked on chain on 06 Nov:
 
-- the hub's relayer on Arc, `0xA7C448C92aB52Cf4F14c75F0439033232E938380`, through the escrow rail's `settle` (`packages/rail/src/escrow/index.ts`);
-- the Whitechain relay's key on 1874 (`packages/relay/src/relayer.ts`).
+- **Production.** On Arc, the production hub's Railway relayer `0xE37F64A73225f5eA06BABcb1cc5440F01446C267`. On 1874, the relay key that ran every real payment, `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006`.
+- **The e2e suite's hubs.** On Arc, `0xEE4d89C544D09968dA97842e6F7be4904fbF3934`. On 1874, `0xA84122316cc4e585B8dD18D294F87ed0804B7E2A`.
+- **A local development hub.**
 
-No buyer, runner, phone or production script submits it. Two other places name it, and neither is in production:
+No buyer, runner or phone submits `fund`. With one immutable arbiter, only that arbiter's hub can fund on v2. The proposal (option (a), the captain's call before the redeploy) has three parts:
+
+- the arbiter is the production key on each chain;
+- the e2e and local hubs keep funding on the v1 escrows, which stay deployed;
+- e2e covers v2 through the production hub.
+
+An immutable set of arbiters (option (b)) would let a test key `failDelivery` a production job, unless each job also records its funder.
+
+Two other places name `fund`, and neither is in production:
 
 - `e2e/flows/arc-wrong-amount.flow.ts` simulates a stranger's `fund` with `eth_call` to show the moved-price revert. On v2 that simulation reads `NotArbiter`, so the flow stays on v1 or changes its expectation.
 - `contracts/script/whitechain/EscrowForkCheck.s.sol` funds from a fork account.
@@ -147,7 +156,7 @@ No buyer, runner, phone or production script submits it. Two other places name i
 | `offerHash`, `buyer`, `payee`, `amount`, `deadline`, `salt` | the buyer's countersignature | `jobId`, the token nonce the buyer signed |
 | `bond` | `offer.bond` (atomic), at most `amount` | the payee's `LockBond` signature (C1); readable as `bondOfJob(jobId)` |
 | `reviewWindow` | `offer.reviewWindow` (seconds, 0 to 86400) | the arbiter at funding, plus the payee's `LockBond` signature when there is a bond; readable as `reviewOf(jobId)` |
-| `arbiter` | constructor, immutable | the hub's relayer on Arc; the relay's key on Whitechain |
+| `arbiter` | constructor, immutable | under option (a): the production hub's relayer on Arc, `0xE37F…C267`; on Whitechain the relay key `0xa2EE…6006` |
 
 Only the arbiter funds (M1), so no one can open a job from a countersignature seen in the mempool. The buyer's countersignature does not cover bond or window:
 
