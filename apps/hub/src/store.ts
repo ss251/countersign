@@ -1,5 +1,13 @@
 import { Database } from "bun:sqlite";
-import type { Offer, PaymentPayload, RailId, Slip } from "./deps.ts";
+import type {
+  ApprovalRequest,
+  Envelope,
+  EnvelopeSpend,
+  Offer,
+  PaymentPayload,
+  RailId,
+  Slip,
+} from "./deps.ts";
 import type { Hex } from "viem";
 
 export type JobStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
@@ -42,6 +50,37 @@ export interface JobPatch {
   slipHash?: Hex | null;
   closedAt?: number | null;
   fault?: Fault | null;
+}
+
+/** A buyer agent's signed statement of its limits and spend, as the hub received it. */
+export interface EnvelopeMirrorRecord {
+  agent: string;
+  envelope: Envelope;
+  spent: EnvelopeSpend;
+  signedAt: number;
+  sig: Hex;
+}
+
+export type ApprovalStatus = "pending" | "countersign" | "decline";
+
+/** A call the buyer agent held for a human decision. */
+export interface ApprovalRecord {
+  id: string;
+  agent: string;
+  offerHash: Hex;
+  title: string;
+  amount: string;
+  rail: RailId;
+  terms: unknown;
+  status: ApprovalStatus;
+  createdAt: number;
+  decidedAt: number | null;
+  /** The agent's signed request, without sig. Null for rows stored before version 2. */
+  request: ApprovalRequest | null;
+  /** The agent's signature over the request body, unique per request. */
+  requestSig: string | null;
+  /** The approver's signature over the decision body. */
+  decisionSig: string | null;
 }
 
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
@@ -104,6 +143,30 @@ interface SlipRow {
   created_at: number;
 }
 
+interface EnvelopeRow {
+  agent: string;
+  envelope_json: string;
+  spent_json: string;
+  signed_at: number;
+  sig: string;
+}
+
+interface ApprovalRow {
+  id: string;
+  agent: string;
+  offer_hash: string;
+  title: string;
+  amount: string;
+  rail: string;
+  terms_json: string;
+  status: string;
+  created_at: number;
+  decided_at: number | null;
+  request_json: string | null;
+  request_sig: string | null;
+  decision_sig: string | null;
+}
+
 export class Store {
   private readonly db: Database;
 
@@ -151,6 +214,43 @@ export class Store {
         created_at INTEGER NOT NULL
       )
     `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS envelopes (
+        agent TEXT PRIMARY KEY,
+        envelope_json TEXT NOT NULL,
+        spent_json TEXT NOT NULL,
+        signed_at INTEGER NOT NULL,
+        sig TEXT NOT NULL
+      )
+    `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        offer_hash TEXT NOT NULL,
+        title TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        rail TEXT NOT NULL,
+        terms_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER NULL,
+        request_json TEXT NULL,
+        request_sig TEXT NULL,
+        decision_sig TEXT NULL
+      )
+    `);
+    const approvalColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(approvals)").all();
+    if (!approvalColumns.some((column) => column.name === "request_json")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN request_json TEXT NULL");
+    }
+    if (!approvalColumns.some((column) => column.name === "request_sig")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN request_sig TEXT NULL");
+    }
+    if (!approvalColumns.some((column) => column.name === "decision_sig")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN decision_sig TEXT NULL");
+    }
+    this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
   }
 
   /** Insert a new offer. Returns false when the hash was already stored. */
@@ -350,6 +450,135 @@ export class Store {
       .all(now)
       .map(jobFromRow);
   }
+
+  /** One buyer's jobs, newest first. The address is compared case-insensitively. */
+  listJobsByBuyer(buyer: string, limit: number): JobRecord[] {
+    return this.db
+      .query<JobRow, [string, number]>(
+        "SELECT * FROM jobs WHERE lower(buyer) = lower(?) ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(buyer, limit)
+      .map(jobFromRow);
+  }
+
+  /** One seller's jobs, newest first. The offer's seller is compared case-insensitively. */
+  listJobsBySeller(seller: string, limit: number): JobRecord[] {
+    return this.db
+      .query<JobRow, [string, number]>(
+        `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.deadline,
+                jobs.status, jobs.payment_json, jobs.settle_tx, jobs.close_tx, jobs.slip_hash,
+                jobs.created_at, jobs.closed_at
+           FROM jobs
+           JOIN offers ON offers.offer_hash = jobs.offer_hash
+          WHERE lower(offers.seller) = lower(?)
+          ORDER BY jobs.created_at DESC, jobs.rowid DESC
+          LIMIT ?`,
+      )
+      .all(seller, limit)
+      .map(jobFromRow);
+  }
+
+  putEnvelopeMirror(record: EnvelopeMirrorRecord): void {
+    this.db
+      .query(
+        "INSERT INTO envelopes (agent, envelope_json, spent_json, signed_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(agent) DO UPDATE SET envelope_json = excluded.envelope_json, spent_json = excluded.spent_json, signed_at = excluded.signed_at, sig = excluded.sig",
+      )
+      .run(
+        record.agent.toLowerCase(),
+        JSON.stringify(record.envelope),
+        JSON.stringify(record.spent),
+        record.signedAt,
+        record.sig,
+      );
+  }
+
+  getEnvelopeMirror(agent: string): EnvelopeMirrorRecord | null {
+    const row = this.db
+      .query<EnvelopeRow, [string]>("SELECT * FROM envelopes WHERE agent = ?")
+      .get(agent.toLowerCase());
+    if (!row) return null;
+    return {
+      agent: row.agent,
+      envelope: JSON.parse(row.envelope_json) as Envelope,
+      spent: JSON.parse(row.spent_json) as EnvelopeSpend,
+      signedAt: row.signed_at,
+      sig: row.sig as Hex,
+    };
+  }
+
+  /** Insert an approval. False when its id or request signature was already stored. */
+  putApproval(approval: ApprovalRecord): boolean {
+    const result = this.db
+      .query(
+        "INSERT OR IGNORE INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at, request_json, request_sig, decision_sig) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        approval.id,
+        approval.agent.toLowerCase(),
+        approval.offerHash,
+        approval.title,
+        approval.amount,
+        approval.rail,
+        JSON.stringify(approval.terms),
+        approval.status,
+        approval.createdAt,
+        approval.decidedAt,
+        approval.request === null ? null : JSON.stringify(approval.request),
+        approval.requestSig,
+        approval.decisionSig,
+      );
+    return result.changes > 0;
+  }
+
+  /** True when this exact signed request was already accepted. */
+  hasApprovalRequestSig(sig: string): boolean {
+    const row = this.db
+      .query<{ present: number }, [string]>("SELECT 1 AS present FROM approvals WHERE request_sig = ? LIMIT 1")
+      .get(sig);
+    return row !== null;
+  }
+
+  /** Pending approvals for one agent that have not passed the given creation time. */
+  countPendingApprovals(agent: string, since: number): number {
+    const row = this.db
+      .query<{ n: number }, [string, number]>(
+        "SELECT COUNT(*) AS n FROM approvals WHERE agent = ? AND status = 'pending' AND created_at > ?",
+      )
+      .get(agent.toLowerCase(), since);
+    return row?.n ?? 0;
+  }
+
+  getApproval(id: string): ApprovalRecord | null {
+    const row = this.db.query<ApprovalRow, [string]>("SELECT * FROM approvals WHERE id = ?").get(id);
+    return row ? approvalFromRow(row) : null;
+  }
+
+  /** Approvals newest first, optionally for one agent. */
+  listApprovals(agent?: string): ApprovalRecord[] {
+    const rows = agent
+      ? this.db
+          .query<ApprovalRow, [string]>(
+            "SELECT * FROM approvals WHERE lower(agent) = lower(?) ORDER BY created_at DESC, rowid DESC",
+          )
+          .all(agent)
+      : this.db
+          .query<ApprovalRow, []>("SELECT * FROM approvals ORDER BY created_at DESC, rowid DESC")
+          .all();
+    return rows.map(approvalFromRow);
+  }
+
+  /** Set a pending approval's decision and signature. False when it was already decided. */
+  decideApproval(
+    id: string,
+    status: Exclude<ApprovalStatus, "pending">,
+    decidedAt: number,
+    decisionSig: string,
+  ): boolean {
+    const result = this.db
+      .query("UPDATE approvals SET status = ?, decided_at = ?, decision_sig = ? WHERE id = ? AND status = 'pending'")
+      .run(status, decidedAt, decisionSig, id);
+    return result.changes > 0;
+  }
 }
 
 function jobFromRow(row: JobRow): JobRecord {
@@ -373,4 +602,22 @@ function jobFromRow(row: JobRow): JobRecord {
 function closedAtFor(job: JobRecord): number | null {
   if (job.closedAt !== undefined) return job.closedAt;
   return job.closeTx !== null ? job.createdAt : null;
+}
+
+function approvalFromRow(row: ApprovalRow): ApprovalRecord {
+  return {
+    id: row.id,
+    agent: row.agent,
+    offerHash: row.offer_hash as Hex,
+    title: row.title,
+    amount: row.amount,
+    rail: row.rail as RailId,
+    terms: JSON.parse(row.terms_json) as unknown,
+    status: row.status as ApprovalStatus,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+    request: row.request_json === null ? null : (JSON.parse(row.request_json) as ApprovalRequest),
+    requestSig: row.request_sig,
+    decisionSig: row.decision_sig,
+  };
 }
