@@ -25,6 +25,12 @@ interface Pending {
   finish(result: DispatchResult): void;
 }
 
+type LockResult = { sig: Hex } | { refused: string };
+
+interface LockPending {
+  finish(result: LockResult): void;
+}
+
 interface Connection {
   ws: WSContext;
   nonce: string;
@@ -32,6 +38,7 @@ interface Connection {
   offers: Set<string>;
   lastPongAt: number;
   pending: Map<string, Pending>;
+  locks: Map<string, LockPending>;
 }
 
 const PING_EVERY_MS = 20_000;
@@ -53,6 +60,7 @@ export class RunnerLink {
     clearInterval(this.heartbeat);
     for (const conn of this.connections.values()) {
       for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
+      for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
       conn.ws.close(1001, "hub stopping");
     }
     this.connections.clear();
@@ -110,6 +118,43 @@ export class RunnerLink {
     });
   }
 
+  async lock(
+    req: { jobId: Hex; offerHash: Hex; escrow: Address; chainId: number; bond: string },
+    timeoutMs: number,
+  ): Promise<{ sig: Hex } | { refused: string }> {
+    const conn = this.find(req.offerHash);
+    if (!conn) return { refused: "offline" };
+
+    return new Promise<LockResult>((resolve) => {
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: LockResult): void => {
+        if (done) return;
+        done = true;
+        if (timer !== undefined) clearTimeout(timer);
+        conn.locks.delete(req.jobId);
+        resolve(result);
+      };
+
+      conn.locks.set(req.jobId, { finish });
+      timer = setTimeout(() => finish({ refused: "timeout" }), Math.max(0, timeoutMs));
+
+      const frame: HubToRunner = {
+        t: "lock",
+        jobId: req.jobId,
+        offerHash: req.offerHash,
+        escrow: req.escrow,
+        chainId: req.chainId,
+        bond: req.bond,
+      };
+      try {
+        conn.ws.send(JSON.stringify(frame));
+      } catch {
+        finish({ refused: "closed" });
+      }
+    });
+  }
+
   private key(ws: WSContext): object {
     return (ws.raw ?? ws) as object;
   }
@@ -122,6 +167,7 @@ export class RunnerLink {
       offers: new Set(),
       lastPongAt: Date.now(),
       pending: new Map(),
+      locks: new Map(),
     };
     this.connections.set(this.key(ws), conn);
     const challenge: HubToRunner = { t: "challenge", nonce: conn.nonce };
@@ -134,6 +180,7 @@ export class RunnerLink {
     if (!conn) return;
     this.connections.delete(key);
     for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
+    for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
   }
 
   private async message(ws: WSContext, data: unknown): Promise<void> {
@@ -168,6 +215,14 @@ export class RunnerLink {
     }
     if (frame.t === "fail") {
       this.fail(conn, frame as unknown as RunnerToHub);
+      return;
+    }
+    if (frame.t === "locked") {
+      this.locked(conn, frame as unknown as RunnerToHub);
+      return;
+    }
+    if (frame.t === "lock-refused") {
+      this.lockRefused(conn, frame as unknown as RunnerToHub);
     }
   }
 
@@ -238,6 +293,25 @@ export class RunnerLink {
     pending.finish({ fail: reason, byRunner: true });
   }
 
+  private locked(conn: Connection, frame: RunnerToHub): void {
+    if (frame.t !== "locked" || typeof frame.jobId !== "string") return;
+    const pending = conn.locks.get(frame.jobId);
+    if (!pending) return;
+    if (typeof frame.sig !== "string" || !/^0x[0-9a-fA-F]+$/.test(frame.sig)) {
+      pending.finish({ refused: "bad-signature" });
+      return;
+    }
+    pending.finish({ sig: frame.sig });
+  }
+
+  private lockRefused(conn: Connection, frame: RunnerToHub): void {
+    if (frame.t !== "lock-refused" || typeof frame.jobId !== "string") return;
+    const pending = conn.locks.get(frame.jobId);
+    if (!pending) return;
+    const reason = typeof frame.reason === "string" ? frame.reason : "lock-refused";
+    pending.finish({ refused: reason });
+  }
+
   private reject(conn: Connection, message: string): void {
     const frame: HubToRunner = { t: "error", message };
     try {
@@ -261,6 +335,7 @@ export class RunnerLink {
       if (now - conn.lastPongAt > PONG_DEADLINE_MS) {
         this.connections.delete(key);
         for (const pending of conn.pending.values()) pending.finish({ fail: "pong-timeout" });
+        for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
         conn.ws.close(4000, "pong timeout");
         continue;
       }
@@ -270,6 +345,7 @@ export class RunnerLink {
       } catch {
         this.connections.delete(key);
         for (const pending of conn.pending.values()) pending.finish({ fail: "closed" });
+        for (const pending of conn.locks.values()) pending.finish({ refused: "closed" });
       }
     }
   }
