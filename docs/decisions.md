@@ -281,3 +281,26 @@ The envelope lives on the agent's machine, and the agent signs its mirror, so th
 **Limits.**
 - The header is the agent's own claim; the payment check is what binds it.
 - A Hedera payer is a Hedera account, not an EVM agent, so it is not covered.
+
+## D18 — a seller delists its own offer, and a canary delists an offer whose runner no longer answers for it (06 Nov; refs #26)
+
+**Delisting by the seller.**
+- `POST /offers/:offerHash/delist` takes `{sig}`: the seller's EIP-191 signature over `countersign delist <offerHash>`.
+- It answers 200 `{offerHash, status: "delisted"}`, including when the offer was already delisted. An unknown offer gets 404, a malformed request 400, and a signature that is not the offer's seller 401.
+
+**What delisted means.**
+- The offer is absent from `GET /offers`, `/offers/search` and every discovery document.
+- A call answers 404 before any 402.
+- A runner's hello cannot bring it back.
+- Publishing the same offer again does not relist it, because its hash is unchanged. A seller relists by publishing a changed offer.
+
+**The canary.**
+- It is on when the hub starts with `CANARY=1`, every `CANARY_INTERVAL_S` seconds (default 300).
+- It covers every listed offer whose runner is online. The hub sends `{t: "canary", offerHash, nonce}` over that runner's WebSocket.
+- A runner that still serves the offer answers `{t: "canary", offerHash, nonce, sig}`, signed by the offer's seller over `countersign canary <offerHash> <nonce>`. Otherwise it answers `{t: "canary-fail", offerHash, nonce, reason}`.
+- Each offer gets three attempts, five seconds apart, ten seconds each. An offer whose three attempts all fail is delisted at once, and the hub logs why.
+- Offline offers are not canaried: they already answer 503 and sell nothing.
+
+**What the canary proves, and what it does not.** It proves that the runner holding the offer still serves it, and that the seller's key still signs for it. It does not run the offer's work or check its output; a paid delivery still goes through the delivery gate.
+
+**Rollout.** A runner that predates the canary ignores it, so its offers would be delisted. `CANARY=1` goes on in production only after every live runner answers canaries: `packages/runner` with this change, and the phone page separately.
