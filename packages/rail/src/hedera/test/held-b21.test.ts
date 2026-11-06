@@ -129,7 +129,20 @@ function mirrorBox(state: MirrorState) {
       return record ? Response.json(record) : new Response("not found", { status: 404 });
     }
     if (path.startsWith("/api/v1/transactions/")) {
-      return Response.json({ transactions: state.transaction ? [state.transaction] : [] });
+      if (new URL(url).searchParams.get("scheduled") === "true") {
+        return Response.json({ transactions: state.transaction ? [state.transaction] : [] });
+      }
+      return Response.json({
+        transactions: [
+          {
+            transaction_id: path.slice("/api/v1/transactions/".length),
+            name: "SCHEDULECREATE",
+            entity_id: SCHEDULE_ID,
+            result: "SUCCESS",
+            scheduled: false,
+          },
+        ],
+      });
     }
     return new Response("not found", { status: 404 });
   }) as unknown as typeof globalThis.fetch;
