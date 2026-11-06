@@ -30,6 +30,7 @@ All values live in Railway, never in the repository.
   - `PORT`.
   - `HUB_DB`, which points into the service volume mounted at `/data`, so offers, jobs and slips survive redeploys.
   - `HUB_PUBLIC_URL`, `ARC_ESCROW` and `ARC_RPC_URL`.
+  - `CS_NETWORK`, left unset (testnet). `mainnet` refuses to boot until [mainnet.md](mainnet.md) is complete.
   - The relayer key, `CS_RELAYER_KEY`. It is set from stdin so it never appears in a command line: `railway variable set CS_RELAYER_KEY --stdin`.
 
 ## Target: Railway's GitHub app

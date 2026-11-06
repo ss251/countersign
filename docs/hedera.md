@@ -4,6 +4,62 @@ countersign settles agent-to-software payments on Hedera testnet over x402 v2. T
 
 No human approves a payment. The agent's envelope (budget cap, per-merchant limit, allowlist) decides, and the facilitator only broadcasts what the agent signed.
 
+**By default the payment is held.** The buyer's scheduled transfer moves money only when the hub submits the seller's countersignature after a checked delivery, so a failed delivery costs the buyer nothing (see the next section). The direct x402 payment traced below is the opt-in alternative.
+
+## Held by default: nothing moves until a checked delivery
+
+On the direct `hedera` rail, the payment settles before the job runs. If the job then fails, the buyer has paid for nothing. That happened once, live: [`0.0.9185802@1793968507.953096251`](https://hashscan.io/testnet/transaction/0.0.9185802@1793968507.953096251) (entry #34).
+
+So the default Hedera path is now the **`hedera-scheduled`** rail. The router ranks it as protected, ahead of the direct rail. A buyer that wants the direct rail opts in.
+
+1. **The buyer schedules the payment.** The agent creates a schedule for the exact USDC transfer, to the seller's payee account, and signs it. That account requires its own signature to receive (`receiverSignatureRequired`), so **nothing moves**. The agent logs a `schedule` entry and counts the amount against its cap.
+2. **The hub holds it.** It reads only the mirror node. The schedule must meet all of these, and nothing is submitted:
+   - its named create transaction is that schedule's own;
+   - it is still pending, with no admin key, and expires at least 60 s after the job's deadline;
+   - its body decodes to exactly the offer's asset, amount, payee and memo, with the buyer as the only debit;
+   - the payee requires its own signature;
+   - the buyer's signature is already on it.
+3. **The seller delivers, then countersigns.** The runner runs the job and signs its slip. Then it checks the schedule itself and **signs, but does not submit,** a `ScheduleSignTransaction`. A runner signs only for its own offer's price and payee.
+4. **The hub releases only after its checks.** If the output passes the offer's checks, the hub submits the seller's signature. The hub holds no key: a signed transaction needs none. The transfer executes in that consensus round. The hub returns the output only once the held schedule shows executed, with exactly the price moved.
+
+**A failed delivery** is a crash, a timeout, an error, or an output that fails the checks. In each case nothing is submitted, and the hub answers: "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires." Unsigned, the schedule expires. The agent then logs an `expired` entry and releases the hold.
+
+**What the hold covers.** It protects the buyer against a seller that fails or never delivers. It does not stop a seller who deliberately signs without delivering, because the seller holds that key. The Arc escrow's arbiter covers that case.
+
+**What it costs.** A held purchase costs the buyer about 0.16 HBAR in network fees (`ScheduleCreate` 0.146, plus the scheduled transfer 0.013), against about 0.005 for a direct one. The seller pays 0.015 to countersign.
+
+### Traced live on the public hub
+
+On the production hub, `https://hub-production-e85e.up.railway.app`, with the Agent Kit offer [`0xc0ceb0a0…443a`](https://hub-production-e85e.up.railway.app/offers/0xc0ceb0a067fdb0cfbb169c3ac6b9c4d91b681726f9abe66ad63556b0aeb4443a). Its 402 lists `hedera-scheduled` first, paying `0.0.11338176` and held for 300 s, then the direct `hedera` rail.
+
+- **Held purchase.**
+  - The agent `0.0.11337064` created schedule [`0.0.11341327`](https://hashscan.io/testnet/schedule/0.0.11341327) in [`0.0.11337064@1793978974.115868685`](https://hashscan.io/testnet/transaction/0.0.11337064@1793978974.115868685), and logged it as entry [#85](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/85).
+  - The seller delivered a `TransferTransaction` of 1 HBAR from `0.0.11337064` to `0.0.11337065` (memo `countersign held demo`). The hub then submitted the seller's countersignature.
+  - The transfer executed `SUCCESS` at `1793978983.950527764`: −0.03 USDC from the agent, +0.03 USDC to `0.0.11338176`.
+  - The slip is `0x86498002e9b11470b6ee58568775cc5de83130585d4521cad6f8c90f4c164499`.
+- **The standalone verifier** on that slip, run with `--mirror https://testnet.mirrornode.hedera.com`, prints `VALID`. All four checks pass:
+  - hash;
+  - seller;
+  - countersignature: "held by Hedera schedule 0.0.11341327, created by 0.0.11337064@1793978974.115868685";
+  - onchain: "schedule 0.0.11341327 executed at 1793978983.950527764: 30000 of 0.0.429274 from 0.0.11337064 to 0.0.11338176".
+- **Failed delivery.**
+  - The same offer, with `{"transfers":[{"accountId":"not-an-account","amount":1}]}`, makes the Agent Kit report an in-band error. The offer's output schema refuses it, so the seller's runner refused before signing anything.
+  - The hub answered 502: "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires."
+  - The schedule [`0.0.11341332`](https://hashscan.io/testnet/schedule/0.0.11341332), created in [`0.0.11337064@1793978994.486891366`](https://hashscan.io/testnet/transaction/0.0.11337064@1793978994.486891366) and logged as entry [#86](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/86), kept only the buyer's signature.
+  - It has no execution record and expired at `1793979300`.
+  - The agent logged [#87](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/87) (`expired`) and released the hold. Its balance went 19.00 → 19.00 USDC: **nothing moved.**
+
+Rehearsed first against a local hub on testnet:
+
+- **Held purchase.** Schedule [`0.0.11340633`](https://hashscan.io/testnet/schedule/0.0.11340633), entry #70. It executed at `1793976347.287046943` when the hub submitted the seller's [`0.0.11338176@1793976342.743278655`](https://hashscan.io/testnet/transaction/0.0.11338176@1793976342.743278655).
+- **Failed delivery.** Schedule [`0.0.11340636`](https://hashscan.io/testnet/schedule/0.0.11340636), entries #71 and #72. It carried only the buyer's signature and has no execution record, and the balance stayed at 19.18 USDC.
+
+```sh
+bun scripts/hedera/agent-run.ts <hub> --offer <hash> --input '<json>' --json                       # held by default
+bun scripts/hedera/agent-run.ts <hub> --offer <hash> --input '<json>' --prove-undelivered --json   # a failed delivery: waits out the hold and checks nothing moved
+bun scripts/hedera/agent-run.ts <hub> --exact ...                                                  # opt out: the direct x402 rail
+```
+
 ## Payment flow, traced through one real payment
 
 The agent `0.0.11337064` bought one call to Circle's `use-usdc` skill (Apache-2.0) for 0.05 USDC through the countersign hub, with no human approving. The seller's runner served the skill and was paid on Hedera at `0.0.11337065`. Every value below was read back from Hedera testnet.

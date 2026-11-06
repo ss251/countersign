@@ -3,6 +3,7 @@ import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
 import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
 import { Wordmark } from "../ui/Mark.tsx";
+import { WalletButton } from "../ui/WalletButton.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
 
@@ -86,6 +87,7 @@ function TopBar({ active }: { active: string }) {
         <nav className="topbar__nav" aria-label="Views">
           {links("topbar__link")}
         </nav>
+        <WalletButton />
         <button
           type="button"
           className="topbar__menu"
@@ -99,6 +101,7 @@ function TopBar({ active }: { active: string }) {
       {open ? (
         <nav id="topbar-sheet" className="topbar__sheet" aria-label="Views">
           {links("topbar__sheet-link")}
+          <WalletButton />
         </nav>
       ) : null}
     </header>
