@@ -123,7 +123,6 @@ Every existing test still passes, unedited.
 - **No network** in tests.
 - **Existing tests:** never edit, weaken, skip or delete one to make it pass. If one fails, fix the code, or stop and report the root cause.
 - **Commits:** small, present tense, ending `refs #21`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -144,4 +143,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/tr-04-revoke-on-hub.md`: the diff summary, the test names, and the gate output counts.
+Write `$M/reports/tr-04-revoke-on-hub.md`: the diff summary, the test names, and the gate output counts.
