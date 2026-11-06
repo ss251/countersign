@@ -36,12 +36,14 @@ describe("lineage naming the offer or seller directly", () => {
     hub.close();
   });
 
-  test("a lineage naming the target's own offer hash is refused with 409 and no 402", async () => {
+  // An offer hash repeated in the lineage is #214's purchase cycle (422), checked first; the
+  // seller and ancestor-job cases below stay D17's lineage cycle (409). Both come before any 402.
+  test("a lineage naming the target's own offer hash is refused with 422 and no 402", async () => {
     const response = await callWithLineage(offerA, { q: "hello" }, [offerA]);
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(422);
     const body = (await response.json()) as ErrorBody;
-    expect(body.code).toBe("lineage-cycle");
+    expect(body.code).toBe("purchase-cycle");
     expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
   });
 
@@ -58,9 +60,10 @@ describe("lineage naming the offer or seller directly", () => {
 
     const response = await callWithLineage(offerA, { q: "hello" }, [upper]);
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(422);
     const body = (await response.json()) as ErrorBody;
-    expect(body.code).toBe("lineage-cycle");
+    expect(body.code).toBe("purchase-cycle");
+    expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
   });
 
   test("another offer's hash is not this offer's cycle and still answers 402", async () => {

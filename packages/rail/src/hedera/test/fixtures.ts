@@ -1,8 +1,10 @@
 // Offline fixtures: real Hedera transactions, frozen against one fixed node and signed locally.
 import { offerHash, type Offer } from "@countersign/core";
+import { proto } from "@hiero-ledger/proto";
 import {
   AccountId,
   Hbar,
+  KeyList,
   PrivateKey,
   Timestamp,
   TokenId,
@@ -19,6 +21,17 @@ export const FEE_PAYER = "0.0.9185802";
 export const FALLBACK_FEE_PAYER = "0.0.7162784";
 export const NODE = AccountId.fromString("0.0.3");
 export const payerKey = PrivateKey.generateECDSA();
+export const sellerSignKey = PrivateKey.generateED25519();
+export const hubKey = PrivateKey.generateED25519();
+
+/** The mirror's key object for a payee that needs the seller and the hub together. */
+export function hubGatedPayeeKey(): { _type: string; key: string } {
+  const key = new KeyList([sellerSignKey.publicKey, hubKey.publicKey], 2);
+  return {
+    _type: "ProtobufEncoded",
+    key: Buffer.from(proto.Key.encode(key._toProtobufKey()).finish()).toString("hex"),
+  };
+}
 
 export function offer(over: Partial<Offer> = {}): Offer {
   return {
