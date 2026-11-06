@@ -27,12 +27,20 @@ export type ChildSpec = SkillSpec | McpSpec | OpenApiSpec;
 
 const CHILD_ENTRY = join(import.meta.dir, "child-entry.ts");
 
-/** Only PATH survives from the parent; HOME points at a fresh temp directory. */
-export function scrubbedEnv(parent: Record<string, string | undefined>): Record<string, string> {
-  return {
+/**
+ * PATH survives from the parent and HOME is a fresh temp directory.
+ * `lineage` is this job's COUNTERSIGN_LINEAGE; it holds no secret.
+ */
+export function scrubbedEnv(
+  parent: Record<string, string | undefined>,
+  lineage?: string,
+): Record<string, string> {
+  const env: Record<string, string> = {
     PATH: parent.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     HOME: mkdtempSync(join(tmpdir(), "countersign-runner-")),
   };
+  if (lineage !== undefined) env.COUNTERSIGN_LINEAGE = lineage;
+  return env;
 }
 
 /** Run one job in the child entry process and return its output. */
@@ -40,9 +48,10 @@ export async function runInChild(
   spec: ChildSpec,
   input: unknown,
   limits: ChildLimits,
+  lineage?: string,
 ): Promise<unknown> {
   const proc = Bun.spawn([process.execPath, CHILD_ENTRY], {
-    env: scrubbedEnv(process.env),
+    env: scrubbedEnv(process.env, lineage),
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
