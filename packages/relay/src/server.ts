@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, fallback, http } from "viem";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { formatUnits } from "@countersign/core";
@@ -307,14 +307,19 @@ function jsonSafe(value: unknown): unknown {
 if (import.meta.main) {
   const config = loadRelayConfig(process.env);
   const account = privateKeyToAccount(config.relayerPrivateKey);
-  const transport = http(config.rpcUrl);
-  const publicClient = createPublicClient({ chain: whitechainSepolia, transport });
   // Fail closed on the wrong chain: rpc-testnet.whitechain.io answers as chain 2625 with zero balances.
-  const chainId = await publicClient.getChainId();
-  if (chainId !== WHITECHAIN_CHAIN_ID) {
-    console.error(`relay refuses to start: ${config.rpcUrl} is chain ${chainId}, not ${WHITECHAIN_CHAIN_ID}`);
-    process.exit(1);
+  for (const url of config.rpcUrls) {
+    const probe = createPublicClient({ chain: whitechainSepolia, transport: http(url) });
+    const chainId = await probe.getChainId().catch(() => null);
+    if (chainId !== WHITECHAIN_CHAIN_ID) {
+      console.error(
+        `relay refuses to start: ${url} is ${chainId === null ? "unreachable" : `chain ${chainId}`}, not ${WHITECHAIN_CHAIN_ID}`,
+      );
+      process.exit(1);
+    }
   }
+  const transport = fallback(config.rpcUrls.map((url) => http(url)));
+  const publicClient = createPublicClient({ chain: whitechainSepolia, transport });
   const walletClient = createWalletClient({ chain: whitechainSepolia, transport, account });
   const escrow = config.policy.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
   const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });

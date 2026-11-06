@@ -59,6 +59,8 @@ export type SettleResponse = {
   transaction: string;
   network: string;
   amount?: string;
+  /** True when the ledger already had this (from, nonce) settled. */
+  replayed?: boolean;
 };
 
 export type ExactClock = number | (() => number);
@@ -207,6 +209,7 @@ export async function settleExact(
           transaction: promoted.txHash,
           network: NETWORK,
           amount: atomicToWire(promoted.amount),
+          replayed: true,
         };
       }
       if (existing.status === "settled") {
@@ -216,6 +219,7 @@ export async function settleExact(
           transaction: existing.txHash,
           network: NETWORK,
           amount: atomicToWire(existing.amount),
+          replayed: true,
         };
       }
       return {
