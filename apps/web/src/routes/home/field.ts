@@ -27,10 +27,18 @@ export interface Geometry {
   buckets: number;
   /** Marks per row when the field groups them by rail. */
   cols: number;
+  /** Where the lifted mark sits on the receipt: px in from its left edge, px down to the middle of the title's first line. */
+  stampX: number;
+  stampY: number;
+  stampScale: number;
 }
 
-export const WIDE: Geometry = { mark: 10, pitch: 14, base: 58, buckets: 56, cols: 6 };
-export const NARROW: Geometry = { mark: 8, pitch: 12, base: 40, buckets: 24, cols: 4 };
+/* At 1440 the evidence carries the frame: 16 px marks on a 22 px pitch, the tape at mid-height (firstmate review 1). */
+export const WIDE: Geometry = { mark: 16, pitch: 22, base: 46, buckets: 40, cols: 6, stampX: 16, stampY: 27, stampScale: 1.6 };
+export const NARROW: Geometry = { mark: 8, pitch: 12, base: 40, buckets: 24, cols: 4, stampX: 12, stampY: 22, stampScale: 1.6 };
+
+/** The evidence stage's beats: the claim, the tape, the rails, the receipt, the ask, and the exit. */
+export const EXIT = 5;
 
 export const keyOf = (s: Settlement): string => `${s.jobId}-${s.kind}`;
 
@@ -125,13 +133,10 @@ export function asideAt(beat: number, narrow: boolean, g: Geometry): AsideSpot {
   return beat >= 4 ? { y: 0, dy: 0 } : { y: g.base, dy: 76 };
 }
 
-/**
- * The stamp in the receipt's top-left corner, where the newest mark lands: 12 px in, and level with
- * the middle of the title's first line (the receipt's 12 px top padding plus half a 20 px line).
- */
+/** The stamp in the receipt's top-left corner, where the newest mark lands, level with the title's first line. */
 export function stampSpot(beat: number, narrow: boolean, g: Geometry): Spot {
   const a = asideAt(beat, narrow, g);
-  return { x: receiptX(narrow), y: a.y, dx: 12, dy: a.dy + 22, s: 1.6, o: 1 };
+  return { x: receiptX(narrow), y: a.y, dx: g.stampX, dy: a.dy + g.stampY, s: g.stampScale, o: 1 };
 }
 
 /**
@@ -139,6 +144,8 @@ export function stampSpot(beat: number, narrow: boolean, g: Geometry): Spot {
  * 0 the claim: marks wait, unseen, on the tape. 1 the tape. 2 grouped by rail.
  * 3 the groups step back (to the left half on a wide screen) and the newest lifts into the receipt.
  * 4 the groups leave the frame to the ask box; the receipt's mark stays.
+ * 5 the exit: every mark leaves with the rest of the stage's evidence, where it stands, so nothing
+ *   is left behind when the frame scrolls away.
  */
 export function markSpots(rows: Settlement[], order: RailId[], beat: number, narrow: boolean): Map<string, Spot> {
   const g = narrow ? NARROW : WIDE;
@@ -153,7 +160,7 @@ export function markSpots(rows: Settlement[], order: RailId[], beat: number, nar
   const dim = beat === 3 ? (narrow ? 0.22 : 0.3) : 0;
   for (const [k, p] of spots) spots.set(k, { ...p, o: dim });
   const newest = newestOf(rows);
-  if (newest) spots.set(keyOf(newest), stampSpot(beat, narrow, g));
+  if (newest) spots.set(keyOf(newest), { ...stampSpot(Math.min(beat, 4), narrow, g), o: beat >= EXIT ? 0 : 1 });
   return spots;
 }
 

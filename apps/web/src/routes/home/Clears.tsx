@@ -4,7 +4,7 @@ import { explorerTemplate, formatClock, networkName, RAIL_LABEL, usd } from "../
 import type { EnvelopeView, Listing, Settlement } from "../../lib/types.ts";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
-import { toBeat, useBeat, useHeight } from "./stage.ts";
+import { span, toBeat, useBeat, useHeight } from "./stage.ts";
 
 /*
  * The second stage: how a purchase clears, as one artifact that changes state.
@@ -13,9 +13,12 @@ import { toBeat, useBeat, useHeight } from "./stage.ts";
  *     corner and the hold-to-countersign try-out takes the centre.
  *   2 "On the escrow rail, nothing moves until the output checks out.": the newest escrow release,
  *     and one quiet line for the direct rails, which settle before delivery.
+ *   3 the exit, half a screen: the envelope and the release leave together; the statement rides
+ *     the frame away, so nothing is orphaned as the proof comes up.
  */
 
-const BEATS = 3;
+const WEIGHTS = [1, 1, 1, 0.5] as const;
+const EXIT = 3;
 
 export interface ClearsProps {
   /** The agent's signed envelope when the hub serves one; otherwise the example stands in. */
@@ -24,23 +27,29 @@ export interface ClearsProps {
   /** The newest escrow release: never a direct-rail payment under the escrow claim. */
   release: Settlement | undefined;
   pinned: boolean;
+  narrow: boolean;
 }
 
 export function ClearsStage(props: ClearsProps) {
   const stage = useRef<HTMLElement>(null);
-  const beat = useBeat(stage, BEATS, props.pinned);
-  const go = (b: number) => toBeat(stage.current, BEATS, b);
+  const beat = useBeat(stage, WEIGHTS, props.pinned);
+  const go = (b: number) => toBeat(stage.current, WEIGHTS, b);
   if (!props.pinned) {
     return (
-      <section ref={stage} className="story story--static" aria-label="How a purchase clears">
-        {Array.from({ length: BEATS }, (_, b) => (
+      <section ref={stage} className="story story--static story--clears" aria-label="How a purchase clears">
+        {Array.from({ length: EXIT }, (_, b) => (
           <ClearsFrame key={b} {...props} beat={b} only go={go} />
         ))}
       </section>
     );
   }
   return (
-    <section ref={stage} className="story story--pinned" style={{ "--beats": BEATS } as CSSProperties} aria-label="How a purchase clears">
+    <section
+      ref={stage}
+      className="story story--pinned story--clears"
+      style={{ "--span": span(WEIGHTS) } as CSSProperties}
+      aria-label="How a purchase clears"
+    >
       <ClearsFrame {...props} beat={beat} only={false} go={go} />
     </section>
   );
@@ -53,6 +62,7 @@ function ClearsFrame({
   envelope,
   featured,
   release,
+  narrow,
 }: ClearsProps & { beat: number; only: boolean; go: (beat: number) => void }) {
   const env = useRef<HTMLDivElement>(null);
   const envHeight = useHeight(env);
@@ -67,12 +77,14 @@ function ClearsFrame({
         {shows(0) ? <h2 className={cx("story__line", on(0) && "is-on")}>The agent signs its limits once.</h2> : null}
         {shows(1) ? <h2 className={cx("story__line", on(1) && "is-on")}>Above them, you countersign the exact offer and amount.</h2> : null}
         {shows(2) ? (
-          <h2 className={cx("story__line", on(2) && "is-on")}>On the escrow rail, nothing moves until the output checks out.</h2>
+          <h2 className={cx("story__line", (on(2) || beat === EXIT) && "is-on")}>
+            On the escrow rail, nothing moves until the output checks out.
+          </h2>
         ) : null}
         <div className="story__desk" style={{ "--env-h": `${envHeight}px` } as CSSProperties}>
-          <Envelope view={envelope} back={beat >= 1} box={env} />
-          {shows(1) ? <TryOut listing={featured} on={on(1)} onFocus={bring(1)} /> : null}
-          {shows(2) ? <Release s={release} on={on(2)} onFocus={bring(2)} /> : null}
+          <Envelope view={envelope} back={beat >= 1} gone={beat >= EXIT} box={env} />
+          {shows(1) ? <TryOut listing={featured} on={on(1)} onFocus={bring(1)} narrow={narrow} /> : null}
+          {shows(2) ? <Release s={release} on={on(2)} onFocus={bring(2)} narrow={narrow} /> : null}
         </div>
       </div>
     </div>
@@ -84,9 +96,19 @@ function ClearsFrame({
  * in words, with no amount, agent or time, so it never reads as a record. The real one replaces
  * it field for field.
  */
-function Envelope({ view, back, box }: { view: EnvelopeView | undefined; back: boolean; box: RefObject<HTMLDivElement | null> }) {
+function Envelope({
+  view,
+  back,
+  gone,
+  box,
+}: {
+  view: EnvelopeView | undefined;
+  back: boolean;
+  gone: boolean;
+  box: RefObject<HTMLDivElement | null>;
+}) {
   return (
-    <div ref={box} className={cx("story__env", back && "is-back")}>
+    <div ref={box} className={cx("story__env", back && "is-back", gone && "is-gone")}>
       {view ? (
         <>
           <p className="label">
@@ -155,7 +177,7 @@ function Envelope({ view, back, box }: { view: EnvelopeView | undefined; back: b
 
 /* Beat 1: the try-out, unchanged in substance: the live offer, its exact amount, and a hold that buys nothing. */
 
-function TryOut({ listing, on, onFocus }: { listing: Listing | undefined; on: boolean; onFocus: () => void }) {
+function TryOut({ listing, on, onFocus, narrow }: { listing: Listing | undefined; on: boolean; onFocus: () => void; narrow: boolean }) {
   const [round, setRound] = useState(0);
   if (!listing) {
     return (
@@ -176,7 +198,7 @@ function TryOut({ listing, on, onFocus }: { listing: Listing | undefined; on: bo
       </p>
       <p className="story__exact">
         <span className="label">You countersign exactly</span>
-        <Amount money={usd(offer.price, rail)} size="lg" flight />
+        <Amount money={usd(offer.price, rail)} size={narrow ? "lg" : "xl"} flight />
       </p>
       <dl className="story__lines story__lines--two">
         <div>
@@ -211,7 +233,7 @@ function TryOut({ listing, on, onFocus }: { listing: Listing | undefined; on: bo
 
 /* Beat 2: the newest escrow release, with its amount, transaction and slip; the direct rails said plainly. */
 
-function Release({ s, on, onFocus }: { s: Settlement | undefined; on: boolean; onFocus: () => void }) {
+function Release({ s, on, onFocus, narrow }: { s: Settlement | undefined; on: boolean; onFocus: () => void; narrow: boolean }) {
   const template = s ? explorerTemplate(s.network) : undefined;
   const href = s ? (s.explorer ?? (template && s.tx ? template.replace("{tx}", encodeURIComponent(s.tx)) : undefined)) : undefined;
   return (
@@ -220,7 +242,7 @@ function Release({ s, on, onFocus }: { s: Settlement | undefined; on: boolean; o
         <>
           <p className="story__exact">
             <span className="status status--released">Released</span>
-            <Amount money={usd(s.amount, s.rail)} size="lg" />
+            <Amount money={usd(s.amount, s.rail)} size={narrow ? "lg" : "xl"} />
           </p>
           <dl className="story__lines story__lines--two">
             <div className="story__wide">

@@ -27,14 +27,20 @@ export const useReducedMotion = (): boolean => useMedia(REDUCE);
 /** A phone: the statement over its evidence, and the marks in their narrow places. */
 export const useNarrow = (): boolean => useMedia(NARROW);
 
-export function useBeat(stage: RefObject<HTMLElement | null>, beats: number, pinned: boolean): number {
+/**
+ * Beats are weighted in screens of scroll: a stage pins for the sum of its weights and is one screen
+ * taller than that, so its frame scrolls away only after the last beat. An exit beat is short.
+ */
+export const span = (weights: readonly number[]): number => weights.reduce((a, b) => a + b, 0);
+
+export function useBeat(stage: RefObject<HTMLElement | null>, weights: readonly number[], pinned: boolean): number {
   const [beat, setBeat] = useState(0);
   useEffect(() => {
     if (!pinned) return;
     let frame = 0;
     const read = () => {
       frame = 0;
-      if (stage.current) setBeat(beatAt(stage.current, beats));
+      if (stage.current) setBeat(beatAt(stage.current, weights));
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(read);
@@ -47,22 +53,27 @@ export function useBeat(stage: RefObject<HTMLElement | null>, beats: number, pin
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
     };
-  }, [stage, beats, pinned]);
+  }, [stage, weights, pinned]);
   return beat;
 }
 
-function beatAt(stage: HTMLElement, beats: number): number {
+function beatAt(stage: HTMLElement, weights: readonly number[]): number {
   const box = stage.getBoundingClientRect();
   const range = box.height - window.innerHeight;
   const progress = range > 0 ? Math.min(1, Math.max(0, -box.top / range)) : 0;
-  return Math.min(beats - 1, Math.floor(progress * beats));
+  let left = progress * span(weights);
+  for (let i = 0; i < weights.length; i++) {
+    left -= weights[i] ?? 1;
+    if (left < 0) return i;
+  }
+  return weights.length - 1;
 }
 
 /**
  * Down to a beat: the middle of its stretch, so it never lands on a threshold. Unpinned, every beat
  * is its own section and this scrolls to it. Smooth unless less motion was asked for.
  */
-export function toBeat(stage: HTMLElement | null, beats: number, beat: number): void {
+export function toBeat(stage: HTMLElement | null, weights: readonly number[], beat: number): void {
   if (!stage) return;
   const behavior: ScrollBehavior = window.matchMedia(REDUCE).matches ? "auto" : "smooth";
   const frames = stage.querySelectorAll<HTMLElement>(":scope > [data-beat]");
@@ -72,7 +83,8 @@ export function toBeat(stage: HTMLElement | null, beats: number, beat: number): 
   }
   const top = stage.getBoundingClientRect().top + window.scrollY;
   const range = stage.offsetHeight - window.innerHeight;
-  window.scrollTo({ top: top + (range * (beat + 0.5)) / beats, behavior });
+  const middle = (span(weights.slice(0, beat)) + (weights[beat] ?? 1) / 2) / span(weights);
+  window.scrollTo({ top: top + range * middle, behavior });
 }
 
 /** The element's own height in px, kept current; layers that stack under it read it as a CSS variable. */

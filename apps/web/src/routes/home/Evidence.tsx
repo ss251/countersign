@@ -5,8 +5,8 @@ import { useNow } from "../../lib/now.ts";
 import type { HubStats, Listing, RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
 import { exampleNeeds } from "../assistant/palette.ts";
-import { asideAt, byTime, keyOf, labelSpots, markSpots, NARROW, newestOf, railOrder, WIDE, type Spot } from "./field.ts";
-import { toBeat, useBeat } from "./stage.ts";
+import { asideAt, byTime, EXIT, keyOf, labelSpots, markSpots, NARROW, newestOf, railOrder, WIDE, type Spot } from "./field.ts";
+import { span, toBeat, useBeat } from "./stage.ts";
 
 /*
  * The first stage: the claim, then its evidence, in one pinned frame.
@@ -15,9 +15,13 @@ import { toBeat, useBeat } from "./stage.ts";
  *   2 "On three rails.": the same marks regroup by rail, each group named with its chain and count.
  *   3 "Each one left a slip anyone can check.": the newest mark lifts out into its receipt.
  *   4 "Ask for one.": the ask box slides in beside the receipt.
+ *   5 the exit, half a screen: all of the stage's evidence leaves together and only the last
+ *     statement rides the frame away, so nothing is orphaned under the next stage.
  */
 
-const BEATS = 5;
+/** Screens of scroll per beat; the exit is short. Unpinned, the exit is not a section of its own. */
+const WEIGHTS = [1, 1, 1, 1, 1, 0.5] as const;
+const SECTIONS = EXIT;
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
 
 export interface EvidenceProps {
@@ -37,19 +41,24 @@ export interface EvidenceProps {
 
 export function EvidenceStage(props: EvidenceProps) {
   const stage = useRef<HTMLElement>(null);
-  const beat = useBeat(stage, BEATS, props.pinned);
-  const go = (b: number) => toBeat(stage.current, BEATS, b);
+  const beat = useBeat(stage, WEIGHTS, props.pinned);
+  const go = (b: number) => toBeat(stage.current, WEIGHTS, b);
   if (!props.pinned) {
     return (
-      <section ref={stage} className="story story--static" aria-label="The claim and its evidence">
-        {Array.from({ length: BEATS }, (_, b) => (
+      <section ref={stage} className="story story--static story--evidence" aria-label="The claim and its evidence">
+        {Array.from({ length: SECTIONS }, (_, b) => (
           <EvidenceFrame key={b} {...props} beat={b} only go={go} />
         ))}
       </section>
     );
   }
   return (
-    <section ref={stage} className="story story--pinned" style={{ "--beats": BEATS } as CSSProperties} aria-label="The claim and its evidence">
+    <section
+      ref={stage}
+      className="story story--pinned story--evidence"
+      style={{ "--span": span(WEIGHTS) } as CSSProperties}
+      aria-label="The claim and its evidence"
+    >
       <EvidenceFrame {...props} beat={beat} only={false} go={go} />
     </section>
   );
@@ -85,13 +94,13 @@ function EvidenceFrame({
         {shows(1) ? <h2 className={cx("story__line", on(1) && "is-on")}>{none ? "No payment has moved on this hub yet." : "Every payment here was real."}</h2> : null}
         {shows(2) ? <h2 className={cx("story__line", on(2) && "is-on")}>{`On ${WORDS[n] ?? n} ${n === 1 ? "rail" : "rails"}.`}</h2> : null}
         {shows(3) ? <h2 className={cx("story__line", on(3) && "is-on")}>Each one left a slip anyone can check.</h2> : null}
-        {shows(4) ? <h2 className={cx("story__line", on(4) && "is-on")}>Ask for one.</h2> : null}
+        {shows(4) ? <h2 className={cx("story__line", on(4, EXIT) && "is-on")}>Ask for one.</h2> : null}
         {shows(1, 4) ? (
           <div className="story__plane">
             <Field rows={rows} order={order} rails={rails} stats={stats} beat={beat} narrow={narrow} />
             {shows(3, 4) ? (
               <div className="story__aside" style={asideStyle(beat, narrow)}>
-                <Receipt s={newestOf(rows)} on={on(3, 4)} onFocus={bring(3, 4)} />
+                <Receipt s={newestOf(rows)} on={on(3, 4)} onFocus={bring(3, 4)} narrow={narrow} />
                 {shows(4) ? <Ask listings={listings} on={on(4)} onFocus={bring(4)} /> : null}
               </div>
             ) : null}
@@ -355,7 +364,7 @@ function Totals({ stats: s, missing, on }: { stats: HubStats | null; missing: st
 
 /* Beat 3: the newest settlement as one receipt, unboxed: plain lines under a hairline. */
 
-function Receipt({ s, on, onFocus }: { s: Settlement | undefined; on: boolean; onFocus: () => void }) {
+function Receipt({ s, on, onFocus, narrow }: { s: Settlement | undefined; on: boolean; onFocus: () => void; narrow: boolean }) {
   const now = useNow(10_000);
   if (!s) {
     return (
@@ -369,7 +378,7 @@ function Receipt({ s, on, onFocus }: { s: Settlement | undefined; on: boolean; o
   return (
     <div className={cx("story__receipt", on && "is-on")} onFocus={onFocus}>
       <p className="story__receipt-title">{s.title || "Untitled offer"}</p>
-      <Amount money={usd(s.amount, s.rail)} size="lg" />
+      <Amount money={usd(s.amount, s.rail)} size={narrow ? "lg" : "xl"} />
       <dl className="story__lines story__lines--two">
         <div>
           <dt className="label">Seller</dt>

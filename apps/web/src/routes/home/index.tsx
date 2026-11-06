@@ -82,6 +82,7 @@ export default function Landing(_props: PageProps) {
         featured={featured}
         release={newestRelease(rows)}
         pinned={pinned}
+        narrow={narrow}
       />
 
       <Proof rails={hubRails} />

@@ -3,6 +3,7 @@ import type { RailDeclaration, RailId, Settlement } from "../src/lib/types.ts";
 import {
   byTime,
   centres,
+  EXIT,
   groups,
   keyOf,
   markSpots,
@@ -46,7 +47,7 @@ const where = (p: Spot) => `${p.x.toFixed(3)}|${p.y}|${p.dx}|${p.dy}`;
 describe("the landing's evidence field", () => {
   test("every beat draws one mark per settlement: 16 settlements make 16 marks, never more", () => {
     for (const narrow of [false, true]) {
-      for (let beat = 0; beat < 5; beat++) {
+      for (let beat = 0; beat <= EXIT; beat++) {
         const spots = markSpots(ROWS, ORDER, beat, narrow);
         expect(spots.size).toBe(ROWS.length);
         for (const s of ROWS) expect(spots.has(keyOf(s))).toBe(true);
@@ -89,6 +90,13 @@ describe("the landing's evidence field", () => {
     }
     const claim = markSpots(ROWS, ORDER, 0, false);
     expect([...claim.values()].every((p) => p.o === 0)).toBe(true);
+  });
+
+  test("the exit beat leaves nothing behind: every mark, the lifted one too, is gone before the frame scrolls away", () => {
+    for (const narrow of [false, true]) {
+      const exit = markSpots(ROWS, ORDER, EXIT, narrow);
+      expect([...exit.values()].every((p) => p.o === 0)).toBe(true);
+    }
   });
 
   test("the escrow beat only ever shows an escrow release, never a newer direct-rail payment", () => {
