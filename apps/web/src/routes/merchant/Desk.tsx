@@ -421,9 +421,10 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
     }
 
     try {
-      const result = await refundOrder(order.id);
+      // Exactly the figure the merchant confirmed: the service signs that or refuses (cs-w1 B15).
+      const result = await refundOrder(order.id, { amount: BigInt(order.refundable) });
       if (!mountedRef.current) return;
-      if (result.ok) {
+      if (result.ok === true) {
         setRow(order.id, {
           kind: "done",
           txHash: result.txHash,
@@ -431,6 +432,8 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
           cancelled,
           before: order.refundable,
         });
+      } else if (result.ok === "unknown") {
+        setRow(order.id, { kind: "unknown", message: result.reason, before: order.refundable });
       } else {
         setRow(order.id, { kind: "error", message: result.reason });
         addRefusal(order.id, result.reason);
@@ -452,9 +455,11 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
     undoTimersRef.current.set(order.id, timer);
   };
 
+  /** Takes a refund back only while its window is open; once it has left, Undo changes nothing. */
   const undoRefund = (id: string) => {
     const timer = undoTimersRef.current.get(id);
-    if (timer !== undefined) window.clearTimeout(timer);
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
     undoTimersRef.current.delete(id);
     setRow(id, null);
   };
@@ -462,6 +467,11 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   /** A partial refund from the panel. Deliberate already (two steps), so it sends at once. */
   const refundPart = async (order: Order, amount: bigint): Promise<PartOutcome> => {
     if (!canAct(access)) return { ok: false, reason: "Refunds cannot be signed from this page." };
+    const current = rows[order.id];
+    if (undoTimersRef.current.has(order.id) || current?.kind === "undo" || current?.kind === "sending") {
+      return { ok: false, reason: "A refund for this order is already on its way." };
+    }
+    setRow(order.id, { kind: "sending" });
     if (offline) {
       if (!sample) return { ok: false, reason: "The sample ledger is still loading." };
       await wait(700);
@@ -473,7 +483,12 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
     try {
       const result = await refundOrder(order.id, { amount });
       if (!mountedRef.current) return { ok: true };
-      if (!result.ok) {
+      if (result.ok === "unknown") {
+        setRow(order.id, { kind: "unknown", message: result.reason, before: order.refundable });
+        return { ok: "unknown" };
+      }
+      if (result.ok === false) {
+        setRow(order.id, null);
         addRefusal(order.id, result.reason);
         return { ok: false, reason: result.reason };
       }
@@ -486,6 +501,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
       });
       return { ok: true };
     } catch (error) {
+      if (mountedRef.current) setRow(order.id, null);
       return { ok: false, reason: messageOf(error) };
     } finally {
       void refresh();
@@ -698,7 +714,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
                     />
                   </td>
                 </tr>
-                {row?.kind === "done" || row?.kind === "error" ? (
+                {row?.kind === "done" || row?.kind === "error" || row?.kind === "unknown" ? (
                   <tr className="mx-result-row">
                     <td colSpan={7}>
                       {row.kind === "done" ? (
@@ -715,6 +731,10 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
                           >
                             {shortHash(row.txHash)}
                           </a>
+                        </p>
+                      ) : row.kind === "unknown" ? (
+                        <p className="mx-result" role="status">
+                          {row.message} Reload to see whether it settled before refunding again.
                         </p>
                       ) : (
                         <p className="mx-result mx-result--refused" role="alert">
@@ -983,6 +1003,7 @@ function RowAction({ order, row, access, onRefund, onUndo }: RowActionProps) {
   if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} undoRef={undoRef} />;
   if (row?.kind === "sending") return <span className="mx-quiet">{held ? "Cancelling…" : "Refunding…"}</span>;
   if (!canAct(access) || !offersRefund(order, row)) {
+    if (row?.kind === "unknown") return <span className="mx-quiet">Unconfirmed</span>;
     return row?.kind === "done" ? <span className="mx-quiet">{row.cancelled ? "Cancelled" : "Refunded"}</span> : null;
   }
   return (

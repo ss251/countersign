@@ -38,6 +38,12 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - **CSV:** the orders CSV gets a final `refund_reasons` column, space-joined.
    - **Tests:** a reason round-trips on refund and on cancel, and a bad reason is refused.
 
+6. **A held escrow is cancelled whole or not at all** (cs-w1 should-fix 2 on PR #83, review 5aab25b). This is `merchant-server.ts`, `POST /orders/:id/refund`, for an escrow order whose status is `held`.
+   - **Exact amount:** proceed only when `amount` equals the order's full `amount` (atomic, compared as BigInt). Then `signCancel` → `/escrow/cancel`, as today.
+   - **Any other amount:** 400 `{ ok: false, reason: "partial_cancel_not_possible" }`, and nothing is signed.
+   - **No amount:** keep accepting it, for older consoles.
+   - **Test:** a held order refunded with half its amount is refused with that reason, and no cancel reaches the relay.
+
 ## Constraints
 
 - **No browser of any kind on this machine.** No headless Chrome, Playwright, Puppeteer or screenshot tools. Verify with tests only.

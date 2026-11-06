@@ -297,7 +297,11 @@ export function humanDate(ms: number): string {
   return zone ? `${day}, ${time} ${zone}` : `${day}, ${time}`;
 }
 
-export type RefundReply = { ok: true; txHash: string; refunded?: string } | { ok: false; reason: string };
+export type RefundReply =
+  | { ok: true; txHash: string; refunded?: string }
+  | { ok: false; reason: string }
+  /** Sent, but not confirmed: it may have gone through, so it is never shown as refused or offered again. */
+  | { ok: "unknown"; reason: string };
 
 /**
  * The merchant service answers a refund two ways. A paid order is sent back by transfer:
@@ -308,7 +312,12 @@ export function normalizeRefundReply(body: unknown, httpStatus: number): RefundR
   if (!body || typeof body !== "object" || !("ok" in body)) return null;
   const reply = body as Record<string, unknown>;
   if (reply.ok === false) {
-    return { ok: false, reason: typeof reply.reason === "string" ? reply.reason : `http_${httpStatus}` };
+    const reason = typeof reply.reason === "string" ? reply.reason : `http_${httpStatus}`;
+    // The relayer sent it and is still waiting for the chain: pending, not refused.
+    if (reason === "settlement_pending") {
+      return { ok: "unknown", reason: "The refund was sent and is still settling on chain." };
+    }
+    return { ok: false, reason };
   }
   if (reply.ok !== true) return null;
   const txHash = typeof reply.txHash === "string" ? reply.txHash : typeof reply.transaction === "string" ? reply.transaction : null;

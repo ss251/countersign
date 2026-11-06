@@ -13,5 +13,7 @@ export default function MerchantPage({ params, query }: PageProps) {
   if (params[0] === "receipt") {
     return <Receipt id={params[1] ?? ""} offline={offline} />;
   }
-  return <Desk offline={offline} merchantQuery={query.get("merchant")} />;
+  // A new source is a new desk: switching between the sample and live never shows one inside the other.
+  const merchant = query.get("merchant");
+  return <Desk key={offline ? "sample" : `live:${merchant ?? ""}`} offline={offline} merchantQuery={merchant} />;
 }

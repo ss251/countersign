@@ -21,7 +21,7 @@ import {
 } from "../src/routes/merchant/model.ts";
 import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder } from "../src/routes/merchant/fixtures.ts";
 import { offersRefund } from "../src/routes/merchant/Panel.tsx";
-import { NOT_SERVED, fetchOrder, fetchOrders } from "../src/routes/merchant/api.ts";
+import { NOT_SERVED, fetchOrder, fetchOrders, refundOrder, unlockRefunds } from "../src/routes/merchant/api.ts";
 import {
   ORDERS_CSV_HEADER,
   assetOf,
@@ -612,6 +612,68 @@ describe("where the desk reads (STEER-1730)", () => {
     expect(await fetchOrder("0x01")).toBeNull();
     serve({ "/hub/orders/": () => new Response("404 Not Found", { status: 404 }) });
     await expect(fetchOrder("0x01")).rejects.toThrow(NOT_SERVED);
+    globalThis.fetch = realFetch;
+  });
+});
+
+describe("refunds sign only what the merchant confirmed (cs-w1 B15 and should-fixes)", () => {
+  const realFetch = globalThis.fetch;
+  const merchant = "0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c";
+  type Hit = { url: string; body: string };
+  const serve = (refund: () => Response | Promise<Response>) => {
+    const hits: Hit[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      hits.push({ url, body: String(init?.body ?? "") });
+      if (url.endsWith("/orders")) return Response.json({ orders: [] }); // the token check
+      if (url.includes("/refund")) return refund();
+      throw new TypeError("network down");
+    }) as typeof fetch;
+    return hits;
+  };
+
+  test("the amount is required, and nothing leaves the console without it", async () => {
+    const hits = serve(() => Response.json({ ok: true, txHash: "0x11" }));
+    await unlockRefunds("t");
+    // @ts-expect-error: the confirmed amount is required
+    await expect(refundOrder("0x01")).rejects.toThrow("A refund needs the amount the merchant confirmed.");
+    expect(hits.filter((hit) => hit.url.includes("/refund"))).toHaveLength(0);
+    const reply = await refundOrder("0x01", { amount: 10_000n });
+    expect(reply).toEqual({ ok: true, txHash: "0x11" });
+    expect(JSON.parse(hits.find((hit) => hit.url.includes("/refund"))!.body)).toEqual({ amount: "10000" });
+    globalThis.fetch = realFetch;
+  });
+
+  test("a 5xx, a dropped connection or a pending settlement may have gone through: never refused", async () => {
+    await unlockRefunds("t").catch(() => undefined);
+    serve(() => new Response("Bad Gateway", { status: 502 }));
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => {
+      throw new TypeError("reset");
+    });
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => Response.json({ ok: false, reason: "settlement_pending" }));
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => Response.json({ ok: false, reason: "refund_not_possible" }, { status: 400 }));
+    expect(await refundOrder("0x01", { amount: 1n })).toEqual({ ok: false, reason: "refund_not_possible" });
+    serve(() => new Response("", { status: 401 }));
+    await expect(refundOrder("0x01", { amount: 1n })).rejects.toThrow("The merchant service refused the token.");
+    globalThis.fetch = realFetch;
+  });
+
+  test("an unconfirmed refund is not offered again while the list is stale", () => {
+    const partly = fixtureOrders[3]!;
+    expect(offersRefund(partly, { kind: "unknown", message: "m", before: partly.refundable })).toBe(false);
+    expect(offersRefund(partly, { kind: "unknown", message: "m", before: "1000000" })).toBe(true);
+  });
+
+  test("only this ledger's own orders are read; a body without a list is an error", async () => {
+    const other = { ...fixtureOrders[0]!, id: "0x" + "99".repeat(32), merchant: "0x" + "12".repeat(20) };
+    globalThis.fetch = (async () => Response.json({ orders: [fixtureOrders[0], other] })) as unknown as typeof fetch;
+    const result = await fetchOrders(merchant);
+    expect(result.orders.map((order) => order.id)).toEqual([fixtureOrders[0]!.id]);
+    globalThis.fetch = (async () => Response.json({ items: [] })) as unknown as typeof fetch;
+    await expect(fetchOrders(merchant)).rejects.toThrow("The answer carried no list of orders.");
     globalThis.fetch = realFetch;
   });
 });

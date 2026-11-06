@@ -158,9 +158,18 @@ async function getJson(url: string): Promise<{ status: number; body: unknown }> 
   return { status: response.status, body };
 }
 
-function listOf(body: unknown): Order[] {
+/**
+ * The orders a source answered for this merchant. A body without an orders list is an error, never
+ * "no payments yet"; a record for any other merchant is dropped, so nothing but this ledger's own
+ * orders reaches its sums or its export.
+ */
+function listOf(body: unknown, merchant: string): Order[] {
   const raw = (body as { orders?: unknown } | null)?.orders;
-  return Array.isArray(raw) ? raw.map(fromHubOrder).filter((order): order is Order => order !== null) : [];
+  if (!Array.isArray(raw)) throw new Error("The answer carried no list of orders.");
+  const wanted = merchant.toLowerCase();
+  return raw
+    .map(fromHubOrder)
+    .filter((order): order is Order => order !== null && order.merchant.toLowerCase() === wanted);
 }
 
 /**
@@ -172,12 +181,12 @@ export async function fetchOrders(merchant: string): Promise<{ orders: Order[]; 
   const hub = deskHub();
   const seller = encodeURIComponent(merchant);
   const fromHub = await getJson(`${hub}/orders?seller=${seller}&limit=200`);
-  if (fromHub.status === 200) return { orders: listOf(fromHub.body), source: { kind: "hub", base: hub } };
+  if (fromHub.status === 200) return { orders: listOf(fromHub.body, merchant), source: { kind: "hub", base: hub } };
   const why = hubCannotSay(fromHub.status);
   if (why) {
     const fromRelay = await getJson(`${RELAY_URL}/orders?merchant=${seller}`);
     if (fromRelay.status === 200) {
-      return { orders: listOf(fromRelay.body), source: { kind: "relay", base: RELAY_URL, why } };
+      return { orders: listOf(fromRelay.body, merchant), source: { kind: "relay", base: RELAY_URL, why } };
     }
     throw new Error(why === "down" ? HUB_DOWN : NOT_SERVED);
   }
@@ -210,24 +219,40 @@ export async function fetchRelayStatus(): Promise<RelayStatus> {
 }
 
 export interface RefundRequest {
-  /** Atomic USDT. Leave it out to send back everything that is left. */
-  amount?: bigint;
+  /**
+   * Atomic USDT: exactly the figure the merchant confirmed on screen. Always sent, so the service
+   * signs that amount or refuses, and never "whatever the relay says is left".
+   */
+  amount: bigint;
 }
 
-export async function refundOrder(id: string, request: RefundRequest = {}): Promise<RefundResult> {
-  const body: { amount?: string } = {};
-  if (request.amount !== undefined) body.amount = request.amount.toString();
-  const response = await merchantFetch(`/orders/${encodeURIComponent(id)}/refund`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+const MAY_HAVE_GONE = "The merchant service did not confirm in time, so the refund may have gone through.";
+
+export async function refundOrder(id: string, request: RefundRequest): Promise<RefundResult> {
+  if (typeof request?.amount !== "bigint" || request.amount <= 0n) {
+    throw new Error("A refund needs the amount the merchant confirmed.");
+  }
+  const token = sessionToken || BUILD_TOKEN;
+  if (!token) throw new Error("Refunds need the merchant token.");
+  let response: Response;
+  try {
+    response = await fetch(`${MERCHANT_URL}/orders/${encodeURIComponent(id)}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ amount: request.amount.toString() }),
+    });
+  } catch {
+    // The request may have reached the service before the connection failed: never call it refused.
+    return { ok: "unknown", reason: MAY_HAVE_GONE };
+  }
+  if (response.status === 401) throw new Error(TOKEN_REFUSED);
+  if (response.status >= 500) return { ok: "unknown", reason: MAY_HAVE_GONE };
   const text = await response.text();
   let parsed: unknown = null;
   try {
     parsed = text.trim() === "" ? null : JSON.parse(text);
   } catch {
-    throw new Error("The merchant service did not answer with JSON.");
+    return { ok: "unknown", reason: MAY_HAVE_GONE };
   }
   const reply = normalizeRefundReply(parsed, response.status);
   if (!reply) throw new Error(`The merchant service answered ${response.status}.`);

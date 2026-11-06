@@ -33,6 +33,8 @@ export type RowState =
   | { kind: "sending" }
   /** `before` is what was refundable when it was sent, to tell a stale list from an updated one. */
   | { kind: "done"; txHash: string; amount: string; cancelled: boolean; before: string }
+  /** Sent but not confirmed: it may have gone through. Never shown as refused, never offered again blind. */
+  | { kind: "unknown"; message: string; before: string }
   | { kind: "error"; message: string };
 
 /**
@@ -42,11 +44,11 @@ export type RowState =
  */
 export function offersRefund(order: Order, row: RowState | undefined): boolean {
   if (row?.kind === "undo" || row?.kind === "sending") return false;
-  if (row?.kind === "done" && order.refundable === row.before) return false;
+  if ((row?.kind === "done" || row?.kind === "unknown") && order.refundable === row.before) return false;
   return canRefund(order);
 }
 
-export type PartOutcome = { ok: true } | { ok: false; reason: string };
+export type PartOutcome = { ok: true } | { ok: "unknown" } | { ok: false; reason: string };
 
 /**
  * Who can refund from this page. A refund is signed with the merchant's own key, which stays on the
@@ -267,6 +269,10 @@ function PanelRefund({ order, row, access, onRefundAll, onUndo, onPart, onUnlock
         {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} {assetOf(order)} returned to{" "}
         <span className="mono">{shortAddress(order.customer)}</span>.
       </p>
+    ) : row?.kind === "unknown" ? (
+      <p className="mx-outcome" role="status">
+        {row.message} This desk offers it again only after the order's record changes; reload to check.
+      </p>
     ) : row?.kind === "error" ? (
       <p className="mx-outcome mx-outcome--refused" role="alert">
         Refused. {refusalWords(row.message)}.
@@ -370,8 +376,9 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
     setRefused(null);
     const outcome = await onRefundPart(check.atomic);
     setSending(false);
-    if (outcome.ok) onView("detail");
-    else setRefused(outcome.reason);
+    // Done or unknown, the form closes: an unconfirmed refund must not be one click from a second one.
+    if (outcome.ok === false) setRefused(outcome.reason);
+    else onView("detail");
   };
 
   return (
