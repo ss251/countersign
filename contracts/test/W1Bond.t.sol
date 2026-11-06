@@ -108,7 +108,7 @@ contract W1BondTest is Test {
     function test_W1_deploy_gate_a_stranger_cannot_lock_a_sellers_free_bond() public {
         _sellerDeposits(BOND);
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, BOND, REVIEW_WINDOW, 0);
+        escrow.setTerms(OFFER, PRICE, BOND, REVIEW_WINDOW, 60);
         (ICountersignedEscrow.Countersignature memory junk,) =
             _countersign(strangerKey, stranger, 1, uint64(block.timestamp + 3650 days), 7, BOND);
 

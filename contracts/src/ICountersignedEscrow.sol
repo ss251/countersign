@@ -94,6 +94,7 @@ interface ICountersignedEscrow {
     error TermsMismatch(bytes32 jobId);
     error BondTooHigh(uint256 bond, uint256 price);
     error BondNeedsWindow();
+    error BondNeedsDuration();
     error BadPayee(address payee);
     error ReviewTooLong(uint64 reviewWindow);
     error SettleWindowClosed(bytes32 jobId, uint256 settleBy);
@@ -106,8 +107,9 @@ interface ICountersignedEscrow {
     error LockMissing(bytes32 jobId);
     error StatusMismatch(bytes32 jobId, uint8 status);
 
-    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. Anyone may submit it,
-    ///         and a bonded job also needs the payee's Lock(jobId) signature.
+    /// @notice Pull `cs.amount` from the buyer into escrow and open the job. Anyone may submit an
+    ///         unbonded job. A bonded job needs the payee's Lock(jobId, funder) signature, and only
+    ///         that funder, as msg.sender, may submit it.
     ///         A non-zero `cs.bond` or `cs.reviewWindow` must match the payee's registered terms,
     ///         and the bond moves from the payee's free bond into the job.
     function fund(bytes32 offerHash, Countersignature calldata cs, bytes calldata lockSig)
@@ -117,7 +119,8 @@ interface ICountersignedEscrow {
     /// @notice The caller, as payee, states the only price, bond and window a bonded or windowed
     ///         job on `offerHash` may carry, and the shortest time to its deadline at funding.
     ///         A bond needs a review window: with window 0 the payee releases on any receipt and
-    ///         takes the payment plus its whole bond back.
+    ///         takes the payment plus its whole bond back. A bond also needs minDuration of at least
+    ///         MIN_BONDED_DURATION, so a bonded job is never opened too close to its deadline.
     function setTerms(bytes32 offerHash, uint256 price, uint256 bond, uint64 reviewWindow, uint64 minDuration)
         external;
 

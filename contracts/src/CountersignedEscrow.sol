@@ -27,7 +27,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     bytes32 public constant CANCEL_TYPEHASH = keccak256("Cancel(bytes32 jobId)");
     bytes32 public constant ACCEPT_TYPEHASH = keccak256("Accept(bytes32 jobId,bytes32 slipHash)");
     bytes32 public constant DISPUTE_TYPEHASH = keccak256("Dispute(bytes32 jobId,uint8 status)");
-    bytes32 public constant LOCK_TYPEHASH = keccak256("Lock(bytes32 jobId)");
+    /// @dev The payee names the one address that may fund with its lock (cs-audit, final pass on 53eed70).
+    bytes32 public constant LOCK_TYPEHASH = keccak256("Lock(bytes32 jobId,address funder)");
     /// @dev EIP-3009's typehash, used to check the buyer's signature before the token does.
     bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
@@ -40,6 +41,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     uint64 public constant MAX_REVIEW_WINDOW = 86_400;
     /// @notice H1: release and failDelivery may still land this long after the deadline.
     uint64 public constant DISPUTE_WINDOW = 600;
+    /// @notice The least minDuration bonded terms may carry, so a bonded job always leaves its payee time to deliver.
+    uint64 public constant MIN_BONDED_DURATION = 60;
 
     IERC20 public immutable token;
     address public immutable treasury;
@@ -106,7 +109,9 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
             if (cs.reviewWindow != 0) _reviews[jobId].window = cs.reviewWindow;
         }
         if (cs.bond != 0) {
-            bytes32 lockDigest = _hashTypedDataV4(keccak256(abi.encode(LOCK_TYPEHASH, jobId)));
+            // The lock names its funder: only that address may open the bonded job, so a lock seen in a
+            // pending or reverted fund cannot be landed or replayed by anyone else.
+            bytes32 lockDigest = _hashTypedDataV4(keccak256(abi.encode(LOCK_TYPEHASH, jobId, msg.sender)));
             if (!SignatureChecker.isValidSignatureNow(cs.payee, lockDigest, lockSig)) revert LockMissing(jobId);
             uint256 available = bondOf[cs.payee];
             if (available < cs.bond) revert BondMissing(cs.payee, cs.bond, available);
@@ -136,6 +141,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (msg.sender == address(this)) revert BadPayee(msg.sender);
         if (bond > price) revert BondTooHigh(bond, price);
         if (bond != 0 && reviewWindow == 0) revert BondNeedsWindow();
+        if (bond != 0 && minDuration < MIN_BONDED_DURATION) revert BondNeedsDuration();
         if (reviewWindow > MAX_REVIEW_WINDOW) revert ReviewTooLong(reviewWindow);
         termsOf[msg.sender][offerHash] =
             BondTerms({price: price, bond: bond, reviewWindow: reviewWindow, minDuration: minDuration});

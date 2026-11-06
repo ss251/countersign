@@ -100,12 +100,12 @@ contract LockTest is Test {
     /// The seller registers the offer's bond, as it does once at publish.
     function _terms(uint256 bond) internal {
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, bond, bond == 0 ? 0 : REVIEW_WINDOW, 0);
+        escrow.setTerms(OFFER, PRICE, bond, bond == 0 ? 0 : REVIEW_WINDOW, bond == 0 ? 0 : 60);
     }
 
-    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
+    function _lockSig(uint256 payeeKey, bytes32 jobId, address funder) internal view returns (bytes memory) {
         bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", escrow.domainSeparator(), keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)))
+            abi.encodePacked("\x19\x01", escrow.domainSeparator(), keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, funder)))
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(payeeKey, digest);
         return abi.encodePacked(r, s, v);
@@ -141,8 +141,9 @@ contract LockTest is Test {
         ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
         jobId = _jobId(BOND);
 
-        vm.prank(funder);
-        bytes32 fundedJobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        vm.startPrank(funder);
+        bytes32 fundedJobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, funder));
+        vm.stopPrank();
 
         assertEq(fundedJobId, jobId, "the funded job is the countersigned one");
         _assertBondLocked(jobId);
@@ -175,7 +176,7 @@ contract LockTest is Test {
         ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
         bytes32 jobId = _jobId(BOND);
 
-        bytes memory wrongLock = _lockSig(buyerKey, jobId);
+        bytes memory wrongLock = _lockSig(buyerKey, jobId, stranger);
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.LockMissing.selector, jobId));
         escrow.fund(OFFER, cs, wrongLock);

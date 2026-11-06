@@ -107,8 +107,8 @@ contract AcceptanceTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId, status)));
     }
 
-    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
-        return _sign712(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    function _lockSig(uint256 payeeKey, bytes32 jobId, address funder) internal view returns (bytes memory) {
+        return _sign712(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, funder)));
     }
 
     /// The seller posts the bond and registers the offer's terms, as it does at publish.
@@ -119,7 +119,7 @@ contract AcceptanceTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _authorizationSig(sellerKey, seller, BOND, 0, validBefore, nonce);
         escrow.depositBond(seller, BOND, 0, validBefore, salt, v, r, s);
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, BOND, window, 0);
+        escrow.setTerms(OFFER, PRICE, BOND, window, 60);
     }
 
     /// The buyer countersigns the offer's bond and window, and the arbiter funds the bonded job.
@@ -127,8 +127,9 @@ contract AcceptanceTest is Test {
         _sellerPublishes(WINDOW);
         ICountersignedEscrow.Countersignature memory cs = _countersign(BOND, WINDOW);
         jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, WINDOW);
-        vm.prank(arbiter);
-        jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        vm.startPrank(arbiter);
+        jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, arbiter));
+        vm.stopPrank();
     }
 
     /// Fund, then deliver: the job is Delivered and the review window starts now.

@@ -95,7 +95,7 @@ contract BondTest is Test {
     /// The seller registers the offer's bond, as it does once at publish.
     function _terms(uint256 bond) internal {
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, bond, REVIEW_WINDOW, 0);
+        escrow.setTerms(OFFER, PRICE, bond, REVIEW_WINDOW, bond == 0 ? 0 : 60);
     }
 
     function _sign712(uint256 key, bytes32 structHash) internal view returns (bytes memory) {
@@ -108,8 +108,8 @@ contract BondTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, slipHash)));
     }
 
-    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
-        return _sign712(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    function _lockSig(uint256 payeeKey, bytes32 jobId, address funder) internal view returns (bytes memory) {
+        return _sign712(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, funder)));
     }
 
     /// The first second after settleBy = deadline + DISPUTE_WINDOW (H1).
@@ -142,8 +142,9 @@ contract BondTest is Test {
         _terms(bond);
         cs = _cs(bond);
         bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, bond, REVIEW_WINDOW);
+        bytes memory lock = _lockSig(sellerKey, expected, arbiter);
         vm.prank(arbiter); // the arbiter funds a bonded job
-        jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, expected));
+        jobId = escrow.fund(OFFER, cs, lock);
     }
 
     // ------------------------------------------------------------------ the four paths
@@ -244,7 +245,7 @@ contract BondTest is Test {
         uint256 buyerWallet = token.balanceOf(buyer);
         uint256 escrowWallet = token.balanceOf(address(escrow));
 
-        bytes memory lockSig = _lockSig(sellerKey, jobId);
+        bytes memory lockSig = _lockSig(sellerKey, jobId, arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BondMissing.selector, seller, BOND + 1, BOND));
         vm.prank(arbiter);
         escrow.fund(OFFER, cs, lockSig);
@@ -294,8 +295,9 @@ contract BondTest is Test {
         _terms(BOND);
         ICountersignedEscrow.Countersignature memory cs = _cs(BOND);
         bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND, REVIEW_WINDOW);
-        vm.prank(arbiter);
-        bytes32 jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, expected));
+        vm.startPrank(arbiter);
+        bytes32 jobId = escrow.fund(OFFER, cs, _lockSig(sellerKey, expected, arbiter));
+        vm.stopPrank();
         assertEq(escrow.bondOf(seller), free);
         assertEq(escrow.bondOfJob(jobId), BOND);
 

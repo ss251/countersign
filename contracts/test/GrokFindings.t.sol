@@ -106,7 +106,7 @@ contract GrokFindingsTest is GrokEscrowSigning {
 
     function _publish(uint256 bond, uint64 window) internal {
         vm.prank(seller);
-        escrow.setTerms(OFFER, PRICE, bond, window, 0);
+        escrow.setTerms(OFFER, PRICE, bond, window, bond == 0 ? 0 : 60);
     }
 
     function _deadline() internal view returns (uint64) {
@@ -129,8 +129,8 @@ contract GrokFindingsTest is GrokEscrowSigning {
         return _sig(buyerKey, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId, signedStatus)));
     }
 
-    function _lockSig(uint256 payeeKey, bytes32 jobId) internal view returns (bytes memory) {
-        return _sig(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId)));
+    function _lockSig(uint256 payeeKey, bytes32 jobId, address funder) internal view returns (bytes memory) {
+        return _sig(payeeKey, keccak256(abi.encode(escrow.LOCK_TYPEHASH(), jobId, funder)));
     }
 
     function _status(bytes32 jobId) internal view returns (uint8) {
@@ -150,9 +150,10 @@ contract GrokFindingsTest is GrokEscrowSigning {
 
         assertEq(escrow.bondOf(seller), BOND, "the free bond is untouched");
 
-        // With the payee's Lock, a stranger funds and the bond locks.
-        vm.prank(stranger);
-        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        // With the payee's Lock naming it as funder, a stranger funds and the bond locks: no arbiter check.
+        vm.startPrank(stranger);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, stranger));
+        vm.stopPrank();
 
         assertEq(escrow.bondOf(seller), 0, "the bond left the free balance");
         assertEq(escrow.bondOfJob(jobId), BOND, "the bond is locked to the job");
@@ -164,8 +165,9 @@ contract GrokFindingsTest is GrokEscrowSigning {
         _deposit(BOND);
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
-        vm.prank(arbiter);
-        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        vm.startPrank(arbiter);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, arbiter));
+        vm.stopPrank();
 
         escrow.release(jobId, SLIP, _releaseSig(jobId));
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
@@ -181,8 +183,9 @@ contract GrokFindingsTest is GrokEscrowSigning {
         _deposit(BOND);
         _publish(BOND, WINDOW);
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) = _cs(1, BOND, WINDOW);
-        vm.prank(arbiter);
-        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId));
+        vm.startPrank(arbiter);
+        escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, arbiter));
+        vm.stopPrank();
 
         bytes memory fundedSig = _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Funded));
         escrow.release(jobId, SLIP, _releaseSig(jobId));
