@@ -39,3 +39,17 @@ describe("registration file", () => {
     expect(back).toEqual(file);
   });
 });
+
+test("the agentWallet endpoint names the chain the identity lives on", () => {
+  const onHedera = registrationFile({
+    name: "seller",
+    description: "on Hedera testnet",
+    hubUrl: "https://hub.example",
+    seller: "0x00000000000000000000000000000000000000aa",
+    offers: [],
+    chainId: 296,
+  });
+  expect(onHedera.endpoints.find((e) => e.name === "agentWallet")?.endpoint).toBe(
+    "eip155:296:0x00000000000000000000000000000000000000aa",
+  );
+});
