@@ -139,3 +139,19 @@ With sixteen hours to the deadline, the team dropped these so the build finishes
 - The subgraph and `/graph/stats` (#4). There is no Goldsky account to deploy it with.
 - Railway preview environments for pull requests. If they come back, the preview secrets rule in `docs/deploy.md` still applies.
 - A headless browser for the e2e `web` flow. No browser runs on the build machine, so the screens are checked by hand in a real browser at 390 and 1440 px, light and dark.
+
+## D11, amended — a countersignature can never become a bond deposit; only the arbiter funds a bonded job (06 Nov; refs #93)
+
+cs-w1 found two problems in the first bond build.
+
+- **B16: two functions accepted one signature.** `depositBond` took any `ReceiveWithAuthorization` to the escrow, and a buyer's countersignature is exactly that, with nonce = jobId. Anyone who saw one could spend it as a deposit: the buyer's money became a bond and the job could never be funded.
+- **The deploy gate: anyone could lock a seller's bond.** A stranger could fund a job of their own on any seller, with any bond, and lock that seller's whole free bond.
+
+Rule:
+
+- **Domain separation.** The escrow computes the deposit nonce itself: `keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH, payee, amount, salt))`, with `BondDeposit(address payee,uint256 amount,bytes32 salt)`.
+  - A jobId is an EIP-712 digest, so it never equals a deposit nonce, and a deposit authorization can never fund a job.
+  - Deposits stay relayable, so a seller without gas can deposit.
+- **Who funds a bonded job.** `fundBonded` is arbiter-only. `fund` (bond 0) stays open to anyone.
+- **The buyer's budget.** An on-chain Failed job counts like a refund: the money is back with the buyer.
+- **Accepted for this deployment.** The arbiter key can lock and slash any seller's free bond, so a leaked hub key puts every free bond at risk. The bond is exactly as safe as the hub's key, so bonds stay small. Seller-signed locks (`LockBond(jobId, bond)`) are a later revision; the contract is immutable once deployed, so they would need a new deployment.

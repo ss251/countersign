@@ -3,6 +3,7 @@ import type { ReceiptOrder } from "./model.ts";
 import {
   addressUrl,
   assetOf,
+  isEscrowOpen,
   decimalsFor,
   explorerOf,
   formatFixed,
@@ -33,7 +34,10 @@ type ReceiptState =
 
 /** Money that went back to the customer: each transfer refund, or the whole amount on a cancel. */
 function returnedLines(order: ReceiptOrder): bigint[] {
-  if (order.closeKind === "cancel" || order.closeKind === "deadline_refund") return [BigInt(order.amount)];
+  const close = order.closeKind;
+  if (close === "cancel" || close === "deadline_refund" || close === "dispute_refund" || close === "delivery_failed") {
+    return [BigInt(order.amount)];
+  }
   const records = order.refunds?.length ? order.refunds : order.refundTxs.map(() => ({ amount: undefined }));
   return records.map((refund) => {
     const value = refund.amount ?? (records.length === 1 ? order.refunded : undefined);
@@ -105,7 +109,7 @@ export function Receipt({ id, offline }: ReceiptProps) {
   const returnedTotal = returned.reduce((sum, value) => sum + value, 0n);
   const kept = amount > returnedTotal ? amount - returnedTotal : 0n;
   const places = decimalsFor([amount, kept, ...returned]);
-  const inFlight = order.status === "held" || order.status === "pending";
+  const inFlight = isEscrowOpen(order.status) || order.status === "pending";
   const unit = assetOf(order);
   const explorer = explorerOf(order);
 

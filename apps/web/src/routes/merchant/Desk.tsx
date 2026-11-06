@@ -16,6 +16,7 @@ import {
   formatWbt,
   formatWeiWbt,
   humanDate,
+  isEscrowOpen,
   isWhitechain,
   itemLabel,
   ledger,
@@ -30,6 +31,7 @@ import {
   statusLabel,
   statusTone,
   txUrl,
+  type ReturnKind,
 } from "./model.ts";
 import {
   RELAY_URL,
@@ -46,6 +48,7 @@ import {
 } from "./api.ts";
 import {
   OrderPanel,
+  ReviewCountdown,
   Sheet,
   UNDO_MS,
   UndoStrip,
@@ -369,7 +372,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
 
   /** The sample ledger's stand-in for the chain: the changes a relay would report, and nothing more. */
   const simulateRefund = (order: Order, amount: bigint, txHash: string) => {
-    const cancelled = order.status === "held";
+    const cancelled = isEscrowOpen(order.status);
     setOrders((current) =>
       current.map((candidate) => {
         if (candidate.id !== order.id) return candidate;
@@ -409,7 +412,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
   const sendRefund = async (order: Order) => {
     undoTimersRef.current.delete(order.id);
     setRow(order.id, { kind: "sending" });
-    const cancelled = order.status === "held";
+    const cancelled = isEscrowOpen(order.status);
 
     if (offline) {
       if (!sample) return;
@@ -527,6 +530,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
         sums.released,
         sums.refunded,
         sums.toll,
+        sums.bondLost,
         sums.net,
         sums.held,
       ]),
@@ -646,7 +650,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
             const row = rows[order.id];
             const item = titleOf(order);
             const isOpen = order.id === selectedId;
-            const inFlight = order.status === "held" || order.status === "pending";
+            const inFlight = isEscrowOpen(order.status) || order.status === "pending";
             return (
               <Fragment key={order.id}>
                 <tr
@@ -882,6 +886,9 @@ function SourceLine({ offline, source }: { offline: boolean; source: OrdersSourc
       <p className="mx-note">
         Sample ledger (?hub=off): four rows link to real Whitechain Sepolia transactions, two are made up, and the times
         are illustrative.
+        {import.meta.env.DEV
+          ? " On this dev server, five more made-up rows show escrow v2's review states, which are not live yet."
+          : ""}
       </p>
     );
   }
@@ -902,12 +909,13 @@ function SourceLine({ offline, source }: { offline: boolean; source: OrdersSourc
  */
 function EquationBand({ sums, ready, unit, places }: { sums: Equation; ready: boolean; unit: string; places: number }) {
   const show = (value: bigint) => (ready ? formatFixed(value, places) : "—");
-  const terms = [
+  const terms: ReadonlyArray<{ label: string; value: bigint; op: "−" | "=" | null }> = [
     { label: "Released", value: sums.released, op: null },
     { label: "Refunded", value: sums.refunded, op: "−" },
     { label: "Toll", value: sums.toll, op: "−" },
+    ...(sums.bondLost > 0n ? [{ label: "Bond lost", value: sums.bondLost, op: "−" as const }] : []),
     { label: "Net", value: sums.net, op: "=" },
-  ] as const;
+  ];
   return (
     <section className="mx-eq" aria-label="Balance">
       <dl className="mx-eq__terms">
@@ -933,7 +941,7 @@ function EquationBand({ sums, ready, unit, places }: { sums: Equation; ready: bo
               {show(sums.held)}
               <Unit symbol={unit} />
             </dd>
-            <dd className="mx-eq__note">Pending. Releases on delivery.</dd>
+            <dd className="mx-eq__note">Pending until the escrow releases.</dd>
           </div>
         </dl>
       )}
@@ -961,7 +969,17 @@ function GasLine({ status }: { status: RelayStatus }) {
   );
 }
 
-/** Why the balance moved by less than the amount: the toll, a refund, a cancel; or that it is still in flight. */
+const RETURN_WORDS: Record<ReturnKind, string> = {
+  cancel: "cancelled",
+  deadline_refund: "deadline refund",
+  dispute_refund: "disputed",
+  delivery_failed: "delivery failed",
+};
+
+/**
+ * Why the balance moved by less than the amount: the toll, a refund, a cancel, a dispute, a failed
+ * delivery and the bond it cost; or that the money is still in flight, with the review clock.
+ */
 function Adjustments({ order }: { order: Order }) {
   const lines = adjustments(order);
   if (lines.length === 0) return null;
@@ -969,19 +987,29 @@ function Adjustments({ order }: { order: Order }) {
     <>
       {lines.map((line) => (
         <span className="mx-adjust" key={line.kind}>
-          {line.kind === "held"
-            ? "Releases on delivery"
-            : line.kind === "settling"
-              ? "Settling"
-              : `−${formatUsdt(line.amount.toString())} ${
-                  line.kind === "toll"
-                    ? "toll"
-                    : line.kind === "refunded"
-                      ? "refunded"
-                      : line.close === "cancel"
-                        ? "cancelled"
-                        : "deadline refund"
-                }`}
+          {line.kind === "held" ? (
+            "Releases on delivery"
+          ) : line.kind === "settling" ? (
+            "Settling"
+          ) : line.kind === "review" ? (
+            line.endsAt ? (
+              <>
+                Review <ReviewCountdown endsAt={line.endsAt} />
+              </>
+            ) : (
+              "In review"
+            )
+          ) : (
+            `−${formatUsdt(line.amount.toString())} ${
+              line.kind === "toll"
+                ? "toll"
+                : line.kind === "refunded"
+                  ? "refunded"
+                  : line.kind === "bond"
+                    ? "bond lost"
+                    : RETURN_WORDS[line.close]
+            }`
+          )}
         </span>
       ))}
     </>
@@ -999,7 +1027,7 @@ interface RowActionProps {
 function RowAction({ order, row, access, onRefund, onUndo }: RowActionProps) {
   const undoRef = useRef<HTMLButtonElement>(null);
   const startedHere = useRef(false);
-  const held = order.status === "held";
+  const held = isEscrowOpen(order.status);
 
   // A keyboard user who refunds from the row lands on Undo, one keypress from taking it back.
   useEffect(() => {
