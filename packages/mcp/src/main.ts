@@ -7,19 +7,22 @@ import { createCountersignMcpServer } from "./server.ts";
 
 const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
 
-const USAGE = `countersign-mcp - hire a countersign offer from an MCP client
+const USAGE = `countersign mcp - hire a countersign offer from an MCP client (stdio)
 
-Usage: countersign-mcp [--hub <url>] [--state <dir>] [--rpc <url>]
+Usage: countersign mcp [--hub <url>] [--state <dir>] [--rpc <url>]
 
 Options:
   --hub <url>    The countersign hub (env CS_HUB; default ${DEFAULT_HUB})
   --state <dir>  Where the envelope, journal and slips live (default ~/.countersign)
-  --rpc <url>    The RPC verify_slip reads the chain from (env CS_RPC_URL)
+  --rpc <url>    The RPC verify_slip reads the chain from (env CS_RPC_URL), e.g. https://rpc.testnet.arc.network
   --help         Print this usage and exit
 
 Environment:
   CS_BUYER_KEY   The agent's private key; without it, buy refuses.
-  CS_NETWORK     Must be unset or testnet.`;
+  CS_NETWORK     Must be unset or testnet.
+
+Install it from the countersign release tarball only. The npm packages named @countersign/*,
+countersign and countersign-mcp belong to other projects: never npx or npm install them.`;
 
 interface Config {
   hub: string;

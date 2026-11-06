@@ -29,9 +29,10 @@ describe("the stdio CLI", () => {
   test("--help prints usage to stdout and exits 0", async () => {
     const { code, stdout, stderr } = await run(["--help"], { PATH: process.env.PATH ?? "" });
     expect(code).toBe(0);
-    expect(stdout).toContain("Usage: countersign-mcp");
+    expect(stdout).toContain("Usage: countersign mcp");
     expect(stdout).toContain("--hub <url>");
     expect(stdout).toContain("CS_BUYER_KEY");
+    expect(stdout).toContain("never npx or npm install them");
     expect(stderr).toBe("");
   });
 });
