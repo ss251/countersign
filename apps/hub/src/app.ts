@@ -15,6 +15,8 @@ import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
+import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
+import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
@@ -26,6 +28,7 @@ export interface HubDeps {
   now: () => number;
   publicUrl: string;
   jobTimeoutMs?: number;
+  identity?: IdentityLookup;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -34,6 +37,15 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
+  const frontdoor = (): FrontdoorDeps => {
+    const view: FrontdoorDeps = {
+      store: deps.store,
+      rails: deps.rails,
+      isOnline: (offerHash) => runners.isOnline(offerHash),
+    };
+    if (deps.identity) view.identity = deps.identity;
+    return view;
+  };
 
   app.use("*", cors({ origin: "*", exposeHeaders: PAYMENT_HEADERS }));
 
@@ -90,11 +102,28 @@ export function createHub(deps: HubDeps) {
     }),
   );
 
+  app.get("/offers/search", (c) =>
+    json(
+      searchOffers(frontdoor(), {
+        q: c.req.query("q"),
+        limit: c.req.query("limit"),
+        rail: c.req.query("rail"),
+        maxPrice: c.req.query("maxPrice"),
+      }),
+    ),
+  );
+
   app.get("/offers/:offerHash", (c) => {
     const stored = deps.store.getOffer(c.req.param("offerHash"));
     if (!stored) return fail(404, "unknown-offer", "Refused. That offer is not known.");
     return json(listing(stored, runners));
   });
+
+  app.get("/sellers", async (c) => json(await listSellers(frontdoor())));
+
+  app.get("/settlements", (c) =>
+    json(listSettlements(frontdoor(), { limit: c.req.query("limit") })),
+  );
 
   app.get("/rails", (c) => json({ rails: deps.rails.map((rail) => rail.declaration) }));
 

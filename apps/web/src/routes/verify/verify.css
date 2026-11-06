@@ -18,10 +18,16 @@
   border-radius: var(--r-3);
   background: var(--sunk);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.55;
   resize: vertical;
   tab-size: 2;
+}
+
+@media (pointer: fine) {
+  .verify__input {
+    font-size: 13px;
+  }
 }
 
 .verify__input:focus-visible {

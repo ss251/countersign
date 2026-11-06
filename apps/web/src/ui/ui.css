@@ -321,8 +321,11 @@ a.hash__value {
   font-size: 16px;
 }
 
-.input.mono {
-  font-size: 15px;
+/* 16px wherever a finger types, or iOS zooms the page; mono may shrink only under a mouse. */
+@media (pointer: fine) {
+  .input.mono {
+    font-size: 15px;
+  }
 }
 
 .input:focus-visible {

@@ -86,7 +86,7 @@ describe("gateway rail", () => {
       kind: "batched",
       gasPaidBy: "gateway",
       asset: { network: ARC, address: USDC, symbol: "USDC", decimals: 6 },
-      explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+      explorerTx: "",
     });
     expect(rail.declaration.finality).toContain("next batch");
     expect(rail.escrow).toBeUndefined();
@@ -190,6 +190,51 @@ describe("gateway rail", () => {
       transaction: "",
       network: ARC,
     });
+  });
+
+  test("verify turns a thrown facilitator error into an invalid result", async () => {
+    const { facilitator } = fakeFacilitator({
+      verify: async () => {
+        throw new Error("gateway is down\nretry later");
+      },
+    });
+    const rail = await gatewayRail({ facilitator });
+    const req = rail.challenge(OFFER, CONTEXT);
+    const payment = await gatewayPayment(BUYER, req);
+
+    expect(await rail.verify(payment, req)).toEqual({
+      isValid: false,
+      invalidReason: "Refused. gateway is down",
+    });
+  });
+
+  test("settle refuses a mismatched accepted without calling the facilitator", async () => {
+    const { facilitator, calls } = fakeFacilitator();
+    const rail = await gatewayRail({ facilitator });
+    const req = rail.challenge(OFFER, CONTEXT);
+    const payment = await gatewayPayment(BUYER, req);
+    const moved = { ...payment, accepted: { ...payment.accepted, amount: "1" } };
+
+    expect(await rail.settle(moved, req)).toEqual({
+      success: false,
+      errorReason: "Refused. The payment does not match this offer.",
+      transaction: "",
+      network: ARC,
+    });
+    expect(calls.settle).toHaveLength(0);
+  });
+
+  test("gatewayPayment copies the resource when given one", async () => {
+    const rail = await gatewayRail({ facilitator: fakeFacilitator().facilitator });
+    const req = rail.challenge(OFFER, CONTEXT);
+    const resource = {
+      url: "http://hub/x",
+      description: "gateway item",
+      mimeType: "application/json",
+    };
+
+    const payment = await gatewayPayment(BUYER, req, resource);
+    expect(payment.resource).toEqual(resource);
   });
 
   test("gatewayRail throws when Arc has no batched kind", async () => {

@@ -1,5 +1,5 @@
 import { privateKeyToAccount } from "viem/accounts";
-import { escrowRail, gatewayRail, type Rail } from "@countersign/rail";
+import { escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
 import { createHederaRail } from "@countersign/rail/hedera";
 import type { Address, Hex } from "viem";
 
@@ -8,6 +8,8 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
 /**
  * The rails this hub settles on, from the environment. Keys arrive only by environment.
  *   ARC_ESCROW, ARC_RPC_URL, CS_RELAYER_KEY  -> rail "escrow" (CountersignedEscrow on Arc testnet, USDC)
+ *   WC_RELAY_URL                             -> rail "whitechain" (CountersignedEscrow on Whitechain Sepolia, USDT;
+ *                                               the relay holds the WBT gas key and its guards; the hub holds none)
  *   GATEWAY_RAIL=1                           -> rail "gateway" (Circle Gateway nanopayments on Arc testnet;
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
@@ -34,6 +36,9 @@ export async function railsFromEnv(env: Record<string, string | undefined>): Pro
         ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
       }),
     );
+  }
+  if (env.WC_RELAY_URL) {
+    rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));
   }
   if (env.GATEWAY_RAIL === "1") {
     rails.push(await gatewayRail({}));

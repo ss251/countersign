@@ -94,7 +94,7 @@ export async function gatewayRail(cfg: GatewayRailConfig = {}): Promise<Rail> {
     kind: "batched",
     gasPaidBy: "gateway",
     finality: "The buyer's Gateway balance is debited at once; Circle Gateway credits the seller in its next batch.",
-    explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+    explorerTx: "",
   };
 
   function challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
@@ -111,18 +111,25 @@ export async function gatewayRail(cfg: GatewayRailConfig = {}): Promise<Rail> {
 
   async function verify(payment: PaymentPayload, req: PaymentRequirements): Promise<VerifyResult> {
     if (!matches(payment.accepted, req)) return { isValid: false, invalidReason: MISMATCH };
-    const result = await facilitator.verify(payment, req);
-    if (result.isValid) {
-      return { isValid: true, ...(result.payer ? { payer: result.payer } : {}) };
+    try {
+      const result = await facilitator.verify(payment, req);
+      if (result.isValid) {
+        return { isValid: true, ...(result.payer ? { payer: result.payer } : {}) };
+      }
+      return {
+        isValid: false,
+        invalidReason: `Refused. ${result.invalidReason ?? "Circle Gateway refused the payment."}`,
+        ...(result.payer ? { payer: result.payer } : {}),
+      };
+    } catch (e) {
+      return { isValid: false, invalidReason: `Refused. ${short(e)}` };
     }
-    return {
-      isValid: false,
-      invalidReason: `Refused. ${result.invalidReason ?? "Circle Gateway refused the payment."}`,
-      ...(result.payer ? { payer: result.payer } : {}),
-    };
   }
 
   async function settle(payment: PaymentPayload, req: PaymentRequirements): Promise<SettleResult> {
+    if (!matches(payment.accepted, req)) {
+      return { success: false, errorReason: MISMATCH, transaction: "", network };
+    }
     try {
       const result = await facilitator.settle(payment, req);
       return {
