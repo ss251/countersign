@@ -249,35 +249,6 @@ export function createRelayApp(options: RelayAppOptions): Hono {
   return app;
 }
 
-if (import.meta.main) {
-  const config = loadRelayConfig(process.env);
-  const account = privateKeyToAccount(config.relayerPrivateKey);
-  const transport = http(config.rpcUrl);
-  const publicClient = createPublicClient({ chain: whitechainSepolia, transport });
-  // Fail closed on the wrong chain: rpc-testnet.whitechain.io answers as chain 2625 with zero balances.
-  const chainId = await publicClient.getChainId();
-  if (chainId !== WHITECHAIN_CHAIN_ID) {
-    console.error(`relay refuses to start: ${config.rpcUrl} is chain ${chainId}, not ${WHITECHAIN_CHAIN_ID}`);
-    process.exit(1);
-  }
-  const walletClient = createWalletClient({ chain: whitechainSepolia, transport, account });
-  const escrow = config.policy.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
-  const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });
-  const ceiling = new SpendCeiling(config.ceiling);
-  ceiling.seed(ledger.recentSpends(Date.now() - config.ceiling.windowMs));
-  const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling, (spend) =>
-    ledger.recordSpend(spend),
-  );
-  const app = createRelayApp({
-    reader: publicClient,
-    relayer,
-    ledger,
-    now: () => Math.floor(Date.now() / 1000),
-    config,
-  });
-  Bun.serve({ port: config.port, fetch: app.fetch });
-  console.log(`relay listening on ${config.port} as ${account.address}`);
-}
 
 const tollBpsCache = new Map<string, number>();
 
@@ -330,4 +301,35 @@ function jsonSafe(value: unknown): unknown {
     );
   }
   return value;
+}
+
+// Started last, so every module-level binding above is initialised before startup code runs.
+if (import.meta.main) {
+  const config = loadRelayConfig(process.env);
+  const account = privateKeyToAccount(config.relayerPrivateKey);
+  const transport = http(config.rpcUrl);
+  const publicClient = createPublicClient({ chain: whitechainSepolia, transport });
+  // Fail closed on the wrong chain: rpc-testnet.whitechain.io answers as chain 2625 with zero balances.
+  const chainId = await publicClient.getChainId();
+  if (chainId !== WHITECHAIN_CHAIN_ID) {
+    console.error(`relay refuses to start: ${config.rpcUrl} is chain ${chainId}, not ${WHITECHAIN_CHAIN_ID}`);
+    process.exit(1);
+  }
+  const walletClient = createWalletClient({ chain: whitechainSepolia, transport, account });
+  const escrow = config.policy.allowedEscrows[0] ?? WHITECHAIN_ESCROW;
+  const ledger = new Ledger(config.dbPath, { tollBps: await tollBpsFor(publicClient, escrow) });
+  const ceiling = new SpendCeiling(config.ceiling);
+  ceiling.seed(ledger.recentSpends(Date.now() - config.ceiling.windowMs));
+  const relayer = new Relayer(publicClient, walletClient, account, config.policy, ceiling, (spend) =>
+    ledger.recordSpend(spend),
+  );
+  const app = createRelayApp({
+    reader: publicClient,
+    relayer,
+    ledger,
+    now: () => Math.floor(Date.now() / 1000),
+    config,
+  });
+  Bun.serve({ port: config.port, fetch: app.fetch });
+  console.log(`relay listening on ${config.port} as ${account.address}`);
 }
