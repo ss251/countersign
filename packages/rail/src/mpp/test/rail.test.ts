@@ -609,6 +609,96 @@ describe("settle", () => {
   });
 });
 
+describe("one tempo method per rail", () => {
+  test("serves two offers with different payees through one mppx instance", async () => {
+    const payeeA = "0x00000000000000000000000000000000000000a1" as const;
+    const sellerB = "0x00000000000000000000000000000000000000b2" as const;
+    const reference = `0x${"ab".repeat(32)}`;
+    const receipt = {
+      method: "tempo",
+      reference,
+      status: "success" as const,
+      timestamp: new Date().toISOString(),
+    };
+    const calls: Array<{ kind: "validate" | "broadcast"; credential: string }> = [];
+    const receivers = new Set<unknown>();
+    const fake: NonNullable<MppRailOptions["tempoMppx"]> = {
+      validateCredential: async function (this: unknown, credential: string) {
+        receivers.add(this);
+        calls.push({ kind: "validate", credential });
+      },
+      broadcastCredential: async function (this: unknown, credential: string) {
+        receivers.add(this);
+        calls.push({ kind: "broadcast", credential });
+        return receipt;
+      },
+    };
+    const rail = railWith({ tempoMppx: fake });
+
+    const offers = [
+      offer("10000", { payTo: { mpp: payeeA } }),
+      offer("10000", { seller: sellerB, payTo: {} }),
+    ];
+    const recipients: string[] = [];
+
+    for (const o of offers) {
+      const req = rail.challenge(o, { resource: RESOURCE, now: nowSeconds() });
+      const { challenge, serialized } = tempoPayload(req);
+      if (typeof challenge.request.recipient !== "string") throw new Error("no recipient");
+      recipients.push(challenge.request.recipient);
+
+      expect(await rail.verify(paymentFor(req, serialized), req)).toEqual({ isValid: true });
+      const settled = await rail.settle(paymentFor(req, serialized), req);
+      expect(settled.success).toBe(true);
+      expect(settled.transaction).toBe(reference);
+    }
+
+    expect(recipients).toEqual([payeeA, sellerB]);
+    expect(calls).toHaveLength(4);
+    expect(calls.filter((call) => call.kind === "validate")).toHaveLength(2);
+    expect(calls.filter((call) => call.kind === "broadcast")).toHaveLength(2);
+    expect(receivers.size).toBe(1);
+    expect(receivers.has(fake)).toBe(true);
+  });
+
+  test("refuses another payee's credential before calling mppx", async () => {
+    const payeeA = "0x00000000000000000000000000000000000000a1" as const;
+    const sellerB = "0x00000000000000000000000000000000000000b2" as const;
+    let calls = 0;
+    const fake: NonNullable<MppRailOptions["tempoMppx"]> = {
+      validateCredential: async () => {
+        calls += 1;
+      },
+      broadcastCredential: async () => {
+        calls += 1;
+        return {
+          method: "tempo",
+          reference: `0x${"ab".repeat(32)}`,
+          status: "success",
+          timestamp: new Date().toISOString(),
+        };
+      },
+    };
+    const rail = railWith({ tempoMppx: fake });
+
+    const reqA = rail.challenge(offer("10000", { payTo: { mpp: payeeA } }), {
+      resource: RESOURCE,
+      now: nowSeconds(),
+    });
+    const reqB = rail.challenge(offer("10000", { seller: sellerB, payTo: {} }), {
+      resource: RESOURCE,
+      now: nowSeconds(),
+    });
+    const { serialized } = tempoPayload(reqA);
+
+    expect(await rail.verify(paymentFor(reqB, serialized), reqB)).toEqual({
+      isValid: false,
+      invalidReason: "offer_mismatch",
+    });
+    expect(calls).toBe(0);
+  });
+});
+
 describe("constructor", () => {
   test("builds without a rail-level recipient", () => {
     const rail = createMppRail({ secretKey: SECRET, realm: REALM });

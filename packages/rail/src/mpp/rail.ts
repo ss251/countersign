@@ -80,6 +80,11 @@ export interface MppRailOptions {
   realm: string;
   /** Optional card method. Without it the rail offers Tempo only. */
   stripe?: { client: StripeClientLike; networkId: string };
+  /** Tests only: the mppx instance that validates and broadcasts Tempo credentials. */
+  tempoMppx?: {
+    validateCredential(credential: string): Promise<unknown>;
+    broadcastCredential(credential: string): Promise<Receipt.Receipt>;
+  };
   /** How long a challenge may be paid. Defaults to 300 seconds. */
   maxTimeoutSeconds?: number;
   /** Challenge ids already settled. Defaults to an in-memory store. */
@@ -307,30 +312,15 @@ export function createMppRail(options: MppRailOptions): MppRail {
   const stripeOptions = options.stripe;
   const seen = options.seen ?? memoryStore();
 
-  // mppx keeps the configured recipient in the method's defaults. Challenge
-  // requests carry their own recipient, but validate/broadcast pick the method
-  // built for the credential's payee, so an offer never settles through a
-  // method configured for another address. Instances are cached by recipient.
-  const tempoMethods = new Map<string, ReturnType<typeof makeTempo>>();
-
-  function makeTempo(payee: string) {
-    const method = tempo.charge({
-      testnet: true,
-      recipient: getAddress(payee),
-      currencies: [TEMPO_CURRENCY],
-      store: Store.memory(),
-    })[0]!;
-    return { method, mppx: Mppx.create({ methods: [method], secretKey, realm }) };
-  }
-
-  function tempoFor(payee: string): ReturnType<typeof makeTempo> {
-    const key = getAddress(payee).toLowerCase();
-    const cached = tempoMethods.get(key);
-    if (cached) return cached;
-    const entry = makeTempo(payee);
-    tempoMethods.set(key, entry);
-    return entry;
-  }
+  // One Tempo method serves every payee: mppx's standalone validate and broadcast
+  // verify against the HMAC-bound challenge's own recipient, and the rail's
+  // inspection pins that recipient to `requirements.payTo`.
+  const tempoCharge = tempo.charge({
+    testnet: true,
+    currencies: [TEMPO_CURRENCY],
+    store: Store.memory(),
+  })[0]!;
+  const tempoMppx = options.tempoMppx ?? Mppx.create({ methods: [tempoCharge], secretKey, realm });
 
   function tempoPayeeFor(offer: Offer): string {
     const payee: string | undefined = offer.payTo?.mpp ?? offer.seller ?? fallbackRecipient;
@@ -361,7 +351,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
     method: "tempo" | "stripe",
   ): MppChallenge {
     if (method === "tempo") {
-      return Challenge.fromMethod(tempoFor(payee).method, {
+      return Challenge.fromMethod(tempoCharge, {
         realm,
         secretKey,
         expires,
@@ -438,9 +428,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
       }
       if (inspected.method === "tempo") {
         try {
-          const recipient = inspected.challenge.request.recipient;
-          if (typeof recipient !== "string") throw new Error("tempo challenge names no recipient");
-          await tempoFor(recipient).mppx.validateCredential(inspected.credential);
+          await tempoMppx.validateCredential(inspected.credential);
         } catch {
           return { isValid: false, invalidReason: "payment_failed", ...withPayer };
         }
@@ -463,9 +451,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
           return { success: false, errorReason: "replay", transaction: "", network: MPP_TEMPO };
         }
         try {
-          const recipient = inspected.challenge.request.recipient;
-          if (typeof recipient !== "string") throw new Error("tempo challenge names no recipient");
-          const receipt = await tempoFor(recipient).mppx.broadcastCredential(inspected.credential);
+          const receipt = await tempoMppx.broadcastCredential(inspected.credential);
           return {
             success: true,
             transaction: receipt.reference,
