@@ -454,6 +454,11 @@ kbd {
   gap: var(--sp-1);
 }
 
+.pcard__unchecked {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
 .pcard__next {
   display: grid;
   gap: var(--sp-2);

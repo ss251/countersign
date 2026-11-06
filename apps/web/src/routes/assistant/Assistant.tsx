@@ -38,7 +38,7 @@ export function Assistant({
   initialPick,
   onOpen,
 }: {
-  envelope: Resource<EnvelopeView>;
+  envelope: Resource<EnvelopeView | null>;
   layout: "page" | "phone" | "overlay";
   initialQuery?: string;
   initialPick?: string;
@@ -58,7 +58,9 @@ export function Assistant({
   const inputId = useId();
   const listId = useId();
   const all = listings.data ?? [];
-  const view = envelope.data;
+  // Undefined while loading or when the hub holds no envelope for the agent: matches are then unchecked here.
+  const view = envelope.data ?? undefined;
+  const noEnvelope = envelope.source === "absent";
 
   const ask = async (need: string) => {
     const text = need.trim();
@@ -215,7 +217,8 @@ export function Assistant({
           <details className="palette__steps">
             <summary className="num">
               {answer.by === "hub" ? `Searched the hub in ${answer.ms} ms` : `Ranked ${answer.searched} offers here in ${answer.ms} ms`}
-              {answer.matches.length ? ` · checked ${checked} against your envelope` : ""} <FixtureNote show={fixtures} />
+              {answer.matches.length ? (noEnvelope ? " · not checked: your envelope is not on this hub" : ` · checked ${checked} against your envelope`) : ""}{" "}
+              <FixtureNote show={fixtures} />
             </summary>
             <ol>
               <li>
@@ -226,7 +229,9 @@ export function Assistant({
               <li>
                 {answer.matches.length === 0
                   ? "Nothing matched, so nothing reached the envelope."
-                  : `Each match was checked against your envelope: ${answer.matches.length - refused} inside, ${refused} refused.`}
+                  : noEnvelope
+                    ? `${envelope.reason ?? "Your envelope is not on this hub."} So the matches were not checked against it here; your agent checks its own envelope before it pays.`
+                    : `Each match was checked against your envelope: ${answer.matches.length - refused} inside, ${refused} refused.`}
               </li>
               <li>Nothing is signed until you hold to countersign, and the agent pays with its own key.</li>
             </ol>
@@ -317,8 +322,8 @@ export function Assistant({
         {palette}
       </div>
       <div className="ask__card">
-        {chosen && view ? (
-          <PurchaseCard key={chosen.listing.hash} listing={chosen.listing} view={view} />
+        {chosen ? (
+          <PurchaseCard key={chosen.listing.hash} listing={chosen.listing} view={view ?? null} />
         ) : layout === "page" ? (
           <p className="ask__placeholder">Choose a match with Enter, or click it, to see exactly what your agent would countersign.</p>
         ) : null}
@@ -399,7 +404,7 @@ function Row({
 }
 
 /** The purchase card: exactly what the agent signs, your envelope's checklist, the hold, then the call it makes. */
-function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView }) {
+function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView | null }) {
   const [signed, setSigned] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
@@ -407,12 +412,15 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const hub = hubBase();
   const base = hub && /^https?:/.test(hub) ? hub : `${window.location.origin}${hub ?? ""}`;
   const command = buyCommand(listing.hash, offer.input, base);
-  const checks = envelopeChecklist(view, {
-    seller: offer.seller,
-    offerHash: listing.hash,
-    amount: offer.price,
-    sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
-  });
+  const agent = view?.agentName ?? "Your agent";
+  const checks = view
+    ? envelopeChecklist(view, {
+        seller: offer.seller,
+        offerHash: listing.hash,
+        amount: offer.price,
+        sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
+      })
+    : null;
   useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
   return (
     <section ref={ref} className="pcard" aria-labelledby="pcard-title">
@@ -423,7 +431,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         </h2>
       </header>
       <p className="pcard__exact">
-        <span className="label">{view.agentName} countersigns exactly</span>
+        <span className="label">{agent} countersigns exactly</span>
         <Amount money={money} size="lg" flight />
       </p>
       <dl className="pcard__fields">
@@ -450,12 +458,16 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
       </dl>
       <div className="pcard__checks">
         <p className="label">Your envelope</p>
-        <Checklist items={checks} />
+        {checks ? (
+          <Checklist items={checks} />
+        ) : (
+          <p className="pcard__unchecked">Your envelope is not on this hub, so this purchase is not checked here. Your agent checks it before it pays.</p>
+        )}
       </div>
       <HoldToSign ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`} left={listing.seller.name} right="you" onSigned={() => setSigned(true)} />
       {signed ? (
         <div className="pcard__next" role="status">
-          <p className="pcard__next-title">Countersigned for {view.agentName}.</p>
+          <p className="pcard__next-title">Countersigned for {agent}.</p>
           <p className="pcard__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
           <div className="command">
             <div className="command__head">

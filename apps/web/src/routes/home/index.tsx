@@ -122,7 +122,12 @@ export default function HomePage(_props: PageProps) {
               The agent signs its limits once: a budget, a cap per seller, an allowlist, and the amount above which it asks you.
               Inside them it buys alone.
             </p>
-            <EnvelopeArtifact view={envelope.data} live={envelope.source === "hub"} listing={featured} />
+            <EnvelopeArtifact
+              view={envelope.data ?? undefined}
+              live={envelope.source === "hub"}
+              missing={envelope.source === "absent" ? envelope.reason : undefined}
+              listing={featured}
+            />
           </li>
           <li className="clear__step">
             <p className="clear__n mono">02</p>
@@ -358,7 +363,30 @@ function SettlementRow({ s, live, now }: { s: Settlement; live: boolean; now: nu
 
 /* The three artifacts the steps point at. Each is real data from this hub, or says it is an example. */
 
-function EnvelopeArtifact({ view, live, listing }: { view: EnvelopeView | undefined; live: boolean; listing: Listing | undefined }) {
+function EnvelopeArtifact({
+  view,
+  live,
+  missing,
+  listing,
+}: {
+  view: EnvelopeView | undefined;
+  live: boolean;
+  /** Why the hub holds no envelope to show, said instead of an example. */
+  missing: string | undefined;
+  listing: Listing | undefined;
+}) {
+  if (missing) {
+    return (
+      <figure className="artifact artifact--empty">
+        <figcaption className="artifact__head">
+          <span className="label">Signed envelope</span>
+        </figcaption>
+        <p className="artifact__note">
+          {missing} When an agent publishes one, its limits and the checklist for the offer in step 02 appear here.
+        </p>
+      </figure>
+    );
+  }
   if (!view) return <div className="artifact artifact--skeleton" aria-hidden="true" />;
   const env = view.envelope;
   const allow = env.allowlist.length;
