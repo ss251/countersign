@@ -29,7 +29,7 @@ type Page = ComponentType<PageProps>;
 const modules = import.meta.glob<PageModule>("../routes/*/index.tsx", { eager: true });
 
 /** Screens designed for a phone at 390 px. Everything else is a desktop surface. */
-const PHONE = new Set(["buyer"]);
+const PHONE = new Set(["buyer", "assistant"]);
 
 export interface Resolved {
   name: string;
@@ -59,6 +59,7 @@ export function hasRoute(name: string): boolean {
  */
 const ALL_VIEWS = [
   { name: "buyer", label: "Buyer", ready: true },
+  { name: "assistant", label: "Assistant", ready: true },
   { name: "seller", label: "Seller", ready: true },
   { name: "merchant", label: "Merchant", ready: true },
   { name: "registry", label: "Registry", ready: true },

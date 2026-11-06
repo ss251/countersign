@@ -179,7 +179,7 @@
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--paper);
   border-top: var(--hair) solid var(--line);
@@ -853,4 +853,165 @@
 
 .approval__dock .hold--done {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--seal) 45%, transparent);
+}
+
+/* Ask: plain words in, live offers out, each with why it fits and what the envelope says. */
+.ask {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.ask__form {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.ask__label {
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ask__row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.ask__row .input {
+  flex: 1;
+}
+
+.ask__try {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.ask__fallback {
+  display: grid;
+  gap: var(--sp-1);
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.ask__fallback-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ask__count {
+  margin-bottom: var(--sp-2);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.matches {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.match {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--d-1) ease;
+}
+
+.match.is-picked {
+  box-shadow: 0 0 0 1.5px var(--ink), var(--elev-1);
+}
+
+.match__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.match__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+
+.match__why {
+  display: grid;
+  gap: 2px;
+  padding-left: var(--sp-4);
+  list-style: disc;
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.match__verdict {
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.match__verdict.is-refused {
+  color: var(--seal);
+}
+
+/* The countersign card: what will be signed, the hold, then the call the agent makes. */
+.cs-card {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--ink);
+}
+
+.cs-card__title {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.cs-card__exact {
+  display: grid;
+  gap: 2px;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.cs-card__terms {
+  display: grid;
+}
+
+.cs-card__terms div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-top: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+}
+
+.cs-card__terms dt {
+  color: var(--slate);
+}
+
+.cs-card__terms dd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  text-align: right;
+}
+
+.cs-card__next {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.cs-card__next-title {
+  color: var(--seal);
+  font-weight: 600;
+}
+
+.cs-card__next-body {
+  color: var(--slate);
+  font-size: var(--t-14);
 }

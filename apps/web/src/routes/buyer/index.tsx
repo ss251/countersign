@@ -9,14 +9,16 @@ import type { Approval, Purchase } from "../../lib/types.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { cx, FixtureNote } from "../../ui/primitives.tsx";
 import { Approvals } from "./Approvals.tsx";
+import { AskTab } from "./AskTab.tsx";
 import { EnvelopeTab } from "./EnvelopeTab.tsx";
 import { HistoryTab } from "./HistoryTab.tsx";
 import "./buyer.css";
 
-type Tab = "approvals" | "envelope" | "history";
+type Tab = "approvals" | "ask" | "envelope" | "history";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "approvals", label: "Approvals" },
+  { id: "ask", label: "Ask" },
   { id: "envelope", label: "Envelope" },
   { id: "history", label: "History" },
 ];
@@ -155,6 +157,7 @@ export default function BuyerPage({ query }: PageProps) {
             onClose={(a) => approvals.set((approvals.data ?? []).filter((x) => x.id !== a.id))}
           />
         ) : null}
+        {tab === "ask" ? <AskTab envelope={envelope} /> : null}
         {tab === "envelope" ? <EnvelopeTab envelope={envelope} /> : null}
         {tab === "history" ? <HistoryTab purchases={purchases} /> : null}
       </div>
@@ -195,6 +198,14 @@ function TabIcon({ id }: { id: Tab }) {
       <svg {...common}>
         <path d="M3 14c1.5-5 4.5-6 6.4-3.2.9 1.4 1.6 2.6 3.1 2.6 1.6 0 2.8-2.4 4-5.4" />
         <path d="M3 18h16" />
+      </svg>
+    );
+  }
+  if (id === "ask") {
+    return (
+      <svg {...common}>
+        <circle cx="10" cy="10" r="5.5" />
+        <path d="M14.2 14.2L18 18" />
       </svg>
     );
   }
