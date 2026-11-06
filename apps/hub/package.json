@@ -1,0 +1,14 @@
+{
+  "name": "@countersign/hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.13.16",
+    "viem": "^2.57.16"
+  }
+}
