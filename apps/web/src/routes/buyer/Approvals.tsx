@@ -37,7 +37,7 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
   if (approvals.source === "absent") {
     // Locked: only the hub's approval token opens this, so say so to the person and put the field in
     // reach. A retry could only fail the same way, so there is none (DESIGN-LOG 12).
-    if (approvals.needsToken && !approvalToken()) return <PhoneLocked what="approvals" onOpen={approvals.reload} />;
+    if (approvals.needsToken) return <PhoneLocked what="approvals" rejected={approvalToken() !== null} onOpen={approvals.reload} />;
     return <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload} />;
   }
   if (approvals.loading && approvals.data === undefined) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
@@ -461,7 +461,16 @@ function ApproverLine({ address, named }: { address: string; named: string | und
  * Locked: only the hub's approval token opens the phone's reads, so say so to the person and put the field
  * in reach. A retry could only fail the same way, so there is none, and Start here is the way out.
  */
-export function PhoneLocked({ what, onOpen }: { what: "approvals" | "purchases"; onOpen: () => void }) {
+export function PhoneLocked({
+  what,
+  rejected = false,
+  onOpen,
+}: {
+  what: "approvals" | "purchases";
+  /** A token is on this phone and the hub still refused it, so the field asks for the right one. */
+  rejected?: boolean;
+  onOpen: () => void;
+}) {
   const id = `locked-${what}`;
   return (
     <section className="locked" data-testid="buyer-locked" aria-labelledby={id}>
@@ -472,6 +481,11 @@ export function PhoneLocked({ what, onOpen }: { what: "approvals" | "purchases";
         This hub opens them with the approval token it was started with. Paste it once: it stays on this phone and goes only
         to this hub.
       </p>
+      {rejected ? (
+        <p className="field__error" role="alert" data-testid="buyer-token-rejected">
+          This hub did not accept the token on this phone. Paste the right one.
+        </p>
+      ) : null}
       <div data-testid="buyer-own-hub">
         <TokenForm
           onSave={(t) => {

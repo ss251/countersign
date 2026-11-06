@@ -21,4 +21,11 @@ describe("the phone, locked (DESIGN-LOG 12)", () => {
     const html = renderToString(createElement(PhoneLocked, { what: "purchases", onOpen: () => {} }));
     expect(html).toContain("Your agent&#x27;s purchases are private.");
   });
+
+  test("a token the hub refused asks for the right one, instead of a dead retry", () => {
+    const html = renderToString(createElement(PhoneLocked, { what: "approvals", rejected: true, onOpen: () => {} }));
+    expect(html).toContain("This hub did not accept the token on this phone. Paste the right one.");
+    expect(html).toContain("Use this token");
+    expect(html).not.toContain("Try again");
+  });
 });

@@ -10,7 +10,7 @@ import { Amount, cx, Empty, Status } from "../../ui/primitives.tsx";
 /** Every call the agent made, newest first. Refused and refunded calls cost nothing. */
 export function HistoryTab({ purchases }: { purchases: Resource<Purchase[] | null> }) {
   if (purchases.source === "absent") {
-    if (purchases.needsToken && !approvalToken()) return <PhoneLocked what="purchases" onOpen={purchases.reload} />;
+    if (purchases.needsToken) return <PhoneLocked what="purchases" rejected={approvalToken() !== null} onOpen={purchases.reload} />;
     return <Absent reason={purchases.reason ?? "This hub has no purchases to show."} onRetry={purchases.reload} />;
   }
   if (!purchases.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
