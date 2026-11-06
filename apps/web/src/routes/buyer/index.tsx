@@ -135,6 +135,15 @@ function Phone({ query }: PageProps) {
         here.
       </p>
     </aside>
+    {/* The right note balances the stage at 1440: what happens on the phone, each step true today (DESIGN-LOG 12). */}
+    <aside className="phone-note phone-note--end" aria-label="How approvals work">
+      <p className="phone-note__eyebrow">On this phone</p>
+      <ol className="phone-steps">
+        <li>Your agent asks only above your limit. Inside it, it buys on its own.</li>
+        <li>You see the exact offer, amount and seller, checked against the envelope your agent signed.</li>
+        <li>You countersign with this phone's own key. The hub checks it against the envelope before the agent can pay.</li>
+      </ol>
+    </aside>
     <div className="phone">
       <header className="phone__bar">
         <p className="phone__title">Buyer's phone</p>

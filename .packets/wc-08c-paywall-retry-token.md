@@ -71,4 +71,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-08c-paywall-retry-token.md`.
+Write `$M/reports/wc-08c-paywall-retry-token.md`.

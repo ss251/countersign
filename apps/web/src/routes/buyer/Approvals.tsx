@@ -35,35 +35,10 @@ export function Approvals({ approvals, envelope, query, onSigned, onSettled, onC
   const current = approvals.data?.[0];
 
   if (approvals.source === "absent") {
-    return (
-      <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload}>
-        {approvals.needsToken && !approvalToken() ? (
-          <>
-            <p className="phone__newcomer">
-              New here? Connect a wallet in the top bar.
-              {hasRoute("start") ? (
-                <>
-                  {" "}
-                  Or <Link to="/start">start here</Link>.
-                </>
-              ) : null}
-            </p>
-            <details className="disclose" data-testid="buyer-own-hub">
-              <summary>I run my own hub</summary>
-              <p className="disclose__body">
-                Paste the approval token your hub was started with. It stays on this phone and goes only to that hub.
-              </p>
-              <TokenForm
-                onSave={(t) => {
-                  rememberApprovalToken(t);
-                  approvals.reload();
-                }}
-              />
-            </details>
-          </>
-        ) : null}
-      </Absent>
-    );
+    // Locked: only the hub's approval token opens this, so say so to the person and put the field in
+    // reach. A retry could only fail the same way, so there is none (DESIGN-LOG 12).
+    if (approvals.needsToken) return <PhoneLocked what="approvals" rejected={approvalToken() !== null} onOpen={approvals.reload} />;
+    return <Absent reason={approvals.reason ?? "This hub has no approvals to show."} onRetry={approvals.reload} />;
   }
   if (approvals.loading && approvals.data === undefined) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
 
@@ -482,6 +457,52 @@ function ApproverLine({ address, named }: { address: string; named: string | und
   );
 }
 
+/**
+ * Locked: only the hub's approval token opens the phone's reads, so say so to the person and put the field
+ * in reach. A retry could only fail the same way, so there is none, and Start here is the way out.
+ */
+export function PhoneLocked({
+  what,
+  rejected = false,
+  onOpen,
+}: {
+  what: "approvals" | "purchases";
+  /** A token is on this phone and the hub still refused it, so the field asks for the right one. */
+  rejected?: boolean;
+  onOpen: () => void;
+}) {
+  const id = `locked-${what}`;
+  return (
+    <section className="locked" data-testid="buyer-locked" aria-labelledby={id}>
+      <h2 id={id} className="locked__title">
+        {`Your agent's ${what} are private.`}
+      </h2>
+      <p className="locked__body">
+        This hub opens them with the approval token it was started with. Paste it once: it stays on this phone and goes only
+        to this hub.
+      </p>
+      {rejected ? (
+        <p className="field__error" role="alert" data-testid="buyer-token-rejected">
+          This hub did not accept the token on this phone. Paste the right one.
+        </p>
+      ) : null}
+      <div data-testid="buyer-own-hub">
+        <TokenForm
+          onSave={(t) => {
+            rememberApprovalToken(t);
+            onOpen();
+          }}
+        />
+      </div>
+      {hasRoute("start") ? (
+        <p className="locked__alt">
+          No hub of your own? <Link to="/start">Buy a tool with your own wallet</Link> on Start here.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 /** The human's approval token for this hub. Pasted once; it stays on this phone. */
 export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
   const [value, setValue] = useState("");
@@ -520,7 +541,7 @@ export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
         }}
       />
       <p id={`${id}-hint`} className={error ? "field__error" : "field__hint"}>
-        {error ?? "The approver token your hub was started with. It stays on this phone and goes only to this hub."}
+        {error ?? "Whoever started this hub has it."}
       </p>
       <Button variant="primary" type="submit" block>
         Use this token

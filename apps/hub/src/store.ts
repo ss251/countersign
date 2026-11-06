@@ -90,6 +90,14 @@ export interface EnvelopeMirrorRecord {
   sig: Hex;
 }
 
+/** A revoke the envelope's approver signed, kept forever: a later revoke does not replace it. */
+export interface RevocationRecord {
+  agent: string;
+  revokedAt: number;
+  sig: Hex;
+  recordedAt: number;
+}
+
 export type ApprovalStatus = "pending" | "countersign" | "decline";
 
 /** A call the buyer agent held for a human decision. */
@@ -183,6 +191,13 @@ interface EnvelopeRow {
   spent_json: string;
   signed_at: number;
   sig: string;
+}
+
+interface RevocationRow {
+  agent: string;
+  revoked_at: number;
+  sig: string;
+  recorded_at: number;
 }
 
 interface ApprovalRow {
@@ -305,6 +320,9 @@ export class Store {
       this.db.run("ALTER TABLE approvals ADD COLUMN decision_sig TEXT NULL");
     }
     this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
+    `);
   }
 
   /** Insert a new offer. Returns false when the hash was already stored. */
@@ -601,6 +619,26 @@ export class Store {
       spent: JSON.parse(row.spent_json) as EnvelopeSpend,
       signedAt: row.signed_at,
       sig: row.sig as Hex,
+    };
+  }
+
+  /** Record a revoke. The first revoke for an agent is kept. */
+  putRevocation(record: RevocationRecord): void {
+    this.db
+      .query("INSERT OR IGNORE INTO revocations (agent, revoked_at, sig, recorded_at) VALUES (?, ?, ?, ?)")
+      .run(record.agent.toLowerCase(), record.revokedAt, record.sig, record.recordedAt);
+  }
+
+  getRevocation(agent: string): RevocationRecord | null {
+    const row = this.db
+      .query<RevocationRow, [string]>("SELECT * FROM revocations WHERE agent = ?")
+      .get(agent.toLowerCase());
+    if (!row) return null;
+    return {
+      agent: row.agent,
+      revokedAt: row.revoked_at,
+      sig: row.sig as Hex,
+      recordedAt: row.recorded_at,
     };
   }
 

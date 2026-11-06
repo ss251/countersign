@@ -8,12 +8,14 @@
  *   hub: challenge -> phone: hello (signed) -> hub: ready
  *   hub: job       -> phone: result | fail
  *   hub: ping      -> phone: pong
+ *   hub: canary    -> phone: canary | canary-fail
  *
  * Nothing here touches the DOM, so the tests run this exact code against the real hub.
  */
 
 import {
   canonicalHash,
+  canaryMessage,
   checkSchema,
   RUNNER_PATH,
   runnerAuthMessage,
@@ -255,6 +257,23 @@ export class RunnerLink {
       case "job":
         await this.onJob(target, frame.order);
         return;
+      case "canary": {
+        const skill = this.cfg.skills().find((s) => s.hash.toLowerCase() === frame.offerHash.toLowerCase());
+        if (!skill) {
+          this.send(target, {
+            t: "canary-fail",
+            offerHash: frame.offerHash,
+            nonce: frame.nonce,
+            reason: "not-served",
+          });
+          return;
+        }
+        const sig = await this.cfg.signer.signMessage({
+          message: canaryMessage(skill.hash, frame.nonce),
+        });
+        this.send(target, { t: "canary", offerHash: skill.hash, nonce: frame.nonce, sig });
+        return;
+      }
       case "error":
         // The hub closes the socket right after; keep its sentence for the person to read.
         this.setStatus({ ...this.current, refusal: frame.message });
