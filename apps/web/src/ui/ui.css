@@ -298,12 +298,14 @@ a.hash__value {
   background: var(--line);
 }
 
+/* Scaled, not resized: transform skips layout. */
 .meter__fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
   border-radius: inherit;
   background: var(--usdc);
-  transition: width var(--d-3) var(--ease-out);
+  transform-origin: left center;
+  transition: transform var(--d-3) var(--ease-out);
 }
 
 /* Inputs: 16px so iOS does not zoom. */

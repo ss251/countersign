@@ -52,6 +52,7 @@
 }
 
 .phone__budget {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -63,6 +64,13 @@
   font-size: var(--t-13);
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* 32px to the eye, 44px to the thumb. */
+.phone__budget::after {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
 }
 
 .phone__budget-amount {
@@ -205,6 +213,11 @@
 }
 
 /* The hold and Decline stay above the tab bar while the terms scroll beneath them. */
+/* Keyboard focus must never land under the dock. */
+.approval :focus-visible {
+  scroll-margin-bottom: 240px;
+}
+
 .approval__dock {
   position: sticky;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
@@ -504,7 +517,7 @@
 }
 
 .limit__change {
-  min-height: 36px;
+  min-height: 44px;
   font-size: var(--t-14);
 }
 
@@ -564,7 +577,7 @@
 }
 
 .allow__remove {
-  min-height: 36px;
+  min-height: 44px;
   font-size: var(--t-14);
 }
 
