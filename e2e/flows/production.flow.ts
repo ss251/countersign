@@ -47,16 +47,24 @@ function walk(dir: string, out: string[]): void {
  * in the repository: if one is in the shipped bundle, the fixture catalogue shipped with it.
  */
 export function fixtureMarkers(): string[] {
+  return [...fixtureMarkerSources().keys()];
+}
+
+/** Each fixture-only value, with the fixture file it comes from. */
+export function fixtureMarkerSources(): Map<string, string> {
   const fixturePaths = new Set(FIXTURE_FILES.map((f) => join(ROOT, f)));
-  const found = new Set<string>();
+  const found = new Map<string, string>();
   for (const f of fixturePaths) {
     if (!existsSync(f)) continue;
-    for (const m of readFileSync(f, "utf8").matchAll(/0x[0-9a-fA-F]{64}|0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/g)) found.add(m[0].toLowerCase());
+    for (const m of readFileSync(f, "utf8").matchAll(/0x[0-9a-fA-F]{64}|0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/g)) {
+      if (!found.has(m[0].toLowerCase())) found.set(m[0].toLowerCase(), f.slice(ROOT.length + 1));
+    }
   }
   const files: string[] = [];
   for (const r of REAL_ROOTS) walk(join(ROOT, r), files);
   const real = files.filter((f) => !fixturePaths.has(f) && !f.includes("/test/")).map((f) => readFileSync(f, "utf8").toLowerCase()).join("\n");
-  return [...found].filter((hex) => !real.includes(hex));
+  for (const hex of [...found.keys()]) if (real.includes(hex)) found.delete(hex);
+  return found;
 }
 
 async function text(ctx: FlowCtx, label: string, url: string): Promise<string> {
@@ -89,10 +97,17 @@ export const productionConsole: Flow = {
       // Both checks always run, so one red line names everything that is wrong.
       const problems: string[] = [];
       if (!bundle.includes(hub)) problems.push(`it does not contain ${hub}, so the console was built without VITE_HUB_URL and opens on fixtures`);
-      const markers = fixtureMarkers();
+      const sources = fixtureMarkerSources();
+      const markers = [...sources.keys()];
       if (markers.length === 0) problems.push("no fixture markers were found in the fixture sources, so the fixture check proves nothing");
       const shipped = markers.filter((m) => bundle.toLowerCase().includes(m));
-      if (shipped.length > 0) problems.push(`${shipped.length} of ${markers.length} fixture-only values ship in it (e.g. ${shipped.slice(0, 2).join(", ")}); load fixtures only on ?hub=off, by dynamic import`);
+      if (shipped.length > 0) {
+        const byFile = new Map<string, number>();
+        for (const m of shipped) byFile.set(sources.get(m) as string, (byFile.get(sources.get(m) as string) ?? 0) + 1);
+        const lane = (f: string) => (f.startsWith("apps/web/src/routes/merchant/") ? "cs-wc" : "cs-ui");
+        const where = [...byFile].map(([f, n]) => `${n} from ${f}, ${lane(f)}`).join("; ");
+        problems.push(`${shipped.length} of ${markers.length} fixture-only values ship in it (${where}); load fixtures only on ?hub=off, by dynamic import`);
+      }
       ctx.note(`fixture markers checked: ${markers.length}`);
       check(problems.length === 0, `the default bundle: ${problems.join("; ")}`);
     });
@@ -129,6 +144,15 @@ export const productionHub: Flow = {
         agent: latest?.buyer ?? ctx.env.secrets.address("CS_BUYER_ADDRESS"),
         slipHash: latest?.slipHash,
       };
+    });
+
+    await ctx.step("production declares every rail it claims", async () => {
+      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera").split(",").map((x) => x.trim()).filter(Boolean);
+      const res = await ctx.http("rails", `${hub}/rails`);
+      equal(res.status, 200, "rails status");
+      const ids = ((res.json as { rails?: Array<{ id: string }> }).rails ?? []).map((r) => r.id);
+      const missing = want.filter((id) => !ids.includes(id));
+      check(missing.length === 0, `production does not declare ${missing.join(", ")} (it declares ${ids.join(", ") || "none"})`);
     });
 
     await ctx.step("every endpoint a screen calls answers 200, open to the console", async () => {
