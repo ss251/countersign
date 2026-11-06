@@ -218,6 +218,14 @@ The headless browser is no longer cut. A person has to be able to sign in, conne
 - **Funding.** The test wallet is funded with 1 USDC on Arc by a dedicated test-funder key before it buys, and the test asserts the balance. The deployer's own key never sits in CI.
 - **Status.** `docs/status.md` marks this `IN DESIGN` until the project exists, and `SHIPPED` only when it runs green.
 
+## D17 — a call nested inside a purchase of the same offer or seller is refused before payment (06 Nov; refs #27)
+
+A call's `lineage` lists the jobIds of the purchases it is nested inside, outermost first (`CallRequest` in `packages/core/src/wire.ts`). The hub now uses it for what it was declared for: refusing cycles.
+
+- **The rule.** Before any 402 or payment, the hub resolves each lineage jobId it knows. If an ancestor job bought the same offer, or an offer from the same seller, the call is refused with 409 `lineage-cycle`: "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged."
+- **Where.** First in the paid-call pipeline, right after the offer is loaded. It runs before the ENS lock, both input gates, the online check and the rails.
+- **What it cannot see.** A jobId this hub does not hold, such as a purchase made through another hub, is skipped. A caller that sends no lineage is not checked. Lineage comes from the caller, so the check stops honest agents from looping, not a buyer who hides its ancestry.
+
 ## D19 — the hub checks a signed-in person with Privy on the routes that act for them; signatures still authorise money (06 Nov; refs #21)
 
 **When it is on.** Only when `PRIVY_APP_ID` and `PRIVY_APP_SECRET` are both set. Otherwise every route behaves exactly as before, and a Privy header is ignored.
@@ -245,6 +253,10 @@ The headless browser is no longer cut. A person has to be able to sign in, conne
 **Left out on purpose.**
 - `PUT /envelopes/:agent`, `POST /approvals` and `POST /offers` are signed by an agent or a seller key, not by a person.
 - The merchant refund is not a hub route: it lives on the merchant's own service.
+
+## D17, amended — a lineage that names the offer or its seller directly is refused too (06 Nov; refs #27)
+
+D17 resolves each lineage jobId through the jobs this hub holds. A lineage entry that is not a jobId, such as the target offer's own hash or its seller's address, was skipped. Now an entry equal to the target's offer hash, or to its seller's address (compared without case), is refused with the same 409 `lineage-cycle`, before any 402. The jobId check is unchanged.
 
 ## D20 — the person revokes an agent from the phone, and the hub refuses that agent before any 402 (06 Nov; refs #21)
 

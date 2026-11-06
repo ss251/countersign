@@ -137,12 +137,17 @@ export const productionHub: Flow = {
       const st = await ctx.http("settlements", `${hub}/settlements?limit=1`);
       equal(st.status, 200, "settlements status");
       const latest = (st.json as { settlements?: Array<{ buyer?: string; slipHash?: string }> }).settlements?.[0];
+      // The newest settlement can legitimately carry no slip (a refunded held call), so the slip
+      // comes from the first row that has one, in the hub's newest-first order.
+      const withSlips = await ctx.http("settlements with slips", `${hub}/settlements?limit=20`);
+      equal(withSlips.status, 200, "settlements with slips status");
+      const slipHash = (withSlips.json as { settlements?: Array<{ slipHash?: string }> }).settlements?.find((s) => s.slipHash)?.slipHash;
       return {
         offerHash: listed[0]!.offerHash,
         seller: listed[0]!.offer.seller,
         // The console names its agent after the latest settlement's buyer; so does this check.
         agent: latest?.buyer ?? ctx.env.secrets.address("CS_BUYER_ADDRESS"),
-        slipHash: latest?.slipHash,
+        slipHash,
       };
     });
 

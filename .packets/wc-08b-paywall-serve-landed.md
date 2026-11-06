@@ -73,4 +73,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-08b-paywall-serve-landed.md`.
+Write `$M/reports/wc-08b-paywall-serve-landed.md`.

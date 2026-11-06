@@ -15,8 +15,9 @@ export interface PageProps {
  * phone: a 390 px screen that draws its own chrome (the buyer).
  * desk:  the shared top bar and a desktop layout.
  * bare:  no app chrome at all, for pages a customer opens, like a receipt.
+ * story: the landing, a full-bleed scroll under the same shared top bar as every desk screen.
  */
-export type Surface = "phone" | "desk" | "bare";
+export type Surface = "phone" | "desk" | "bare" | "story";
 
 type PageModule = {
   default: ComponentType<PageProps>;
