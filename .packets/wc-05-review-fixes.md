@@ -2,7 +2,7 @@
 
 ## Goal
 
-cs-w1 reviewed `packages/relay` at `d1fcf2a`. The review is at `/Users/thescoho/Developer/countersign-mumbai/reports/review-d1fcf2a.md`; read it first. It found two blockers and four should-fix items. Fix all six here, so that the relay can be integrated.
+cs-w1 reviewed `packages/relay` at `d1fcf2a`. The review is at `$M/reports/review-d1fcf2a.md`; read it first. It found two blockers and four should-fix items. Fix all six here, so that the relay can be integrated.
 
 cs-w1's failing tests are on branch `cs/w1` in `packages/relay/test/w1-attacks.test.ts`. Copy that file into this worktree **unchanged** (`git show cs/w1:packages/relay/test/w1-attacks.test.ts > packages/relay/test/w1-attacks.test.ts`). Its tests must pass. Do not weaken them.
 
@@ -20,7 +20,7 @@ Do not touch `packages/rail/**`, `packages/core/**`, `apps/**`, `contracts/**`, 
 
 ## Fixes
 
-The list also covers cs-w1's second review (`/Users/thescoho/Developer/countersign-mumbai/reports/review-5444ec5.md`). That review adds three items:
+The list also covers cs-w1's second review (`$M/reports/review-5444ec5.md`). That review adds three items:
 
 - **B1b**, the same defect as B1 on `POST /orders/:id/refund`;
 - **B2** now also covering released escrow jobs;
@@ -175,7 +175,7 @@ All green, including `w1-attacks.test.ts`. `git diff --stat cs/wc...HEAD` lists 
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-05-review-fixes.md`:
+Write `$M/reports/wc-05-review-fixes.md`:
 
 - one line per fix, naming its test;
 - the test counts;

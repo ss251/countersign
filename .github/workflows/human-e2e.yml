@@ -43,13 +43,14 @@ jobs:
       - name: run the human acceptance flow
         working-directory: e2e
         env:
+          PROJECT: ${{ github.event.inputs.project }}
           E2E_HUMAN_FUNDER_KEY: ${{ secrets.E2E_HUMAN_FUNDER_KEY }}
           PRIVY_TEST_EMAIL: ${{ secrets.PRIVY_TEST_EMAIL }}
           PRIVY_TEST_OTP: ${{ secrets.PRIVY_TEST_OTP }}
           E2E_HUMAN_CONSOLE: ${{ vars.E2E_HUMAN_CONSOLE }}
           E2E_HUMAN_HUB: ${{ vars.E2E_HUMAN_HUB }}
         run: |
-          case "${{ github.event.inputs.project }}" in
+          case "$PROJECT" in
             privy) args="--project=privy" ;;
             injected) args="--project=injected" ;;
             *) args="" ;;
@@ -62,8 +63,8 @@ jobs:
         with:
           name: human-e2e
           path: |
-            e2e/human/artifacts/
             e2e/human/runs/
+            e2e/human/artifacts/*/injected/
           retention-days: 14
 
       - name: summarize

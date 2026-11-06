@@ -1,9 +1,12 @@
 // The held Hedera rail: the buyer creates a scheduled USDC transfer that needs the payee's
 // signature, the hub verifies and holds it without moving money, and only a checked delivery
-// lets the hub submit the seller's countersignature. A failed delivery leaves the schedule to
-// expire unsigned, so nothing moves.
+// lets the hub co-sign the seller's countersignature. The payee is a 2-of-2 account of the
+// seller and the hub, so neither can release the schedule alone. A failed delivery leaves the
+// schedule to expire unsigned, so nothing moves.
+import { proto } from "@hiero-ledger/proto";
 import {
   Client,
+  PrivateKey,
   ReceiptStatusError,
   ScheduleSignTransaction,
   StatusError,
@@ -46,6 +49,8 @@ interface Hold {
 }
 
 export interface HeldRailOptions {
+  /** The hub's ED25519 release key, or its DER string; the held payee must require it. */
+  hubKey: PrivateKey | string;
   mirror?: MirrorOptions;
   /** Unix seconds. */
   now?: () => number;
@@ -82,6 +87,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The two keys of a payee that requires the seller and the hub together, or null for any other shape. */
+function gatedKeys(key: proto.Key): proto.Key[] | null {
+  const list = key.keyList;
+  if (list) {
+    const keys = list.keys ?? [];
+    return keys.length === 2 ? keys : null;
+  }
+  const threshold = key.thresholdKey;
+  if (threshold) {
+    const keys = threshold.keys?.keys ?? [];
+    return threshold.threshold === 2 && keys.length === 2 ? keys : null;
+  }
+  return null;
+}
+
+function holdsKey(key: proto.Key, publicKey: Buffer): boolean {
+  return key.ed25519 != null && Buffer.from(key.ed25519).equals(publicKey);
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -90,7 +114,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** The hub holds no key: an operator-less client only submits the seller's frozen signature. */
+/** An operator-less client submits the seller-and-hub signed transaction. */
 async function submitWithTestnetClient(tx: ScheduleSignTransaction): Promise<{ status: string }> {
   const client = Client.forTestnet();
   try {
@@ -125,7 +149,24 @@ export function heldJobId(createTxId: string): Hex {
   return keccak256(toBytes(createTxId));
 }
 
-export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<HeldRail> {
+/** A fresh ED25519 release key in the DER form the hub's environment carries; for tests and scripts. */
+export function newHubReleaseKey(): string {
+  return PrivateKey.generateED25519().toStringDer();
+}
+
+export async function createHederaHeldRail(opts: HeldRailOptions): Promise<HeldRail> {
+  if (!opts.hubKey) throw new Error("the held rail needs its hub release key");
+  let hubKey: PrivateKey;
+  if (typeof opts.hubKey === "string") {
+    try {
+      hubKey = PrivateKey.fromStringED25519(opts.hubKey);
+    } catch {
+      throw new Error("the held rail's hub release key is not an ED25519 key");
+    }
+  } else {
+    hubKey = opts.hubKey;
+  }
+  const hubPublicKey = Buffer.from(hubKey.publicKey.toBytesRaw());
   const mirror = opts.mirror ?? {};
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   const seen = opts.seen ?? memoryStore();
@@ -215,6 +256,8 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       if (tx.scheduleId?.toString() !== hold.scheduleId) return fail("bad_countersign");
       if (tx.transactionId?.accountId?.toString() !== hold.payTo) return fail("bad_countersign");
 
+      await tx.sign(hubKey);
+
       const receipt = await submit(tx);
       if (receipt.status !== "SUCCESS" && receipt.status !== "SCHEDULE_ALREADY_EXECUTED") {
         return fail(`submit_failed: ${receipt.status}`);
@@ -240,7 +283,15 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       }
 
       holds.delete(jobId);
-      return { success: true, payer: hold.payer, transaction: hold.createTxId, network: HEDERA_TESTNET };
+      const settled: SettleResult = {
+        success: true,
+        payer: hold.payer,
+        transaction: hold.createTxId,
+        network: HEDERA_TESTNET,
+      };
+      // The link opens the execution, not the create; the enumeration stays as it was.
+      Object.defineProperty(settled, "explorerRef", { value: record.consensusTimestamp, enumerable: false });
+      return settled;
     },
 
     async refund(jobId) {
@@ -281,6 +332,7 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
           name: "hedera-scheduled",
           offerHash: offerHash(offer),
           holdSeconds: offer.deadline + 180,
+          hubKey: hubKey.publicKey.toStringRaw(),
         },
       };
     },
@@ -332,8 +384,27 @@ export async function createHederaHeldRail(opts: HeldRailOptions = {}): Promise<
       }
       if (!check.ok) return invalid(`mismatch: ${check.message}`);
 
-      const payee = await readAccount(requirements.payTo);
-      if (payee?.receiver_sig_required !== true) return invalid("payee_does_not_hold");
+      let payee: Record<string, unknown> | null;
+      try {
+        payee = await readAccount(requirements.payTo);
+      } catch {
+        return invalid("payee_not_hub_gated");
+      }
+      if (payee?.receiver_sig_required !== true) return invalid("payee_not_hub_gated");
+      const payeeKey = isRecord(payee.key) ? payee.key : null;
+      if (payeeKey?._type !== "ProtobufEncoded" || typeof payeeKey.key !== "string") {
+        return invalid("payee_not_hub_gated");
+      }
+      let decoded: proto.Key;
+      try {
+        decoded = proto.Key.decode(Buffer.from(payeeKey.key, "hex"));
+      } catch {
+        return invalid("payee_not_hub_gated");
+      }
+      const keys = gatedKeys(decoded);
+      if (!keys || !keys.some((key) => holdsKey(key, hubPublicKey))) {
+        return invalid("payee_not_hub_gated");
+      }
 
       const payer = schedule.payer;
       if (!payer) return invalid("unsupported_payer_key");

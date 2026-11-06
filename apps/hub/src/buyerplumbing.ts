@@ -7,6 +7,7 @@ import {
   approvalDecisionSigner,
   approvalRequestHash,
   canonicalJson,
+  envelopeRevokeMessage,
   explorerUrl,
   RAIL_IDS,
   type ApprovalRequest,
@@ -15,6 +16,7 @@ import {
   type Rail,
   type RailId,
 } from "./deps.ts";
+import { owns, personFrom, type PrivyVerifier } from "./privy.ts";
 import type { ApprovalRecord, ApprovalStatus, Store } from "./store.ts";
 
 export interface BuyerPlumbingDeps {
@@ -22,6 +24,8 @@ export interface BuyerPlumbingDeps {
   rails: Rail[];
   now: () => number;
   humanApprovalToken?: string;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
 }
 
 type EffectiveStatus = ApprovalStatus | "expired";
@@ -38,6 +42,7 @@ export function registerBuyerPlumbing(app: Hono, deps: BuyerPlumbingDeps): void 
 
   app.put("/envelopes/:agent", async (c) => putEnvelope(c, deps));
   app.get("/envelopes/:agent", (c) => getEnvelope(c, deps));
+  app.post("/envelopes/:agent/revoke", async (c) => revokeEnvelope(c, deps));
 
   app.post("/approvals", async (c) => createApproval(c, deps));
   app.get("/approvals", (c) => listApprovals(c, deps));
@@ -160,22 +165,83 @@ async function putEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Respons
   return json({ ok: true });
 }
 
-function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Response {
-  const refused = requireToken(c, deps);
-  if (refused !== null) return refused;
+async function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "none") {
+    const refused = requireToken(c, deps);
+    if (refused) return refused;
+  }
   const agent = c.req.param("agent");
   if (agent === undefined || agent === "") {
     return fail(400, "bad-request", "Refused. Name the agent.");
   }
   const stored = deps.store.getEnvelopeMirror(agent);
   if (stored === null) return fail(404, "unknown-agent", "Refused. That agent has no mirror here.");
+  if (privyCheck.kind === "person") {
+    const approver = deps.store.getEnvelopeMirror(agent)?.envelope.approver;
+    if (!owns(privyCheck.person, approver)) {
+      return fail(403, "not-your-agent", "Refused. This agent's approver key is not one of your wallets.");
+    }
+  }
+  const rev = deps.store.getRevocation(agent);
   return json({
     envelope: stored.envelope,
     spent: stored.spent,
     signedAt: stored.signedAt,
     sig: stored.sig,
     verified: true,
+    revocation: rev === null ? null : { revokedAt: rev.revokedAt },
   });
+}
+
+async function revokeEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "none") {
+    const refused = requireToken(c, deps);
+    if (refused) return refused;
+  }
+
+  const agent = (c.req.param("agent") ?? "").toLowerCase();
+  const mirror = deps.store.getEnvelopeMirror(agent);
+  if (mirror === null) {
+    return fail(404, "no-envelope", "Refused. This hub holds no envelope for that agent.");
+  }
+  const approver = mirror.envelope.approver;
+  if (approver === undefined) {
+    return fail(409, "no-approver", "Refused. This agent's envelope names no approver key.");
+  }
+  if (privyCheck.kind === "person" && !owns(privyCheck.person, approver)) {
+    return fail(403, "not-your-agent", "Refused. This agent's approver key is not one of your wallets.");
+  }
+
+  const parsed = await readJsonLimited(c);
+  if (parsed.kind === "too-large") return fail(413, "too-large", "Refused. The request body is too large.");
+  if (parsed.kind === "malformed") return fail(400, "bad-request", "Refused. The revoke is malformed.");
+  const body = parsed.value;
+  if (!isRecord(body)) return fail(400, "bad-request", "Refused. The revoke is malformed.");
+  const revokedAt = body.revokedAt;
+  const sig = body.sig;
+  if (!Number.isSafeInteger(revokedAt) || typeof sig !== "string") {
+    return fail(400, "bad-request", "Refused. The revoke is malformed.");
+  }
+  if (Math.abs(deps.now() - (revokedAt as number)) > CLOCK_SKEW) {
+    return fail(400, "bad-time", "Refused. The revoke's time is not the hub's clock.");
+  }
+
+  const signer = await recover(envelopeRevokeMessage(agent, revokedAt as number), sig);
+  if (signer === null || signer.toLowerCase() !== approver.toLowerCase()) {
+    return fail(401, "bad-signature", "Refused. The revoke is not signed by this agent's approver.");
+  }
+
+  deps.store.putRevocation({
+    agent,
+    revokedAt: revokedAt as number,
+    sig: sig as Hex,
+    recordedAt: deps.now(),
+  });
+  return json({ agent, revoked: true, revokedAt: deps.store.getRevocation(agent)!.revokedAt });
 }
 
 async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
@@ -267,13 +333,23 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   return json({ id }, 201);
 }
 
-function listApprovals(c: Context, deps: BuyerPlumbingDeps): Response {
-  const refused = requireToken(c, deps);
-  if (refused !== null) return refused;
+async function listApprovals(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "none") {
+    const refused = requireToken(c, deps);
+    if (refused) return refused;
+  }
   const agent = c.req.query("agent");
   const filter = c.req.query("status") ?? "pending";
   if (filter !== "pending" && filter !== "decided" && filter !== "all") {
     return fail(400, "bad-request", "Refused. Unknown approval status.");
+  }
+  if (privyCheck.kind === "person") {
+    const approver = deps.store.getEnvelopeMirror(agent ?? "")?.envelope.approver;
+    if (!owns(privyCheck.person, approver)) {
+      return fail(403, "not-your-agent", "Refused. This agent's approver key is not one of your wallets.");
+    }
   }
   const now = deps.now();
   const approvals = deps.store
@@ -295,12 +371,22 @@ function getApproval(c: Context, deps: BuyerPlumbingDeps): Response {
 }
 
 async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
-  const refused = requireToken(c, deps);
-  if (refused !== null) return refused;
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "none") {
+    const refused = requireToken(c, deps);
+    if (refused) return refused;
+  }
 
   const id = c.req.param("id");
   const row = id === undefined ? null : deps.store.getApproval(id);
   if (row === null) return fail(404, "unknown-approval", "Refused. That approval is not known.");
+  if (privyCheck.kind === "person") {
+    const approver = deps.store.getEnvelopeMirror(row.agent)?.envelope.approver;
+    if (!owns(privyCheck.person, approver)) {
+      return fail(403, "not-your-agent", "Refused. This agent's approver key is not one of your wallets.");
+    }
+  }
   const now = deps.now();
   const status = effectiveStatus(row, now);
   if (status === "expired") return fail(409, "expired", "Refused. This approval has expired.");

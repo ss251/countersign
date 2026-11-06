@@ -233,7 +233,7 @@ Stop, commit what works, and report if any of these happen:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-02-escrow-rail.md` covering:
+Write `$M/reports/wc-02-escrow-rail.md` covering:
 
 - what was built;
 - test counts;
