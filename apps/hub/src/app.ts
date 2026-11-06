@@ -277,7 +277,9 @@ export function createHub(deps: HubDeps) {
     } catch {
       return fail(500, "internal", "Refused. The hub could not complete the call.");
     }
-    console.log(`[hub] call ${hash} rail=${outcome.railId ?? "none"} status=${outcome.status}`);
+    console.log(
+      `[hub] call ${hash} rail=${outcome.railId ?? "none"} status=${outcome.status}${reasonSuffix(outcome)}`,
+    );
     return json(outcome.body, outcome.status, outcome.headers);
   });
 
@@ -298,6 +300,20 @@ function listing(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The refusal's one-line reason, at most 200 characters. Never a header, payment, input or output. */
+function reasonSuffix(outcome: { status: number; body: unknown }): string {
+  if (outcome.status === 200 || !isRecord(outcome.body)) return "";
+  let reason: string | undefined;
+  if (outcome.status === 402) {
+    if (typeof outcome.body.error === "string") reason = outcome.body.error;
+  } else if (typeof outcome.body.code === "string" && typeof outcome.body.message === "string") {
+    reason = `${outcome.body.code}: ${outcome.body.message}`;
+  }
+  if (reason === undefined) return "";
+  const oneLine = reason.replace(/[\r\n]+/g, " ").trim();
+  return oneLine === "" ? "" : ` reason=${oneLine.slice(0, 200)}`;
 }
 
 function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
