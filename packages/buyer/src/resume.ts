@@ -1,8 +1,9 @@
 import { createPublicClient, http, type Hex } from "viem";
-import type { Network } from "@countersign/core";
+import type { Envelope, Network } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
 import type { Journal, JournalEntry, JournalKind } from "./journal.ts";
 import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
+import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { State } from "./state.ts";
 
 export interface ResumeSummary {
@@ -64,6 +65,8 @@ export async function resume(args: {
   now?: number;
   known?: KnownRail[];
   readJobStatus?: JobStatusReader;
+  /** Publish the envelope mirror after the resume settles any open jobs. */
+  mirror?: { account: SigningAccount; envelope: Envelope };
 }): Promise<ResumeSummary[]> {
   const { hub, journal, state } = args;
   const known = args.known ?? KNOWN_RAILS;
@@ -118,6 +121,15 @@ export async function resume(args: {
     } else {
       out.push({ jobId, status: job.status });
     }
+  }
+  if (args.mirror) {
+    await publishEnvelope({
+      hub,
+      account: args.mirror.account,
+      envelope: args.mirror.envelope,
+      spent: journal.spend(),
+      now: at,
+    });
   }
   return out;
 }

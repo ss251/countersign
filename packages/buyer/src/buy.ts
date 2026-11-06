@@ -15,8 +15,10 @@ import {
   type RailId,
 } from "@countersign/core";
 import type { HubClient } from "./hub-client.ts";
-import type { Journal } from "./journal.ts";
+import type { Journal, JournalEntry } from "./journal.ts";
+import { requestApproval } from "./approvals.ts";
 import { KNOWN_RAILS, type KnownRail } from "./known-rails.ts";
+import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { Payer } from "./payer.ts";
 import type { State } from "./state.ts";
 import { checkGatewayTerms, checkTerms } from "./terms.ts";
@@ -42,12 +44,34 @@ export interface BuyArgs {
   known?: KnownRail[];
   /** Restrict the choice to one rail id, e.g. "gateway". */
   rail?: RailId;
+  /** "local" refuses above askAbove; "hub" asks the human through the hub first. */
+  approvals?: "local" | "hub";
+  /** The agent key, needed to sign hub approvals and envelope mirrors. */
+  account?: SigningAccount;
+  /** Publish the envelope mirror after every journal change. */
+  mirror?: boolean;
 }
 
 type Chosen = { kind: "countersign"; rail: KnownRail } | { kind: "gateway" };
 
 export async function buy(a: BuyArgs): Promise<CallResult> {
   const { hub, offerHash, input, journal, envelope } = a;
+  const agent: SigningAccount | undefined =
+    a.account ?? a.payers.find((payer) => payer.account !== undefined)?.account;
+  const publishMirror = async (): Promise<void> => {
+    if (!a.mirror || !agent) return;
+    await publishEnvelope({
+      hub,
+      account: agent,
+      envelope,
+      spent: journal.spend(),
+      now: a.now,
+    });
+  };
+  const record = async (entry: JournalEntry): Promise<void> => {
+    journal.append(entry);
+    await publishMirror();
+  };
   const listing = await hub.getOffer(offerHash);
   const offer = listing.offer;
   // The offer is only what the hub says it is until it hashes to the hash we asked for.
@@ -109,7 +133,7 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
 
   if (!entry || !payer || !chosen) {
     if (refusal !== undefined) {
-      journal.append({
+      await record({
         at: a.now,
         kind: "refused",
         offerHash,
@@ -134,8 +158,44 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
   };
 
   if (needsHuman(envelope, entry.amount) && !a.approve) {
-    journal.append({ ...base, kind: "refused", reason: "held" });
-    throw new BuyError("Held. This call is above your ask-above limit; approve it to countersign.");
+    if ((a.approvals ?? "local") === "local") {
+      await record({ ...base, kind: "refused", reason: "held" });
+      throw new BuyError("Held. This call is above your ask-above limit; approve it to countersign.");
+    }
+
+    const account = agent;
+    if (!account) throw new BuyError("Held. The agent key is not available to ask the hub.");
+    const local = checkEnvelope(
+      envelope,
+      journal.spend(),
+      { seller: offer.seller, offerHash, amount: entry.amount },
+      a.now,
+    );
+    if (!local.ok) {
+      await record({ ...base, kind: "refused", reason: local.reason });
+      throw new BuyError(local.message);
+    }
+
+    const outcome = await requestApproval({
+      hub,
+      account,
+      offerHash,
+      title: offer.title,
+      amount: entry.amount,
+      rail: railId ?? "unknown",
+      terms: entry,
+      now: a.now,
+    });
+    if (outcome !== "countersign") {
+      const reason =
+        outcome === "decline"
+          ? "human-declined"
+          : outcome === "expired"
+            ? "human-expired"
+            : "human-timeout";
+      await record({ ...base, kind: "refused", reason });
+      throw new BuyError("Held. The human did not countersign this call.");
+    }
   }
 
   const reservationId = crypto.randomUUID();
@@ -143,9 +203,10 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     checkEnvelope(envelope, spend, { seller: offer.seller, offerHash, amount: entry.amount }, a.now),
   );
   if (!decision.ok) {
-    journal.append({ ...base, kind: "refused", reason: decision.reason });
+    await record({ ...base, kind: "refused", reason: decision.reason });
     throw new BuyError(decision.message);
   }
+  await publishMirror();
 
   let signed: { payment: PaymentPayload; jobId: Hex };
   try {
@@ -155,16 +216,16 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       resource: first.required.resource,
     });
   } catch (e) {
-    journal.append({ ...base, kind: "failed", reservationId, reason: "signing" });
+    await record({ ...base, kind: "failed", reservationId, reason: "signing" });
     throw e;
   }
   const { payment, jobId } = signed;
-  journal.append({ ...base, kind: "signed", reservationId, jobId });
+  await record({ ...base, kind: "signed", reservationId, jobId });
 
   const paid = await hub.call(offerHash, input, payment, a.lineage);
   if (paid.kind !== "paid") {
     const message = paid.kind === "error" ? paid.message : "Refused. The hub asked for payment again.";
-    journal.append({ ...base, kind: "failed", jobId, reason: message });
+    await record({ ...base, kind: "failed", jobId, reason: message });
     throw new BuyError(message);
   }
   const { result } = paid;
@@ -187,12 +248,12 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     }
   };
   if (await bad()) {
-    journal.append({ ...base, kind: "failed", jobId, reason: "bad-slip" });
+    await record({ ...base, kind: "failed", jobId, reason: "bad-slip" });
     throw new BuyError("Refused. The slip does not verify; the escrow refunds at the deadline.");
   }
 
   a.state.saveSlip(slip);
-  journal.append({
+  await record({
     ...base,
     kind: slip.body.escrow ? "released" : "settled",
     rail: slip.body.rail,
