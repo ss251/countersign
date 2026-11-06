@@ -19,6 +19,7 @@ import {
   type ImportedPackage,
 } from "./imports.ts";
 import { isRecord, type JsonObject } from "./json.ts";
+import { buildEnvironment, checkFiles, readDist, readTarball } from "./leaks.ts";
 import {
   dependencyUnion,
   entrySources,
@@ -33,6 +34,7 @@ import { omittedExportLines, PUBLISH_SURFACE } from "./surface.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
 const SOURCE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
+const LEAK_ENVIRONMENT = buildEnvironment();
 
 type EmittedFile = {
   file: string;
@@ -372,9 +374,13 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
   writeFileSync(join(stageDir, "package.json"), `${JSON.stringify(staged, null, 2)}\n`);
   rewriteBins(stageDir, staged);
   guardPackage(short, emitted);
+  checkFiles(displayPath(stageDir), readDist(stageDir), LEAK_ENVIRONMENT);
 
   rmSync(bundleDir, { recursive: true, force: true });
-  return pack({ short, version: staged.version, stageDir, outRoot });
+  const packed = pack({ short, version: staged.version, stageDir, outRoot });
+  const clean = checkFiles(packed.tarball, readTarball(packed.tarball), LEAK_ENVIRONMENT);
+  console.log(`${short}: packed files clean (${clean} files)`);
+  return packed;
 }
 
 async function main(): Promise<void> {
