@@ -57,8 +57,25 @@ const MAX_WINDOWS = 50;
 
 export interface VerifyOptions {
   rpcUrl?: string;
+  /** A Hedera mirror node base URL, e.g. https://testnet.mirrornode.hedera.com. */
+  mirrorUrl?: string;
+  /** The fetch used for mirror reads; defaults to the global fetch. */
+  fetch?: typeof fetch;
   /** The escrow deployments to trust; defaults to the deployments this package knows. */
   knownEscrows?: readonly KnownEscrow[];
+}
+
+const ACCOUNT_ID = /^0\.0\.\d+$/;
+const TRANSACTION_ID = /^0\.0\.\d+@\d+\.\d+$/;
+
+/** A held Hedera payment: the buyer's schedule, released by the seller's countersignature. */
+function isHeld(slip: Slip): boolean {
+  const accepted = slip.payment.accepted;
+  return (
+    accepted.network.startsWith("hedera:") &&
+    accepted.extra?.name === "hedera-scheduled" &&
+    slip.body.rail === "hedera-scheduled"
+  );
 }
 
 export async function verifySlip(slip: Slip, opts: VerifyOptions = {}): Promise<Verdict> {
@@ -66,6 +83,7 @@ export async function verifySlip(slip: Slip, opts: VerifyOptions = {}): Promise<
   const skipped: string[] = [];
   const add = (check: string, ok: boolean, detail: string) => findings.push({ check, ok, detail });
   const body = slip.body;
+  const held = isHeld(slip);
 
   const hash = slipHash(body);
   add("hash", hash === slip.hash, hash === slip.hash ? `slip hash ${hash}` : `body hashes to ${hash}, slip says ${slip.hash}`);
@@ -78,13 +96,21 @@ export async function verifySlip(slip: Slip, opts: VerifyOptions = {}): Promise<
     add("seller", false, `seller signature does not parse: ${(e as Error).message.split("\n")[0]}`);
   }
 
-  if (slip.payment.accepted.scheme === "countersign") {
+  if (held) {
+    checkHeld(slip, add);
+  } else if (slip.payment.accepted.scheme === "countersign") {
     await checkCountersigned(slip, add);
   } else {
     add("countersignature", true, `rail ${body.rail} pays by ${slip.payment.accepted.scheme}; its payment is checked by its settlement`);
   }
 
-  if (opts.rpcUrl && body.escrow) {
+  if (held) {
+    if (opts.mirrorUrl) {
+      await checkHeldOnMirror(slip, opts.mirrorUrl, opts.fetch ?? fetch, add);
+    } else {
+      skipped.push("onchain: not checked. Pass a Hedera mirror URL (--mirror) to read the schedule's execution.");
+    }
+  } else if (opts.rpcUrl && body.escrow) {
     checkEscrow(body.escrow, body.chainId, opts.knownEscrows ?? KNOWN_ESCROWS, add);
     await checkOnchain(slip, opts.rpcUrl, add);
   } else if (opts.rpcUrl) {
@@ -94,6 +120,116 @@ export async function verifySlip(slip: Slip, opts: VerifyOptions = {}): Promise<
   }
 
   return { valid: findings.every((f) => f.ok), findings, skipped };
+}
+
+function checkHeld(slip: Slip, add: (c: string, ok: boolean, d: string) => void): void {
+  const payload = slip.payment.payload;
+  const scheduleId = payload.scheduleId;
+  const createTxId = payload.createTxId;
+  if (
+    typeof scheduleId !== "string" ||
+    !ACCOUNT_ID.test(scheduleId) ||
+    typeof createTxId !== "string" ||
+    !TRANSACTION_ID.test(createTxId)
+  ) {
+    add("countersignature", false, "the held payment names no schedule");
+    return;
+  }
+  const settlement = slip.settlement.transaction;
+  if (settlement !== createTxId) {
+    add("countersignature", false, `the slip's settlement ${settlement} is not the schedule's create ${createTxId}`);
+    return;
+  }
+  add(
+    "countersignature",
+    true,
+    `held by Hedera schedule ${scheduleId}, created by ${createTxId}; the seller's countersignature released it`,
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readMirror(f: typeof fetch, url: string): Promise<unknown> {
+  const response = await f(url);
+  if (!response.ok) return undefined;
+  return (await response.json()) as unknown;
+}
+
+async function checkHeldOnMirror(
+  slip: Slip,
+  mirrorUrl: string,
+  f: typeof fetch,
+  add: (c: string, ok: boolean, d: string) => void,
+): Promise<void> {
+  const body = slip.body;
+  const payload = slip.payment.payload;
+  const scheduleId = payload.scheduleId;
+  const createTxId = payload.createTxId;
+  if (
+    typeof scheduleId !== "string" ||
+    !ACCOUNT_ID.test(scheduleId) ||
+    typeof createTxId !== "string" ||
+    !TRANSACTION_ID.test(createTxId)
+  ) {
+    add("onchain", false, "not the buyer's create of this schedule");
+    return;
+  }
+  const at = createTxId.indexOf("@");
+  const payer = createTxId.slice(0, at);
+  const id = `${payer}-${createTxId.slice(at + 1).replace(".", "-")}`;
+  const base = mirrorUrl.replace(/\/+$/, "");
+  try {
+    const create = await readMirror(f, `${base}/api/v1/transactions/${id}`);
+    const creates = isRecord(create) && Array.isArray(create.transactions) ? create.transactions : [];
+    const created = creates.some(
+      (t) =>
+        isRecord(t) &&
+        t.name === "SCHEDULECREATE" &&
+        t.entity_id === scheduleId &&
+        t.result === "SUCCESS",
+    );
+    if (!created || payer !== body.buyer) {
+      add("onchain", false, "not the buyer's create of this schedule");
+      return;
+    }
+
+    const schedule = await readMirror(f, `${base}/api/v1/schedules/${scheduleId}`);
+    const executed = isRecord(schedule) ? schedule.executed_timestamp : undefined;
+    if (typeof executed !== "string" || executed.length === 0) {
+      add("onchain", false, "the schedule has not executed");
+      return;
+    }
+
+    const execution = await readMirror(f, `${base}/api/v1/transactions/${id}?scheduled=true`);
+    const records = isRecord(execution) && Array.isArray(execution.transactions) ? execution.transactions : [];
+    const record = records.find(
+      (t) => isRecord(t) && t.result === "SUCCESS" && t.consensus_timestamp === executed,
+    );
+    if (!isRecord(record)) {
+      add("onchain", false, "the schedule's execution record is missing");
+      return;
+    }
+    const transfers = Array.isArray(record.token_transfers) ? record.token_transfers : [];
+    const net = new Map<string, bigint>();
+    for (const t of transfers) {
+      if (!isRecord(t) || t.token_id !== body.asset || typeof t.account !== "string") continue;
+      net.set(t.account, (net.get(t.account) ?? 0n) + BigInt(String(t.amount)));
+    }
+    const amount = BigInt(body.amount);
+    if (net.get(body.payTo) !== amount || net.get(body.buyer) !== -amount) {
+      add("onchain", false, "the execution moved a different amount or payee");
+      return;
+    }
+    add(
+      "onchain",
+      true,
+      `schedule ${scheduleId} executed at ${executed}: ${body.amount} of ${body.asset} from ${body.buyer} to ${body.payTo}`,
+    );
+  } catch (e) {
+    add("onchain", false, `mirror read failed: ${(e as Error).message}`);
+  }
 }
 
 async function checkCountersigned(slip: Slip, add: (c: string, ok: boolean, d: string) => void): Promise<void> {
