@@ -126,6 +126,7 @@ The console at [web-production-a58de.up.railway.app](https://web-production-a58d
 | Capability | Status | Evidence | Claimed in |
 |---|---|---|---|
 | End-to-end suite that checks every payment on chain | `SHIPPED` | `e2e/`, [e2e/runs/LATEST.md](../e2e/runs/LATEST.md) | README, [e2e.md](e2e.md) |
+| A headless browser for a human end-to-end test (`e2e/human`): sign in, connect, buy, verify, refund on the deployed app | `IN DESIGN` | Un-cut by [D14, amended](decisions.md) (STEER-2108). Playwright in CI only, on demand and nightly, never on the build machine. No code yet; it is `SHIPPED` only when it runs green. Until then the screens are checked by hand in a real browser | [e2e.md](e2e.md) flow 9 |
 | CI runs typecheck, the bun tests, forge and the web build on every pull request, offline | `SHIPPED` | `.github/workflows/ci.yml` | CONTRIBUTING |
 | Squash-only merges and delete-branch-on-merge | `SHIPPED` | repository settings | CONTRIBUTING |
 | An Arc Studio project link that opens logged out | `NOT BUILT` | Studio has no public-project link (D6) | README, which says so |
@@ -140,4 +141,3 @@ The console at [web-production-a58de.up.railway.app](https://web-production-a58d
 | Unified balance | `CUT` | D14 | |
 | Subgraph and `/graph/stats` | `CUT` | D14: no indexer account for Arc testnet ([#4](https://github.com/ss251/countersign/issues/4)) | |
 | Railway preview environments per pull request | `CUT` | D14 | [deploy.md](deploy.md) |
-| A headless browser for the e2e `web` flow | `CUT` | D14. The visual checks are done by hand in a real browser | [e2e.md](e2e.md) flow 9 |
