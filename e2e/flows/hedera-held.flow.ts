@@ -14,9 +14,10 @@
  */
 
 import { canonicalHash, fromBase64Json, PAYMENT_REQUIRED_HEADER, type Offer, type PaymentRequired, type Slip } from "@countersign/core";
+import { verifyCli } from "../lib/actors.ts";
 import { agentRun, agentTakes, evidence, hederaExact, hederaHeld, OPEN_CAP, type AgentRun } from "../lib/agent.ts";
 import { units, wallets } from "../lib/budget.ts";
-import { HEDERA } from "../lib/chains.ts";
+import { ARC, HEDERA } from "../lib/chains.ts";
 import { check, equal, NotRun, sameHex, type Flow, type FlowCtx, type RunEnv, type Spend } from "../lib/flow.ts";
 import { mirrorGet, mirrorTxId, topicMessage } from "../lib/hedera.ts";
 import { MAX_PRICE, MCP_SELLER } from "./hedera-mcp.flow.ts";
@@ -208,14 +209,16 @@ export const hederaHeldPaid: Flow = {
       equal(m.payerAccount, agentId, "the agent wrote the entry");
     });
 
-    await ctx.step("the slip names the held rail and the schedule's create", async () => {
+    await ctx.step("the slip names the held rail and the schedule's create, and it verifies", async () => {
       const res = await ctx.http("public slip", `${base}/slips/${paid.slipHash}`);
       equal(res.status, 200, "slip status");
       const slip = res.json as Slip;
-      ctx.save("slip.json", slip);
+      const path = ctx.save("slip.json", slip);
       equal(slip.body.rail, HELD, "slip rail");
       sameHex(slip.body.inputHash, canonicalHash(input), "slip.inputHash is the hash of the tool's arguments");
       equal(mirrorTxId(slip.settlement.transaction), mirrorTxId(paid.createTx), "slip settlement");
+      const v = await verifyCli(ctx, "held", path, ARC.rpc);
+      equal(v.verdict, "VALID", `verdict (${v.lines.join(" | ")})`);
     });
   },
 };

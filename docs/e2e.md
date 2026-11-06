@@ -237,7 +237,7 @@ Both first check the same three things:
 5. **mirror, schedule**: executed, created and paid for by the agent, not waiting for expiry, not deleted.
 6. **mirror, transfer**: the scheduled `CRYPTOTRANSFER` succeeded and moved exactly the price from the agent to one account, the held payee.
 7. **HCS**: the `schedule` entry names the schedule, the create, the amount, the payee and the offer, written by the agent.
-8. **the slip**: the public hub serves it, rail `hedera-scheduled`, its input hash is the tool's arguments, and its settlement is the schedule's create.
+8. **the slip**: the public hub serves it, rail `hedera-scheduled`, its input hash is the tool's arguments, its settlement is the schedule's create, and it verifies. Until #163 is fixed the verifier calls a held slip INVALID, so this step is red.
 
 21b, `--flow hedera-held-undelivered`, about seven minutes, since it waits out the hold. The input is cs-hd's `{"transfers":[{"accountId":"not-an-account","amount":1}]}`, which the offer's schema takes and the Agent Kit tool cannot serve.
 
