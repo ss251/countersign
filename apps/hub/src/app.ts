@@ -5,6 +5,7 @@ import {
   assertOffer,
   assertSchema,
   checkEnsLock,
+  delistMessage,
   type EnsResolve,
   offerHash,
   publishMessage,
@@ -121,6 +122,37 @@ export function createHub(deps: HubDeps) {
 
     const fresh = deps.store.putOffer(hash, request.offer.seller, request.offer, deps.now());
     return json({ offerHash: hash }, fresh ? 201 : 200);
+  });
+
+  app.post("/offers/:offerHash/delist", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json<unknown>();
+    } catch {
+      return fail(400, "bad-request", "Refused. The delist request is malformed.");
+    }
+    if (!isRecord(body) || typeof body.sig !== "string") {
+      return fail(400, "bad-request", "Refused. The delist request is malformed.");
+    }
+
+    const stored = deps.store.getOffer(c.req.param("offerHash"));
+    if (stored === null) return fail(404, "unknown-offer", "Refused. That offer is not listed.");
+
+    let signer: string;
+    try {
+      signer = await recoverMessageAddress({
+        message: delistMessage(stored.offerHash),
+        signature: body.sig as Hex,
+      });
+    } catch {
+      return fail(401, "bad-signature", "Refused. The delist signature is not the seller's.");
+    }
+    if (signer.toLowerCase() !== stored.seller.toLowerCase()) {
+      return fail(401, "bad-signature", "Refused. The delist signature is not the seller's.");
+    }
+
+    if (stored.delistedAt === null) deps.store.delistOffer(stored.offerHash, deps.now());
+    return json({ offerHash: stored.offerHash, status: "delisted" }, 200);
   });
 
   app.get("/offers", (c) =>
