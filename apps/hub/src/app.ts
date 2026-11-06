@@ -57,6 +57,7 @@ const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPO
 
 export function createHub(deps: HubDeps) {
   const app = new Hono();
+  const liveRailIds: ReadonlySet<string> = new Set(deps.rails.map((rail) => rail.declaration.id));
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
   const router = new HubRouter(deps.rails);
@@ -164,7 +165,7 @@ export function createHub(deps: HubDeps) {
 
   app.get("/offers", (c) =>
     json({
-      offers: deps.store.listOffers().map((stored) => listing(stored, runners)),
+      offers: deps.store.listOffers().map((stored) => listing(stored, runners, liveRailIds)),
     }),
   );
 
@@ -182,7 +183,7 @@ export function createHub(deps: HubDeps) {
   app.get("/offers/:offerHash", (c) => {
     const stored = deps.store.getOffer(c.req.param("offerHash"));
     if (!stored) return fail(404, "unknown-offer", "Refused. That offer is not known.");
-    return json(listing(stored, runners));
+    return json(listing(stored, runners, liveRailIds));
   });
 
   app.get("/sellers", async (c) => json(await listSellers(frontdoor())));
@@ -289,12 +290,14 @@ export function createHub(deps: HubDeps) {
 function listing(
   stored: { offerHash: Hex; offer: Offer; delistedAt: number | null },
   runners: RunnerLink,
+  live: ReadonlySet<string>,
 ): Listing {
   return {
     offerHash: stored.offerHash,
     offer: stored.offer,
     online: runners.isOnline(stored.offerHash),
     status: stored.delistedAt === null ? "listed" : "delisted",
+    liveRails: stored.offer.rails.filter((id) => live.has(id)),
   };
 }
 
