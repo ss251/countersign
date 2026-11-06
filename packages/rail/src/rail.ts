@@ -77,7 +77,11 @@ export type EscrowStatus =
 
 /** Closing a funded job on an escrow rail. Each call returns the tx that did it. */
 export interface EscrowOps {
-  release(jobId: Hex, slipHash: Hex, sellerSig: Hex): Promise<SettleResult>;
+  /**
+   * `countersign` is the seller's signed release, for rails whose release is a seller signature
+   * the hub submits; the Arc escrow ignores it.
+   */
+  release(jobId: Hex, slipHash: Hex, sellerSig: Hex, countersign?: string): Promise<SettleResult>;
   /** Permissionless once the deadline has passed. */
   refund(jobId: Hex): Promise<SettleResult>;
   /** The seller hands the money back before the deadline. */
