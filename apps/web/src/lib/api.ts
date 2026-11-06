@@ -144,6 +144,29 @@ async function slipView(hash: string): Promise<SlipView | undefined> {
   };
 }
 
+/** GET /trees/:root as the hub serves it (STEER-2235 item 5, cs-35). */
+interface HubTree {
+  root: string;
+  nodes: Record<string, { slip: Slip; title: string; sellerName: string; observed?: string[] }>;
+  missing?: string[];
+}
+
+/** The hub's own walk, signed children and its observed purchases; null from a hub that has no such route yet. */
+async function hubTree(root: string): Promise<TreeView | null> {
+  try {
+    const t = await hubGet<HubTree>(`/trees/${root}`, 8000);
+    const nodes: TreeView["nodes"] = {};
+    for (const [hash, n] of Object.entries(t.nodes)) {
+      nodes[hash] = { slip: n.slip, title: n.title, sellerName: n.sellerName, observed: n.observed ?? [] };
+    }
+    return { root: root as TreeView["root"], nodes, missing: t.missing ?? [] };
+  } catch (e) {
+    // An unknown slip is the hub's answer; any other 404 is a hub from before /trees.
+    if (e instanceof HubError && e.status === 404 && e.code !== "unknown-slip") return null;
+    throw e;
+  }
+}
+
 async function treeView(root: string): Promise<TreeView> {
   const nodes: TreeView["nodes"] = {};
   const visit = async (hash: string, depth: number): Promise<void> => {
@@ -172,7 +195,8 @@ export const api = {
     hubBase() ? live(await hubRails()) : settle(Object.values((await fixtures()).rails)),
   slip: async (hash: string): Promise<Loaded<SlipView | undefined>> =>
     hubBase() ? live(await slipView(hash)) : settle((await fixtures()).slipByHash(hash)),
-  tree: async (root: string): Promise<Loaded<TreeView>> => (hubBase() ? live(await treeView(root)) : settle((await fixtures()).tree)),
+  tree: async (root: string): Promise<Loaded<TreeView>> =>
+    hubBase() ? live((await hubTree(root)) ?? (await treeView(root))) : settle((await fixtures()).tree),
   /**
    * Recent releases and refunds, newest first. null means the hub does not serve them yet,
    * which the overview says plainly instead of inventing rows.
