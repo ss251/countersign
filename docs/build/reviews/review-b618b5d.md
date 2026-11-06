@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Re-review b618b5d — B6 fix
 Result: **blockers=0 should-fix=1**. B6 is closed: `buy()` refuses unless `canonicalHash(offer) == offerHash` before any terms check; my B6 test passes, `bun test packages/buyer` green (including my cs/w1 copy of the attack tests).

@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 329b69a (PR 107, cs/hd-09 with hd-09b, #42): the runner sells MCP tools
 

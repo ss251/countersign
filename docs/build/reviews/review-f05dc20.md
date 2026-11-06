@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review f05dc20 (cs/cs-06, PR 36) — discovery: Bazaar list, 402 extension, A2A card, skills index, OpenAPI
 Result: **blockers=0 should-fix=2**. `bun test apps/hub/test/discovery.test.ts` 8/8.

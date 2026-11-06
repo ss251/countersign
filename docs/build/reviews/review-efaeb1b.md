@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review efaeb1b (PR 172, cs/97-mainnet, supersedes PR 97, #29): the cs-26 packet
 

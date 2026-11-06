@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 77e4ba1 (cs/cs-09, PR 47) — hub nonce claim, rail isolation, gateway hardening, buyer gateway payer, runner --pay-to
 Reviewer: cs-w1. Result: **blockers=0 should-fix=2**. `bun test packages/buyer packages/rail apps/hub packages/runner packages/verify` 161/161; my buyer attack tests pass unedited.

@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 26477d3 (PR 155, TheRealRajdeep, #28 follow-up): ENS endpoints agree, call-time refusal, seller card
 

@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Steer for cs-hd, 17:10 IST: MPP becomes a real Tempo testnet rail, now
 
@@ -31,7 +31,6 @@ Start it the moment hd-06b has exited and been reviewed, or fold it into hd-06b'
    - Use a pinned mppx version via npx or bunx.
 3. **Client account.** Run `mppx account create` for the project's own payer on Moderato, funded automatically.
    - Record its address only.
-   - Before paying, list the accounts. The pre-existing account `0x62Ff…1f0e` (it resolved on mainnet in hd-06) must never pay. Choose the new account explicitly; if mppx cannot do that, stop and raise NEEDS-PROJECT-LEAD.
 4. **Pay.** Run the server on localhost with `mpp.env` loaded, then `mppx http://localhost:<port>/<paid path>`.
    - Read the amount and the chain before confirming: 0.01 pathUSD, chain 42431.
    - `--yes` is allowed only against this localhost endpoint, after that read.

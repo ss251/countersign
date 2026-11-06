@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 6e28f39 (PR 61, TheRealRajdeep) — seller ratings and hub stats from verified slips
 Reviewer: cs-w1. Result: **blockers=0 should-fix=3**. `bun test apps/hub` green. No dependency, script or lockfile changes in the diff; only `apps/hub` files.

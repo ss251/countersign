@@ -7,8 +7,8 @@ The rules ask where AI was used. This folder is the answer: the plan, the rules 
 - **The project lead** set the goals and took the decisions. Each decision during the night is a steer, in [`steers/`](steers/).
 - **Claude Opus lanes**, one per area (orchestration, Whitechain, Hedera, the console, the phone, end-to-end tests, claims, docs), planned and designed the work. They wrote each task as a packet with its acceptance test, and reviewed what came back. They also wrote the screens and the docs themselves. Their briefs are in [`lanes/`](lanes/).
 - **DeepSeek workers** wrote most of the other code. Each one executed exactly one packet, in its own worktree.
-- **A reviewer lane** (cs-w1) read every diff that touches money and posted blockers. Nothing merged with a blocker open, and nothing merged without a green gate: typecheck, the bun tests and forge. Its notes are in [`reviews/`](reviews/).
-- **Audits** of the escrow contract are in [`audits/`](audits/) and [`../audits/`](../audits/): an audit pass on main, and an independent audit of escrow v2 by Grok 4.7.
+- **Review.** Every packet's diff was reviewed before merge, and money-path changes by a dedicated reviewer lane (cs-w1), which posted blockers. Nothing merged with a blocker open, and nothing merged without a green gate: typecheck, the bun tests and forge. The reviewer's notes are in [`reviews/`](reviews/).
+- **Audits** of the escrow contract are in [`audits/`](audits/) and [`../audits/`](../audits/): an audit pass on main, and an independent audit of escrow v2 by Grok 4.7, through its CLI ([steers/STEER-2205-grok.md](steers/STEER-2205-grok.md), [the audit](../audits/2026-11-06-grok-escrow-v2.md)).
 - **The evidence** is the end-to-end suite and the chain. A claim counts only with a green flow on a real chain, a link that opens logged out, or a signed transaction ([status.md](../status.md)).
 - **A human teammate** also wrote features directly, through pull requests that went through the same review and gate: seller ratings, Circle CLI interop, the guides and threat model, ENS seller names, the mainnet guard and the escrow v2 contract.
 
@@ -30,6 +30,6 @@ Every file here except this one is generated from the working directory by a scr
 - local paths become `$M` (the planning directory), `$R` (the clone), `$WT` (the worktrees) or `~`;
 - machine names become "the build machine" and "the second machine";
 - the person directing the work is called the project lead;
-- lines about other work on the same machines are removed.
+- a few lines about the machines' local setup are left out.
 
 The output then has to pass a term check and gitleaks before it is committed. Each file starts with a one-line note saying so. Variable names appear; secret values never do.

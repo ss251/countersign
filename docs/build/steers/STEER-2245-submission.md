@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # STEER-2245: the prize selection, the AI-use disclosure, Railway, and Arc Studio
 
@@ -12,7 +12,6 @@ We may select up to 3 Partner Prizes, and a partner's several tracks all count a
 - **Whitechain** (Scale and Operate);
 - **Hedera** (AI Agents That Pay).
 
-The Finalist option is chosen separately, on top of those. The README, the pitch and the demo script never imply any other track: not Whitechain Tokenize or Continuity, and not a fourth partner.
 
 ## 2. The AI-use disclosure, a submission requirement (owner: cs-readme; cs-truth reviews the sanitising; the firstmate runs the final gate)
 

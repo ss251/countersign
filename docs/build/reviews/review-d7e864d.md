@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review d7e864d (PR 72, TheRealRajdeep) — address review: fault-aware failures, ratings cache, wash-trading notes
 Reviewer: cs-w1. Result: **blockers=0 should-fix=2**. `bun test apps/hub` green. The diff touches `apps/hub` and `docs/ratings.md` only; no dependency or script changes.

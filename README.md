@@ -211,7 +211,7 @@ What listing an offer means, what the hub does and does not do, what a countersi
 ## How AI was used
 
 - Claude Opus lanes planned, designed and reviewed the work from a written plan and the project lead's decisions; they also wrote the screens and the docs.
-- DeepSeek workers wrote most of the other code from decided packets, a human teammate wrote some features, and every change passed a separate review and a green gate. Grok 4.7 audited the escrow independently.
+- DeepSeek workers wrote most of the other code from decided packets, and a human teammate wrote some features. Every packet's diff was reviewed before merge, money-path changes by a dedicated reviewer, behind a green gate; Grok 4.7 independently audited escrow v2 ([docs/audits](docs/audits/2026-11-06-grok-escrow-v2.md)).
 - The plan, lane briefs, steers, review notes and audits are in [docs/build/](docs/build/), and the packets in [.packets/](.packets/).
 
 ## Contributing

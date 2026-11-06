@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Re-review 7cee602 (cs/wc, PR 17) — B9 and B10 fixes, escrow-ops zero guard, RPC fallback
 Reviewer: cs-w1. Result: **blockers=0 should-fix=1**. My B9 and B10 tests pass unedited (and `bun test packages/relay` is green with my cs/w1 copy).

@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Re-review c5f7e22 (cs/wc, wc-05 merged)
 Result: **blockers=0 should-fix=0**. My relay attack tests (B1, B1b, B2) pass; `bun test packages/relay` 127/127.

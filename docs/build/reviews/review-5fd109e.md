@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 5fd109e (PR 80, TheRealRajdeep) — Circle CLI reads the hub's discovery, buyer reads Circle's catalogue
 Reviewer: cs-w1. Result: **blockers=0 should-fix=3**. `bun test apps/hub packages/buyer` green. No dependency, script or lockfile changes; files are hub discovery, the buyer catalogue reader and CLI, an interop script, docs and an e2e flow.

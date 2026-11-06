@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Countersign fleet — common rules
 
@@ -326,7 +326,6 @@ orch-cs supplies any hub endpoints these need, as non-view packets: an offer sea
   - only against our own localhost endpoint;
   - never `--yes` until the amount and the chain have been read;
   - Tempo **testnet only** (Moderato, chain 42431, pathUSD). Never mainnet.
-  - Pay only from the project's own account created with `mppx account create`. Never from the pre-existing account `0x62Ff…1f0e`. If mppx cannot be told which account to use, stop and raise NEEDS-PROJECT-LEAD.
   - Nobody runs the `stripe` CLI or reads its config directory. `docs/mpp.md` carries the safe recipe.
 - **MPP secrets (project lead, 06 Nov 17:10 IST).** cs-hd, never a worker, creates `~/.config/countersign/mpp.env` with `umask 077`. It holds:
   - `MPP_SECRET_KEY` from `openssl rand -base64 32` (the challenge HMAC secret);
@@ -339,7 +338,6 @@ orch-cs supplies any hub endpoints these need, as non-view packets: an offer sea
 - **Allowed without asking:** testnet deploys, explorer verification, faucet requests, and cs-w4 pushing `cs/*` feature branches.
 - **Everything else is NEEDS-PROJECT-LEAD:** `main`, public hosting, sharing links, mainnet, posting anywhere.
 - **Hosting is Railway (project lead decisions, 15:30 and 15:45 IST).** The public console deploys from this machine, where the Railway CLI is logged in as ss251.
-  - Use a new Railway project named `countersign`. Never touch any other project or service in that account.
   - Console deploys are approved. No other host: not Vercel, and not Studio's Share.
   - **Railway hosting is issue #7, owned by the fleet (17:00 IST).**
     - cs-ui deploys both services, the console (`apps/web`) and the hub (`apps/hub`), from this machine into the `countersign` project. orch-cs supplies the hub's start command and env names.

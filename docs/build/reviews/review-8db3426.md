@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Review 8db3426 (PR 91, TheRealRajdeep) — ENS seller names on Sepolia lock the payee
 Reviewer: cs-w1. Result: **blockers=1 should-fix=3**. Test: `W1 B13` in `packages/core/test/w1-ens.test.ts` on `cs/w1` (31c99c5); it fails, and the PR's own tests pass. No dependency, script or lockfile changes in the diff.

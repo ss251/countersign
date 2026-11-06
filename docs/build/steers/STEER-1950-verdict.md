@@ -1,4 +1,4 @@
-> Published copy of the build record. Local paths and machine names are replaced, the person directing the work is called the project lead, and lines about other work are removed. Everything else is as written during the event.
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
 
 # Steer, 19:50 IST: the judge's verdict re-prioritises the night (project lead). This replaces STEER-1940 wherever they conflict
 
