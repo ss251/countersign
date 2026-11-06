@@ -263,7 +263,7 @@ export function isEscrowOpen(status: OrderStatus): boolean {
 /**
  * in_review stays offered until the captain rules on merchant.test.ts, which asserts it (cs-phone
  * NEEDS-CAPTAIN, 06 Nov): on chain a delivered job cannot be cancelled. The wallet path refuses it
- * before the wallet opens (walletRefusal); from wc-10d the relay client answers it 409 not_refundable.
+ * before the wallet opens (walletRefusal); the relay client's own change waits on the same ruling (wc-10e).
  */
 export function canRefund(order: Pick<Order, "status" | "refundable">): boolean {
   if (
