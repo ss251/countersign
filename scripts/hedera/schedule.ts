@@ -1,17 +1,10 @@
 // The scheduled checkout, live: the agent creates a USDC schedule, the seller checks and signs it,
 // and the transfer executes on the second key. `--expiry-demo` creates one schedule and never signs
 // it, then shows it expire with no money moved. Prints ids and links only, never a key.
-//   bun scripts/hedera/schedule.ts [--expiry-demo]
-import {
-  checkEnvelope,
-  formatUnits,
-  offerHash,
-  type Envelope,
-  type Offer,
-} from "../../packages/core/src/index.ts";
-import { spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
-import { createScheduledPayment } from "../../packages/buyer/src/hedera/schedule.ts";
-import { appendEntry, readEntries, reconcile, type SpendEntry } from "../../packages/buyer/src/hedera/spendlog.ts";
+//   bun scripts/hedera/schedule.ts [--expiry-demo] [--json]
+import { formatUnits, offerHash, type Envelope, type Offer } from "../../packages/core/src/index.ts";
+import { createHederaAgent, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
+import { readEntries, reconcile } from "../../packages/buyer/src/hedera/spendlog.ts";
 import {
   countersignSchedule,
   getSchedule,
@@ -25,7 +18,6 @@ import {
 import {
   HBAR_DECIMALS,
   HASHSCAN_TESTNET,
-  HEDERA_TESTNET,
   MIRROR_TESTNET,
   USDC_DECIMALS,
 } from "../../packages/rail/src/hedera/constants.ts";
@@ -49,13 +41,28 @@ function fail(message: string): never {
 
 const args = process.argv.slice(2);
 let expiryDemo = false;
+let json = false;
 for (const arg of args) {
   if (arg === "--expiry-demo") expiryDemo = true;
+  else if (arg === "--json") json = true;
   else fail(`unknown argument ${arg}`);
 }
 
 function say(...line: unknown[]): void {
-  console.log(...line);
+  if (json) console.error(...line);
+  else console.log(...line);
+}
+
+interface Evidence {
+  agent: { id: string; url: string };
+  offer: { title: string; hash: string; price: string };
+  create?: { tx: string; url: string };
+  schedule?: { id: string; url: string; expiresAt: number };
+  sign?: { tx: string; url: string };
+  executed?: { consensusTimestamp: string; credit: string };
+  log: { sequence: number; kind: string; url: string }[];
+  balance?: { before: string; after: string };
+  audit?: { matched: number; unbacked: number; unlogged: number; pending: number; released: number };
 }
 
 /** The same funds gate as the recorded beat: no script spends below either floor. */
@@ -104,6 +111,20 @@ async function waitForExpiry(id: string, timeoutMs = 180_000): Promise<void> {
   }
 }
 
+async function waitForEntry(
+  topicId: string,
+  predicate: (entry: { sequence: number; entry: { kind: string; schedule?: string } }) => boolean,
+  timeoutMs = 30_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const entries = await readEntries(topicId);
+    const found = entries.find(predicate);
+    if (found || Date.now() > deadline) return { entries, found };
+    await new Promise((r) => setTimeout(r, 1_500));
+  }
+}
+
 const env = readEnv();
 const agentId = need(env, "HD_AGENT_ID");
 const agentEvm = need(env, "HD_AGENT_EVM");
@@ -132,129 +153,164 @@ const offerHashHex = offerHash(offer);
 
 if (!expiryDemo) await budgetGate(agentId, agentEvm);
 
+const topicLink = hashscanTopic(topicId);
+const evidence: Evidence = {
+  agent: { id: agentId, url: hashscanAccount(agentId) },
+  offer: { title: offer.title, hash: offerHashHex, price: usdc(offer.price) },
+  log: [],
+};
+
 const agentClient = testnetClient(agentId, agentKey);
 let sellerClient: ReturnType<typeof testnetClient> | null = null;
-const topicLink = hashscanTopic(topicId);
 let ok = false;
+const mode: "main" | "expiry" = expiryDemo ? "expiry" : "main";
 
 try {
+  const prior = await readEntries(topicId);
+  const spent = spentFromLog(prior);
+  const cap = (BigInt(spent.total) + PRICE + PRICE / 2n).toString(10);
+  const envelope: Envelope = {
+    v: 1,
+    agent: agentEvm as Envelope["agent"],
+    cap,
+    perMerchant: cap,
+    allowlist: [],
+    revoked: false,
+  };
+  const agent = createHederaAgent({
+    // schedule never calls the hub; the agent still takes a URL.
+    hub: "http://127.0.0.1:0",
+    payer: { accountId: agentId, key: agentKey },
+    envelope,
+    topicId,
+    logClient: agentClient,
+    spent,
+  });
+
+  say(`agent    ${agentId}  ${hashscanAccount(agentId)}`);
+  say(`offer    ${offer.title}  ${usdc(PRICE)} USDC  payTo ${sellerSignId}  ${offerHashHex}`);
+  say(`envelope cap ${usdc(cap)} USDC  spent ${usdc(spent.total)} USDC`);
+
+  // The run's window starts before anything is signed, in consensus-style time.
+  const since = `${nowSeconds()}.000000000`;
+  const sinceSeconds = Number(since.split(".")[0]);
+
+  const outcome = await agent.schedule(
+    { offer, offerHash: offerHashHex },
+    { client: agentClient, expiresInSeconds: expiryDemo ? 60 : 300 },
+  );
+  if (outcome.kind === "refused") throw new Error(outcome.message);
+  evidence.create = { tx: outcome.createTxId, url: hashscanTx(outcome.createTxId) };
+  evidence.schedule = { id: outcome.scheduleId, url: scheduleLink(outcome.scheduleId), expiresAt: outcome.expiresAt };
+  evidence.log.push({ sequence: outcome.logSequence, kind: "schedule", url: mirrorMessage(topicId, outcome.logSequence) });
+  say(`created  ${outcome.createTxId}  ${hashscanTx(outcome.createTxId)}`);
+  say(`schedule ${outcome.scheduleId}  ${scheduleLink(outcome.scheduleId)}`);
+  say(`hcs      sequence ${outcome.logSequence}  ${topicLink}  ${mirrorMessage(topicId, outcome.logSequence)}`);
+
   if (expiryDemo) {
     const before = (await tokenBalance(agentId, USDC_TESTNET)) ?? 0n;
-    const payment = await createScheduledPayment(
-      agentClient,
-      { accountId: agentId, key: agentKey },
-      { payTo: sellerSignId, asset: USDC_TESTNET, amount: PRICE, offerHash: offerHashHex, expiresInSeconds: 60 },
-    );
-    say(`created  ${payment.createTxId}  ${hashscanTx(payment.createTxId)}`);
-    say(`schedule ${payment.scheduleId}  ${scheduleLink(payment.scheduleId)}`);
-    const schedule = await waitForSchedule(payment.scheduleId);
+    const schedule = await waitForSchedule(outcome.scheduleId);
     say(`expires  ${schedule.expirationTime ?? "unknown"}`);
-    await waitForExpiry(payment.scheduleId);
+    await waitForExpiry(outcome.scheduleId);
 
-    const final = await getSchedule(payment.scheduleId);
+    const release = await agent.releaseExpired(outcome.hold);
+    say(`release  ${release}`);
+
+    const { entries, found } = await waitForEntry(
+      topicId,
+      (e) => e.entry.kind === "expired" && e.entry.schedule === outcome.scheduleId,
+    );
+    if (found) {
+      evidence.log.push({ sequence: found.sequence, kind: "expired", url: mirrorMessage(topicId, found.sequence) });
+      say(`hcs      sequence ${found.sequence}  ${topicLink}  ${mirrorMessage(topicId, found.sequence)}`);
+    }
+
+    const final = await getSchedule(outcome.scheduleId);
     const after = (await tokenBalance(agentId, USDC_TESTNET)) ?? 0n;
-    const status = final ? await scheduleStatus(payment.scheduleId, { now: nowSeconds }) : "missing";
+    const status = final ? await scheduleStatus(outcome.scheduleId, { now: nowSeconds }) : "missing";
     say(`status   ${status}`);
     say(`executed ${final?.executedTimestamp ?? "none"}`);
     say(`balance  ${usdc(before)} -> ${usdc(after)} USDC ${before === after ? "(unchanged)" : "(CHANGED)"}`);
-    ok = status === "expired" && !final?.executedTimestamp && before === after;
+    evidence.balance = { before: usdc(before), after: usdc(after) };
+
+    const mine = entries.filter(
+      (e) =>
+        Number(e.consensusAt.split(".")[0]) >= sinceSeconds ||
+        e.sequence === outcome.logSequence ||
+        e.sequence === found?.sequence,
+    );
+    const audit = await reconcile(mine, agentId, USDC_TESTNET, { since });
+    say(
+      `audit    matched ${audit.matched.length}, unbacked ${audit.unbacked.length}, unlogged ${audit.unlogged.length}, pending ${audit.pending.length}, released ${audit.released.length}`,
+    );
+    for (const { logged, why } of audit.unbacked) {
+      say(`unbacked sequence ${logged.sequence}  ${logged.entry.tx ?? "(no tx)"}  ${why}`);
+    }
+    evidence.audit = {
+      matched: audit.matched.length,
+      unbacked: audit.unbacked.length,
+      unlogged: audit.unlogged.length,
+      pending: audit.pending.length,
+      released: audit.released.length,
+    };
+
+    ok =
+      status === "expired" &&
+      !final?.executedTimestamp &&
+      before === after &&
+      release === "released" &&
+      found !== undefined &&
+      audit.released.length === 1 &&
+      audit.unbacked.length === 0;
     if (ok) say("Expired. Nothing moved.");
   } else {
-    const prior = await readEntries(topicId);
-    const spent = spentFromLog(prior);
-    const cap = (BigInt(spent.total) + PRICE + PRICE / 2n).toString(10);
-    const envelope: Envelope = {
-      v: 1,
-      agent: agentEvm as Envelope["agent"],
-      cap,
-      perMerchant: cap,
-      allowlist: [],
-      revoked: false,
-    };
-    const decision = checkEnvelope(
-      envelope,
-      spent,
-      { seller: offer.seller, offerHash: offerHashHex, amount: PRICE.toString(10) },
-      nowSeconds(),
-    );
-    say(`agent    ${agentId}  ${hashscanAccount(agentId)}`);
-    say(`offer    ${offer.title}  ${usdc(PRICE)} USDC  payTo ${sellerSignId}  ${offerHashHex}`);
-    say(`envelope cap ${usdc(cap)} USDC  spent ${usdc(spent.total)} USDC  ${decision.ok ? "approved" : decision.message}`);
-    if (!decision.ok) throw new Error(decision.message);
-
-    // The run's window starts before anything is signed, in consensus-style time.
-    const since = `${nowSeconds()}.000000000`;
-    const sinceSeconds = Number(since.split(".")[0]);
-
-    const payment = await createScheduledPayment(
-      agentClient,
-      { accountId: agentId, key: agentKey },
-      { payTo: sellerSignId, asset: USDC_TESTNET, amount: PRICE, offerHash: offerHashHex, expiresInSeconds: 300 },
-    );
-    say(`created  ${payment.createTxId}  ${hashscanTx(payment.createTxId)}`);
-    say(`schedule ${payment.scheduleId}  ${scheduleLink(payment.scheduleId)}`);
-
-    await waitForSchedule(payment.scheduleId);
-    say(`status   ${await scheduleStatus(payment.scheduleId, { now: nowSeconds })}`);
+    await waitForSchedule(outcome.scheduleId);
+    say(`status   ${await scheduleStatus(outcome.scheduleId, { now: nowSeconds })}`);
 
     sellerClient = testnetClient(sellerSignId, sellerSignKey);
-    const signTxId = await countersignSchedule(sellerClient, payment.scheduleId, {
+    const signTxId = await countersignSchedule(sellerClient, outcome.scheduleId, {
       asset: USDC_TESTNET,
       amount: PRICE,
       payTo: sellerSignId,
       offerHash: offerHashHex,
       payer: agentId,
     });
+    evidence.sign = { tx: signTxId, url: hashscanTx(signTxId) };
     say(`signed   ${signTxId}  ${hashscanTx(signTxId)}`);
 
-    const executed = await waitForScheduledExecution(payment.createTxId, { timeoutMs: 90_000 });
+    const executed = await waitForScheduledExecution(outcome.createTxId, { timeoutMs: 90_000 });
     const credit = netFor(executed.tokens[USDC_TESTNET] ?? [], sellerSignId);
+    evidence.executed = { consensusTimestamp: executed.consensusTimestamp, credit: usdc(credit) };
     say(`Executed when the second key landed  consensus ${executed.consensusTimestamp}`);
     say(`seller   credit ${usdc(credit)} USDC  result ${executed.result}`);
 
-    const entry: SpendEntry = {
-      v: 1,
-      kind: "spend",
-      rail: "hedera",
-      network: HEDERA_TESTNET,
-      offerHash: offerHashHex,
-      seller: offer.seller,
-      payTo: sellerSignId,
-      asset: USDC_TESTNET,
-      amount: PRICE.toString(10),
-      tx: payment.createTxId,
-      schedule: payment.scheduleId,
-      total: (BigInt(spent.total) + PRICE).toString(10),
-      cap,
-      at: nowSeconds(),
-    };
-    const appended = await appendEntry(agentClient, topicId, entry);
-    say(`hcs      sequence ${appended.sequence}  ${topicLink}  ${mirrorMessage(topicId, appended.sequence)}`);
-
-    // Read the run's entries back from the mirror before auditing them.
-    let entries = await readEntries(topicId);
-    const deadline = Date.now() + 30_000;
-    for (;;) {
-      entries = await readEntries(topicId);
-      if (entries.some((e) => e.sequence === appended.sequence) || Date.now() > deadline) break;
-      await new Promise((r) => setTimeout(r, 1_500));
-    }
+    // The schedule entry already covers the spend; do not append a second entry.
+    const { entries } = await waitForEntry(topicId, (e) => e.sequence === outcome.logSequence);
     const mine = entries.filter(
-      (e) => Number(e.consensusAt.split(".")[0]) >= sinceSeconds || e.sequence === appended.sequence,
+      (e) => Number(e.consensusAt.split(".")[0]) >= sinceSeconds || e.sequence === outcome.logSequence,
     );
     const audit = await reconcile(mine, agentId, USDC_TESTNET, { since });
-    say(`audit    matched ${audit.matched.length}, unbacked ${audit.unbacked.length}, unlogged ${audit.unlogged.length}`);
+    say(
+      `audit    matched ${audit.matched.length}, unbacked ${audit.unbacked.length}, unlogged ${audit.unlogged.length}, pending ${audit.pending.length}, released ${audit.released.length}`,
+    );
     for (const { logged, why } of audit.unbacked) {
       say(`unbacked sequence ${logged.sequence}  ${logged.entry.tx ?? "(no tx)"}  ${why}`);
     }
     for (const tx of audit.unlogged) say(`unlogged ${tx}  ${hashscanTx(tx)}`);
+    evidence.audit = {
+      matched: audit.matched.length,
+      unbacked: audit.unbacked.length,
+      unlogged: audit.unlogged.length,
+      pending: audit.pending.length,
+      released: audit.released.length,
+    };
 
     ok =
       executed.result === "SUCCESS" &&
       credit === PRICE &&
+      audit.matched.length === 1 &&
       audit.unbacked.length === 0 &&
-      audit.unlogged.length === 0 &&
-      audit.matched.length > 0;
+      audit.unlogged.length === 0;
   }
 } catch (error) {
   say(`error    ${error instanceof Error ? error.message : String(error)}`);
@@ -264,4 +320,5 @@ try {
   agentClient.close();
 }
 
+if (json) console.log(JSON.stringify({ beat: "hedera-schedule", mode, ok, evidence }));
 process.exitCode = ok ? 0 : 1;
