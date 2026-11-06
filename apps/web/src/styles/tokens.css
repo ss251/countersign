@@ -114,9 +114,10 @@
   }
 }
 
-/* The landing is dark by default (STEER-1815): the same dark tokens, scoped to it, unless light is pinned. */
+/* The landing is dark by default (STEER-1815): the same dark tokens, scoped to it and to the shell's bar and footer around it, unless light is pinned. */
 :root[data-theme="dark"],
-:root:not([data-theme="light"]) .landing {
+:root:not([data-theme="light"]) .landing,
+:root:not([data-theme="light"]) .shell:has(.landing) {
   color-scheme: dark;
   --paper: oklch(0.181 0.004 106.8); /* #121210, near-black */
   --ink: oklch(0.946 0.010 93.6); /* #efede6 */

@@ -40,6 +40,7 @@ const REGISTERED_EVENT = parseAbiItem(
 );
 const WINDOW = 10_000n;
 const CACHE_MS = 10 * 60 * 1000;
+const FAILURE_CACHE_MS = 30 * 1000;
 
 interface CacheEntry {
   value: Erc8004Identity | null;
@@ -49,13 +50,15 @@ interface CacheEntry {
 /**
  * Look up the newest ERC-8004 registration for a seller. Reads `Registered` logs in
  * 10,000-block windows from `fromBlock`, filtered on the indexed owner topic. Any RPC
- * failure is a null identity, never a failed request.
+ * failure is a null identity, never a failed request. A failed lookup keeps the last
+ * identity it found, and is retried after 30 seconds.
  */
 export function erc8004IdentityLookup(options: Erc8004IdentityOptions): IdentityLookup {
   const client = options.client ?? rpcClient(options.rpcUrl);
   const fromBlock = BigInt(options.fromBlock);
   const now = options.now ?? Date.now;
   const cache = new Map<string, CacheEntry>();
+  const lastFound = new Map<string, Erc8004Identity>();
 
   return async (seller: string): Promise<Erc8004Identity | null> => {
     const key = seller.toLowerCase();
@@ -64,17 +67,20 @@ export function erc8004IdentityLookup(options: Erc8004IdentityOptions): Identity
     if (cached !== undefined && cached.expiresAt > at) return cached.value;
 
     let value: Erc8004Identity | null = null;
+    let failed = false;
     try {
       const latest = await client.getBlockNumber();
       let newest: RegisteredLog | null = null;
       for (let start = fromBlock; start <= latest; start += WINDOW) {
         const end = start + WINDOW - 1n > latest ? latest : start + WINDOW - 1n;
-        const logs = await client.getRegisteredLogs({
-          registry: options.registry,
-          owner: seller as Address,
-          fromBlock: start,
-          toBlock: end,
-        });
+        const logs = await retryOnce(() =>
+          client.getRegisteredLogs({
+            registry: options.registry,
+            owner: seller as Address,
+            fromBlock: start,
+            toBlock: end,
+          }),
+        );
         for (const log of logs) {
           if (log.owner.toLowerCase() !== key) continue;
           if (
@@ -90,12 +96,22 @@ export function erc8004IdentityLookup(options: Erc8004IdentityOptions): Identity
         value = { identityRegistry: options.registry, agentId: newest.agentId.toString() };
       }
     } catch {
-      value = null;
+      failed = true;
+      value = lastFound.get(key) ?? null;
     }
 
-    cache.set(key, { value, expiresAt: at + CACHE_MS });
+    if (!failed && value !== null) lastFound.set(key, value);
+    cache.set(key, { value, expiresAt: at + (failed ? FAILURE_CACHE_MS : CACHE_MS) });
     return value;
   };
+}
+
+async function retryOnce<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch {
+    return await call();
+  }
 }
 
 function rpcClient(rpcUrl: string | undefined): IdentityClient {
