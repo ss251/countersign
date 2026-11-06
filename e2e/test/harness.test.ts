@@ -315,6 +315,7 @@ describe("report", () => {
     );
     expect(text).toContain("| 1 | `arc-spine` | PASS |");
     expect(text).toContain("| 2 | `arc-wrong-amount` | FAIL |");
+    expect(text).toContain("| escrow | v1 · `0x19c27d770969291e6a0a305dc1be1a845e7c1b76` |");
     expect(text).toContain("`chain refuses a moved price`");
     expect(text).toContain("NOT RUN (browser rule)");
     expect(text).toContain("](https://testnet.arcscan.app/tx/0x");

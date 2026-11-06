@@ -104,7 +104,7 @@ and the flows that verify a v2 slip (`slip-onchain-arc`, `public-spine`) are red
 - `pinArcV2` writes a `rails.json` that the buyer's own `State.loadRails()` returns as `KnownRail[]`,
   with `version: 2` and the switched Arc escrow.
 
-`e2e/test/harness.test.ts`'s run-summary case supplies the new meta fields.
+`e2e/test/harness.test.ts`'s run-summary case supplies the new meta fields and asserts the `escrow` row.
 
 ## Docs
 
@@ -127,7 +127,7 @@ bun test v1.3.14 (0d9b296a)
 
  37 pass
  0 fail
- 109 expect() calls
+ 110 expect() calls
 Ran 37 tests across 2 files. [8.42s]
 ```
 
