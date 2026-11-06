@@ -2,7 +2,7 @@
 
 What countersign has built, what is still on a branch, and what is only a design. Every row was checked against the code, not against another page. If any other page in this repository disagrees with this one, the other page is wrong.
 
-Checked on 07 Nov 2026 against `main` at `cd3a005`, the commit the production hub runs (`/healthz` names it, live since 20:47Z on 06 Nov). The hub carries escrow v2 support, but its escrow rails still point at the v1 contracts. `SHIPPED` means on `main` and deployed. A row that is merged or on `main` but not deployed says which, and flips only when it is both. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
+Checked on 07 Nov 2026 against `main` at `0b2bba4`. The production hub runs `872c8cb` (`/healthz` names it, live since 20:54Z on 06 Nov), and `main` has no hub change since. The hub carries escrow v2 support, but its escrow rails still point at the v1 contracts. `SHIPPED` means on `main` and deployed. A row that is merged or on `main` but not deployed says which, and flips only when it is both. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
 
 | Status | Meaning |
 |---|---|
