@@ -35,6 +35,16 @@ describe("the escrows this verifier trusts", () => {
     expect(v2?.name).toMatch(/escrow v2/);
   });
 
+  test("Arc's escrow v2 is pinned beside its v1 deployments", () => {
+    const v2 = KNOWN_ESCROWS.find(
+      (entry) => entry.chainId === ARC_TESTNET && entry.escrow.toLowerCase() === "0x10a3c07cc6a519c0106e315d2c42010ecbeff3ce",
+    );
+    expect(v2?.escrow).toBe(getAddress("0x10a3c07cc6a519c0106e315d2c42010ecbeff3ce"));
+    expect(v2?.name).toMatch(/escrow v2/);
+    // The v1 deployments that hold today's Arc jobs stay.
+    expect(KNOWN_ESCROWS.filter((entry) => entry.chainId === ARC_TESTNET).length).toBe(3);
+  });
+
   test("Whitechain's v1 escrow stays pinned, so its open jobs still verify", () => {
     expect(
       KNOWN_ESCROWS.some(
