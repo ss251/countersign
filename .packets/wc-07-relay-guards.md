@@ -1,6 +1,6 @@
 # wc-07 — relay: never release a zero slip hash; Ankr RPC first
 
-Issue: #37 (on-chain slip hash: never zero) and #10 (Whitechain rail).
+Issue: #37 (on-chain slip hash: never zero), #10 (Whitechain rail) and #14 (the drop-in: cs-w1 blockers B9, B10).
 
 ## Goal
 
@@ -47,6 +47,23 @@ Touch nothing else. View code is out of bounds: nothing under `apps/web`. Never 
    - the refusal of the 2625 host.
 
 3. **Rail default.** In `packages/rail/src/whitechain/index.ts` the default `rpcUrl` becomes `https://rpc.ankr.com/whitechain_testnet`. Update its test.
+
+4. **cs-w1's review of the drop-in: blockers B9 and B10, plus two should-fix items.** The report is `/Users/thescoho/Developer/countersign-mumbai/reports/review-1f7615d.md`; read it. The issue is #14. Start by copying the reviewer's tests unchanged: `git show cs/w1:packages/relay/test/w1-attacks.test.ts > packages/relay/test/w1-attacks.test.ts`. B9 and B10 in that file must pass, and the earlier tests must keep passing. Add `packages/relay/src/paywall.ts`, `packages/relay/src/pay-fetch.ts` and `packages/relay/examples/**` to this packet's lease.
+   - **B9 — one payment buys one response.**
+     - Before `next()`, `whitechainPaywall` claims the authorisation, keyed on `from:nonce` (lower case).
+     - Any second request presenting a claimed authorisation gets 409 `{ error: "Refused. This payment was already used." }`. That holds while the first is in flight and after it settled. The handler never runs for it.
+     - The claim is released only when the first request is refused before settlement: verify fails, the handler returns 4xx/5xx, or settle fails. A released authorisation can be used again, because no money moved.
+     - Settled claims are kept in a bounded map, dropped after the authorisation's `validBefore`.
+     - Separately, `settleExact`'s idempotent answer for an already-settled `(from, nonce)` gains `replayed: true`. The paywall refuses any settle answer with `replayed: true` with the same 409, so two paywall instances sharing one relay cannot both serve one payment.
+     - Tests: a concurrent replay, a replay after settlement, a replay after a failed handler (allowed), and `replayed: true` from the relay (refused).
+   - **B10 — spend counts when the agent signs, not when it sees a receipt.**
+     - `createPayFetch` adds the amount to `spent` at the moment it signs.
+     - It keeps the signed authorisations as `{ nonce, amount, validBefore }`.
+     - `spent()` includes all of them. Release an amount only if an optional `reader` (anything with viem's `readContract`) shows `authorizationState(from, nonce) === false` after `validBefore`, through a `reconcile()` method. Without a reader, never release.
+     - Cap `validBefore` at `now + min(maxTimeoutSeconds, 300)`. The merchant's number is advice, not a command.
+     - Tests: a merchant that always answers 500 gets at most one authorisation under a one-call budget; the `validBefore` cap; `reconcile` releasing an unused expired authorisation.
+   - **Should-fix 1 — serve before settle.** Add `settle: "after" | "before"` to `whitechainPaywall`, defaulting to `"after"`. With `"before"` it settles first and only then runs the handler, for handlers with side effects. Document both in a JSDoc block on the function. Test `"before"`.
+   - **Should-fix 2 — pay only known merchants.** Add an optional `payTo: string[]` allowlist to `createPayFetch`. When it is set, any other `payTo` throws `SpendLimitError` before anything is signed. Test it, and use it in `examples/agent.ts`, which stays at 25 lines or fewer.
 
 ## Constraints
 
