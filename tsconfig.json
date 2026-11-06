@@ -22,7 +22,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@countersign-hub/relay/paywall": ["./packages/relay/src/paywall.ts"],
+      "@countersign-hub/relay/pay-fetch": ["./packages/relay/src/pay-fetch.ts"],
+      "@countersign-hub/relay/browser": ["./packages/relay/src/browser.ts"]
+    }
   },
   "include": [
     "apps/*/src",

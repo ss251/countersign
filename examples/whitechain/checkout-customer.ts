@@ -1,4 +1,4 @@
-import { createPayFetch } from "@countersign/relay/browser";
+import { createPayFetch } from "@countersign-hub/relay/browser";
 import type { Address, LocalAccount } from "viem";
 
 // Pay the 402 from your wallet. You hold USDT only, never WBT.
