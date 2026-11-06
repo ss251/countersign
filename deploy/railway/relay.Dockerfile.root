@@ -1,0 +1,8 @@
+# The Whitechain relay from a Railway GitHub build: repo root is the build context.
+FROM oven/bun:1.3.14-slim
+WORKDIR /app
+COPY . .
+RUN bun install --frozen-lockfile --production
+ENV NODE_ENV=production
+EXPOSE 8402
+CMD ["bun","run","packages/relay/src/server.ts"]

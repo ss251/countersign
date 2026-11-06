@@ -23,6 +23,7 @@ import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
+import type { PrivyVerifier } from "./privy.ts";
 import { Ratings } from "./ratings.ts";
 import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
@@ -41,10 +42,14 @@ export interface HubDeps {
   ens?: EnsResolve;
   /** Bearer token the human's phone presents to decide an approval. */
   humanApprovalToken?: string;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
+  /** The full git commit this hub was deployed from, or undefined when unknown. */
+  commit?: string;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -75,6 +80,7 @@ export function createHub(deps: HubDeps) {
   app.get("/healthz", (c) =>
     json({
       ok: true,
+      commit: deps.commit ?? null,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
       router: router.healthz(),
