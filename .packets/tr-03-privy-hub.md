@@ -40,9 +40,10 @@ export type PersonCheck =
   | { kind: "person"; person: Person }
   | { kind: "refused"; status: 401 | 503; code: "bad-session" | "session-unavailable"; message: string };
 
-/** The two calls the verifier makes; a test passes a fake. */
+/** The three calls the verifier makes; a test passes a fake. */
 export interface PrivyClientLike {
-  verifyAuthToken(token: string): Promise<{ appId: string; userId: string }>;
+  getVerificationKey(): Promise<string>;
+  verifyAuthToken(token: string, verificationKey: string): Promise<{ appId: string; userId: string }>;
   getUserById(userId: string): Promise<{ linkedAccounts: Array<{ type: string; address?: string; chainType?: string }> }>;
 }
 
@@ -57,11 +58,15 @@ export function createPrivyVerifier(
 1. **The client.** When `options.client` is not given, build `const real = new PrivyClient(appId, appSecret, { timeout: 5_000 })` and wrap it:
    ```ts
    {
-     verifyAuthToken: (token) => real.verifyAuthToken(token),
+     getVerificationKey: () => real.getVerificationKey(),
+     verifyAuthToken: (token, key) => real.verifyAuthToken(token, key),
      getUserById: async (id) => (await real.getUserById(id)) as unknown as { linkedAccounts: Array<{ type: string; address?: string; chainType?: string }> },
    }
    ```
-2. **Verify.** `verify(token)` calls `client.verifyAuthToken(token)`. If it throws, throw `new PrivySessionError("invalid")`. If `claims.appId !== appId`, throw `new PrivySessionError("wrong app")`.
+2. **Verify (amendment A1, orch-cs).** In 1.32.5, `verifyAuthToken` fetches Privy's verification key on first use. A network failure inside it would otherwise read as a bad token. So `verify(token)` does these steps in order:
+   - Call `client.getVerificationKey()`. If it throws, throw `new PrivyUnavailableError("verification key unreachable")`. That answers 503. The real client caches the key after the first success, so later calls are local.
+   - Call `client.verifyAuthToken(token, key)` with that key. If it throws, throw `new PrivySessionError("invalid")`. That answers 401.
+   - If `claims.appId !== appId`, throw `new PrivySessionError("wrong app")`.
 3. **Cache.** Keep a cache `Map<userId, { wallets, expiresAt }>`, with `now = options.now ?? Date.now` and a lifetime of `options.cacheMs ?? 60_000`. A live entry returns `{ userId, wallets }` without calling Privy.
 4. **Wallets.** Otherwise call `client.getUserById(claims.userId)`. If it throws, throw `new PrivyUnavailableError("unreachable")`. `wallets` is every linked account with `type === "wallet"`, `chainType === "ethereum"` and a string `address`, lowercased. Cache it, then return `{ userId: claims.userId, wallets }`.
 
@@ -219,6 +224,8 @@ Cases:
     - A claims `appId` that differs gives `PrivySessionError`.
     - `verifyAuthToken` throwing gives `PrivySessionError`.
     - `getUserById` throwing gives `PrivyUnavailableError`.
+    - `getVerificationKey` throwing gives `PrivyUnavailableError`, and `personFrom` turns it into 503 `session-unavailable`, not 401 (amendment A1).
+    - `verifyAuthToken` is called with the key `getVerificationKey` returned.
     - Two verifies inside `cacheMs` call `getUserById` once.
 
 Every existing test still passes, unedited.
@@ -245,7 +252,7 @@ All green.
 Stop if any of these happens:
 - a change is needed outside the lease;
 - `requireToken`, `getEnvelopeMirror`, `paidCall`, `failure`, `handleReview` or `fail` differ from what this packet names;
-- `@privy-io/server-auth` 1.32.5 does not export `PrivyClient` with `verifyAuthToken` and `getUserById`;
+- `@privy-io/server-auth` 1.32.5 does not export `PrivyClient` with `getVerificationKey`, `verifyAuthToken` and `getUserById`;
 - a failure survives three different fixes;
 - 60 minutes have passed.
 
