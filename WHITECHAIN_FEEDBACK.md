@@ -7,6 +7,9 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 - **14:45** — The `whitechain-dev` skill gave us chain ID, RPC, explorer and the Blockscout verifier URL in one read. The RPC answered `cast chain-id` with `1874` on the first try.
 - **14:50** — The explorer's API is easy to work with. `/api/v2/smart-contracts/{address}` named the proxy implementation (`TetherTokenV2`), and `/verification/config` listed every compiler and EVM target, so we could check verification would succeed before deploying anything.
 
+- **15:02** — Forking 1874 locally worked well. We ran our escrow against the real `TetherTokenV2` and the live WWBT/USDT pool in a forge simulation before spending any gas, and the token's EIP-3009 `receiveWithAuthorization` behaved exactly as on USDC.
+- **15:04** — Verification took one command. `forge script --verify --verifier blockscout --verifier-url https://explorer.testnet.whitechain.io/api/` verified both contracts (one of them with dynamic-array constructor args) about 20 seconds after deploy, with no API key.
+
 ## Where we got stuck
 
 - **14:50** — Two different tokens called USDT. The prize requires `0xcedfB561…f55a7`, but the token list in the docs gives `0xaa7962d0…8f46` as USDT. That contract reports `USDT.e` (bridged from Tron). The docs never mention `0xcedf…`. We only confirmed it was the right token by reading its proxy and its minter (`USDTBridge`) on the explorer.

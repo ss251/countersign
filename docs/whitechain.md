@@ -99,8 +99,25 @@ The REST API also accepts `standard-input`, `multi-part` and `flattened-code` at
 
 ## Deployments
 
-Filled in as they land, each with its explorer link.
+Both contracts were deployed by `DeployWhitechain.s.sol` on 2026-11-06 and verified on Blockscout in the same run (`--verify --verifier blockscout`): solc 0.8.28, cancun, 200 optimizer runs. The machine-readable record is `contracts/deployments/whitechain-sepolia.json`.
 
-| Contract | Address | Tx |
+| Contract | Address | Deploy tx |
 |---|---|---|
-| CountersignedEscrow | pending | |
+| CountersignedEscrow | [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4) | [`0x256544f7…303c`](https://explorer.testnet.whitechain.io/tx/0x256544f7d967714fd5efa02e04c95ba6512c004d20742ba08ec1532f7247303c) |
+| FeeSplit (the escrow's treasury) | [`0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F`](https://explorer.testnet.whitechain.io/address/0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F) | [`0x0f3309ca…2a6a`](https://explorer.testnet.whitechain.io/tx/0x0f3309ca5193279ade7333e2bba97d285d738cb07e8516fd11b897651bb92a6a) |
+
+- Escrow token: USDT `0xcedf…55a7`. Toll: 100 bps (1%), fixed at deploy, with no owner who could change it.
+- Escrow EIP-712 domain: `{ name: "Countersign", version: "1", chainId: 1874, verifyingContract: <escrow> }`, separator `0x04e836f1dcf972a17d79a66f67763c7c9a67bd5af92e6182d5677bae9236ab3f`.
+- FeeSplit sends 50% of every toll to the relayer and 50% to the deployer. The relayer's half is how the business side pays for gas: the toll accrues in USDT, and the relayer can swap it for WBT on the same pool the buyer's USDT came from.
+
+Before deploying, `EscrowForkCheck.s.sol` ran the escrow against the real TetherTokenV2 in a local simulation of chain 1874, broadcasting nothing. These all held:
+
+- fund then release, with 99% to the payee and 1% to the treasury;
+- a replayed countersignature is refused;
+- a settlement at a moved price is refused before any money moves;
+- the payee's cancel through a relayer returns the full amount;
+- a stranger's refund after the deadline returns the full amount.
+
+```
+forge script contracts/script/whitechain/EscrowForkCheck.s.sol --fork-url https://rpc.testnet.whitechain.io
+```
