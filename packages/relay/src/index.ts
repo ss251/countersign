@@ -13,3 +13,5 @@ export * from "./merchant-server.ts";
 export * from "./whitechain-config.ts";
 export * from "./countersign-scheme.ts";
 export * from "./escrow-ops.ts";
+export * from "./paywall.ts";
+export * from "./pay-fetch.ts";
