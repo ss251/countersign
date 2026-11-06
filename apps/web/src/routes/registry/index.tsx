@@ -5,6 +5,7 @@ import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { ANONYMOUS, formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
 import { settlementIndex, type Ledger } from "../../lib/ledger.ts";
+import { liveSplit, NOT_LIVE } from "../../lib/live.ts";
 import { useNow } from "../../lib/now.ts";
 import type { Listing, SellerRecord, Settlement } from "../../lib/types.ts";
 import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
@@ -278,7 +279,7 @@ export default function RegistryPage(_props: PageProps) {
           ) : (
             <div className="sellers">
               {groups.map((g) => (
-                <SellerCard key={g.address} g={g} ledger={ledger} now={now} />
+                <SellerCard key={g.address} g={g} ledger={ledger} now={now} hubRailIds={hubRailIds} />
               ))}
             </div>
           )}
@@ -288,7 +289,31 @@ export default function RegistryPage(_props: PageProps) {
   );
 }
 
-export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
+/** One offer row's rails: the ones this hub settles, then any it only lists. */
+export function OfferRowRails({ rails, hubRailIds }: { rails: RailId[]; hubRailIds: readonly string[] | undefined }) {
+  const split = liveSplit(rails, hubRailIds);
+  if (!split) return <p className="orow__rails">{rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>;
+  const live = split.live.map((r) => RAIL_LABEL[r]).join(", ");
+  const listed = split.listed.map((r) => RAIL_LABEL[r]).join(", ");
+  return (
+    <p className="orow__rails">
+      {live}
+      {split.listed.length > 0 ? `${live ? " · " : ""}${listed}: ${NOT_LIVE}` : null}
+    </p>
+  );
+}
+
+export function SellerCard({
+  g,
+  ledger,
+  now,
+  hubRailIds,
+}: {
+  g: SellerGroup;
+  ledger: Ledger;
+  now: number;
+  hubRailIds?: readonly string[] | undefined;
+}) {
   const last = ledger.lastBySeller.get(g.address);
   const calls = g.released + g.refunded + g.failed;
   const titleId = `seller-${g.address}`;
@@ -348,7 +373,7 @@ export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger;
                   {l.offer.summary}
                 </p>
               </div>
-              <p className="orow__rails">{l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+              <OfferRowRails rails={l.offer.rails} hubRailIds={hubRailIds} />
               <p className="orow__state num">
                 {l.status === "delisted" ? (
                   <span className="orow__delisted">Delisted{l.reason ? `: ${l.reason}` : ""}</span>

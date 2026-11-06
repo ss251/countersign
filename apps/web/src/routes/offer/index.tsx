@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { JsonSchema } from "@countersign/core";
+import type { JsonSchema, RailId } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { ANONYMOUS, formatAgo, formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
+import { liveSplit, NOT_LIVE } from "../../lib/live.ts";
 import { settlementIndex } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
 import { failedDeliveryNote, termsKind } from "../../lib/terms.ts";
@@ -69,6 +70,7 @@ export default function OfferPage({ params }: PageProps) {
     const d = rails.data?.find((x) => x.id === r);
     return d ? termsKind(d) : undefined;
   });
+  const hubRailIds = rails.source === "hub" && rails.data ? rails.data.map((d) => d.id) : undefined;
 
   return (
     <div className="page offer">
@@ -96,7 +98,7 @@ export default function OfferPage({ params }: PageProps) {
           <Amount money={usd(offer.price, offer.rails[0])} size="xl" />
           <p className="offer__per">per call</p>
         </div>
-        <p className="offer__rails">Settles on {offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+        <OfferRailLine rails={offer.rails} hubRailIds={hubRailIds} />
         <p className={cx("page__lede offer__summary", !more && offer.summary.length > 220 && "is-clamped")}>{offer.summary}</p>
         {offer.summary.length > 220 ? (
           <button type="button" className="link-button offer__more" aria-expanded={more} onClick={() => setMore((m) => !m)}>
@@ -223,7 +225,7 @@ export default function OfferPage({ params }: PageProps) {
             const d = rails.data?.find((x) => x.id === r);
             return (
               <div key={r} className="card offer__rail">
-                {d ? <RailCard declaration={d} /> : <p className="section__note">{RAIL_LABEL[r]}: not declared by this hub.</p>}
+                {d ? <RailCard declaration={d} /> : <p className="section__note">{RAIL_LABEL[r]}: {NOT_LIVE}.</p>}
               </div>
             );
           })}
@@ -247,6 +249,22 @@ export default function OfferPage({ params }: PageProps) {
         </p>
       </section>
     </div>
+  );
+}
+
+/** The offer's rails: the ones this hub settles, then any the seller only lists. */
+export function OfferRailLine({ rails, hubRailIds }: { rails: RailId[]; hubRailIds: readonly string[] | undefined }) {
+  const split = liveSplit(rails, hubRailIds);
+  if (!split) {
+    return <p className="offer__rails">Settles on {rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>;
+  }
+  const live = split.live.map((r) => RAIL_LABEL[r]).join(", ");
+  const listed = split.listed.map((r) => RAIL_LABEL[r]).join(", ");
+  return (
+    <>
+      <p className="offer__rails">{live ? `Settles on ${live}` : "Settles on no rail live on this hub"}</p>
+      {split.listed.length > 0 ? <p className="offer__rails">{`${listed}: ${NOT_LIVE}`}</p> : null}
+    </>
   );
 }
 
