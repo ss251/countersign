@@ -32,7 +32,17 @@ else
   src="$work"
   label="$ref ($(git -C "$root" rev-parse --short "$ref"))"
   echo "installing $label"
-  (cd "$src" && bun install --frozen-lockfile >/dev/null)
+  (cd "$src" && bun install --frozen-lockfile --linker hoisted >/dev/null)
+fi
+
+# The Privy app id is public, but it lives on the web service. Read it here, where this checkout is linked to
+# Railway: inside the build's temporary copy the CLI is not linked, the read came back empty, and the console
+# shipped with email sign-in off (23:08 IST). An empty id is said out loud, never shipped silently.
+# set -e would end the script on a failed read with no word, so the read may fail and the guard below speaks.
+privy_id="${VITE_PRIVY_APP_ID-$( (cd "$here" && railway variables --service "${RAILWAY_SERVICE:-web}" --kv 2>/dev/null | sed -n 's/^VITE_PRIVY_APP_ID=//p') || true)}"
+if [ -z "$privy_id" ] && [ "${ALLOW_NO_PRIVY:-0}" != "1" ]; then
+  echo "deploy: VITE_PRIVY_APP_ID is empty, so the console would ship with email sign-in off; set it or ALLOW_NO_PRIVY=1" >&2
+  exit 1
 fi
 
 echo "building apps/web from $label"
@@ -41,8 +51,15 @@ echo "building apps/web from $label"
   VITE_HUB_URL="${VITE_HUB_URL:-https://hub-production-e85e.up.railway.app}" \
   VITE_RELAY_URL="${VITE_RELAY_URL-/relay}" \
   VITE_MERCHANT_URL="${VITE_MERCHANT_URL-/merchant-api}" \
+  VITE_PRIVY_APP_ID="$privy_id" \
     bunx --bun vite build --logLevel warn
 )
+
+# The built bundle must carry that id, or sign-in is off whatever the variable said.
+if [ -n "$privy_id" ] && ! grep -rqF "$privy_id" "$src/apps/web/dist/assets"; then
+  echo "deploy: the bundle does not carry the Privy app id, so nothing was uploaded" >&2
+  exit 1
+fi
 
 # The phone page (apps/phone, cs-phone's lane) is hosted at /phone/ once the ref carries it. It dials the
 # hub's websocket directly, so the console needs no proxy for it; both VITE_ values are public URLs.
@@ -55,13 +72,19 @@ if [ -f "$src/apps/phone/package.json" ]; then
   )
 fi
 
+# STEER-2225: never ship a bundle that could ask for an approval, a permit or eth_sign. The check reads the
+# source maps, so it runs before they are dropped; a ref without the script is checked by this checkout's copy.
+grep_script="$src/apps/web/scripts/wallet-grep.ts"
+[ -f "$grep_script" ] || grep_script="$here/scripts/wallet-grep.ts"
+bun "$grep_script" "$src/apps/web/dist" || { echo "deploy: the bundle failed the wallet check, so nothing was uploaded" >&2; exit 1; }
+
 cp -R "$src/apps/web/dist" "$stage/dist"
 rm -f "$stage"/dist/assets/*.map
 if [ -d "$src/apps/phone/dist" ]; then
   cp -R "$src/apps/phone/dist" "$stage/dist/phone"
   rm -f "$stage"/dist/phone/assets/*.map
 fi
-cp "$src/apps/web/server.ts" "$stage/server.ts"
+(cd "$src" && bun build apps/web/server.ts --target bun --outfile "$stage/server.js")
 cp "$here/deploy/Dockerfile" "$stage/Dockerfile"
 echo "staged $(du -sh "$stage" | cut -f1)"
 

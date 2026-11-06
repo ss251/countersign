@@ -57,6 +57,7 @@ const offer: Offer = {
   price,
   deadline: 120,
   bond,
+  reviewWindow: 60,
   rails,
   issuedAt: now(),
 };

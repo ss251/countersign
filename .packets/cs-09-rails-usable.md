@@ -20,7 +20,7 @@ Facts from a live run on 06 Nov (#3 comment):
 - A Gateway settlement's `transaction` is a transfer id (a UUID), not a chain tx.
 - The Arc testnet Gateway kind is `exact` with `extra {name: "GatewayWalletBatched", version: "1", verifyingContract: "0x0077777d7eba4688bdef3e311b846f25870a19b9"}`, asset USDC `0x3600000000000000000000000000000000000000`.
 
-Reviews to satisfy: `/Users/thescoho/Developer/countersign-mumbai/reports/review-20c2ebf.md` (should-fix 1–3).
+Reviews to satisfy: `$M/reports/review-20c2ebf.md` (should-fix 1–3).
 
 ## Lease
 
