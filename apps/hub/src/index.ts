@@ -10,7 +10,7 @@ const dbPath = process.env.HUB_DB ?? "data/hub.sqlite";
 if (dbPath !== ":memory:") mkdirSync(dirname(resolve(dbPath)), { recursive: true });
 
 const store = new Store(dbPath);
-const rails = railsFromEnv(process.env);
+const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
 
@@ -21,4 +21,4 @@ setInterval(() => {
   void runJanitor({ store, rails, now });
 }, 30_000);
 
-console.log(`[hub] listening on ${server.url}`);
+console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
