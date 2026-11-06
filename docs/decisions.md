@@ -253,3 +253,28 @@ A call's `lineage` lists the jobIds of the purchases it is nested inside, outerm
 **Left out on purpose.**
 - `PUT /envelopes/:agent`, `POST /approvals` and `POST /offers` are signed by an agent or a seller key, not by a person.
 - The merchant refund is not a hub route: it lives on the merchant's own service.
+
+## D21 — the erc8183 rail: countersign's escrow, holding its money in an ERC-8183 job, with a JobHook that emits the slip hash (06 Nov; refs #24)
+
+**What exists.** Arc testnet already runs the ERC-8183 reference `AgenticCommerce` at `0x0747EEf0706327138c69792bF28Cd525089e4583`:
+- an EIP-1967 proxy, paying in Arc USDC, with zero platform and evaluator fees;
+- `createJob`, `setBudget`, `fund(uint256,bytes)`, `submit`, `complete`, `reject`, `claimRefund` and `getJob`, all read from the implementation's bytecode on 06 Nov.
+
+Its hooks are limited to an admin's whitelist, so our hook cannot be attached there. Its roles also do not fit a relayed, one-signature checkout on their own: the client creates and funds, the provider submits, and the evaluator completes.
+
+**The adapter.** `CountersignedEscrow8183` keeps v1's external interface and events exactly: `fund`, `release`, `refund`, `cancel`, `jobOf`, `tollBps`, and `Funded`, `Released`, `Refunded`. So the existing escrow rail (version 1), the hub and the slip verifier work with it unchanged.
+- **Custody.** The money sits in an ERC-8183 job on the shared core. The adapter is that job's client, provider and evaluator, so every step is relayed with countersign's own signatures.
+- **Signatures.** The buyer signs one EIP-3009 countersignature naming the adapter, exactly as for v1. The seller signs `Release(jobId, slipHash)` or `Cancel(jobId)` under the adapter's domain.
+- **`fund`.** Checks the countersignature exactly as v1 does, pulls the amount, then `createJob(adapter, adapter, expiredAt, "countersign:<offerHash>", address(0))`, `setBudget(amount)` and `fund`. `expiredAt` is the deadline, or now plus six minutes if that is later, because the core refuses an expiry under five minutes.
+- **`release`.** Up to the deadline, with the seller's signature: `submit(job, slipHash)`, then `complete(job, slipHash)`. The adapter calls the JobHook, which emits `SlipCommitted(job, slipHash, caller)`. It then pays the seller the amount less the toll, and the toll to the treasury.
+- **`refund`.** After the deadline, anyone may call it. The adapter calls `reject`, falling back to `claimRefund` when the core's own expiry has passed, and returns the full amount to the buyer.
+- **`cancel`.** The payee's signature does the same at any time while the job is funded.
+- **A changed core fee.** If the core ever pays the adapter less than the amount on `complete`, the release reverts with `CoreFeeTaken`, and the buyer recovers the full amount by refund, because `reject` returns the whole budget.
+
+**The JobHook.** It implements `IACPHook` with ERC-165. On the `submit` selector, `afterAction` emits `SlipCommitted(uint256 job, bytes32 slipHash, address caller)`; it does nothing on other selectors and in `beforeAction`. Anyone may call it, so the event names its caller, and only events whose caller is the adapter count. A core that whitelists it could attach it directly.
+
+**The rail.** The hub adds rail `erc8183` when `ERC8183_ESCROW` is set, using the escrow rail with `version: 1`. The buyer pays it only after its address is pinned in `packages/buyer/src/known-rails.ts`, which happens after deployment.
+
+**Trust and limits.**
+- The money sits in a contract whose proxy admin is a third party, who can upgrade it or change its fees. The fee guard covers fees, but nothing covers an upgrade.
+- The 8183 job's provider is the adapter, not the seller. The seller is named in the adapter's `Funded` and `Released` events.
