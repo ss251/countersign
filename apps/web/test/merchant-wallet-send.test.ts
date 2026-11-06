@@ -84,6 +84,14 @@ describe("a held escrow: the merchant's wallet signs a cancel for this one job",
     expect(calls[0]?.body.jobId).toBe(JOB);
   });
 
+  test("a job that names its own escrow is cancelled on that contract, not the relayer's newest", async () => {
+    const V1 = "0x3333333333333333333333333333333333333333";
+    const seen: Seen = {};
+    const { fetch } = relay(ok);
+    await sendWalletRefund(input({ seen, fetch, order: order({ escrow: V1 }) }));
+    expect(getAddress(String(seen.domain?.verifyingContract))).toBe(getAddress(V1));
+  });
+
   test("declined in the wallet: nothing reaches the relay", async () => {
     const { calls, fetch } = relay(ok);
     const outcome = await sendWalletRefund(input({ fetch, signTypedData: async () => Promise.reject(rejected()) }));

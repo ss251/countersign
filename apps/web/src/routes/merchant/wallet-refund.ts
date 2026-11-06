@@ -52,6 +52,12 @@ export function walletRefusal(order: Order, wallet: string | undefined, status: 
   if (payees !== undefined && !payees.some((payee) => same(payee, wallet))) {
     return "The relayer pays gas only for the merchants on its allowlist, and this wallet is not on it.";
   }
+  // A cancel goes to the job's own escrow; a relayer that does not call that contract cannot submit it.
+  const escrows = status?.policy?.allowedEscrows;
+  const jobEscrow = order.escrow;
+  if (walletRefundIsCancel(order) && jobEscrow && escrows !== undefined && !escrows.some((e) => same(e, jobEscrow))) {
+    return "The relayer does not call this order's escrow contract, so it could not submit the cancel.";
+  }
   if (order.kind === "escrow" && order.status === "in_review") {
     return "This job is delivered and in its review window, and the escrow cancels only a job that is not yet delivered.";
   }
@@ -74,6 +80,8 @@ export function refundView(order: Order): RefundOrderView {
     merchant: order.merchant,
     amount: order.amount,
     refunded: order.refunded,
+    // The relay client signs a cancel for the order's own escrow first, then the relay's.
+    ...(order.escrow ? { escrow: order.escrow } : {}),
   };
 }
 

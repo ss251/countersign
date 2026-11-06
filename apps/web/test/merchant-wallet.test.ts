@@ -63,6 +63,18 @@ describe("which orders the connected wallet may refund", () => {
     expect(walletRefusal(order(), MERCHANT, status([]))).toMatch(/allowlist/);
   });
 
+  test("a cancel for an escrow the relayer does not call is refused; a direct refund does not care", () => {
+    const V1 = "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4";
+    const V2 = "0x55b3000000000000000000000000000000000391";
+    const relayOnV2 = status();
+    relayOnV2.policy = { ...relayOnV2.policy!, allowedEscrows: [V2] };
+    expect(walletRefusal(order({ escrow: V1 }), MERCHANT, relayOnV2)).toMatch(/does not call this order's escrow/);
+    expect(walletRefusal(order({ escrow: V2.toLowerCase() }), MERCHANT, relayOnV2)).toBeNull();
+    expect(walletRefusal(order({ escrow: V1, kind: "exact", status: "paid" }), MERCHANT, relayOnV2)).toBeNull();
+    // A record without its escrow is not refused here: the relay client falls back to the relay's.
+    expect(walletRefusal(order(), MERCHANT, relayOnV2)).toBeNull();
+  });
+
   test("a delivered job in its review window is refused: the escrow cancels only a job still Funded", () => {
     expect(walletRefusal(order({ status: "in_review" }), MERCHANT, status())).toMatch(/review window/);
   });
@@ -110,6 +122,10 @@ describe("what the merchant reads before signing", () => {
       amount: "10000",
       refunded: "500",
     });
+    // The job's own escrow travels with it, so a v1 job's cancel is signed for v1.
+    expect(refundView(order({ escrow: "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4" })).escrow).toBe(
+      "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4",
+    );
   });
 });
 

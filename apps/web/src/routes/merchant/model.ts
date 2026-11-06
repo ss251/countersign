@@ -66,6 +66,11 @@ export interface Order {
   asset?: { symbol: string; decimals: number };
   /** Explorer base for this order's links. */
   explorer?: string;
+  /**
+   * The escrow contract that holds this job, as the relay records it. Once v1 and v2 jobs sit side
+   * by side, a cancel must be signed for the job's own contract. Absent on older records.
+   */
+  escrow?: string;
   /* Escrow v2 review, as the hub serves it (docs/spec/escrow.md, 'Escrow v2'). Times in ms. */
   reviewWindow?: number | null;
   deliveredAt?: number | null;
@@ -1015,6 +1020,7 @@ export function fromHubOrder(raw: unknown): Order | null {
     networkName: text(r.networkName) ?? undefined,
     asset,
     explorer: text(r.explorer) ?? undefined,
+    escrow: text(r.escrow) ?? undefined,
     reviewWindow: typeof r.reviewWindow === "number" && Number.isFinite(r.reviewWindow) ? r.reviewWindow : null,
     deliveredAt: millis(r.deliveredAt),
     reviewEndsAt: millis(r.reviewEndsAt),
