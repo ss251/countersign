@@ -155,3 +155,15 @@ Rule:
 - **Who funds a bonded job.** `fundBonded` is arbiter-only. `fund` (bond 0) stays open to anyone.
 - **The buyer's budget.** An on-chain Failed job counts like a refund: the money is back with the buyer.
 - **Accepted for this deployment.** The arbiter key can lock and slash any seller's free bond, so a leaked hub key puts every free bond at risk. The bond is exactly as safe as the hub's key, so bonds stay small. Seller-signed locks (`LockBond(jobId, bond)`) are a later revision; the contract is immutable once deployed, so they would need a new deployment.
+
+## D13, amended — the router ranks rails that protect the buyer first, unless the buyer opts in (06 Nov; refs #94)
+
+cs-w1 reviewed the router (bb5f265) and found a policy problem. Ranking by cost alone put the rails that cannot refund the buyer (gateway, hedera, eip3009 and mpp, all of kind `direct` or `batched`) ahead of escrow, because they carry no toll. The buyer takes the first entry it can pay, so it would pay unprotected by default, against the product's promise that payments move only when the work lands.
+
+Rule:
+
+- **Protected first.** A rail is protected when its kind is `escrow`. Without an opt-in, the order is healthy first, then protected before unprotected, then cost, finality and rail id.
+- **Opting in.** A buyer opts in with `X-Countersign-Allow-Unprotected: 1`, or by naming an unprotected rail in `X-Countersign-Rails`. Price then competes across both kinds.
+- **Nothing is dropped.** Unprotected rails stay listed, so a buyer that can only pay them (a Gateway-only client, the Hedera agent) pays as before.
+- **Health is per rail and offer.** One seller's broken offer or one buyer's late signature cannot degrade a rail for everyone else.
+- **Bounded attempt logs.** At most 20 attempts are kept per key, and at most 5 are copied into a slip.

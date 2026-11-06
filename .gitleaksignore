@@ -1,0 +1,6 @@
+# One false positive: prose in a worker report (line 11 describes extra: {name: tokenName, version: tokenVersion}),
+# misread by generic-api-key. Exact fingerprints only, one per commit that carries the line.
+361151b54246cb1b07d542a0ecac26c52ffccd45:.packets/reports/cs-15-eip3009.md:generic-api-key:11
+7fc3c3056e4b13f5299ea3918ad39b0b02926c22:.packets/reports/cs-15-eip3009.md:generic-api-key:11
+f41f469d574299a5229b76e1a5c209dd4516307a:.packets/reports/cs-15-eip3009.md:generic-api-key:11
+e2176b728a72abadb90287c0c1f82fd20edfaa2e:.packets/reports/cs-15-eip3009.md:generic-api-key:11
