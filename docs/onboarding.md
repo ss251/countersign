@@ -88,7 +88,7 @@ No production offer carries a seller bond yet, because the escrows on production
 ## Charge for your own API in USDT
 
 <!-- get-started:charge -->
-Status: the paywall works today from a clone, on Whitechain testnet with test USDT. Two limits apply. The package exists only inside this repository until it is released. Do not install `@countersign/*` from npm: that scope belongs to another project. This relay's release name is `@countersign-hub/relay`, imported from `@countersign-hub/relay/paywall`. It is not published, and nobody yet holds that name for this project on npm, so install nothing under it from npm until this page says where the release is. The hosted relay pays gas for its own merchant only, so you run a relay of your own.
+Status: the paywall works today from a clone, on Whitechain testnet with test USDT. Two limits apply. The package exists only inside this repository until it is released. Do not install `@countersign/*` from npm: that scope belongs to another project. This relay's release name is `@countersign-hub/relay`, imported from `@countersign-hub/relay/paywall`. It is not published yet, so install nothing under it from npm until this page says where the release is. The hosted relay pays gas for its own merchant only, so you run a relay of your own.
 
 Put one route behind the paywall. Save this as `mine/shop.ts` inside the clone:
 
