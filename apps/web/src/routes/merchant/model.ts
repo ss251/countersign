@@ -25,6 +25,8 @@ export interface Order {
   status: OrderStatus;
   closeKind?: CloseKind | null;
   createdAt: number;
+  /** When the money reached the merchant, in ms; null while held or if it never did. */
+  receivedAt?: number | null;
   settleTx: string;
   closeTx?: string | null;
   refundTxs: string[];
@@ -153,13 +155,13 @@ export function statusLabel(status: OrderStatus): string {
   }
 }
 
+/** Only Paid is green. Held money is blue where it is shown as an amount; its badge stays neutral. */
 export function statusTone(status: OrderStatus): StatusTone {
   switch (status) {
-    case "pending":
-    case "held":
-      return "money";
     case "paid":
       return "settled";
+    case "pending":
+    case "held":
     case "partially_refunded":
     case "refunded":
     case "refund_pending":
@@ -311,4 +313,54 @@ export function formatWeiWbt(wei: string): string {
 /** A decimal WBT amount (as the relay reports it) to exactly four decimals. */
 export function formatWbt(value: string): string {
   return formatWeiWbt(decimalToWei(value).toString());
+}
+
+/** The ledger's status filters. Partly refunded money still sits with the merchant, so it is Paid. */
+export type OrderFilter = "all" | "paid" | "held" | "refunded";
+
+export const ORDER_FILTERS: ReadonlyArray<{ key: OrderFilter; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "paid", label: "Paid" },
+  { key: "held", label: "Held" },
+  { key: "refunded", label: "Refunded" },
+];
+
+export function matchesFilter(order: Pick<Order, "status">, filter: OrderFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "paid":
+      return order.status === "paid" || order.status === "partially_refunded";
+    case "held":
+      return order.status === "held" || order.status === "pending";
+    case "refunded":
+      return order.status === "refunded" || order.status === "refund_pending" || order.status === "cancelled";
+  }
+}
+
+export function filterCounts(orders: readonly Pick<Order, "status">[]): Record<OrderFilter, number> {
+  const counts: Record<OrderFilter, number> = { all: 0, paid: 0, held: 0, refunded: 0 };
+  for (const order of orders) {
+    for (const { key } of ORDER_FILTERS) if (matchesFilter(order, key)) counts[key] += 1;
+  }
+  return counts;
+}
+
+/** "6 Nov, 14:32": the Received column, where the year is today's. */
+export function shortHumanDate(ms: number): string {
+  const date = new Date(ms);
+  const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  return `${day}, ${time}`;
+}
+
+/**
+ * When the money reached the merchant. Direct payments arrive at settlement; escrow orders only on
+ * release. Held, pending, cancelled and deadline-refunded orders were never received: null.
+ */
+export function receivedAt(order: Pick<Order, "kind" | "status" | "closeKind" | "createdAt"> & { receivedAt?: number | null }): number | null {
+  if (order.receivedAt !== undefined) return order.receivedAt;
+  if (!wasReceived(order)) return null;
+  // Older relays send no receivedAt; a direct payment settles when it is created.
+  return order.kind === "exact" ? order.createdAt : null;
 }

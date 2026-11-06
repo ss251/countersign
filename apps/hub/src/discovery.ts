@@ -73,9 +73,20 @@ export function challengeOptions(
   for (const id of offer.rails) {
     const rail = configured.get(id);
     if (!rail) continue;
-    options.push({ entry: rail.challenge(offer, { resource, now }), rail });
+    try {
+      options.push({ entry: rail.challenge(offer, { resource, now }), rail });
+    } catch (error) {
+      // One broken rail must not take the 402 down. Never log the offer body.
+      console.warn(`[hub] rail ${id} challenge failed: ${firstLine(error)}`);
+    }
   }
   return options;
+}
+
+/** The first line of an error, safe to put in one log line or one refusal. */
+export function firstLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split("\n")[0]?.slice(0, 300) || "unknown error";
 }
 
 export function acceptsFor(

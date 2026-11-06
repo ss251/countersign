@@ -1,5 +1,5 @@
 import { getAddress, toHex } from "viem";
-import type { LocalAccount } from "viem";
+import type { Hex, LocalAccount } from "viem";
 import {
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
@@ -11,9 +11,10 @@ import {
   toBase64Json,
 } from "@countersign/core";
 import { NETWORK, USDT } from "./chain.ts";
-import { authorizationToWire, sameAddress, signAuthorization } from "./eip3009.ts";
+import { authorizationToWire, sameAddress, signAuthorization, tokenAbi } from "./eip3009.ts";
 import type { Authorization } from "./eip3009.ts";
 import type { PaymentPayload, PaymentRequirements, SettleResponse } from "./exact.ts";
+import type { ChainReader } from "./ports.ts";
 
 export type FetchLike = (
   input: string | URL | Request,
@@ -24,8 +25,12 @@ export type PayFetchOptions = {
   account: LocalAccount;
   /** Decimal USDT cap for one call. Defaults to "1.00". */
   maxPerCall?: string;
-  /** Decimal USDT cap across every settled call. */
+  /** Decimal USDT cap across every signed call. */
   budget?: string;
+  /** When set, a payment to any other address is refused before it is signed. */
+  payTo?: string[];
+  /** Reads authorizationState during reconcile(). Without one, a spend is never released. */
+  reader?: Pick<ChainReader, "readContract">;
   /** Injectable for tests. Defaults to the global fetch at creation time. */
   fetch?: FetchLike;
   /** Unix seconds. Defaults to the wall clock. */
@@ -40,8 +45,10 @@ export type PaymentReceipt = {
 
 export type PayFetch = {
   (input: string | URL | Request, init?: RequestInit): Promise<PaidResponse>;
-  /** Total settled, as a decimal USDT string. */
+  /** Total signed, as a decimal USDT string, including authorisations without a receipt. */
   spent: () => string;
+  /** Release expired authorisations that the chain never used, when a reader is configured. */
+  reconcile: () => Promise<void>;
 };
 
 export class SpendLimitError extends Error {
@@ -65,14 +72,26 @@ type PaymentRequired = {
   accepts?: PaymentRequirements[];
 };
 
+type SignedAuthorization = {
+  nonce: Hex;
+  amount: bigint;
+  /** Unix seconds. */
+  validBefore: number;
+};
+
+const MAX_TIMEOUT_SECONDS = 300;
+
 export function createPayFetch(options: PayFetchOptions): PayFetch {
   const account = options.account;
   const maxPerCall = parseUnits(options.maxPerCall ?? "1.00", USDT.decimals);
   const budget =
     options.budget === undefined ? null : parseUnits(options.budget, USDT.decimals);
+  const allowlist = options.payTo?.map((value) => getAddress(value)) ?? null;
+  const reader = options.reader ?? null;
   const send = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   let spentAtomic = 0n;
+  const signed: SignedAuthorization[] = [];
 
   const pay = (async (input: string | URL | Request, init?: RequestInit) => {
     const first = await send(input, init);
@@ -90,6 +109,10 @@ export function createPayFetch(options: PayFetchOptions): PayFetch {
       return wrap(first);
     }
 
+    const payTo = getAddress(requirements.payTo);
+    if (allowlist && !allowlist.some((allowed) => sameAddress(allowed, payTo))) {
+      throw new SpendLimitError(`${payTo} is not an allowed merchant.`);
+    }
     if (amount > maxPerCall) {
       throw new SpendLimitError(
         `${formatUnits(amount, USDT.decimals)} USDT is over the ${formatUnits(maxPerCall, USDT.decimals)} USDT per-call limit.`,
@@ -101,15 +124,33 @@ export function createPayFetch(options: PayFetchOptions): PayFetch {
       );
     }
 
+    const signedAt = now();
+    const timeout = Math.min(requirements.maxTimeoutSeconds ?? 120, MAX_TIMEOUT_SECONDS);
     const authorization: Authorization = {
       from: account.address,
-      to: getAddress(requirements.payTo),
+      to: payTo,
       value: amount,
       validAfter: 0n,
-      validBefore: BigInt(now() + (requirements.maxTimeoutSeconds ?? 120)),
+      validBefore: BigInt(signedAt + timeout),
       nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
     };
-    const signature = await signAuthorization(account, authorization);
+    const reservation: SignedAuthorization = {
+      nonce: authorization.nonce,
+      amount,
+      validBefore: signedAt + timeout,
+    };
+    // Reserve before signing: the budget counts the authorisation from this moment, because the
+    // merchant can settle it whether or not it ever returns a receipt.
+    signed.push(reservation);
+    spentAtomic += amount;
+
+    let signature: Hex;
+    try {
+      signature = await signAuthorization(account, authorization);
+    } catch (error) {
+      release(reservation);
+      throw error;
+    }
     const payment: PaymentPayload = {
       x402Version: 2,
       resource: required.resource,
@@ -129,12 +170,37 @@ export function createPayFetch(options: PayFetchOptions): PayFetch {
             amount: typeof settle.amount === "string" ? settle.amount : requirements.amount,
           }
         : undefined;
-    if (receipt) spentAtomic += amount;
     return wrap(second, receipt);
   }) as PayFetch;
 
   pay.spent = () => formatUnits(spentAtomic, USDT.decimals);
+  pay.reconcile = async () => {
+    if (!reader) return;
+    const at = now();
+    for (const entry of [...signed]) {
+      if (at <= entry.validBefore) continue;
+      let used: unknown;
+      try {
+        used = await reader.readContract({
+          address: USDT.address,
+          abi: tokenAbi,
+          functionName: "authorizationState",
+          args: [account.address, entry.nonce],
+        });
+      } catch {
+        continue;
+      }
+      if (used === false) release(entry);
+    }
+  };
   return pay;
+
+  function release(entry: SignedAuthorization): void {
+    const index = signed.indexOf(entry);
+    if (index < 0) return;
+    signed.splice(index, 1);
+    spentAtomic -= entry.amount;
+  }
 
   function wrap(response: Response, payment?: PaymentReceipt): PaidResponse {
     return new PaidResponse(

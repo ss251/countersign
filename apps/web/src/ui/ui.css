@@ -77,14 +77,14 @@ a.hash__value {
   transition: color var(--d-1) var(--ease-out);
 }
 
-/* A 40px touch target around a 24px glyph. */
+/* A 44px touch target around a 24px glyph. */
 .copy::after {
   content: "";
   position: absolute;
-  inset: -8px;
+  inset: -10px;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .copy:hover {
     color: var(--ink);
   }
@@ -145,7 +145,7 @@ a.hash__value {
   justify-content: space-between;
   gap: var(--sp-4);
   padding: var(--sp-2) 0;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
   min-width: 0;
 }
 
@@ -183,17 +183,21 @@ a.hash__value {
   white-space: nowrap;
   user-select: none;
   transition:
-    transform var(--d-1) var(--ease-out),
-    background-color var(--d-1) var(--ease-out),
-    border-color var(--d-1) var(--ease-out);
+    transform var(--d-press) var(--ease-out),
+    background-color var(--d-1) ease,
+    box-shadow var(--d-1) ease;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
+/* Disabled has its own colours, not an opacity, so it reads the same on any surface. */
 .btn:disabled {
-  opacity: 0.45;
+  background: var(--sunk);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
 }
 
 .btn--block {
@@ -207,7 +211,7 @@ a.hash__value {
 
 .btn--secondary {
   background: var(--raised);
-  border-color: var(--line);
+  box-shadow: var(--elev-1);
   color: var(--ink);
 }
 
@@ -223,9 +227,12 @@ a.hash__value {
   color: var(--seal);
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--ink) 88%, var(--paper));
+  }
   .btn--secondary:hover:not(:disabled) {
-    border-color: color-mix(in oklab, var(--ink) 30%, var(--line));
+    box-shadow: var(--elev-1-hover);
   }
   .btn--quiet:hover:not(:disabled) {
     color: var(--ink);
@@ -239,8 +246,8 @@ a.hash__value {
 
 .card {
   background: var(--raised);
-  border: 1px solid var(--line);
   border-radius: var(--r-3);
+  box-shadow: var(--elev-1);
 }
 
 .empty {
@@ -264,12 +271,12 @@ a.hash__value {
 .fixture-note {
   display: inline-flex;
   align-items: center;
-  height: 20px;
+  height: 22px;
   padding: 0 6px;
   border: 1px dashed var(--line);
   border-radius: var(--r-1);
   color: var(--slate);
-  font-size: var(--t-11);
+  font-size: var(--t-12);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -291,12 +298,14 @@ a.hash__value {
   background: var(--line);
 }
 
+/* Scaled, not resized: transform skips layout. */
 .meter__fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
   border-radius: inherit;
   background: var(--usdc);
-  transition: width var(--d-3) var(--ease-out);
+  transform-origin: left center;
+  transition: transform var(--d-3) var(--ease-out);
 }
 
 /* Inputs: 16px so iOS does not zoom. */
@@ -312,8 +321,11 @@ a.hash__value {
   font-size: 16px;
 }
 
-.input.mono {
-  font-size: 15px;
+/* 16px wherever a finger types, or iOS zooms the page; mono may shrink only under a mouse. */
+@media (pointer: fine) {
+  .input.mono {
+    font-size: 15px;
+  }
 }
 
 .input:focus-visible {
@@ -348,9 +360,10 @@ a.hash__value {
   max-width: none;
   margin: auto auto var(--sp-4);
   padding: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-3);
   background: var(--raised);
+  box-shadow: var(--elev-2);
   color: var(--ink);
 }
 
@@ -365,7 +378,7 @@ a.hash__value {
 }
 
 .sheet[open] {
-  animation: sheet-in var(--d-3) var(--ease-out);
+  animation: sheet-in var(--d-3) var(--ease-drawer);
 }
 
 @keyframes sheet-in {
@@ -378,7 +391,7 @@ a.hash__value {
 .sheet__body {
   display: grid;
   gap: var(--sp-3);
-  padding: var(--sp-5);
+  padding: var(--sp-5) var(--sp-5) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
 }
 
 .sheet__title {
@@ -393,4 +406,47 @@ a.hash__value {
   display: grid;
   gap: var(--sp-2);
   margin-top: var(--sp-2);
+}
+
+/* Field help and errors, shared by every form. */
+.field__hint {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.field__error {
+  color: var(--seal);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+/* Code and commands */
+.code,
+.command__body {
+  margin: 0;
+  padding: var(--sp-4);
+  overflow: auto;
+  border-radius: var(--r-2);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.command__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.command {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.command__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }

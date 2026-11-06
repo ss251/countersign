@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { getAddress, isAddress } from "viem";
 import type { Address, Hex } from "viem";
-import { USDT, WHITECHAIN_RPC_URL } from "./chain.ts";
+import { USDT, WHITECHAIN_RPC_URLS } from "./chain.ts";
 import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 import type { SpendCeilingConfig } from "./ceiling.ts";
 import type { RelayerPolicy } from "./relayer.ts";
@@ -11,7 +11,7 @@ export type Env = Record<string, string | undefined>;
 
 export type RelayConfig = {
   relayerPrivateKey: Hex;
-  rpcUrl: string;
+  rpcUrls: string[];
   dbPath: string;
   port: number;
   relayUrl: string;
@@ -53,7 +53,7 @@ export function loadRelayConfig(env: Env): RelayConfig {
   const allowedPayees = addressListEnv(env, "RELAY_PAYEES", [DEFAULT_PAYEE]);
   return {
     relayerPrivateKey,
-    rpcUrl: env.WHITECHAIN_RPC_URL?.trim() || WHITECHAIN_RPC_URL,
+    rpcUrls: rpcUrlsEnv(env),
     dbPath,
     port: intEnv(env, "RELAY_PORT", 8402),
     relayUrl: env.RELAY_URL?.trim() || "http://localhost:8402",
@@ -88,6 +88,31 @@ export function loadMerchantConfig(env: Env): MerchantConfig {
     token,
     origins: originsEnv(env),
   };
+}
+
+function rpcUrlsEnv(env: Env): string[] {
+  const list = env.WHITECHAIN_RPC_URLS?.trim();
+  const single = env.WHITECHAIN_RPC_URL?.trim();
+  const urls = list
+    ? list.split(",").map((value) => value.trim()).filter(Boolean)
+    : single
+      ? [single]
+      : [...WHITECHAIN_RPC_URLS];
+  if (urls.length === 0) {
+    throw new Error("WHITECHAIN_RPC_URLS must list at least one URL");
+  }
+  for (const url of urls) {
+    let host: string;
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch {
+      throw new Error(`WHITECHAIN_RPC_URLS must be comma-separated URLs`);
+    }
+    if (host === "rpc-testnet.whitechain.io") {
+      throw new Error(`${url} is rpc-testnet.whitechain.io, chain 2625, not chain 1874`);
+    }
+  }
+  return urls;
 }
 
 function requiredPrivateKey(env: Env, name: string): Hex {

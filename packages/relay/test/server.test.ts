@@ -158,6 +158,13 @@ describe("relay server", () => {
       app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     expect((await post("/escrow/refund", { jobId: "nope" })).status).toBe(400);
     expect((await post("/escrow/release", { jobId: `0x${"12".repeat(32)}` })).status).toBe(400);
+    const zero = await post("/escrow/release", {
+      jobId: `0x${"12".repeat(32)}`,
+      slipHash: `0x${"00".repeat(32)}`,
+      sellerSig: `0x${"ab".repeat(65)}`,
+    });
+    expect(zero.status).toBe(422);
+    expect(await zero.json()).toEqual({ ok: false, reason: "zero_slip_hash" });
     expect((await post("/escrow/refund", { jobId: `0x${"12".repeat(32)}` })).status).toBe(404);
     const { body, jobId } = await makeCountersignBody(relay);
     await post("/settle", body);
@@ -183,6 +190,32 @@ describe("relay server", () => {
     const csv = await app.request(`/orders.csv?merchant=${merchant}`);
     expect(csv.headers.get("content-disposition")).toContain("attachment");
     expect((await app.request("/orders.csv")).status).toBe(400);
+  });
+
+  test("order responses include receivedAt", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const id = fakeHash();
+    relay.ledger.recordPayment({
+      id,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: id,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    const merchant = encodeURIComponent(relay.merchant.address);
+    const list = (await (await app.request(`/orders?merchant=${merchant}`)).json()) as {
+      orders: { id: string; receivedAt: number | null }[];
+    };
+    expect(list.orders).toHaveLength(1);
+    expect(list.orders[0]!.id).toBe(id);
+    expect(list.orders[0]!.receivedAt).toBe(NOW * 1000);
+    const one = (await (await app.request(`/orders/${id}`)).json()) as { receivedAt: number | null };
+    expect(one.receivedAt).toBe(NOW * 1000);
   });
 
   test("list routes refuse without a filter", async () => {

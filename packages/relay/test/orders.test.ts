@@ -151,6 +151,38 @@ describe("orders", () => {
     expect(s.ledger.refundable(s.held)).toBe(0n);
   });
 
+  test("receivedAt is the moment the merchant could use the money", () => {
+    const ledger = new Ledger(":memory:");
+    const paid = fakeHash();
+    const pendingPayment = fakeHash();
+    ledger.recordPayment(newPayment(paid, 1000));
+    ledger.recordPending(newPayment(pendingPayment, 2000));
+    expect(ledger.getOrder(paid)!.receivedAt).toBe(1000);
+    expect(ledger.getOrder(pendingPayment)!.receivedAt).toBeNull();
+
+    const released = jobId();
+    const held = jobId();
+    const cancelled = jobId();
+    const refunded = jobId();
+    const pending = jobId();
+    ledger.recordJob(newJob(released, 3000));
+    ledger.recordJob(newJob(held, 4000));
+    ledger.recordJob(newJob(cancelled, 5000));
+    ledger.recordJob(newJob(refunded, 6000));
+    ledger.recordJob(newJob(pending, 7000, { status: "pending" }));
+    ledger.closeJob(released, "released", fakeHash(), "0xs", 8000);
+    ledger.closeJob(cancelled, "cancelled", fakeHash(), undefined, 9000);
+    ledger.closeJob(refunded, "refunded", fakeHash(), undefined, 10000);
+
+    expect(ledger.getOrder(released)!.receivedAt).toBe(8000);
+    expect(ledger.getOrder(held)!.receivedAt).toBeNull();
+    expect(ledger.getOrder(cancelled)!.receivedAt).toBeNull();
+    expect(ledger.getOrder(refunded)!.receivedAt).toBeNull();
+    expect(ledger.getOrder(pending)!.receivedAt).toBeNull();
+    const listed = ledger.listOrders({ merchant: MERCHANT }).find((order) => order.id === released);
+    expect(listed!.receivedAt).toBe(8000);
+  });
+
   test("ordersCsv has the header and one row per order", () => {
     const s = seeded();
     const refundTx = fakeHash();

@@ -12,6 +12,7 @@ import type { TestRelay } from "./escrow-support.ts";
 import { NOW, createTestRelay } from "./support.ts";
 
 const SLIP: Hex = `0x${"51".repeat(32)}`;
+const ZERO_SLIP: Hex = `0x${"00".repeat(32)}`;
 
 async function funded(relay: TestRelay) {
   const made = await makeCountersignBody(relay);
@@ -37,6 +38,26 @@ describe("escrow ops", () => {
       expect(result.status).toBe("released");
     }
     expect(relay.chain.writes.at(-1)!.functionName).toBe("release");
+  });
+
+  test("a zero slip hash is refused before any simulation or write", async () => {
+    const relay = createTestRelay();
+    const { jobId, escrow } = await funded(relay);
+    const sig = await relay.merchant.signTypedData(releaseTypedData(1874, escrow, jobId, ZERO_SLIP));
+    const simulate = relay.chain.simulateContract.bind(relay.chain);
+    let simulations = 0;
+    relay.chain.simulateContract = async (call) => {
+      simulations += 1;
+      return simulate(call);
+    };
+    const writes = relay.chain.writes.length;
+
+    const result = await releaseJob({ jobId, slipHash: ZERO_SLIP, sellerSig: sig }, csContext(relay));
+
+    expect(result).toEqual({ ok: false, reason: "zero_slip_hash" });
+    expect(simulations).toBe(0);
+    expect(relay.chain.writes).toHaveLength(writes);
+    expect(relay.ledger.getJob(jobId)!.status).toBe("funded");
   });
 
   test("cancel closes the job as cancelled", async () => {

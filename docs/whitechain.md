@@ -110,6 +110,25 @@ Every payment below was settled in USDT `0xcedf…55a7` through the relay (`pack
 
 | 2026-11-06 10:09 | An AI agent buys a forecast from a separate shop app over x402, with no gas, no seed phrase and no chain choice. The shop adds a USDT price to one route with `whitechainPaywall` (`packages/relay/examples/shop.ts`, 23 lines). The agent pays with `createPayFetch` under a per-call limit (`packages/relay/examples/agent.ts`, 17 lines). 0.05 USDT | [`0x1c366946…5f07`](https://explorer.testnet.whitechain.io/tx/0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07) |
 
+### The main flow, through the hub
+
+The same hub code as `apps/hub`, run with the `whitechain` rail (`packages/relay/scripts/whitechain-hub.ts`). The seller runner serves `whitechain-dev`, the Whitechain skill, under the merchant's key. The buyer agent buys it under its envelope (2 USDT budget, 1 per seller), with no human step and no gas.
+
+| When (UTC) | What | Tx |
+|---|---|---|
+| 2026-11-06 10:13 | Buyer funds the escrow for `whitechain-dev`, 0.05 USDT, job `0x01a66ebc…b231` | [`0x415bddc8…b08c`](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c) |
+| 2026-11-06 10:13 | Runner delivers and the hub checks the output against the offer's schema. The relay then releases: 0.0495 USDT to the merchant, 0.0005 to `FeeSplit`. `Released` carries the slip hash `0x7f69ea83…df6c` | [`0x90ed826a…c812`](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812) |
+| 2026-11-06 10:18 | An earlier call asked for a section the skill does not have. The runner refused, the hub refused the delivery, and once the deadline passed the hub's janitor refunded the full 0.05 USDT through the relay. No one decided anything | [`0xebf26b54…a7a2`](https://explorer.testnet.whitechain.io/tx/0xebf26b543f81853ef12824ada9fb1096dac25d03a39986a4d5e2abe44228a7a2) |
+
+The slip was checked with the hub stopped, reading chain 1874 through `https://rpc.ankr.com/whitechain_testnet`. All five checks passed: hash, seller, terms, countersignature, and on chain, where `Released(job, slip)` comes from escrow `0x9279…7eb4` in block 12363646.
+
+```
+bun packages/verify/src/cli.ts slip.json --rpc https://rpc.ankr.com/whitechain_testnet
+...
+ok   onchain           Released(job, slip) by 0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4 in block 12363646
+VALID
+```
+
 ### The drop-in, in about 20 lines each side
 
 A business that wants USDT on Whitechain for an API adds one middleware to a route:
@@ -207,3 +226,15 @@ Before deploying, `EscrowForkCheck.s.sol` ran the escrow against the real Tether
 ```
 forge script contracts/script/whitechain/EscrowForkCheck.s.sol --fork-url https://rpc.testnet.whitechain.io
 ```
+
+## Demo beat, 45 seconds: the refund and the gasless payer
+
+Show the artifact first. Every step below runs against live Whitechain Sepolia.
+
+1. **The payer.** The buyer agent buys `whitechain-dev` through the hub on rail `whitechain`. Its envelope approves the 0.05 USDT. There is no gas prompt, no seed phrase and no chain to pick. The terminal prints `Released. Slip minted.`
+2. **The merchant.** The order appears on `#/merchant` within 2.5 s and briefly highlights in blue. It shows as **Paid**, with its **Received** time, and the line above the table says the relayer paid the gas.
+3. **The refund.** Click **Refund** on that row. A four-second **Undo** window runs out, then the row reads `Refunded. 0.05 USDT returned to 0xcb39…4298.` Its explorer link opens a USDT transfer from the merchant back to the customer, with the gas paid by the relayer.
+4. **The customer's record.** Open **View receipt** on a phone. It shows the status, the amount, the returned line, and proof links that open on the explorer without countersign.
+5. **The accountant.** Click **Export for accountant**. The CSV opens with fees, refunds and net per order.
+
+Closing line: *"Every payment and every refund is USDT on Whitechain, and nobody but the relayer ever held WBT."*

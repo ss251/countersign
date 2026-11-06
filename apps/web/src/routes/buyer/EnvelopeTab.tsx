@@ -6,7 +6,7 @@ import type { Envelope, EnvelopeView } from "../../lib/types.ts";
 import { Meter } from "../../ui/Meter.tsx";
 import { Amount, Button, Hash } from "../../ui/primitives.tsx";
 
-/** The human's limits: budget, per-seller limit, when to ask, allowlist, revoke. */
+/** The human’s limits: budget, per-seller limit, when to ask, allowlist, revoke. */
 export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView> }) {
   const view = envelope.data;
   if (!view) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
@@ -94,15 +94,25 @@ function LimitRow({
   const [error, setError] = useState<string | null>(null);
   const id = useId();
 
+  const check = (raw: string): string | null => {
+    try {
+      parseUnits(raw.trim(), 6);
+      return null;
+    } catch (err) {
+      return err instanceof AmountError ? "Enter an amount like 0.25, with at most 6 decimals." : String(err);
+    }
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    try {
-      onSave(parseUnits(value.trim(), 6).toString());
-      setEditing(false);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof AmountError ? "Enter an amount like 0.25, with at most 6 decimals." : String(err));
+    const problem = check(value);
+    if (problem) {
+      setError(problem);
+      return;
     }
+    onSave(parseUnits(value.trim(), 6).toString());
+    setEditing(false);
+    setError(null);
   };
 
   if (!editing) {
@@ -138,12 +148,20 @@ function LimitRow({
           id={id}
           className="input num"
           inputMode="decimal"
+          enterKeyHint="done"
           autoComplete="off"
-          autoFocus
+          data-1p-ignore
+          data-lpignore="true"
+          // The keyboard opens only where a fine pointer asked for it; on a phone the tap does.
+          autoFocus={window.matchMedia("(pointer: fine)").matches}
           value={value}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            // Late to accuse, quick to forgive: once an error shows, it clears as soon as the value is fixed.
+            if (error) setError(check(e.target.value));
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setEditing(false);
           }}
@@ -184,7 +202,7 @@ function Allowlist({
     e.preventDefault();
     const a = address.trim().toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(a)) {
-      setError("Enter the seller's address: 0x and 40 hex characters.");
+      setError("Enter the seller’s address: 0x and 40 hex characters.");
       return;
     }
     if (list.includes(a)) {
@@ -237,8 +255,13 @@ function Allowlist({
             <input
               className="input mono"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                if (error) setError(null);
+              }}
               autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
               autoCapitalize="off"
               spellCheck={false}
               placeholder="0x…"

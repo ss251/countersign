@@ -126,6 +126,8 @@ export type Order = {
   status: OrderStatus;
   closeKind: CloseKind | null;
   createdAt: number;
+  /** When the merchant could use the money, in ms; null for held, pending, cancelled or deadline-refunded escrow orders. */
+  receivedAt: number | null;
   settleTx: string;
   closeTx: string | null;
   refundTxs: string[];
@@ -570,6 +572,7 @@ export class Ledger {
             : transferStatus(payment.amount, payment.refunded),
       closeKind: null,
       createdAt: payment.settledAt,
+      receivedAt: payment.status === "pending" ? null : payment.settledAt,
       settleTx: payment.txHash,
       closeTx: null,
       refundTxs: refunds.map((refund) => refund.txHash),
@@ -612,6 +615,7 @@ export class Ledger {
       status,
       closeKind: closeKindOf(job.status),
       createdAt: job.createdAt,
+      receivedAt: job.status === "released" ? job.closedAt : null,
       settleTx: job.fundTx,
       closeTx: job.closeTx,
       refundTxs: refunds.map((refund) => refund.txHash),

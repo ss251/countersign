@@ -4,6 +4,7 @@ import {
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
   PAYMENT_SIGNATURE_HEADER,
+  slipCommitHash,
   toBase64Json,
   type Offer,
   type PaymentPayload,
@@ -11,14 +12,18 @@ import {
   type PaymentRequirements,
   type SettleResult,
   type Slip,
+  type VerifyResult,
+  ZERO_HASH,
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
-import { bazaarExtension, challengeOptions, resourceFor } from "./discovery.ts";
+import { bazaarExtension, challengeOptions, firstLine, resourceFor } from "./discovery.ts";
 import type { RunnerLink } from "./runners.ts";
 import type { Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
+
+const CHECK_FAILED = "Refused. The payment could not be checked.";
 
 export interface CallDeps {
   store: Store;
@@ -117,7 +122,13 @@ export async function paidCall(
     );
   }
 
-  const verify = await match.rail.verify(payment, match.entry);
+  let verify: VerifyResult;
+  try {
+    verify = await match.rail.verify(payment, match.entry);
+  } catch (error) {
+    console.warn(`[hub] rail ${railId} verify failed: ${firstLine(error)}`);
+    return paymentRequired(offer, resource, accepts, CHECK_FAILED, railId);
+  }
   if (!verify.isValid) {
     return paymentRequired(
       offer,
@@ -128,7 +139,18 @@ export async function paidCall(
     );
   }
 
-  const settle = await match.rail.settle(payment, match.entry);
+  const nonce = authorizationNonce(payment.payload);
+  if (nonce !== null && deps.store.getJob(nonce) !== null) {
+    return duplicatePayment(railId);
+  }
+
+  let settle: SettleResult;
+  try {
+    settle = await match.rail.settle(payment, match.entry);
+  } catch (error) {
+    console.warn(`[hub] rail ${railId} settle failed: ${firstLine(error)}`);
+    return paymentRequired(offer, resource, accepts, CHECK_FAILED, railId);
+  }
   if (!settle.success) {
     return paymentRequired(
       offer,
@@ -139,12 +161,12 @@ export async function paidCall(
     );
   }
 
-  const jobId = authorizationNonce(payment.payload) ?? keccak256(toBytes(settle.transaction));
+  const jobId = nonce ?? keccak256(toBytes(settle.transaction));
   const deadline = termsDeadline(payment.payload) ?? now + offer.deadline;
   const buyer = settle.payer ?? verify.payer ?? "";
   const escrowRail = match.rail.escrow !== undefined;
 
-  deps.store.putJob({
+  const claimed = deps.store.claimJob({
     jobId,
     offerHash: stored.offerHash,
     rail: railId,
@@ -158,6 +180,7 @@ export async function paidCall(
     slipHash: null,
     createdAt: now,
   });
+  if (!claimed) return duplicatePayment(railId);
 
   const order = buildOrder({
     jobId,
@@ -187,8 +210,13 @@ export async function paidCall(
   let closeTx = settle.transaction;
   let closing: SettleResult = settle;
   const escrow = match.rail.escrow;
+  const slipHash = delivered.slip.hash;
   if (escrow) {
-    const release = await escrow.release(jobId, delivered.slip.hash, delivered.slip.sellerSig);
+    const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
+    if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
+      return failedDelivery(deps, jobId, railId);
+    }
+    const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
       return failure(502, "release-failed", "Refused. The escrow did not release.", railId);
     }
@@ -196,16 +224,19 @@ export async function paidCall(
     closing = release;
   }
 
+  const settlement: Slip["settlement"] = {
+    transaction: closeTx,
+    network: match.rail.declaration.network,
+  };
+  if (match.rail.declaration.explorerTx !== "") {
+    settlement.url = explorerUrl(match.rail.declaration, closeTx);
+  }
   const slip: Slip = {
     body: delivered.slip.body,
-    hash: delivered.slip.hash,
+    hash: slipHash,
     sellerSig: delivered.slip.sellerSig,
     payment,
-    settlement: {
-      transaction: closeTx,
-      network: match.rail.declaration.network,
-      url: explorerUrl(match.rail.declaration, closeTx),
-    },
+    settlement,
   };
   deps.store.putSlip(slip.hash, jobId, slip, now);
   deps.store.updateJob(jobId, {
@@ -230,6 +261,10 @@ function failedDelivery(deps: CallDeps, jobId: Hex, railId: string): CallOutcome
     "Refused. The seller's output does not match the offer. Your money returns at the deadline.",
     railId,
   );
+}
+
+function duplicatePayment(railId: string): CallOutcome {
+  return failure(409, "duplicate-payment", "Refused. This payment was already used.", railId);
 }
 
 function failure(status: number, code: string, message: string, railId?: string): CallOutcome {

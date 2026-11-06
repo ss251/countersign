@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["run.ts", "lib", "flows", "test"],
+  "exclude": ["node_modules", "artifacts", "runs"]
+}

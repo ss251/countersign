@@ -20,6 +20,7 @@ import {
   type Order,
 } from "../src/routes/merchant/model.ts";
 import { fixtureCsv, fixtureOrders, fixtureRefundTx } from "../src/routes/merchant/fixtures.ts";
+import { filterCounts, matchesFilter, receivedAt } from "../src/routes/merchant/model.ts";
 
 describe("formatUsdt", () => {
   test("formats atomic amounts without floats", () => {
@@ -59,10 +60,10 @@ describe("status vocabulary", () => {
     for (const status of statuses) expect(statusLabel(status).length).toBeGreaterThan(0);
   });
 
-  test("tones every status", () => {
+  test("only Paid is green; every other badge is neutral", () => {
     expect(statuses.map((status) => [status, statusTone(status)])).toEqual([
-      ["pending", "money"],
-      ["held", "money"],
+      ["pending", "neutral"],
+      ["held", "neutral"],
       ["paid", "settled"],
       ["partially_refunded", "neutral"],
       ["refunded", "neutral"],
@@ -241,5 +242,32 @@ describe("identifiers and links", () => {
     expect(formatWeiWbt("11340000000000000")).toBe("0.0113");
     expect(formatWeiWbt("50000000000000000")).toBe("0.0500");
     expect(formatWbt("1.42")).toBe("1.4200");
+  });
+});
+
+describe("filters", () => {
+  test("counts the fixtures per filter; partly refunded money is still Paid", () => {
+    expect(filterCounts(fixtureOrders)).toEqual({ all: 6, paid: 3, held: 1, refunded: 2 });
+  });
+
+  test("Held covers settling payments, Refunded covers cancels", () => {
+    expect(matchesFilter({ status: "pending" }, "held")).toBe(true);
+    expect(matchesFilter({ status: "cancelled" }, "refunded")).toBe(true);
+    expect(matchesFilter({ status: "refund_pending" }, "refunded")).toBe(true);
+    expect(matchesFilter({ status: "held" }, "paid")).toBe(false);
+  });
+});
+
+describe("receivedAt", () => {
+  // An order as an older relay sends it: no receivedAt field at all.
+  const { receivedAt: _dropped, ...base } = fixtureOrders[0]!;
+  test("a held order has no received date until it releases", () => {
+    expect(receivedAt({ ...base, kind: "escrow", status: "held", closeKind: null })).toBeNull();
+    expect(receivedAt({ ...base, kind: "escrow", status: "paid", closeKind: "release", receivedAt: 1_000 })).toBe(1_000);
+  });
+
+  test("a direct payment is received when it settles; a cancel never is", () => {
+    expect(receivedAt({ ...base, kind: "exact", status: "paid", closeKind: null, createdAt: 5_000 })).toBe(5_000);
+    expect(receivedAt({ ...base, kind: "escrow", status: "cancelled", closeKind: "cancel" })).toBeNull();
   });
 });
