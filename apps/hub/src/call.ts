@@ -4,6 +4,7 @@ import {
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
   PAYMENT_SIGNATURE_HEADER,
+  slipCommitHash,
   toBase64Json,
   type Offer,
   type PaymentPayload,
@@ -11,6 +12,7 @@ import {
   type PaymentRequirements,
   type SettleResult,
   type Slip,
+  ZERO_HASH,
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
@@ -187,8 +189,13 @@ export async function paidCall(
   let closeTx = settle.transaction;
   let closing: SettleResult = settle;
   const escrow = match.rail.escrow;
+  const slipHash = delivered.slip.hash;
   if (escrow) {
-    const release = await escrow.release(jobId, delivered.slip.hash, delivered.slip.sellerSig);
+    const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
+    if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
+      return failedDelivery(deps, jobId, railId);
+    }
+    const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
       return failure(502, "release-failed", "Refused. The escrow did not release.", railId);
     }
@@ -198,7 +205,7 @@ export async function paidCall(
 
   const slip: Slip = {
     body: delivered.slip.body,
-    hash: delivered.slip.hash,
+    hash: slipHash,
     sellerSig: delivered.slip.sellerSig,
     payment,
     settlement: {

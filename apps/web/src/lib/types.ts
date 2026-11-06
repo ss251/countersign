@@ -105,3 +105,22 @@ export interface TreeView {
   root: Hex;
   nodes: Record<string, { slip: Slip; title: string; sellerName: string }>;
 }
+
+/** A release or a refund, as the overview lists it. */
+export interface Settlement {
+  jobId: string;
+  offerHash: string;
+  title: string;
+  seller: string;
+  /** Atomic. */
+  amount: string;
+  rail: RailId;
+  network: string;
+  kind: "released" | "refunded";
+  tx: string;
+  /** Explorer link for tx, when the hub knows one. */
+  explorer?: string;
+  slipHash?: string;
+  /** Unix seconds. */
+  at: number;
+}

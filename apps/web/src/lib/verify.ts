@@ -1,6 +1,6 @@
 import { slipHash, type Slip } from "@countersign/core";
-import { verifySlip as runVerifier, type Finding } from "@countersign/verify";
-import { networkName } from "./format.ts";
+import type { Finding } from "@countersign/verify";
+import { explorerTemplate, networkName, shortHex } from "./format.ts";
 
 /**
  * The page runs the same verifier as the CLI (@countersign/verify). Offline it checks
@@ -19,6 +19,8 @@ export interface VerifyCheck {
   detail: string;
   /** A value worth comparing by eye, shown in mono. */
   value?: string;
+  /** Where the value can be seen for oneself, e.g. the transaction on the explorer. */
+  href?: string;
 }
 
 export interface Verdict {
@@ -67,15 +69,19 @@ export async function verifySlip(slip: Slip, options: { readChain?: boolean } = 
   const rpcUrl = options.readChain && canReadChain(slip) ? PUBLIC_RPC[slip.body.network] : undefined;
   let findings: Finding[];
   try {
+    // Loaded on first use: the verifier brings viem's RPC client, which only these checks need.
+    const { verifySlip: runVerifier } = await import("@countersign/verify");
     findings = (await runVerifier(slip, rpcUrl ? { rpcUrl } : {})).findings;
   } catch (e) {
     findings = [{ check: "hash", ok: false, detail: `the slip cannot be checked: ${(e as Error).message.split("\n")[0]}` }];
   }
 
   const exact = slip.payment?.accepted?.scheme !== "countersign";
+  // A release on chain is for the slip hash. It vouches for this body only if the body hashes to it.
+  const hashOk = findings.find((f) => f.check === "hash")?.ok === true;
   const checks: VerifyCheck[] = [];
   for (const f of findings) {
-    const c = present(f, slip, exact);
+    const c = present(f, slip, exact, hashOk);
     if (c) checks.push(c);
   }
 
@@ -99,7 +105,7 @@ export async function verifySlip(slip: Slip, options: { readChain?: boolean } = 
   };
 }
 
-function present(f: Finding, slip: Slip, exact: boolean): VerifyCheck | null {
+function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): VerifyCheck | null {
   switch (f.check) {
     case "hash": {
       let computed: string | undefined;
@@ -150,17 +156,42 @@ function present(f: Finding, slip: Slip, exact: boolean): VerifyCheck | null {
         detail: f.ok ? "One EIP-3009 signature names the escrow and binds the amount and the job." : sentence(f.detail),
         value: buyerOf(slip),
       };
-    case "onchain":
+    case "onchain": {
       if (!slip.body.escrow) return null;
+      const network = networkName(slip.body.network);
+      const tx = slip.settlement?.transaction;
+      const href = tx && explorerTemplate(slip.body.network) ? explorerTemplate(slip.body.network).replace("{tx}", tx) : undefined;
+      if (f.ok && hashOk) {
+        const block = /block (\d+)/.exec(f.detail)?.[1];
+        return {
+          id: "onchain",
+          title: "The chain holds this slip's hash",
+          state: "pass",
+          detail: `${network}${block ? ` block ${Number(block).toLocaleString("en-US")}` : ""}: the escrow's Released event for this job carries exactly the hash computed here.`,
+          value: tx,
+          href,
+        };
+      }
+      if (f.ok && !hashOk) {
+        // The event matches the hash the file claims, but the body was changed after signing.
+        return {
+          id: "onchain",
+          title: "The chain holds a different hash",
+          state: "fail",
+          detail: `${network}'s Released event for this job carries the hash this file claims, but the body here hashes to something else. The chain does not hold this slip.`,
+          value: tx,
+          href,
+        };
+      }
       return {
         id: "onchain",
-        title: f.ok ? `Released on ${networkName(slip.body.network)}` : "Not released on chain",
-        state: f.ok ? "pass" : "fail",
-        detail: f.ok
-          ? `Read from ${networkName(slip.body.network)}'s public RPC: the escrow emitted Released for this job and this slip hash.`
-          : sentence(f.detail),
-        value: slip.settlement?.transaction,
+        title: /differ|mismatch/i.test(f.detail) ? "The chain holds a different hash" : `Not released on ${network}`,
+        state: "fail",
+        detail: chainFailure(f.detail, network),
+        value: tx,
+        href,
       };
+    }
     default:
       return { id: f.check, title: f.check, state: f.ok ? "pass" : "fail", detail: sentence(f.detail) };
   }
@@ -171,9 +202,23 @@ function buyerOf(slip: Slip): string | undefined {
   return p?.terms?.buyer;
 }
 
-/** The CLI's findings are terse and lowercase; on the page they read as sentences. */
+/** What went wrong reading the chain, in words, not a library's message. */
+function chainFailure(detail: string, network: string): string {
+  if (/could not be found|not found|unknown transaction/i.test(detail)) {
+    return `Not found on ${network}. The transaction this slip names is not on that chain.`;
+  }
+  if (/differ|mismatch/i.test(detail)) {
+    return `${network}'s Released event for this job carries another slip hash. The chain does not hold this slip.`;
+  }
+  if (/does not release this slip/i.test(detail)) {
+    return `Found on ${network}, but it does not release this job and this slip hash.`;
+  }
+  return `${network}'s public RPC did not answer. Try again, or open the transaction on the explorer.`;
+}
+
+/** The CLI's findings are terse, lowercase and carry full hashes; on the page they read as short sentences. */
 function sentence(s: string): string {
-  const t = s.trim();
+  const t = s.trim().replace(/0x[0-9a-fA-F]{40,}/g, (h) => shortHex(h));
   if (!t) return t;
   const first = t.charAt(0).toUpperCase() + t.slice(1);
   return /[.!?]$/.test(first) ? first : `${first}.`;

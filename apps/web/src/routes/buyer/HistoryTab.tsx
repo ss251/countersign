@@ -70,7 +70,7 @@ function Row({ p }: { p: Purchase }) {
   );
 }
 
-/** Today's releases, with the money they moved per asset, and the calls that cost nothing. */
+/** Today’s releases, with the money they moved per asset, and the calls that cost nothing. */
 function Summary({ items }: { items: Purchase[] }) {
   const released = items.filter((p) => p.status === "released");
   const totals = new Map<string, bigint>();
