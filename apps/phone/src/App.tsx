@@ -386,7 +386,8 @@ function PhotoSheet({ ask, more, phone }: { ask: PhotoAsk; more: number; phone: 
           <p className="quiet">The buyer gave no prompt. Any photo you choose to take answers it.</p>
         )}
         <p className="wait">
-          Paid into escrow. The hub waits <span className="num">{minutes(left)}</span> more, then the buyer is refunded.
+          Paid into escrow. The hub waits <span className="num">{minutes(left)}</span> more. Without a photo, the
+          buyer is refunded at the deadline.
         </p>
         {ask.problem ? <p className="refusal">{ask.problem}</p> : null}
         <label className={preparing ? "primary is-busy" : "primary"} aria-disabled={preparing}>
@@ -408,7 +409,8 @@ function PhotoSheet({ ask, more, phone }: { ask: PhotoAsk; more: number; phone: 
           Decline
         </button>
         <p className="quiet small">
-          Shrunk on this phone to 800 px and sent with its sha256. Camera metadata, including any location, is removed.
+          Shrunk on this phone to at most 800 px and sent with its sha256. Camera metadata, including any location, is
+          removed.
           {more > 0 ? ` ${more} more ${more === 1 ? "request" : "requests"} waiting.` : ""}
         </p>
       </div>
