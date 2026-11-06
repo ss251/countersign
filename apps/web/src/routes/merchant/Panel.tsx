@@ -28,8 +28,20 @@ export const UNDO_MS = 4000;
 export type RowState =
   | { kind: "undo" }
   | { kind: "sending" }
-  | { kind: "done"; txHash: string; amount: string; cancelled: boolean }
+  /** `before` is what was refundable when it was sent, to tell a stale list from an updated one. */
+  | { kind: "done"; txHash: string; amount: string; cancelled: boolean; before: string }
   | { kind: "error"; message: string };
+
+/**
+ * May this order be refunded from here right now? Not while a refund is in its undo window or on
+ * its way, and not until the list has caught up with one that just went out, so a stale remainder
+ * can never be offered twice.
+ */
+export function offersRefund(order: Order, row: RowState | undefined): boolean {
+  if (row?.kind === "undo" || row?.kind === "sending") return false;
+  if (row?.kind === "done" && order.refundable === row.before) return false;
+  return canRefund(order);
+}
 
 export type PartOutcome = { ok: true } | { ok: false; reason: string };
 
@@ -169,7 +181,10 @@ function OrderDetail({
                         ? "Returned on cancel"
                         : "Returned at deadline"}
                 </dt>
-                <dd className="mono">−{formatFixed(line.amount, places)}</dd>
+                <dd className="mono">
+                  −{formatFixed(line.amount, places)}
+                  <Unit />
+                </dd>
               </div>
             ) : null,
           )}
@@ -214,34 +229,34 @@ function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnloc
       </button>
     );
   }
-  if (row?.kind === "done") {
-    return (
+  const outcome =
+    row?.kind === "done" ? (
       <p className="mx-outcome" role="status">
         {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} USDT returned to{" "}
         <span className="mono">{shortAddress(order.customer)}</span>.
       </p>
-    );
-  }
-  const refusal =
-    row?.kind === "error" ? (
+    ) : row?.kind === "error" ? (
       <p className="mx-outcome mx-outcome--refused" role="alert">
         Refused. {refusalWords(row.message)}.
       </p>
     ) : null;
-  if (!canRefund(order)) return refusal;
+  if (!offersRefund(order, row)) return outcome;
   if (!canSign) {
     return (
-      <p className="mx-outcome">
-        Refunds need the merchant token.{" "}
-        <button type="button" className="mx-button mx-button--quiet" onClick={onUnlock}>
-          Unlock refunds
-        </button>
-      </p>
+      <>
+        {outcome}
+        <p className="mx-outcome">
+          Refunds need the merchant token.{" "}
+          <button type="button" className="mx-button mx-button--quiet" onClick={onUnlock}>
+            Unlock refunds
+          </button>
+        </p>
+      </>
     );
   }
   return (
     <>
-      {refusal}
+      {outcome}
       <button type="button" className="mx-button mx-button--money" onClick={onRefundAll}>
         {refundLabel(order)} USDT
       </button>
@@ -270,7 +285,16 @@ export function UndoStrip({
       <span className="mx-undo__text">
         {held ? "Cancelling" : "Refunding"} <span className="mono">{formatUsdt(order.refundable)}</span> USDT
       </span>
-      <button ref={undoRef} type="button" className="mx-button mx-button--quiet" onClick={onUndo}>
+      <button
+        ref={undoRef}
+        type="button"
+        className="mx-button mx-button--quiet"
+        onClick={(event) => {
+          // Inside a ledger row, a click must not also open the order.
+          event.stopPropagation();
+          onUndo();
+        }}
+      >
         Undo
       </button>
       <span className="mx-undo__bar" aria-hidden="true" style={{ animationDuration: `${UNDO_MS}ms` }} />
@@ -417,9 +441,11 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
  * Below the desk width the order opens as a modal sheet: a bottom sheet on a phone, a drawer on a
  * tablet. The native dialog traps focus, makes the page behind inert and closes on Escape.
  */
-export function Sheet({ labelledBy, onClose, children }: { labelledBy?: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [closing, setClosing] = useState(false);
+  const closedRef = useRef(false);
+  const fallbackRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -429,15 +455,28 @@ export function Sheet({ labelledBy, onClose, children }: { labelledBy?: string; 
     const previous = root.style.overflow;
     root.style.overflow = "hidden";
     return () => {
+      window.clearTimeout(fallbackRef.current);
       root.style.overflow = previous;
       if (dialog.open) dialog.close();
     };
   }, []);
 
+  const finish = () => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    window.clearTimeout(fallbackRef.current);
+    onClose();
+  };
+
   const requestClose = () => {
     if (closing) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) onClose();
-    else setClosing(true);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finish();
+      return;
+    }
+    setClosing(true);
+    // If the exit animation never reports its end, the sheet still goes.
+    fallbackRef.current = window.setTimeout(finish, 320);
   };
 
   return (
@@ -445,7 +484,7 @@ export function Sheet({ labelledBy, onClose, children }: { labelledBy?: string; 
       ref={ref}
       className="mx-sheet"
       data-closing={closing ? "" : undefined}
-      aria-labelledby={labelledBy}
+      aria-label={label}
       onCancel={(event) => {
         event.preventDefault();
         requestClose();
@@ -455,7 +494,7 @@ export function Sheet({ labelledBy, onClose, children }: { labelledBy?: string; 
         if (event.target === event.currentTarget) requestClose();
       }}
       onAnimationEnd={(event) => {
-        if (closing && event.target === event.currentTarget) onClose();
+        if (closing && event.target === event.currentTarget) finish();
       }}
     >
       <div className="mx-sheet__body">{children}</div>

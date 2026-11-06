@@ -133,7 +133,16 @@ export function Receipt({ id, fixture }: ReceiptProps) {
             {returned.map((value, index) => (
               <div className="mx-sum__line mx-sum__line--less" key={index}>
                 <dt>Returned to you</dt>
-                <dd className="mono">{value > 0n ? `−${formatFixed(value, places)}` : "Returned"}</dd>
+                <dd className="mono">
+                  {value > 0n ? (
+                    <>
+                      −{formatFixed(value, places)}
+                      <Unit />
+                    </>
+                  ) : (
+                    "Returned"
+                  )}
+                </dd>
               </div>
             ))}
             <div className="mx-sum__line mx-sum__line--total">

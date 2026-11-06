@@ -4,7 +4,6 @@ import {
   ORDER_FILTERS,
   addressUrl,
   adjustments,
-  canRefund,
   dateStamp,
   decimalsFor,
   equation,
@@ -39,7 +38,7 @@ import {
   unlockRefunds,
 } from "./api.ts";
 import { fixtureCsv, fixtureDetail, fixtureMerchant, fixtureOrders, fixtureRefundTx, fixtureStatus } from "./fixtures.ts";
-import { OrderPanel, Sheet, UNDO_MS, UndoStrip, type PanelView, type PartOutcome, type RowState } from "./Panel.tsx";
+import { OrderPanel, Sheet, UNDO_MS, UndoStrip, offersRefund, type PanelView, type PartOutcome, type RowState } from "./Panel.tsx";
 
 const POLL_MS = 2500;
 const STATUS_POLL_MS = 5000;
@@ -379,9 +378,9 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
 
     if (fixture) {
       await wait(700);
-      const txHash = fixtureRefundTx(order.id, added[order.id]?.length ?? 0);
+      const txHash = fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
       simulateRefund(order, BigInt(order.refundable), null, txHash);
-      setRow(order.id, { kind: "done", txHash, amount: order.refundable, cancelled });
+      setRow(order.id, { kind: "done", txHash, amount: order.refundable, cancelled, before: order.refundable });
       return;
     }
 
@@ -389,7 +388,13 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
       const result = await refundOrder(order.id);
       if (!mountedRef.current) return;
       if (result.ok) {
-        setRow(order.id, { kind: "done", txHash: result.txHash, amount: result.refunded ?? order.refundable, cancelled });
+        setRow(order.id, {
+          kind: "done",
+          txHash: result.txHash,
+          amount: result.refunded ?? order.refundable,
+          cancelled,
+          before: order.refundable,
+        });
       } else {
         setRow(order.id, { kind: "error", message: result.reason });
         addRefusal(order.id, result.reason);
@@ -424,7 +429,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
       await wait(700);
       const txHash = fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
       simulateRefund(order, amount, reason, txHash);
-      setRow(order.id, { kind: "done", txHash, amount: amount.toString(), cancelled: false });
+      setRow(order.id, { kind: "done", txHash, amount: amount.toString(), cancelled: false, before: order.refundable });
       return { ok: true };
     }
     try {
@@ -434,7 +439,13 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
         addRefusal(order.id, result.reason);
         return { ok: false, reason: result.reason };
       }
-      setRow(order.id, { kind: "done", txHash: result.txHash, amount: result.refunded ?? amount.toString(), cancelled: false });
+      setRow(order.id, {
+        kind: "done",
+        txHash: result.txHash,
+        amount: result.refunded ?? amount.toString(),
+        cancelled: false,
+        before: order.refundable,
+      });
       return { ok: true };
     } catch (error) {
       return { ok: false, reason: messageOf(error) };
@@ -620,6 +631,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
                               else openRefs.current.delete(order.id);
                             }}
                             aria-haspopup={split ? undefined : "dialog"}
+                            title={item}
                             onClick={(event) => {
                               event.stopPropagation();
                               openOrder(order.id);
@@ -701,7 +713,11 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
         ) : null}
       </div>
 
-      {panel && !split ? <Sheet onClose={closePanel}>{panel}</Sheet> : null}
+      {panel && !split ? (
+        <Sheet label="Order" onClose={closePanel}>
+          {panel}
+        </Sheet>
+      ) : null}
     </div>
   );
 }
@@ -779,8 +795,8 @@ function Adjustments({ order }: { order: Order }) {
                     : line.kind === "refunded"
                       ? "refunded"
                       : line.close === "cancel"
-                        ? "returned on cancel"
-                        : "returned at deadline"
+                        ? "cancelled"
+                        : "deadline refund"
                 }`}
         </span>
       ))}
@@ -809,8 +825,9 @@ function RowAction({ order, row, canSign, onRefund, onUndo }: RowActionProps) {
 
   if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} undoRef={undoRef} />;
   if (row?.kind === "sending") return <span className="mx-quiet">{held ? "Cancelling…" : "Refunding…"}</span>;
-  if (row?.kind === "done") return <span className="mx-quiet">{row.cancelled ? "Cancelled" : "Refunded"}</span>;
-  if (!canSign || !canRefund(order)) return null;
+  if (!canSign || !offersRefund(order, row)) {
+    return row?.kind === "done" ? <span className="mx-quiet">{row.cancelled ? "Cancelled" : "Refunded"}</span> : null;
+  }
   return (
     <button
       type="button"

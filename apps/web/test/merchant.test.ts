@@ -20,6 +20,7 @@ import {
   type Order,
 } from "../src/routes/merchant/model.ts";
 import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder } from "../src/routes/merchant/fixtures.ts";
+import { offersRefund } from "../src/routes/merchant/Panel.tsx";
 import {
   adjustments,
   checkRefundAmount,
@@ -425,5 +426,24 @@ describe("fixture refunds", () => {
     const hashes = [0, 1, 2, 3, 4].map((attempt) => fixtureRefundTx(id, attempt));
     expect(new Set(hashes).size).toBe(hashes.length);
     for (const hash of hashes) expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+});
+
+describe("offersRefund", () => {
+  const partly = fixtureOrders[3]!; // 1.00 paid, 0.25 back, 0.75 left
+  const done = (before: string) => ({ kind: "done" as const, txHash: "0x01", amount: "250000", cancelled: false, before });
+
+  test("never during the undo window or while sending", () => {
+    expect(offersRefund(partly, { kind: "undo" })).toBe(false);
+    expect(offersRefund(partly, { kind: "sending" })).toBe(false);
+  });
+
+  test("not on a stale list: the remainder that was just refunded is never offered twice", () => {
+    expect(offersRefund(partly, done(partly.refundable))).toBe(false);
+  });
+
+  test("again once the list shows what is left after a partial refund", () => {
+    expect(offersRefund(partly, done("1000000"))).toBe(true);
+    expect(offersRefund({ ...partly, refundable: "0", status: "refunded" }, done("750000"))).toBe(false);
   });
 });
