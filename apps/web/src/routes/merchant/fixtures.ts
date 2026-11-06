@@ -16,9 +16,27 @@ const NOW = Date.now();
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+/*
+ * Every hash this sample made up, rather than took from the chain. They are shown as plain text,
+ * never as explorer links, because no explorer has them (STEER-1730).
+ */
+const STAND_INS = new Set<string>([
+  "0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a",
+  "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
+  "0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c",
+]);
+
+/** The review samples' made-up hashes, one pattern: 0x then a four-character "e" seed, sixteen times. */
+const REVIEW_STAND_IN = /^0x(e[0-9]{3}){16}$/i;
+
+export function isStandIn(hash: string): boolean {
+  return STAND_INS.has(hash.toLowerCase()) || REVIEW_STAND_IN.test(hash);
+}
+
+
 export const fixtureMerchant = MERCHANT;
 
-export const fixtureOrders: Order[] = [
+const baseOrders: Order[] = [
   {
     // Real: an agent bought a forecast over x402 through the drop-in paywall.
     id: "0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07",
@@ -141,18 +159,12 @@ export const fixtureOrders: Order[] = [
 ];
 
 /*
- * Every hash this sample made up, rather than took from the chain. They are shown as plain text,
- * never as explorer links, because no explorer has them (STEER-1730).
+ * Escrow v2's review states are not live anywhere yet, so their sample rows load only on the dev
+ * server, where the desk is checked. A production build drops this import, and the rows with it.
  */
-const STAND_INS = new Set<string>([
-  "0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a",
-  "0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
-  "0x2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c",
-]);
+const devSamples: Order[] = import.meta.env.DEV ? (await import("./review-samples.ts")).reviewSamples() : [];
 
-export function isStandIn(hash: string): boolean {
-  return STAND_INS.has(hash.toLowerCase());
-}
+export const fixtureOrders: Order[] = [...baseOrders, ...devSamples];
 
 /** The refund a fixture desk pretends to send: a hash of its own per order and per attempt, never reused. */
 export function fixtureRefundTx(orderId: string, attempt = 0): string {

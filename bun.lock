@@ -22,6 +22,22 @@
         "viem": "^2.57.16",
       },
     },
+    "apps/phone": {
+      "name": "@countersign/phone",
+      "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "viem": "^2.57.16",
+      },
+      "devDependencies": {
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.2.1",
+        "vite": "^8.3.6",
+      },
+    },
     "apps/web": {
       "name": "@countersign/web",
       "version": "0.0.0",
@@ -133,6 +149,8 @@
     "@countersign/hub": ["@countersign/hub@workspace:apps/hub"],
 
     "@countersign/identity": ["@countersign/identity@workspace:packages/identity"],
+
+    "@countersign/phone": ["@countersign/phone@workspace:apps/phone"],
 
     "@countersign/rail": ["@countersign/rail@workspace:packages/rail"],
 

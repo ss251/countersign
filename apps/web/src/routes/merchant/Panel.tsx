@@ -8,11 +8,13 @@ import {
   canRefund,
   checkRefundAmount,
   contribution,
+  countdown,
   decimalsFor,
   explorerOf,
   formatFixed,
   formatUsdt,
   humanDate,
+  isEscrowOpen,
   isWhitechain,
   networkNameOf,
   refundLabel,
@@ -21,6 +23,7 @@ import {
   statusLabel,
   statusTone,
   timeline,
+  type ReturnKind,
 } from "./model.ts";
 import { Timeline } from "./Timeline.tsx";
 
@@ -101,8 +104,38 @@ interface OrderPanelProps {
   onUnlock: () => void;
 }
 
+/** "ends in 4:32", ticking each second; "ended" once the window has closed. */
+export function ReviewCountdown({ endsAt }: { endsAt: number | null | undefined }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!endsAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [endsAt]);
+  if (!endsAt) return null;
+  const left = endsAt - now;
+  return (
+    <span title={humanDate(endsAt)}>
+      {left > 0 ? (
+        <>
+          ends in <span className="mono">{countdown(left)}</span>
+        </>
+      ) : (
+        "ended"
+      )}
+    </span>
+  );
+}
+
+const RETURNED: Record<ReturnKind, string> = {
+  cancel: "Returned on cancel",
+  deadline_refund: "Returned at deadline",
+  dispute_refund: "Returned on dispute",
+  delivery_failed: "Returned, delivery failed",
+};
+
 export function OrderPanel(props: OrderPanelProps) {
-  return props.view === "refund" && canRefund(props.order) && props.order.status !== "held" ? (
+  return props.view === "refund" && canRefund(props.order) && !isEscrowOpen(props.order.status) ? (
     <RefundForm {...props} />
   ) : (
     <OrderDetail {...props} />
@@ -145,7 +178,7 @@ function OrderDetail({
   const headingId = useId();
   const breakdownId = useId();
   const activityId = useId();
-  const held = order.status === "held";
+  const held = isEscrowOpen(order.status);
   const amount = BigInt(order.amount);
   const lines = adjustments(order);
   const net = contribution(order);
@@ -214,9 +247,9 @@ function OrderDetail({
                     ? "Toll"
                     : line.kind === "refunded"
                       ? "Refunded"
-                      : line.close === "cancel"
-                        ? "Returned on cancel"
-                        : "Returned at deadline"}
+                      : line.kind === "bond"
+                        ? "Bond lost"
+                        : RETURNED[line.close]}
                 </dt>
                 <dd className="mono">
                   −{formatFixed(line.amount, places)}
@@ -226,7 +259,19 @@ function OrderDetail({
             ) : null,
           )}
           <div className="mx-sum__line mx-sum__line--total">
-            <dt>{held ? "Held until delivery" : order.status === "pending" ? "Settling" : "Net"}</dt>
+            <dt>
+              {order.status === "in_review" ? (
+                <>
+                  In review, <ReviewCountdown endsAt={order.reviewEndsAt} />
+                </>
+              ) : held ? (
+                "Held until delivery"
+              ) : order.status === "pending" ? (
+                "Settling"
+              ) : (
+                "Net"
+              )}
+            </dt>
             <dd className={`mono${held || order.status === "pending" ? " mx-money" : ""}`}>
               {formatFixed(held || order.status === "pending" ? amount : net, places)}
               <Unit symbol={unit} />
@@ -257,7 +302,7 @@ interface PanelRefundProps {
 
 /** The panel's refund controls, in step with the row: the same undo window, the same result. */
 function PanelRefund({ order, row, access, onRefundAll, onUndo, onPart, onUnlock }: PanelRefundProps) {
-  const held = order.status === "held";
+  const held = isEscrowOpen(order.status);
   if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} />;
   if (row?.kind === "sending") {
     return (
@@ -328,7 +373,7 @@ export function UndoStrip({
   onUndo: () => void;
   undoRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const held = order.status === "held";
+  const held = isEscrowOpen(order.status);
   return (
     <span className="mx-undo" role="status">
       <span className="mx-undo__text">
