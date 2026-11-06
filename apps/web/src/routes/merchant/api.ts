@@ -116,6 +116,21 @@ export function deskHub(): string {
   return hubBase() ?? "/hub";
 }
 
+/**
+ * The sample ledger is shown only when ?hub=off is chosen: in this URL, or remembered from an
+ * earlier one by the shared resolver (lib/hub.ts keeps "off" until ?hub=default). Anything else,
+ * including no choice at all, reads live.
+ */
+export function hubOff(query: URLSearchParams): boolean {
+  if (query.get("hub") === "off") return true;
+  if (hubBase() !== null) return false;
+  try {
+    return window.localStorage.getItem("countersign.hub") === "off";
+  } catch {
+    return false;
+  }
+}
+
 /** Where the desk's orders came from, said on the page so nobody mistakes one source for another. */
 export type OrdersSource =
   | { kind: "hub"; base: string }

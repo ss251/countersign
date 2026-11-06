@@ -1,4 +1,5 @@
 import type { PageProps } from "../../app/routes.ts";
+import { hubOff } from "./api.ts";
 import { Desk } from "./Desk.tsx";
 import { Receipt } from "./Receipt.tsx";
 import "./merchant.css";
@@ -8,7 +9,7 @@ export const surface = (params: string[]) => (params[0] === "receipt" ? "bare" :
 
 export default function MerchantPage({ params, query }: PageProps) {
   // Live by default. Only ?hub=off shows the sample ledger, loaded on demand (STEER-1730).
-  const offline = query.get("hub") === "off";
+  const offline = hubOff(query);
   if (params[0] === "receipt") {
     return <Receipt id={params[1] ?? ""} offline={offline} />;
   }
