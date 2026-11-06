@@ -17,8 +17,9 @@ import {
   type Hex,
   http,
   parseAbi,
+  parseSignature,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import {
   authorizationTypedData,
   countersignPayload,
@@ -31,7 +32,7 @@ import {
   ZERO_HASH,
 } from "@countersign/core";
 import { escrowAbi } from "../src/escrow/abi.ts";
-import { escrowRail, fundArgs } from "../src/escrow/index.ts";
+import { bondOfPayee, escrowRail, fundArgs } from "../src/escrow/index.ts";
 import type { Rail } from "../src/rail.ts";
 
 const ROOT = join(import.meta.dir, "../../..");
@@ -39,6 +40,7 @@ const ROOT = join(import.meta.dir, "../../..");
 const deployer = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 const buyer = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 const seller = privateKeyToAccount("0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a");
+const unbondedSeller = privateKeyToAccount("0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a");
 
 const port = 20_000 + Math.floor(Math.random() * 20_000);
 const rpcUrl = `http://127.0.0.1:${port}`;
@@ -93,9 +95,13 @@ beforeAll(async () => {
     token,
     "0x000000000000000000000000000000000000dEaD",
     100,
+    deployer.address,
   ]);
   await pub.waitForTransactionReceipt({
     hash: await wallet.writeContract({ address: token, abi: tokenAbi, functionName: "mint", args: [buyer.address, 100_000_000n] }),
+  });
+  await pub.waitForTransactionReceipt({
+    hash: await wallet.writeContract({ address: token, abi: tokenAbi, functionName: "mint", args: [seller.address, 10_000_000n] }),
   });
   rail = escrowRail({
     id: "escrow",
@@ -134,10 +140,46 @@ const offer: Offer = {
   issuedAt: 1,
 };
 
-async function pay(salt: string, priceOverride?: string): Promise<{ payment: PaymentPayload; jobId: Hex }> {
-  const req = rail.challenge(offer, { resource: "http://hub/x", now: 0 });
+const receiveTypes = {
+  ReceiveWithAuthorization: [
+    { name: "from", type: "address" },
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "validAfter", type: "uint256" },
+    { name: "validBefore", type: "uint256" },
+    { name: "nonce", type: "bytes32" },
+  ],
+} as const;
+
+async function depositBond(payee: PrivateKeyAccount, amount: bigint): Promise<void> {
+  const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("")}` as Hex;
+  const now = await blockTime();
+  const validAfter = BigInt(Math.max(0, now - 60));
+  const validBefore = BigInt(now + 600);
+  const signature = await payee.signTypedData({
+    domain: { name: "USDC", version: "2", chainId: 31337, verifyingContract: token },
+    types: receiveTypes,
+    primaryType: "ReceiveWithAuthorization",
+    message: { from: payee.address, to: escrowAddr, value: amount, validAfter, validBefore, nonce },
+  });
+  const sig = parseSignature(signature);
+  const v = sig.v !== undefined ? Number(sig.v) : (sig.yParity ?? 0) + 27;
+  const hash = await wallet.writeContract({
+    address: escrowAddr,
+    abi: escrowAbi,
+    functionName: "depositBond",
+    args: [payee.address, amount, validAfter, validBefore, nonce, v, sig.r, sig.s],
+  });
+  const receipt = await pub.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("depositBond failed");
+}
+
+async function pay(salt: string, offerOverride: Offer = offer, priceOverride?: string): Promise<{ payment: PaymentPayload; jobId: Hex }> {
+  const req = rail.challenge(offerOverride, { resource: "http://hub/x", now: 0 });
   const extra = req.extra as unknown as CountersignExtra;
-  const now = Math.floor(Date.now() / 1000);
+  const now = await blockTime();
   const input = {
     terms: {
       offerHash: extra.offerHash,
@@ -173,6 +215,7 @@ describe("escrow rail on anvil", () => {
     const extra = req.extra as unknown as CountersignExtra;
     expect(extra.offerHash).toBe(offerHash(offer));
     expect(extra.escrow).toBe(getAddress(escrowAddr));
+    expect((req.extra as { bond?: string }).bond).toBe(offer.bond);
   });
 
   test("verify, settle, release: the seller is paid less the toll", async () => {
@@ -189,11 +232,12 @@ describe("escrow rail on anvil", () => {
 
     const slipHash: Hex = "0x5151515151515151515151515151515151515151515151515151515151515151";
     const sellerSig = await seller.signTypedData(releaseTypedData(31337, escrowAddr, jobId, slipHash));
+    const before = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [seller.address] });
     const released = await rail.escrow!.release(jobId, slipHash, sellerSig);
     expect(released.success).toBe(true);
     expect(await rail.escrow!.status(jobId)).toBe("released");
     const paid = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [seller.address] });
-    expect(paid).toBe(1_500_000n - 15_000n);
+    expect(paid - before).toBe(1_500_000n - 15_000n);
   }, 30_000);
 
   test("a release of the zero hash is refused and sends nothing", async () => {
@@ -250,5 +294,70 @@ describe("escrow rail on anvil", () => {
     expect(await rail.escrow!.status(jobId)).toBe("refunded");
     const after = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [buyer.address] });
     expect(after).toBe(before);
+  }, 30_000);
+
+  test("a bonded fund locks the seller's bond on the job", async () => {
+    const bonded: Offer = { ...offer, bond: "500000" };
+    await depositBond(seller, 500_000n);
+    const { payment, jobId } = await pay("5", bonded);
+    const funded = await rail.settle(payment, payment.accepted);
+    expect(funded.success).toBe(true);
+    expect(await rail.escrow!.status(jobId)).toBe("funded");
+
+    const jobBond = await pub.readContract({
+      address: escrowAddr,
+      abi: escrowAbi,
+      functionName: "bondOfJob",
+      args: [jobId],
+    });
+    const free = await pub.readContract({
+      address: escrowAddr,
+      abi: escrowAbi,
+      functionName: "bondOf",
+      args: [seller.address],
+    });
+    expect(jobBond).toBe(500_000n);
+    expect(free).toBe(0n);
+    expect(await bondOfPayee(pub, escrowAddr, seller.address)).toBe("0");
+    expect(await rail.escrow!.bondOfPayee!(seller.address)).toBe("0");
+  }, 30_000);
+
+  test("failDelivery pays the buyer the amount and the bond", async () => {
+    const bonded: Offer = { ...offer, bond: "500000" };
+    await depositBond(seller, 500_000n);
+    const { payment, jobId } = await pay("6", bonded);
+    expect((await rail.settle(payment, payment.accepted)).success).toBe(true);
+    const before = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [buyer.address] });
+
+    const failed = await rail.escrow!.failDelivery!(jobId);
+    expect(failed.success).toBe(true);
+    expect(await rail.escrow!.status(jobId)).toBe("failed");
+
+    const after = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [buyer.address] });
+    expect(after - before).toBe(2_000_000n);
+  }, 30_000);
+
+  test("a bonded fund with no deposit fails settle with a clear reason", async () => {
+    const unbonded: Offer = { ...offer, seller: unbondedSeller.address, bond: "500000" };
+    const { payment, jobId } = await pay("7", unbonded);
+    const buyerBefore = await pub.readContract({
+      address: token,
+      abi: tokenAbi,
+      functionName: "balanceOf",
+      args: [buyer.address],
+    });
+
+    const result = await rail.settle(payment, payment.accepted);
+    expect(result.success).toBe(false);
+    expect(result.errorReason ?? "").toContain("funding");
+    expect(result.errorReason ?? "").toContain("fundBonded");
+    expect(await rail.escrow!.status(jobId)).toBe("none");
+    const buyerAfter = await pub.readContract({
+      address: token,
+      abi: tokenAbi,
+      functionName: "balanceOf",
+      args: [buyer.address],
+    });
+    expect(buyerAfter).toBe(buyerBefore);
   }, 30_000);
 });
