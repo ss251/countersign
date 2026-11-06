@@ -1,6 +1,6 @@
 # The human end-to-end run
 
-`e2e/human` is a Playwright project that does what a person does on the deployed console and hub, and proves each money step on chain. It is separate from the fast suite in `e2e/` ([e2e.md](e2e.md)) and has its own report. [D14, amended](decisions.md) is why it exists. Its first green run against production is [`20261106-192916-e0f5`](../e2e/human/runs/20261106-192916-e0f5.md), the `privy` project, 9 of 9 steps. Its row in [status.md](status.md) stays `IN PROGRESS` until that run's test code is on `main` and the nightly run is green.
+`e2e/human` is a Playwright project that does what a person does on the deployed console and hub, and proves each money step on chain. It is separate from the fast suite in `e2e/` ([e2e.md](e2e.md)) and has its own report. [D14, amended](decisions.md) is why it exists. Its first green run against production is [`20261106-192916-e0f5`](../e2e/human/runs/20261106-192916-e0f5.md), the `privy` project, 9 of 9 steps. Its row in [status.md](status.md) stays `IN PROGRESS` until the nightly run from `main` is green.
 
 ## What one run does
 
