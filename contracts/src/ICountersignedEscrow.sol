@@ -105,7 +105,7 @@ interface ICountersignedEscrow {
     error ReviewClosed(bytes32 jobId, uint64 endsAt);
     error NotOpen(bytes32 jobId);
     error LockMissing(bytes32 jobId);
-    error LateReleaseNeedsArbiter(bytes32 jobId);
+    error ReleaseNeedsArbiter(bytes32 jobId);
     error StatusMismatch(bytes32 jobId, uint8 status);
 
     /// @notice Pull `cs.amount` from the buyer into escrow and open the job. Anyone may submit an
@@ -144,8 +144,8 @@ interface ICountersignedEscrow {
     function withdrawBond(uint256 amount) external;
 
     /// @notice The payee's signed Release(jobId, slipHash). With review window 0 it pays the payee,
-    ///         less the toll. With a window it records the delivery and starts the review. Anyone may
-    ///         submit it until the deadline; after it, through settleBy, only the arbiter may.
+    ///         less the toll. With a window it records the delivery and starts the review. Only the
+    ///         arbiter may submit it, through settleBy, after its gate has checked the delivery.
     function release(bytes32 jobId, bytes32 slipHash, bytes calldata sellerSig) external;
 
     /// @notice The buyer accepts a delivered job: the payee is paid at once. The buyer calls it, or

@@ -169,7 +169,9 @@ contract GrokFindingsTest is GrokEscrowSigning {
         escrow.fund(OFFER, cs, _lockSig(sellerKey, jobId, arbiter));
         vm.stopPrank();
 
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
 
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotOpen.selector, jobId));
@@ -188,7 +190,9 @@ contract GrokFindingsTest is GrokEscrowSigning {
         vm.stopPrank();
 
         bytes memory fundedSig = _disputeSig(jobId, uint8(ICountersignedEscrow.Status.Funded));
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
         assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
 
         vm.expectRevert(

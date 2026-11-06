@@ -408,7 +408,9 @@ contract AuditFixesTest is EscrowSigning {
 
     function test_dispute_inside_the_window_pays_amount_plus_bond() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
         (,, uint64 endsAt) = escrow.reviewOf(jobId);
         uint256 buyerBefore = token.balanceOf(buyer);
         uint256 sellerBefore = token.balanceOf(seller);
@@ -494,7 +496,9 @@ contract AuditFixesTest is EscrowSigning {
         // One second later neither does.
         vm.warp(settleBy + 1);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowClosed.selector, jobs[2], settleBy));
+        vm.startPrank(arbiter);
         escrow.release(jobs[2], SLIP, late2);
+        vm.stopPrank();
         vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowClosed.selector, jobs[3], settleBy));
         escrow.failDelivery(jobs[3]);
@@ -602,7 +606,7 @@ contract AuditFixesTest is EscrowSigning {
         uint256 settleBy = _settleBy(jobId);
         bytes32 junk = keccak256("no delivery");
         bytes memory junkSig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, junk)));
-        bytes4 late = bytes4(keccak256("LateReleaseNeedsArbiter(bytes32)"));
+        bytes4 late = bytes4(keccak256("ReleaseNeedsArbiter(bytes32)"));
 
         vm.warp(uint256(escrow.jobOf(jobId).deadline) + 1);
         vm.prank(seller);
@@ -691,7 +695,9 @@ contract AuditFixesTest is EscrowSigning {
         } else if (which == 4) {
             (call, boundary, until) = (abi.encodeCall(escrow.refund, (jobId)), settleBy, false);
         } else {
+            vm.startPrank(arbiter);
             escrow.release(jobId, SLIP, _releaseSig(jobId));
+            vm.stopPrank();
             (,, uint64 endsAt) = escrow.reviewOf(jobId);
             if (which == 5) {
                 (call, boundary, until) = (
@@ -726,7 +732,9 @@ contract AuditFixesTest is EscrowSigning {
         bytes32 jobId = _fundJob(1, 0, 0);
         uint256 sellerBefore = token.balanceOf(seller);
 
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
 
         assertEq(token.balanceOf(seller) - sellerBefore, PRICE - _toll(), "the seller is paid");
         assertEq(escrow.tollAccrued(), _toll(), "the toll waits in the escrow");
@@ -818,11 +826,13 @@ contract ConservationHandler is EscrowSigning {
         if (jobs.length == 0) return;
         bytes32 jobId = _job(i);
         bytes memory sig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, bytes32(i))));
+        vm.startPrank(arbiter);
         try escrow.release(jobId, bytes32(i), sig) {} catch {}
     }
 
     function accept(uint256 i) external {
         if (jobs.length == 0) return;
+        vm.stopPrank();
         vm.prank(buyer);
         try escrow.accept(_job(i), "") {} catch {}
     }

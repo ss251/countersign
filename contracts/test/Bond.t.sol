@@ -156,7 +156,9 @@ contract BondTest is Test {
         uint256 sellerWallet = token.balanceOf(seller);
 
         uint256 toll = PRICE * TOLL_BPS / 10_000;
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        vm.stopPrank();
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.BondReturned(jobId, seller, BOND);
         vm.prank(buyer);
@@ -274,7 +276,9 @@ contract BondTest is Test {
 
     function test_fail_delivery_refuses_a_released_job() public {
         (bytes32 jobId,) = _fundBonded(BOND);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
+        vm.stopPrank();
         vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
         escrow.failDelivery(jobId);

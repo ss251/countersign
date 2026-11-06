@@ -138,7 +138,9 @@ contract AcceptanceTest is Test {
         endsAt = uint64(block.timestamp) + WINDOW;
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Delivered(jobId, SLIP, uint64(block.timestamp), endsAt);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
         _assertStatus(jobId, ICountersignedEscrow.Status.Delivered);
     }
 
@@ -344,7 +346,9 @@ contract AcceptanceTest is Test {
         jobId = escrow.fund(OFFER, cs, "");
 
         uint256 sellerBefore = token.balanceOf(seller);
+        vm.startPrank(arbiter);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
+        vm.stopPrank();
         assertEq(token.balanceOf(seller) - sellerBefore, PRICE - _toll());
         _assertStatus(jobId, ICountersignedEscrow.Status.Released);
     }
