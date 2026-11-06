@@ -87,9 +87,9 @@ describe("discovery", () => {
   test("serves the Circle discovery shape", async () => {
     const body = await list(hub);
 
-    expect(body.data.x402Version).toBe(2);
-    expect(body.data.pagination).toEqual({ limit: 50, offset: 0, total: 2 });
-    expect(body.data.items).toHaveLength(2);
+    expect(body.x402Version).toBe(2);
+    expect(body.pagination).toEqual({ limit: 50, offset: 0, total: 2 });
+    expect(body.items).toHaveLength(2);
 
     const item = findItem(body, skill);
     expect(item.resource).toBe(`http://hub.test/offers/${offerHash(skill)}/call`);
@@ -110,7 +110,17 @@ describe("discovery", () => {
     expect(item.metadata.method).toBe("POST");
     expect(item.metadata.description).toBe(skill.summary);
     expect(item.metadata.mimeType).toBe("application/json");
-    expect(item.metadata.input.body).toEqual(skill.input);
+    expect(item.metadata.input).toEqual({
+      type: "http",
+      method: "POST",
+      bodyType: "json",
+      body: {
+        type: "object",
+        properties: { input: skill.input, lineage: { type: "array", items: { type: "string" } } },
+        required: ["input"],
+      },
+    });
+    expect(item.metadata.supportsCircleGateway).toBe(false);
     expect(item.metadata.output.schema).toEqual(skill.output);
     expect(item.metadata.offerHash).toBe(offerHash(skill));
     expect(item.metadata.upstream).toEqual(skill.upstream);
@@ -132,26 +142,59 @@ describe("discovery", () => {
     const page = (await fetch(`${hub.url}/discovery/resources?limit=1&offset=1`).then((r) =>
       r.json(),
     )) as DiscoveryList;
-    expect(page.data.pagination).toEqual({ limit: 1, offset: 1, total: 2 });
-    expect(page.data.items).toHaveLength(1);
+    expect(page.pagination).toEqual({ limit: 1, offset: 1, total: 2 });
+    expect(page.items).toHaveLength(1);
 
     const byTitle = (await fetch(`${hub.url}/discovery/resources?query=weather`).then((r) =>
       r.json(),
     )) as DiscoveryList;
-    expect(byTitle.data.pagination.total).toBe(1);
-    expect(byTitle.data.items[0]?.metadata.offerHash).toBe(offerHash(other));
+    expect(byTitle.pagination.total).toBe(1);
+    expect(byTitle.items[0]?.metadata.offerHash).toBe(offerHash(other));
 
     const bySummary = (await fetch(`${hub.url}/discovery/resources?query=question`).then((r) =>
       r.json(),
     )) as DiscoveryList;
-    expect(bySummary.data.pagination.total).toBe(1);
-    expect(bySummary.data.items[0]?.metadata.offerHash).toBe(offerHash(skill));
+    expect(bySummary.pagination.total).toBe(1);
+    expect(bySummary.items[0]?.metadata.offerHash).toBe(offerHash(skill));
 
     const byAdapter = (await fetch(`${hub.url}/discovery/resources?query=MCP`).then((r) =>
       r.json(),
     )) as DiscoveryList;
-    expect(byAdapter.data.pagination.total).toBe(1);
-    expect(byAdapter.data.items[0]?.metadata.offerHash).toBe(offerHash(other));
+    expect(byAdapter.pagination.total).toBe(1);
+    expect(byAdapter.items[0]?.metadata.offerHash).toBe(offerHash(other));
+  });
+
+  test("a query holding a resource URL finds that offer, as circle services inspect asks", async () => {
+    const hash = offerHash(other);
+    const url = `http://hub.test/offers/${hash}/call`;
+    const found = (await fetch(
+      `${hub.url}/discovery/resources?query=${encodeURIComponent(url)}&limit=1&siwx=false`,
+    ).then((r) => r.json())) as DiscoveryList;
+    expect(found.items.map((item) => item.resource)).toEqual([url]);
+  });
+
+  test("filters by category and type the way Circle's catalogue does", async () => {
+    const get = async (qs: string) =>
+      ((await fetch(`${hub.url}/discovery/resources?${qs}`).then((r) => r.json())) as DiscoveryList)
+        .pagination.total;
+    expect(await get("category=infrastructure")).toBe(2);
+    expect(await get("category=WEB_SEARCH_RESEARCH")).toBe(0);
+    expect(await get("type=http")).toBe(2);
+    expect(await get("type=mcp")).toBe(0);
+  });
+
+  test("an unpaid call with the advertised example body reaches the 402", async () => {
+    const hash = offerHash(skill);
+    runners.push(await connect(hub, hash));
+    const first = await call(hub, hash, { q: "hello" });
+    const bazaar = ((await first.json()) as PaymentRequired).extensions?.bazaar as BazaarExtension;
+
+    const response = await fetch(`${hub.url}/offers/${hash}/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(bazaar.info.input.body),
+    });
+    expect(response.status).toBe(402);
   });
 
   test("the 402 body carries the bazaar extension", async () => {
@@ -166,8 +209,10 @@ describe("discovery", () => {
     expect(bazaar).toBeDefined();
     expect(bazaar?.info.input.type).toBe("http");
     expect(bazaar?.info.input.bodyType).toBe("json");
-    expect(bazaar?.info.input.body).toEqual({ q: "example" });
-    expect(bazaar?.schema.properties.input.properties.body).toEqual(skill.input);
+    expect(bazaar?.info.input.body).toEqual({ input: { q: "example" } });
+    expect(bazaar?.schema.properties.input.properties.body).toEqual(
+      findItem(await list(hub), skill).metadata.input.body,
+    );
   });
 
   test("the agent card lists one skill per offer and both paths serve it", async () => {
@@ -248,8 +293,8 @@ describe("discovery", () => {
     hub.store.delistOffer(hash, NOW);
 
     const body = await list(hub);
-    expect(body.data.pagination.total).toBe(1);
-    expect(body.data.items.map((entry) => entry.metadata.offerHash)).toEqual([offerHash(other)]);
+    expect(body.pagination.total).toBe(1);
+    expect(body.items.map((entry) => entry.metadata.offerHash)).toEqual([offerHash(other)]);
 
     const card = (await fetch(`${hub.url}/.well-known/agent-card.json`).then((r) =>
       r.json(),
@@ -276,7 +321,7 @@ async function list(hub: TestHub): Promise<DiscoveryList> {
 }
 
 function findItem(body: DiscoveryList, offer: Offer): DiscoveryItem {
-  const item = body.data.items.find((entry) => entry.metadata.offerHash === offerHash(offer));
+  const item = body.items.find((entry) => entry.metadata.offerHash === offerHash(offer));
   if (!item) throw new Error("offer missing from discovery");
   return item;
 }

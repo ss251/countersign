@@ -16,6 +16,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | # | Flow | Proves | Network | Owner |
 |---|---|---|---|---|
 | 1 | `arc-spine` | discovery, envelope, countersign, fund, deliver, release; the slip verifies with the hub stopped | Arc testnet | orch-cs |
+| 1b | `runner-restart` | a seller's runner stops and starts again; its offer keeps its hash and comes back online | none | orch-cs |
 | 2 | `arc-wrong-amount` | a settlement at another price is refused by the hub and reverted by the chain | Arc testnet | orch-cs |
 | 3 | `arc-deadline-refund` | the seller fails to deliver; after the deadline a stranger refunds the full amount, with no hub running | Arc testnet | orch-cs |
 | 4a | `slip-onchain-arc` | the `Released` event carries the slip's hash; a tampered slip whose own hash still matches fails | Arc testnet | orch-cs |
@@ -24,6 +25,10 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 6 | `hedera` | an agent pays a hub offer over x402 with no human step; the payment is on the mirror node and in the HCS spend log | Hedera testnet | cs-hd |
 | 7 | `merchant` | totals, a partial refund and the accountant export agree with the chain | Whitechain Sepolia | cs-wc |
 | 8 | `discovery` | the A2A card, skills index, OpenAPI document and offer list resolve from a clean client, locally and on the public hub | none | orch-cs |
+| 10 | `arc-gateway` | the buyer pays from its Circle Gateway balance: debited at once, slip names the gateway rail | Arc testnet | orch-cs |
+| 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
+| 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
+| 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
@@ -43,6 +48,12 @@ Each flow is a list of named steps. The first failed step ends the flow, names i
 7. **slip names its rail.** The slip the buyer saved equals the hub's copy, names rail `escrow`, and its settlement is the release transaction.
 8. **hub stopped.** The hub process exits and its port refuses connections.
 9. **verifier VALID.** `packages/verify` with only the slip file and a public RPC prints `VALID`, with `hash`, `seller`, `terms`, `countersignature` and `onchain` all `ok`.
+
+### 1b · runner-restart
+
+1. **runner serves** `use-arc` with its own state directory; the offer is listed and online.
+2. **runner stops**; the hub lists the offer offline.
+3. **runner restarts** with the same state. It republishes the same offer hash and the hub lists it online again.
 
 ### 2 · arc-wrong-amount
 
@@ -76,19 +87,23 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 2. **buyer holds no gas.** The buyer's WBT balance and transaction count on chain 1874 are both zero.
 3. **buyer pays in USDT.** The buyer CLI buys the `whitechain-dev` skill. Released, slip minted.
 4. **chain agrees.** The fund and release transactions were sent by the relayer, not the buyer; USDT moved from the buyer to the escrow and on to the merchant; the buyer still has zero WBT and zero transactions.
-5. **merchant refunds in one click.** `POST /orders/:id/refund` with the merchant's token returns a transaction; USDT moves from the merchant back to the buyer; the order reads `refunded`.
+5. **merchant sees the order** in its own ledger, with both transactions.
+6. **merchant refunds in one click.** `POST /orders/:id/refund` with the merchant's token returns a transaction the relayer sent; USDT moves from the merchant back to the buyer; the order reads `refunded`; the buyer still holds no WBT and has sent no transaction.
 
 ### 6 · hedera
 
-1. **hub up** with the Hedera rail, and a seller whose offer pays a Hedera account.
-2. **agent pays with no human step.** `scripts/hedera/agent-run.ts --json` finds the offer through the hub, pays it and reports the transaction id, its HashScan link and the spend-log sequence.
-3. **mirror confirms.** The mirror node shows the transaction as `SUCCESS`, the agent debited and the seller credited the price in USDC, and the memo naming the offer hash.
-4. **spend log entry.** The HCS message at the reported sequence decodes to a `spend` entry for this offer, this amount and this transaction id.
+1. **hub up** with the Hedera rail, and a seller whose offer pays a Hedera account (`runner serve --pay-to hedera=<account>`).
+2. **402 names the rail.** The challenge asks for USDC on `hedera:testnet`, paid to the seller's account, with the facilitator's fee payer.
+3. **agent pays with no human step.** `scripts/hedera/agent-run.ts --json` finds the offer through the hub, pays it and reports the transaction id, its HashScan link and the spend-log sequence.
+4. **mirror confirms.** Read by the suite's own mirror client: the transaction is `SUCCESS`, the agent is debited and the seller credited exactly the price in USDC, and the memo names the offer hash.
+5. **spend log entry.** The HCS message at the reported sequence decodes to a `spend` entry for this offer, this amount and this transaction id, submitted by the agent.
+6. **envelope refuses past its cap.** The same agent with a cap below what it has spent refuses the call, pays nothing and logs a `refused` entry with reason `over-cap`.
+7. **the log is complete for the run.** Every USDC payment the agent made since the flow began has a spend entry naming its transaction and amount, and every spend entry in that window is backed by a payment.
 
 ### 7 · merchant
 
-1. **payment lands.** The buyer pays the merchant in USDT through the relay.
-2. **totals.** The merchant's orders give received, refunded and net that match the USDT transfers on chain.
+1. **payment lands.** The buyer buys a 0.02 USDT skill from the merchant through the hub and the relay.
+2. **totals.** The merchant view's own `totals()` over the merchant's orders gives received, fees and net that match the chain: the fee is the toll in the `Released` event.
 3. **partial refund.** A refund of part of the order returns that transaction and `remaining`; the chain shows exactly that amount going back; the order reads `partially_refunded`.
 4. **totals move.** Refunded rises and net falls by the refunded amount, nothing else.
 5. **export.** `orders.csv` has the documented header and a row for the order whose amounts and explorer links match the chain.
@@ -105,6 +120,37 @@ Runs against the suite's own hub and, when set, the public hub. A clean client i
 5. `/discovery/resources` lists the offers in x402 v2 form.
 6. `/offers`: every listed offer hashes to its own `offerHash`, recomputed here.
 7. An unpaid call answers 402 with the bazaar extension.
+
+### 10 · arc-gateway
+
+1. **hub up** with the escrow and Gateway rails; the seller lists one offer on both.
+2. **402 offers Gateway**: an `exact` entry for `GatewayWalletBatched` at the price, paid to the seller, beside the escrow entry.
+3. **buyer pays through Gateway** (`buy --rail gateway`); the journal records `settled` on rail `gateway`.
+4. **debited at once**: the buyer's Gateway balance drops by exactly the price. The seller is credited in Gateway's next batch, so there is no per-call chain transaction to check.
+5. **slip** names rail `gateway`, no escrow, carries the Gateway transfer id, equals the hub's copy and verifies.
+
+### 11 · refusals
+
+Each case uses a fresh buyer state and must end with a refusal in the journal and no `signed` entry.
+
+1. The hub's input gate answers 422 `Refused. The input does not match the offer's schema.`, and the buyer CLI refuses the same input before signing.
+2. Over the budget, over the per-seller limit, a seller not on the allowlist, a revoked envelope, and a call above `ask-above` held for the human, each with its own message and reason.
+3. With the runner stopped, the hub answers 503 `The seller is offline. Nothing was charged.` and the buyer refuses.
+
+### 12 · public-spine
+
+1. **a live offer**: the public hub lists an online Arc offer at or under 0.05 USDC; the suite recomputes its hash.
+2. **envelope approves** and the buyer CLI buys it through the public hub; the hosted relayer pays the gas and the hosted seller's runner delivers.
+3. **chain agrees**: `Funded` names this buyer and that seller at the listed price; `Released` carries the slip's hash.
+4. **slip verifies with no hub**, and its explorer link opens.
+
+### 13 · ratings
+
+1. **three calls on one offer**: one delivered, one the seller makes to itself, one whose delivery fails.
+2. **rating**: `/ratings/<seller>` counts one delivered, one failed and one self-dealt, scores 0.5 over two closed calls, and names one buyer and the delivered volume; `/ratings` agrees.
+3. **stats**: `/stats` agrees, with three calls on the escrow rail.
+4. **janitor**: after the deadline the hub refunds the failed call itself; the `Refunded` event returns the full price.
+5. **rating follows**: the failed call now counts as refunded.
 
 ## Results
 
@@ -125,4 +171,9 @@ A test that fails is not edited to pass. A product bug goes to the owning lane a
 - **Keys.** Testnet keys are read at run time from env files outside the repository. Each child process receives only the key it needs, by environment, never in argv. Every artifact is scrubbed of key material before it is written.
 - **Re-runnable.** Every run uses fresh offers, salts and job ids, and cleans up nothing on chain.
 - **Own wallets for gas.** The suite submits through its own hub and relay with its own gas wallets, so it never races another process for a nonce.
+- **Own state per flow.** Each runner gets its own state directory, so another runner on the machine never changes what a flow publishes.
 - **Testnets only.** Arc testnet (5042002), Whitechain Sepolia (1874), Hedera testnet.
+
+## Schedule
+
+A full run goes through the shared gate lock about once an hour from a clean checkout of `cs/e2e`. Its summary is committed and becomes `LATEST.md`; a new failure, or a flow that passes again, is posted to the owning lane.

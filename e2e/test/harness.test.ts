@@ -204,3 +204,28 @@ describe("report", () => {
     expect(text).not.toMatch(/\/Users\/|\/home\/|\/tmp\//);
   });
 });
+
+describe("run lock", () => {
+  test("a second run waits until the first releases, and a dead owner's lock is taken over", async () => {
+    const { acquireRunLock } = await import("../lib/lock.ts");
+    const dir = mkdtempSync(join(tmpdir(), "e2e-lock-"));
+    process.env.E2E_LOCK_DIR = join(dir, "lock");
+    const release = await acquireRunLock("first", () => undefined);
+    let second = false;
+    const waiting = acquireRunLock("second", () => undefined).then((r) => {
+      second = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(second).toBe(false);
+    release();
+    (await waiting)();
+    expect(second).toBe(true);
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    mkdirSync(join(dir, "lock"));
+    writeFileSync(join(dir, "lock", "owner"), "999999 ghost 2026-11-06T00:00:00Z\n");
+    const taken = await acquireRunLock("third", () => undefined);
+    taken();
+    delete process.env.E2E_LOCK_DIR;
+  }, 20_000);
+});

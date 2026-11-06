@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./hedera": "./src/hedera/index.ts"
+    "./hedera": "./src/hedera/index.ts",
+    "./mpp": "./src/mpp/index.ts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "4.0.0",
@@ -15,6 +16,8 @@
     "@x402/core": "2.30.0",
     "@x402/evm": "2.30.0",
     "@x402/hedera": "2.30.0",
+    "mppx": "0.17.1",
+    "stripe": "23.1.0",
     "viem": "^2.57.16"
   }
 }

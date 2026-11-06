@@ -1,4 +1,4 @@
-import { acceptsFor, resourceFor, type DiscoveryDeps } from "./discovery.ts";
+import { acceptsFor, callBodySchema, resourceFor, type DiscoveryDeps } from "./discovery.ts";
 import type { StoredOffer } from "./store.ts";
 
 type JsonObject = Record<string, unknown>;
@@ -59,6 +59,13 @@ export function openapiDocument(deps: DiscoveryDeps): JsonObject {
     },
     "/discovery/resources": { get: { summary: "List x402 discovery resources." } },
     "/rails": { get: { summary: "List settlement rails." } },
+    "/ratings": {
+      get: { summary: "Seller ratings derived from verified slips, refunds and failed deliveries." },
+    },
+    "/ratings/{seller}": {
+      get: { summary: "One seller's derived rating, with a line per offer.", parameters: [pathParam("seller")] },
+    },
+    "/stats": { get: { summary: "Hub totals derived from the job ledger." } },
   };
 
   for (const stored of deps.store.listOffers()) {
@@ -136,11 +143,7 @@ function offerPath(deps: DiscoveryDeps, stored: StoredOffer): JsonObject {
         required: true,
         content: {
           "application/json": {
-            schema: {
-              type: "object",
-              properties: { input: offer.input },
-              required: ["input"],
-            },
+            schema: callBodySchema(offer),
           },
         },
       },

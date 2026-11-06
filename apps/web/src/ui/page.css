@@ -19,16 +19,21 @@
   margin-bottom: var(--sp-8);
 }
 
+/* The page's eyebrow is a label: small caps, like every field name on the desk. */
 .page__eyebrow {
   color: var(--slate);
-  font-size: var(--t-13);
-  font-weight: 500;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
+/* Titles at desk scale: one line of what this is, not a headline. */
 .page__title {
-  font-size: var(--t-32);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  font-size: var(--t-24);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
 }
 
 .page__lede {
@@ -62,13 +67,16 @@
 
 .section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-3);
 }
 
 .section__title {
-  font-size: var(--t-13);
-  font-weight: 600;
   color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .section__note {

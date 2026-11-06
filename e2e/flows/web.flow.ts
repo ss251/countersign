@@ -24,7 +24,7 @@ export interface WebDriver {
   close(): Promise<void>;
 }
 
-export const WEB_ROUTES = ["/", "/buyer", "/seller", "/merchant", "/registry", "/verify"] as const;
+export const WEB_ROUTES = ["/", "/buyer", "/assistant", "/seller", "/merchant", "/registry", "/verify"] as const;
 export const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 1440, height: 900 },

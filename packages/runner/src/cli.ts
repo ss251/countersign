@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
 import { startRunner, type ServedOffer } from "./daemon.ts";
-import { publishOffer } from "./publish.ts";
+import { publishOffer, type PublishedOffer } from "./publish.ts";
 import { readSkill, skillOffer, type Skill } from "./skill.ts";
 
 const DEFAULT_DEADLINE = 120;
@@ -46,8 +46,8 @@ async function publishCommand(options: Options): Promise<void> {
   if (path === undefined) throw new Error("--skill is required.");
   const skill = await readSkill(path);
   const offer = makeOffer(account.address, skill, options);
-  const hash = await publishWithState(options, account, offer, skill);
-  console.log(hash);
+  const { offerHash } = await publishWithState(options, account, offer, skill);
+  console.log(offerHash);
 }
 
 function publishWithState(
@@ -55,24 +55,41 @@ function publishWithState(
   account: RunnerAccount,
   offer: Offer,
   skill: Skill,
-): Promise<Hex> {
+): Promise<PublishedOffer> {
   return publishOffer(options.hub, account, offer, {
     ...(options.state !== undefined ? { stateDir: options.state } : {}),
     skillSha256: skill.sha256,
   });
 }
 
-async function serveCommand(options: Options): Promise<void> {
-  const account = await sellerAccount();
+export interface PreparedServe {
+  served: ServedOffer[];
+  hashes: Hex[];
+}
+
+/** Publish every skill and return the stable offers a runner should serve. */
+export async function prepareServed(
+  options: Options,
+  account: RunnerAccount,
+): Promise<PreparedServe> {
   const served: ServedOffer[] = [];
+  const hashes: Hex[] = [];
 
   for (const path of options.skills) {
     const skill = await readSkill(path);
     const offer = makeOffer(account.address, skill, options);
-    const hash = await publishWithState(options, account, offer, skill);
-    console.log(`published ${hash} ${offer.title}`);
-    served.push({ offer, spec: { adapter: "skill", skillPath: path } });
+    const published = await publishWithState(options, account, offer, skill);
+    console.log(`published ${published.offerHash} ${published.offer.title}`);
+    served.push({ offer: published.offer, spec: { adapter: "skill", skillPath: path } });
+    hashes.push(published.offerHash);
   }
+
+  return { served, hashes };
+}
+
+async function serveCommand(options: Options): Promise<void> {
+  const account = await sellerAccount();
+  const { served } = await prepareServed(options, account);
 
   const handle = startRunner({
     hubUrl: options.hub,
