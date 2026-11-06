@@ -11,6 +11,7 @@ import {
 import { createHederaAgent, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
 import { readEntries } from "../../packages/buyer/src/hedera/spendlog.ts";
 import { FACILITATORS, HEDERA_TESTNET, httpFacilitator } from "../../packages/rail/src/hedera/index.ts";
+import { Transaction, TransferTransaction } from "../../packages/rail/src/hedera/sdk.ts";
 import { hashscanAccount, hashscanTopic, hashscanTx, parseTxId } from "../../packages/rail/src/hedera/txid.ts";
 import { key, need, readEnv, testnetClient } from "./env.ts";
 
@@ -142,13 +143,59 @@ function feePayerFromTx(id: string): string | null {
   }
 }
 
-/** The output as canonical JSON, cut to what an evidence line can carry. */
+/** The output as canonical JSON, whole. */
 function canonicalOutput(output: unknown): string {
   try {
-    return canonicalJson(output).slice(0, 400);
+    return canonicalJson(output);
   } catch {
-    return String(output).slice(0, 400);
+    return String(output);
   }
+}
+
+/** The unsigned transaction the buyer paid for, decoded from the tool's bytes. */
+function decodedOutput(output: unknown): Evidence | null {
+  const bytes = bufferBytes(output);
+  if (bytes === null) return null;
+  try {
+    return { label: "decoded", value: describeTransaction(Transaction.fromBytes(Buffer.from(bytes))) };
+  } catch (error) {
+    return { label: "decoded", value: `not decodable: ${messageOf(error)}` };
+  }
+}
+
+function bufferBytes(output: unknown): number[] | null {
+  if (!isRecord(output)) return null;
+  const result = output.result;
+  if (!isRecord(result)) return null;
+  const bytes = result.bytes;
+  if (!isRecord(bytes)) return null;
+  if (bytes.type !== "Buffer" || !Array.isArray(bytes.data)) return null;
+  const data: number[] = [];
+  for (const byte of bytes.data) {
+    if (typeof byte !== "number") return null;
+    data.push(byte);
+  }
+  return data;
+}
+
+function describeTransaction(tx: Transaction): string {
+  const type = tx instanceof TransferTransaction ? "TransferTransaction" : tx.constructor.name;
+  const payer = tx.transactionId?.accountId?.toString() ?? "unknown";
+  const hbar =
+    tx instanceof TransferTransaction
+      ? [...tx.hbarTransfers]
+          .map(([account, amount]) => `${account.toString()} ${amount.toBigNumber().toString()}`)
+          .join(", ")
+      : "";
+  return `${type} payer ${payer} hbar ${hbar} memo ${tx.transactionMemo}`;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 say(`hub      ${hub}`);
@@ -195,6 +242,8 @@ try {
         evidence.push({ label: "spend log", value: `#${outcome.logSequence}`, url: topicLink });
         evidence.push({ label: "slip", value: outcome.slip.hash });
         evidence.push({ label: "output", value: canonicalOutput(outcome.output) });
+        const decoded = decodedOutput(outcome.output);
+        if (decoded !== null) evidence.push(decoded);
       } else if (outcome.kind === "refused") {
         say(`call ${n}   refuse: ${outcome.reason}`);
         say(`message  ${outcome.message}`);
