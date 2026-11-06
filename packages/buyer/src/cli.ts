@@ -46,7 +46,7 @@ function parse(argv: string[]): Parsed {
 
 function agentAccount() {
   const key = process.env.CS_BUYER_KEY;
-  if (!key) throw new Error("Set CS_BUYER_KEY to the agent's private key.");
+  if (!key) throw new Error("Not signed in. Run: npx -y @countersign-hub/cli login");
   return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
 }
 
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
     console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | accept <jobId> | dispute <jobId> [--direct] | envelope show|set | publish-envelope | journal | resume | openai [--port <n>]");
-    console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
+    console.log("Flags: --hub <url> --state <dir>.");
   }
 }
 
