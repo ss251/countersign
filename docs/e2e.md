@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Every flow countersign claims has a test here. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees.
+Each flow below runs end to end. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees. What the suite does not cover yet is listed at the end.
 
 ```
 bun run e2e                      # every flow, in order
@@ -29,11 +29,13 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
 | 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
 | 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
+| 15 | `public-hedera` | the Hedera agent pays a live offer on the public hub with no human step; mirror, HCS entry, the hub's settlement and the slip | Hedera testnet | cs-hd |
+| 16 | `public-gateway` | a Gateway nanopayment on a live offer of the public hub; balance debited at once, the hub serves the same slip | Arc testnet | orch-cs |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
-Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
+Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its 28 cases are the seven routes in `e2e/flows/web.flow.ts`, each at 390 and 1440 px, light and dark.
 
 ## What each flow asserts
 
@@ -100,7 +102,7 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 4. **mirror confirms.** Read by the suite's own mirror client: the transaction is `SUCCESS`, the agent is debited and the seller credited exactly the price in USDC, and the memo names the offer hash.
 5. **spend log entry.** The HCS message at the reported sequence decodes to a `spend` entry for this offer, this amount and this transaction id, submitted by the agent.
 6. **envelope refuses past its cap.** The same agent with a cap below what it has spent refuses the call, pays nothing and logs a `refused` entry with reason `over-cap`.
-7. **the log is complete for the run.** Every USDC payment the agent made since the flow began has a spend entry naming its transaction and amount, and every spend entry in that window is backed by a payment.
+7. **the log is complete for the run.** Every USDC payment the agent made since the flow began is backed by an entry naming its transaction and amount: a `spend`, or a `schedule` whose transfer executed later under the create's id. Every `spend` entry in that window is backed by a payment; `expired` entries move nothing.
 
 ### 7 · merchant
 
@@ -154,12 +156,26 @@ Each case uses a fresh buyer state and must end with a refusal in the journal an
 4. **janitor**: after the deadline the hub refunds the failed call itself; the `Refunded` event returns the full price.
 5. **rating follows**: the failed call now counts as refunded.
 
+### 15 · public-hedera
+
+1. **a live Hedera offer** on the public hub, and its 402 asks for USDC on `hedera:testnet` paid to the offer's Hedera account.
+2. **the agent pays through the public hub** with `scripts/hedera/agent-run.ts --json`, no human step.
+3. **mirror**: `SUCCESS`, the agent debited and the payee credited exactly the price, memo naming the offer.
+4. **HCS**: the spend entry at the reported sequence names this payment.
+5. **the hosted hub** lists the settlement with its slip, serves the slip, and the slip verifies.
+
+### 16 · public-gateway
+
+1. **a live Gateway offer** on the public hub; the buyer CLI pays it with `--rail gateway`.
+2. **debited at once**: the buyer's Gateway balance drops by exactly the price.
+3. **the hosted hub serves the same slip**, rail `gateway`, and it verifies.
+
 ### 14a, 14b · production smoke
 
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
 
 1. **console**: the index and every module script it loads are fetched as text. The default bundle must contain the production hub's URL. It must also contain none of the fixture-only values: addresses and hashes found in the fixture files and nowhere else in the repository, collected fresh on each run.
-2. **hub**: every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, and the approval decision passes CORS preflight with an `authorization` header. One failure message lists every endpoint that fails.
+2. **hub**: production declares escrow, Gateway and Hedera. Every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, and the approval decision passes CORS preflight with an `authorization` header. One failure message lists every endpoint that fails.
 
 ## Results
 
@@ -186,3 +202,18 @@ A test that fails is not edited to pass. A product bug goes to the owning lane a
 ## Schedule
 
 A full run goes through the shared gate lock about once an hour from a clean checkout of `cs/e2e`. Its summary is committed and becomes `LATEST.md`; a new failure, or a flow that passes again, is posted to the owning lane.
+
+## Not covered yet
+
+These parts of the product have no end-to-end flow:
+
+- ERC-8004 identity and feedback;
+- the Stripe MPP rail;
+- receipt trees and lineage;
+- the subgraph;
+- ENS seller names;
+- the mainnet guard;
+- the `mcp` runner adapter;
+- the Escrow v2 review window, dispute and bond.
+
+The web routes are written but not run on the build machine. A part moves into the flows table only once its flow passes.

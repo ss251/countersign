@@ -52,6 +52,8 @@ export function Assistant({
   const [active, setActive] = useState(0);
   const [picked, setPicked] = useState<string | null>(initialPick ?? null);
   const [hint, setHint] = useState(false);
+  /** Enter pressed before the answer arrived: open the top match as soon as it lands. */
+  const [queued, setQueued] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
@@ -162,9 +164,25 @@ export function Assistant({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (answer && answer.need === query.trim() && current) open(current);
-    else void ask(query);
+    const text = query.trim();
+    if (answer && answer.need === text && !busy) {
+      if (current) open(current);
+      return;
+    }
+    // Enter before the answer: search now and keep the Enter, so the top match opens when it lands.
+    if (text) {
+      setQueued(true);
+      void ask(query);
+    }
   };
+
+  useEffect(() => {
+    if (!queued || busy || !answer || answer.need !== query.trim()) return;
+    setQueued(false);
+    const top = rows[0];
+    if (top) open(top);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued, busy, answer, query]);
 
   const allow = (m: Match) => {
     if (!view || view.mirror) return undefined;
@@ -206,7 +224,11 @@ export function Assistant({
           autoFocus={layout !== "phone" && window.matchMedia("(pointer: fine)").matches}
           placeholder="What does your agent need?"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            // Typing again withdraws an Enter that was waiting for the earlier answer.
+            setQueued(false);
+            setQuery(e.target.value);
+          }}
           onKeyDown={onKeyDown}
         />
         {busy ? <span className="palette__busy" aria-hidden="true" /> : null}
@@ -421,7 +443,10 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
       })
     : null;
-  useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
+  // A block body on purpose: scrollIntoView returns a Promise in current Chrome, and React would take it for a cleanup.
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
     <section ref={ref} className="pcard" aria-labelledby="pcard-title">
       <header className="pcard__head">

@@ -76,8 +76,9 @@ kbd {
   transition: border-color var(--d-1) var(--ease-out);
 }
 
+/* The input draws no ring of its own: the whole palette's rule turns to ink while it has focus. */
 .palette:focus-within {
-  border-color: color-mix(in oklch, var(--line), var(--ink) 35%);
+  border-color: var(--ink);
 }
 
 .palette__form {
@@ -372,8 +373,9 @@ kbd {
   overflow: visible;
 }
 
+/* A dark scrim in both themes: mixing from ink would turn into a light wash on dark paper. */
 .palette-dialog::backdrop {
-  background: color-mix(in oklch, var(--ink) 22%, transparent);
+  background: oklch(0.15 0.01 100 / 0.38);
 }
 
 .palette--overlay {
