@@ -17,6 +17,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Hex } from "viem";
+import { KNOWN_ESCROWS } from "@countersign/verify";
+import { fundingRefusal, rpcJobReader } from "../src/runner/funding.ts";
 import { publishOffer, readJob } from "../src/runner/hub.ts";
 import { RunnerLink, type ServedSkill } from "../src/runner/link.ts";
 import { signerFromKey } from "../src/runner/signer.ts";
@@ -74,9 +76,13 @@ if (photoPath !== undefined) {
 if (skills.length === 0) throw new Error("Name a skill: --lat and --lon, or --photo.");
 
 console.log(`seller ${signer.address} on ${hubUrl}`);
+const chainJob = rpcJobReader();
 const link = new RunnerLink({
   hubUrl,
   signer,
+  // The same check the phone runs: the job must be funded on Arc for this seller at the price.
+  checkOrder: (order, offer) =>
+    fundingRefusal(order, offer, { seller: signer.address, now: now(), known: KNOWN_ESCROWS, read: chainJob }),
   skills: () => skills,
   onStatus: (s) => console.log(`link ${s.phase}${s.accepted.length ? ` ${s.accepted.length} offers` : ""}${s.refusal ? ` ${s.refusal}` : ""}`),
   onJob: (update) => {

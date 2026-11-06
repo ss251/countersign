@@ -27,6 +27,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@countersign/core": "workspace:*",
+        "@countersign/verify": "workspace:*",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "viem": "^2.57.16",
@@ -102,6 +103,7 @@
         "@countersign/core": "workspace:*",
         "@hashgraph/hedera-agent-kit": "4.2.0",
         "@hashgraph/hedera-agent-kit-mcp": "1.2.0",
+        "@hiero-ledger/proto": "2.32.0",
         "@hiero-ledger/sdk": "2.90.1",
         "@modelcontextprotocol/sdk": "1.32.2",
         "@x402/core": "2.30.0",
