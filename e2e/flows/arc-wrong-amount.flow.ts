@@ -16,8 +16,8 @@ import {
   type PaymentRequired,
 } from "@countersign/core";
 import { countersignPayer, KNOWN_RAILS } from "@countersign/buyer";
-import { escrowAbi, fundArgs } from "@countersign/rail";
-import { startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
+import { escrowAbi, escrowV2Abi, fundArgs, fundArgsV2 } from "@countersign/rail";
+import { arcV2Rail, startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
 import { ARC, escrowEvents, JOB, jobOf, receipt, revertOf, sameAddress, tokenTransfers, writer } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
@@ -69,7 +69,10 @@ export const arcWrongAmount: Flow = {
     });
 
     const signed = await ctx.step("buyer countersigns the listed price", async () => {
-      const rail = KNOWN_RAILS.find((k) => k.chainId === ARC.chainId && sameAddress(k.escrow, ARC.escrow));
+      const rail =
+        ARC.escrowVersion === 2
+          ? arcV2Rail()
+          : KNOWN_RAILS.find((k) => k.chainId === ARC.chainId && sameAddress(k.escrow, ARC.escrow));
       check(rail, "the buyer pins the Arc escrow");
       const out = await countersignPayer(buyerAccount).pay(entry, { now: Math.floor(Date.now() / 1000), rail });
       ctx.save("payment.json", out.payment);
@@ -93,10 +96,21 @@ export const arcWrongAmount: Flow = {
     });
 
     await ctx.step("chain refuses a moved price", async () => {
-      const [offer, cs] = fundArgs(seller.offerHash, payload);
-      const movedCs = { ...cs, amount: MOVED };
       const movedJobId = jobIdOf({ ...payload.terms, amount: MOVED.toString() }, ARC.chainId, ARC.escrow);
-      const data = encodeFunctionData({ abi: escrowAbi, functionName: "fund", args: [offer, movedCs] });
+      let data: Hex;
+      let callArgs: readonly unknown[];
+      if (ARC.escrowVersion === 2) {
+        const [offer, cs] = fundArgsV2(seller.offerHash, payload);
+        const movedCs = { ...cs, amount: MOVED };
+        const args = [offer, movedCs, "0x"] as const;
+        data = encodeFunctionData({ abi: escrowV2Abi, functionName: "fund", args });
+        callArgs = args;
+      } else {
+        const [offer, cs] = fundArgs(seller.offerHash, payload);
+        const movedCs = { ...cs, amount: MOVED };
+        data = encodeFunctionData({ abi: escrowAbi, functionName: "fund", args: [offer, movedCs] });
+        callArgs = [offer, movedCs];
+      }
       // Gas is set by hand so the transaction is mined and its revert is on the record.
       const hash: Hex = await writer(ARC, stranger).sendTransaction({ to: ARC.escrow, data, gas: 300_000n });
       ctx.tx("arc", "fund at twice the signed price", hash, { reverted: true });
@@ -104,7 +118,7 @@ export const arcWrongAmount: Flow = {
       equal(rcpt.status, "reverted", "moved-price fund receipt status");
       equal(escrowEvents(ARC, rcpt).funded.length, 0, "Funded events in the reverted tx");
       equal(tokenTransfers(ARC, rcpt).length, 0, "token transfers in the reverted tx");
-      const why = await revertOf(ARC, stranger.address, "fund", [offer, movedCs]);
+      const why = await revertOf(ARC, stranger.address, "fund", callArgs);
       check(why, "replaying the moved-price fund reverts");
       equal(why.errorName, "CountersignatureMismatch", "revert reason");
       sameHex(why.args[0] as string, movedJobId, "CountersignatureMismatch names the moved terms' job id");
@@ -114,7 +128,9 @@ export const arcWrongAmount: Flow = {
 
     await ctx.step("the signature holds at the signed price", async () => {
       // Replayed as a call only: nothing is sent and the buyer's authorisation is never used.
-      const why = await revertOf(ARC, stranger.address, "fund", fundArgs(seller.offerHash, payload));
+      const args: readonly unknown[] =
+        ARC.escrowVersion === 2 ? [...fundArgsV2(seller.offerHash, payload), "0x"] : fundArgs(seller.offerHash, payload);
+      const why = await revertOf(ARC, stranger.address, "fund", args);
       check(why === null, `fund at the signed price would revert with ${why?.errorName}`);
     });
   },
