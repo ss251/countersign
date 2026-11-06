@@ -626,3 +626,179 @@ exit=1
 Only `scripts/release/leaks.ts`, `scripts/release/build.ts` and
 `scripts/release/test/leaks.test.ts` changed. No package source, root `package.json`,
 `bun.lock`, `tsconfig.json`, `.gitignore`, key or env file was touched.
+
+## cs-70e: the real CLI and its child entry
+
+### The changes
+
+`scripts/release/imports.ts` adds `stripShebang`, which removes one leading `#!` line
+before `scanImportPackages` calls Bun's transpiler. The scanned file on disk is not
+rewritten.
+
+`scripts/release/surface.ts` adds `EXTRA_ENTRIES` and `EXTRA_DEPENDENCIES`. Both are
+empty for `relay` and `mcp`; `cli` adds the runner child entry
+(`packages/runner/src/child-entry.ts` -> `dist/child-entry.js`) and the published
+`@countersign-hub/mcp` dependency from workspace `mcp`. `manifest.ts` adds
+`bundleEntries` (the manifest entries plus the extras, with one target-collision
+check), `extraDependencyRanges` (`^` plus the source package version, or a skipped
+line), and takes the staged Node floor from the source package through `engines.ts`
+(`nodeEngine`). `build.ts` builds every entry in one `Bun.build` rooted at the
+repository, stages each output at its target, then guards, import-scans and packs it.
+Extra dependencies are merged after the scan, so pruning cannot drop them.
+`smoke.ts` reads the installed package's `engines.node` (`floorMajor`), runs the
+second pass under `npx -y node@<major>`, and checks the CLI's installed
+`dist/child-entry.js` with `node -e` and `fs.existsSync`.
+
+### Gate 1: install, typecheck, tests
+
+```
+$ bun install --linker hoisted && bun run typecheck
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [2.22s]
+$ tsc -p tsconfig.json
+$ bun test scripts/release
+bun test v1.3.14 (0d9b296a)
+
+ 74 pass
+ 0 fail
+ 141 expect() calls
+Ran 74 tests across 10 files. [301.00ms]
+```
+
+The 63 tests from cs-70d are unchanged. Eleven new tests cover the shebang scan, the
+`relay`/`mcp` empty extras, the `cli` extra entry list and its staging target, the fact
+that extras never reach `bin` or `exports`, the extra dependency range, its loud skip
+line, its survival after an empty import scan, the source versus default engine, and
+the `>=N` floor parser.
+
+### Gate 2: the relay is unchanged
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: packed files clean (4 files)
+relay: .release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+The size and the four files match cs-70d exactly.
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 10s
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+node 20 --version: v20.20.2
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+### Gate 3: the CLI against K2 — blocked by the guard
+
+The refreshed `origin/cs/tr-09` tip (`e3b1c17`) already declares
+`"bin": { "countersign": "./src/bin.ts" }`, so the second worktree needed no manifest
+edit. It merged the local `cs/cs-70` branch, since nothing is pushed.
+
+```
+$ git worktree add --detach "$HOME/Developer/countersign-wt/k3-cli" origin/cs/tr-09
+$ cd "$HOME/Developer/countersign-wt/k3-cli" && git merge --no-edit cs/cs-70
+$ bun install --linker hoisted && bun scripts/release/build.ts --only cli --out .release
+bun install v1.3.14 (0d9b296a)
+Saved lockfile
+
+748 packages installed [10.40s]
+cli: extra dependency @countersign-hub/mcp skipped (packages/mcp not found)
+cli: dependencies 0 of 0 declared: 
+Node guard failed for cli:
+  .release/stage/cli/dist/bin.js:32564:18 "Bun." (source packages/buyer/src/openai/server.ts)
+  packages/runner/src/cli.ts:488:5 "import.meta.main"
+  packages/runner/src/child.ts:97:16 "Bun."
+Bun-only APIs in package sources are not rewritten by this build.
+exit=1
+```
+
+The packet says not to edit K2 or runner source when the guard fails, so the gate
+stopped there. No CLI tarball was produced, so there is no CLI tarball size or packed
+file list to report. The parts before the guard did complete, and they show the extra
+entry and engine wiring:
+
+```json
+{
+  "name": "@countersign-hub/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "bin": {
+    "countersign": "./dist/bin.js"
+  }
+}
+```
+
+The staged tree before packing:
+
+```
+dist/bin.js
+dist/child-entry.js
+package.json
+```
+
+`.bundle/packages/*.map` also exists during the guard and is deleted before packing, so
+those three files are the ones `files: ["dist"]` plus npm would have packed. `dependencies`
+is empty because `packages/mcp` is absent in that tree and the extra dependency was
+skipped with the required line.
+
+The guard named three K2/runner sources: `Bun.spawn` in
+`packages/runner/src/child.ts:97`, `import.meta.main` in
+`packages/runner/src/cli.ts:488`, and `Bun.serve` in
+`packages/buyer/src/openai/server.ts:92` (emitted in `dist/bin.js`). These are findings
+for K2's owner; the release tooling did not weaken the guard. Smoke was not run because
+there is no CLI tarball.
+
+The worktree was removed afterwards with `git worktree remove --force` and
+`git worktree prune`.
+
+### Gate 4: missing lanes still fail
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release-req
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+`.release-req` was removed afterwards.
+
+### Files
+
+Only `scripts/release/imports.ts`, `scripts/release/surface.ts`,
+`scripts/release/engines.ts`, `scripts/release/manifest.ts`,
+`scripts/release/build.ts`, `scripts/release/smoke.ts` and the tests under
+`scripts/release/test/` changed. No package source, root `package.json`, `bun.lock`,
+`tsconfig.json`, `.gitignore`, key or env file was touched. The three commits are the
+shebang fix, the extra-entry/engine feature, and the tests.
+
