@@ -1,5 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -29,17 +40,46 @@ function parse(text: string): Session | null {
   return null;
 }
 
+function refuse(path: string): null {
+  process.stderr.write(`countersign: refusing the session at ${path}: symlink, non-regular file or unsafe permissions.\n`);
+  return null;
+}
+
 export function fileSessionBackend(dir: string = join(homedir(), ".config", "countersign")): SessionBackend {
   const path = join(dir, "session.json");
   return {
     kind: "file",
     where: () => path,
-    read: () => (existsSync(path) ? parse(readFileSync(path, "utf8")) : null),
+    read() {
+      try {
+        if (lstatSync(dir).isSymbolicLink()) return refuse(dir);
+      } catch {
+        return null;
+      }
+      try {
+        const info = lstatSync(path);
+        if (info.isSymbolicLink() || !info.isFile() || (info.mode & 0o077) !== 0) return refuse(path);
+      } catch {
+        return null;
+      }
+      try {
+        return parse(readFileSync(path, "utf8"));
+      } catch {
+        return null;
+      }
+    },
     write(session) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       chmodSync(dir, 0o700);
-      writeFileSync(path, `${JSON.stringify(session)}\n`, { mode: 0o600 });
-      chmodSync(path, 0o600);
+      const tmp = `${path}.tmp`;
+      rmSync(tmp, { force: true });
+      const fd = openSync(tmp, "wx", 0o600);
+      try {
+        writeSync(fd, `${JSON.stringify(session)}\n`);
+      } finally {
+        closeSync(fd);
+      }
+      renameSync(tmp, path);
     },
     clear() {
       rmSync(path, { force: true });

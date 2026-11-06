@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,7 +11,7 @@ import {
   withHub,
   type CliDeps,
 } from "../src/cli.ts";
-import { runLogin, runLogout, runWhoami } from "../src/login.ts";
+import { assertHubUrl, runLogin, runLogout, runWhoami, safeConsoleUrl } from "../src/login.ts";
 import {
   NOT_SIGNED_IN,
   fileSessionBackend,
@@ -24,6 +24,8 @@ import {
 const TOKEN = "session-token-7f3a9c";
 const ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
 const HUB = "https://hub.test";
+const CONSOLE = "https://web-production-a58de.up.railway.app";
+const VERIFY_URL = `${CONSOLE}/#/cli-login?code=ABCD-1234`;
 const NOW = 1_700_000_000;
 const FRESH = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 const SESSION: Session = { token: TOKEN, hub: HUB, address: ADDRESS, expiresAt: FRESH };
@@ -161,6 +163,44 @@ describe("session storage", () => {
     expect(loadSession(backend, SESSION.expiresAt)).toBeNull();
     expect(loadSession(backend, SESSION.expiresAt - 1)).toEqual(SESSION);
   });
+
+  test("a symlink at session.json is refused on read without leaking it", () => {
+    const dir = join(tmp, "config");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const target = join(tmp, "elsewhere.json");
+    writeFileSync(target, `${JSON.stringify(SESSION)}\n`, { mode: 0o600 });
+    symlinkSync(target, join(dir, "session.json"));
+    const backend = fileSessionBackend(dir);
+
+    expect(backend.read()).toBeNull();
+    expect(stderr.join("")).toContain(backend.where());
+    expect(stderr.join("")).not.toContain(TOKEN);
+  });
+
+  test("a symlinked session directory is refused on read", () => {
+    const real = join(tmp, "real");
+    mkdirSync(real, { recursive: true, mode: 0o700 });
+    writeFileSync(join(real, "session.json"), `${JSON.stringify(SESSION)}\n`, { mode: 0o600 });
+    const link = join(tmp, "linked");
+    symlinkSync(real, link);
+    const backend = fileSessionBackend(link);
+
+    expect(backend.read()).toBeNull();
+    expect(stderr.join("")).toContain(link);
+    expect(stderr.join("")).not.toContain(TOKEN);
+  });
+
+  test("a 0644 session file is refused on read without leaking it", () => {
+    const dir = join(tmp, "config");
+    const backend = fileSessionBackend(dir);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(backend.where(), `${JSON.stringify(SESSION)}\n`, { mode: 0o644 });
+    chmodSync(backend.where(), 0o644);
+
+    expect(backend.read()).toBeNull();
+    expect(stderr.join("")).toContain(backend.where());
+    expect(stderr.join("")).not.toContain(TOKEN);
+  });
 });
 
 describe("login", () => {
@@ -174,7 +214,7 @@ describe("login", () => {
         return json({
           code: "ABCD-1234",
           deviceSecret: "device-secret",
-          verifyUrl: "https://hub.test/verify",
+          verifyUrl: VERIFY_URL,
           interval: 1,
           expiresAt: NOW + 600,
         });
@@ -203,10 +243,10 @@ describe("login", () => {
     });
 
     expect(backend.read()).toEqual(SESSION);
-    expect(opened).toEqual(["https://hub.test/verify"]);
+    expect(opened).toEqual([VERIFY_URL]);
 
     const text = out.join("");
-    expect(text).toContain(`Open this link and sign in: https://hub.test/verify`);
+    expect(text).toContain(`Open this link and sign in: ${VERIFY_URL}`);
     expect(text).toContain(`The page will show this code: ABCD-1234`);
     expect(text).toContain(ADDRESS);
     expect(text).toContain("https://faucet.circle.com");
@@ -251,6 +291,89 @@ describe("login", () => {
     expect(backend.read()).toBeNull();
     expect(out.join("")).not.toContain(TOKEN);
     expect(stderr.join("")).not.toContain(TOKEN);
+  });
+
+  test("an unsafe verifyUrl is printed but never opened", async () => {
+    const backend = fileSessionBackend(join(tmp, "config"));
+    const out: string[] = [];
+    const opened: string[] = [];
+    const unsafe = `${CONSOLE}/#/cli-login?code=ABCD-1234&calc`;
+    const { fetchImpl } = fetchRecorder((url) => {
+      if (url === `${HUB}/cli/login/start`) {
+        return json({
+          code: "ABCD-1234",
+          deviceSecret: "device-secret",
+          verifyUrl: unsafe,
+          interval: 1,
+          expiresAt: NOW + 600,
+        });
+      }
+      return json({ error: "gone" }, 410);
+    });
+
+    await runLogin([], {
+      backend,
+      hub: HUB,
+      write: (t) => out.push(t),
+      fetchImpl,
+      open: (url) => opened.push(url),
+      sleep: async () => {},
+      now: () => NOW,
+    });
+
+    expect(opened).toEqual([]);
+    expect(out.join("")).toContain(`Open this link and sign in: ${unsafe}`);
+  });
+
+  test("login --hub http://evil.example exits non-zero without any fetch", async () => {
+    const original = globalThis.fetch;
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches += 1;
+      throw new Error("no network in tests");
+    }) as unknown as typeof fetch;
+    try {
+      await run(["login", "--hub", "http://evil.example"], inertDeps([]));
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    expect(fetches).toBe(0);
+    expect(process.exitCode).toBe(1);
+    expect(stderr.join("")).toContain("Refused: the countersign hub must be https.");
+  });
+});
+
+describe("safeConsoleUrl", () => {
+  test("accepts the console's https link", () => {
+    const url = `${CONSOLE}/#/cli-login?code=ABCD-EFGH`;
+    expect(safeConsoleUrl(url)).toBe(url);
+  });
+
+  test("refuses http, another origin, shell characters, whitespace and javascript:", () => {
+    expect(safeConsoleUrl(`${CONSOLE.replace("https:", "http:")}/#/cli-login?code=ABCD-EFGH`)).toBeNull();
+    expect(safeConsoleUrl("https://evil.example/#/cli-login?code=ABCD-EFGH")).toBeNull();
+    expect(safeConsoleUrl(`${CONSOLE}/#/cli-login?code=ABCD-EFGH&calc`)).toBeNull();
+    expect(safeConsoleUrl(`${CONSOLE}/#/cli-login?code=ABCD-EFGH|x`)).toBeNull();
+    expect(safeConsoleUrl(`${CONSOLE}/#/cli-login?code=AB CD`)).toBeNull();
+    expect(safeConsoleUrl("javascript:alert(1)")).toBeNull();
+  });
+});
+
+describe("assertHubUrl", () => {
+  test("accepts https hubs and plain http on the local machine", () => {
+    expect(assertHubUrl("https://hub-production-e85e.up.railway.app")).toBe(
+      "https://hub-production-e85e.up.railway.app",
+    );
+    expect(assertHubUrl("http://127.0.0.1:8787")).toBe("http://127.0.0.1:8787");
+    expect(assertHubUrl("http://localhost:8787")).toBe("http://localhost:8787");
+    expect(assertHubUrl("http://[::1]:8787")).toBe("http://[::1]:8787");
+  });
+
+  test("refuses a plain-http hub elsewhere", () => {
+    expect(() => assertHubUrl("http://evil.example")).toThrow(
+      "Refused: the countersign hub must be https.",
+    );
   });
 });
 
@@ -381,6 +504,28 @@ describe("useSession", () => {
     expect(useSession(env)).toBe(true);
     expect(env.CS_SESSION).toBeUndefined();
     expect(env.CS_HUB).toBeUndefined();
+  });
+
+  test("a stored session whose hub is plain http is refused and sets nothing", () => {
+    const script = `
+      import { fileSessionBackend } from ${JSON.stringify(join(import.meta.dir, "../src/session.ts"))};
+      import { useSession } from ${JSON.stringify(join(import.meta.dir, "../src/cli.ts"))};
+      fileSessionBackend().write(${JSON.stringify({ ...SESSION, hub: "http://evil.example" })});
+
+      const env = {};
+      if (useSession(env) !== false) process.exit(2);
+      if (env.CS_SESSION !== undefined) process.exit(3);
+      if (env.CS_HUB !== undefined) process.exit(4);
+
+      process.stdout.write("ok");
+    `;
+    const result = Bun.spawnSync(["bun", "-e", script], {
+      cwd: join(import.meta.dir, "../../.."),
+      env: { ...process.env, HOME: tmp, COUNTERSIGN_KEYSTORE: "file" },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toBe("ok");
   });
 });
 

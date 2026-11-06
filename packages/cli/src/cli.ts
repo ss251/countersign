@@ -3,7 +3,7 @@
  * each subcommand runs an existing CLI (docs/decisions.md D22).
  */
 import { main as runnerMain } from "../../runner/src/cli.ts";
-import { runLogin, runLogout, runWhoami } from "./login.ts";
+import { assertHubUrl, runLogin, runLogout, runWhoami } from "./login.ts";
 import { defaultSessionBackend, loadSession, NOT_SIGNED_IN } from "./session.ts";
 
 export const VERSION = "0.1.1";
@@ -64,14 +64,27 @@ export function withHub(args: string[], env: Record<string, string | undefined> 
   return [...args, "--hub", hub];
 }
 
+/** The hub value that withHub settled on, whether it came as `--hub <url>` or `--hub=<url>`. */
+function hubValue(args: string[], env: Record<string, string | undefined> = process.env): string {
+  const settled = withHub(args, env);
+  const last = settled.at(-1) ?? DEFAULT_HUB;
+  return last.startsWith("--hub=") ? last.slice("--hub=".length) : last;
+}
+
 /** The CI override signs locally; otherwise a stored session becomes CS_SESSION and CS_HUB. */
 export function useSession(env: Record<string, string | undefined> = process.env): boolean {
   if (env.CS_BUYER_KEY !== undefined || env.CS_SELLER_KEY !== undefined) return true;
   const session = loadSession();
   if (session === null) return false;
+  let hub: string;
+  try {
+    hub = assertHubUrl(session.hub);
+  } catch {
+    return false;
+  }
   env.CS_SESSION = session.token;
   // The token goes only to the hub that issued it, whatever CS_HUB said before.
-  env.CS_HUB = session.hub;
+  env.CS_HUB = hub;
   return true;
 }
 
@@ -144,7 +157,7 @@ export async function run(argv: string[], deps: CliDeps = DEFAULT_DEPS): Promise
   if (command === "login" || command === "logout" || command === "whoami") {
     const loginDeps = {
       backend: defaultSessionBackend(),
-      hub: withHub([]).at(-1) as string,
+      hub: hubValue(rest),
       write: (t: string) => process.stdout.write(t),
     };
     if (command === "login") await runLogin(rest, loginDeps);

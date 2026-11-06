@@ -26,20 +26,57 @@ type LoginPoll =
   | { status: "approved"; sessionToken: string; address: string; expiresAt: number };
 
 const EXPIRED = "The login expired. Run countersign login again.\n";
+const CONSOLE_ORIGIN = "https://web-production-a58de.up.railway.app";
+const UNSAFE_URL_CHARACTERS = /[&|^<>"%`;\s]/;
+const HUB_REFUSED = "Refused: the countersign hub must be https.";
+
+/** The link to the console, or null when the hub answered with anything else. */
+export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): string | null {
+  if (UNSAFE_URL_CHARACTERS.test(url)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  if (parsed.origin !== consoleOrigin) return null;
+  return url;
+}
+
+/** The hub origin, or a refusal: only https, plus plain http to the local machine. */
+export function assertHubUrl(hub: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(hub);
+  } catch {
+    throw new Error(HUB_REFUSED);
+  }
+  const local =
+    parsed.protocol === "http:" &&
+    (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]");
+  if (parsed.protocol !== "https:" && !local) throw new Error(HUB_REFUSED);
+  return parsed.origin;
+}
 
 /** Open a URL in the user's browser without waiting for it. */
 function defaultOpen(url: string): void {
-  let command = "xdg-open";
-  let args = [url];
-  if (process.platform === "darwin") {
-    command = "open";
-  } else if (process.platform === "win32") {
-    command = "cmd";
-    args = ["/c", "start", "", url];
-  }
-  const child = spawn(command, args, { detached: true, stdio: "ignore" });
+  const windows = process.platform === "win32";
+  const command = windows ? "rundll32" : process.platform === "darwin" ? "open" : "xdg-open";
+  const args = windows ? ["url.dll,FileProtocolHandler", url] : [url];
+  const child = spawn(command, args, { detached: true, stdio: "ignore", shell: false });
   child.on("error", () => {});
   child.unref();
+}
+
+function hubOrRefuse(hub: string): string | null {
+  try {
+    return assertHubUrl(hub);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+    return null;
+  }
 }
 
 function expired(): void {
@@ -52,10 +89,12 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000));
   const open = deps.open ?? defaultOpen;
+  const hub = hubOrRefuse(deps.hub);
+  if (hub === null) return;
 
   let start: LoginStart;
   try {
-    const response = await fetchImpl(`${deps.hub}/cli/login/start`, { method: "POST" });
+    const response = await fetchImpl(`${hub}/cli/login/start`, { method: "POST" });
     if (!response.ok) throw new Error("start refused");
     start = (await response.json()) as LoginStart;
   } catch {
@@ -66,9 +105,12 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
 
   deps.write(`Open this link and sign in: ${start.verifyUrl}\n`);
   deps.write(`The page will show this code: ${start.code}\n`);
-  try {
-    open(start.verifyUrl);
-  } catch {}
+  const safeUrl = safeConsoleUrl(start.verifyUrl);
+  if (safeUrl !== null) {
+    try {
+      open(safeUrl);
+    } catch {}
+  }
 
   const interval = Number.isFinite(start.interval) && start.interval > 0 ? start.interval : 5;
 
@@ -78,7 +120,7 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
 
     let poll: LoginPoll;
     try {
-      const response = await fetchImpl(`${deps.hub}/cli/login/poll`, {
+      const response = await fetchImpl(`${hub}/cli/login/poll`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ deviceSecret: start.deviceSecret }),
@@ -93,7 +135,7 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
     if (poll.status === "approved") {
       const session: Session = {
         token: poll.sessionToken,
-        hub: deps.hub,
+        hub,
         address: poll.address,
         expiresAt: poll.expiresAt,
       };
@@ -112,10 +154,12 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
 
 export async function runLogout(_args: string[], deps: LoginDeps): Promise<void> {
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const hub = hubOrRefuse(deps.hub);
+  if (hub === null) return;
   const session = loadSession(deps.backend);
   if (session !== null) {
     try {
-      await fetchImpl(`${deps.hub}/cli/logout`, {
+      await fetchImpl(`${hub}/cli/logout`, {
         method: "POST",
         headers: { Authorization: `Bearer ${session.token}` },
       });
@@ -128,6 +172,8 @@ export async function runLogout(_args: string[], deps: LoginDeps): Promise<void>
 export async function runWhoami(_args: string[], deps: LoginDeps): Promise<void> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const readBalances = deps.balances ?? defaultBalances;
+  const hub = hubOrRefuse(deps.hub);
+  if (hub === null) return;
   const session = loadSession(deps.backend);
   if (session === null) {
     process.stderr.write(`${NOT_SIGNED_IN}\n`);
@@ -137,7 +183,7 @@ export async function runWhoami(_args: string[], deps: LoginDeps): Promise<void>
 
   let response: Response;
   try {
-    response = await fetchImpl(`${deps.hub}/cli/session`, {
+    response = await fetchImpl(`${hub}/cli/session`, {
       headers: { Authorization: `Bearer ${session.token}` },
     });
   } catch {
