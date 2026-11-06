@@ -17,10 +17,10 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  *                                               Gateway debits the buyer at once and credits the seller in a batch)
  *   HEDERA_RAIL=1                            -> rail "hedera" (HTS USDC on Hedera testnet through an x402
  *                                               facilitator; the hub holds no Hedera key)
- *   HEDERA_SCHEDULED_RAIL=1 -> rail "hedera-scheduled" (a held Hedera payment: the buyer's schedule moves no USDC
- *                                               until the seller's key signs it; this hub submits the seller's
- *                                               countersignature only after a checked delivery, but the seller's
- *                                               key can also release it alone; the hub holds no key)
+ *   HEDERA_SCHEDULED_RAIL=1, HEDERA_HELD_HUB_KEY -> rail "hedera-scheduled" (a held Hedera payment: the
+ *                                               payee is a 2-of-2 account of the seller and this hub, so the
+ *                                               buyer's schedule moves USDC only when both sign; this hub
+ *                                               co-signs only after a checked delivery)
  * Rails from other lanes are added here as they integrate.
  *
  * Gateway and Hedera ask their facilitator what it supports while they start. If a facilitator is
@@ -65,6 +65,7 @@ export const RAIL_CONFIG_VARS = [
   "ARC_USDC",
   "ARC_ESCROW_VERSION",
   "CS_RELAYER_KEY",
+  "HEDERA_HELD_HUB_KEY",
 ] as const;
 
 /** Whether the environment asks for this rail. */
@@ -137,7 +138,12 @@ export async function railsFromEnv(
     await startOptional(
       rails,
       "hedera-scheduled",
-      makers.hederaScheduled ?? (() => createHederaHeldRail()),
+      makers.hederaScheduled ??
+        (() => {
+          const value = env.HEDERA_HELD_HUB_KEY;
+          if (!value) throw new Error("HEDERA_HELD_HUB_KEY is not set");
+          return createHederaHeldRail({ hubKey: value });
+        }),
       log,
     );
   }
