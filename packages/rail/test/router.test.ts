@@ -46,12 +46,59 @@ const gateway = declaration("gateway", 900, 0);
 const hedera = declaration("hedera", 5, 0);
 
 describe("chooseRail", () => {
-  test("the cheapest acceptable rail wins", () => {
+  test("a protected rail wins even when an unprotected rail costs less", () => {
     const choice = chooseRail(offer(["escrow", "gateway"]), {}, [escrow, gateway], {}, NOW);
+
+    expect(choice.chosen).toBe("escrow");
+    expect(choice.candidates).toEqual(["escrow", "gateway"]);
+    expect(choice.reason).toBe(
+      "escrow: protected rail, listed before unprotected rails (cost 100, finality 2 s)",
+    );
+    expect(choice.trace.find((entry) => entry.rail === "gateway")?.why).toBe(
+      "fallback 1: does not refund the buyer, listed after the escrow rails",
+    );
+    expect(choice.trace.find((entry) => entry.rail === "escrow")?.why).toBe("chosen");
+  });
+
+  test("the buyer opts into unprotected rails with allowUnprotected", () => {
+    const choice = chooseRail(
+      offer(["escrow", "gateway"]),
+      { allowUnprotected: true },
+      [escrow, gateway],
+      {},
+      NOW,
+    );
 
     expect(choice.chosen).toBe("gateway");
     expect(choice.candidates).toEqual(["gateway", "escrow"]);
-    expect(choice.reason).toBe("gateway: cheapest acceptable rail (cost 0, finality 900 s)");
+    expect(choice.reason).toBe(
+      "gateway: cheapest acceptable rail, the buyer allows unprotected rails (cost 0, finality 900 s)",
+    );
+    expect(choice.trace.find((entry) => entry.rail === "gateway")?.why).toBe("chosen");
+  });
+
+  test("naming an unprotected rail in the caps is also an opt-in", () => {
+    const choice = chooseRail(
+      offer(["escrow", "gateway"]),
+      { rails: ["gateway"] },
+      [escrow, gateway],
+      {},
+      NOW,
+    );
+
+    expect(choice.chosen).toBe("gateway");
+    expect(choice.candidates).toEqual(["gateway"]);
+    expect(choice.trace.find((entry) => entry.rail === "escrow")?.why).toBe(
+      "the buyer cannot pay it",
+    );
+  });
+
+  test("without a protected rail the unprotected trace stays plain", () => {
+    const choice = chooseRail(offer(["gateway", "hedera"]), {}, [gateway, hedera], {}, NOW);
+
+    expect(choice.chosen).toBe("hedera");
+    expect(choice.candidates).toEqual(["hedera", "gateway"]);
+    expect(choice.trace.find((entry) => entry.rail === "gateway")?.why).toBe("fallback 1");
   });
 
   test("finality over the buyer's maximum makes a rail ineligible", () => {
@@ -114,7 +161,8 @@ describe("chooseRail", () => {
     expect(choice).toEqual({
       candidates: ["hedera", "escrow"],
       chosen: "hedera",
-      reason: "hedera: cheapest acceptable rail (cost 0, finality 5 s)",
+      reason:
+        "hedera: cheapest acceptable rail, the buyer allows unprotected rails (cost 0, finality 5 s)",
       trace: [
         {
           rail: "gateway",
