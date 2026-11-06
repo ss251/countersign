@@ -195,8 +195,9 @@ export function Receipt({ id, offline }: ReceiptProps) {
         </section>
 
         <p className="mx-receipt__footer">
-          Every step above is a transaction on {networkNameOf(order)}. Anyone can check it on the explorer, with or
-          without countersign.
+          {standIn?.(order.settleTx)
+            ? "A made-up order in the sample ledger: none of its steps is a real transaction."
+            : `Every step above is a transaction on ${networkNameOf(order)}. Anyone can check it on the explorer, with or without countersign.`}
         </p>
       </article>
     </div>
