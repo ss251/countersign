@@ -1,8 +1,9 @@
 import type { Order, ReceiptOrder, RefundRecord, RelayStatus } from "./model.ts";
-import { formatUsdt, txUrl, wasReceived } from "./model.ts";
+import { ordersCsv, txUrl } from "./model.ts";
 
 /*
- * Fixture orders for reviewing the screens with no services running (?fixture=1).
+ * The sample ledger, for reviewing the screens with no hub (?hub=off). Loaded only by dynamic
+ * import, so the default bundle never carries it.
  * Four are the real Whitechain Sepolia history of this merchant, so every proof link opens a
  * real transaction. The held order and the partly refunded one are made up, with hashes of
  * their own; no hash appears twice.
@@ -205,40 +206,7 @@ export function findFixtureOrder(id: string): ReceiptOrder | null {
   return order ? fixtureDetail(order) : null;
 }
 
-function csvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-const CSV_HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
-
-/** The same columns the relay's orders.csv exports, from the fixtures. */
+/** The export a sample desk downloads: the same builder and columns as a live one. */
 export function fixtureCsv(): string {
-  const rows = [CSV_HEADER];
-  for (const order of fixtureOrders) {
-    const amount = wasReceived(order) ? BigInt(order.amount) : 0n;
-    const fee = BigInt(order.fee ?? "0");
-    const refunded = BigInt(order.refunded);
-    const net = amount - fee - refunded;
-    rows.push(
-      [
-        new Date(order.createdAt).toISOString(),
-        order.id,
-        order.kind,
-        order.customer,
-        order.merchant,
-        formatUsdt(order.amount),
-        formatUsdt(fee.toString()),
-        formatUsdt(order.refunded),
-        `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
-        order.status,
-        txUrl(order.settleTx),
-        order.closeTx ? txUrl(order.closeTx) : "",
-        order.refundTxs.map((hash) => txUrl(hash)).join(" "),
-      ]
-        .map(csvField)
-        .join(","),
-    );
-  }
-  return `${rows.join("\n")}\n`;
+  return ordersCsv(fixtureOrders);
 }

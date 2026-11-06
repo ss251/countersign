@@ -1,21 +1,27 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import { navigate } from "../../app/router.tsx";
 import type { Equation, Order, OrderFilter, ReceiptOrder, RefundReason, RefundRecord, Refusal, RelayStatus } from "./model.ts";
 import {
   ORDER_FILTERS,
   addressUrl,
   adjustments,
+  assetOf,
   dateStamp,
   decimalsFor,
   equation,
+  explorerOf,
   filterCounts,
   formatFixed,
   formatUsdt,
   formatWbt,
   formatWeiWbt,
   humanDate,
+  isWhitechain,
   itemLabel,
   ledger,
   matchesFilter,
+  networkNameOf,
+  ordersCsv,
   refundLabel,
   refusalWords,
   shortAddress,
@@ -29,25 +35,41 @@ import {
   RELAY_URL,
   canSignRefunds,
   fetchOfferTitle,
+  fetchOrder,
   fetchOrders,
-  fetchOrdersCsv,
-  fetchRelayOrder,
   fetchRelayStatus,
+  probeMerchantService,
   refundOrder,
   resolveMerchant,
   unlockRefunds,
+  type OrdersSource,
 } from "./api.ts";
-import { fixtureCsv, fixtureDetail, fixtureMerchant, fixtureOrders, fixtureRefundTx, fixtureStatus } from "./fixtures.ts";
-import { OrderPanel, Sheet, UNDO_MS, UndoStrip, offersRefund, type PanelView, type PartOutcome, type RowState } from "./Panel.tsx";
+import {
+  OrderPanel,
+  Sheet,
+  UNDO_MS,
+  UndoStrip,
+  awayWords,
+  canAct,
+  offersRefund,
+  type PanelView,
+  type PartOutcome,
+  type RefundAccess,
+  type RowState,
+} from "./Panel.tsx";
 
-const POLL_MS = 2500;
+/** The sample ledger, imported only on ?hub=off so the default bundle never carries it. */
+type Sample = typeof import("./fixtures.ts");
+
+const POLL_MS = 4000;
 const STATUS_POLL_MS = 5000;
 const HIGHLIGHT_MS = 1200;
 /** From this width the order opens beside the ledger; below it, as a sheet over it. */
 const SPLIT_QUERY = "(min-width: 1100px)";
 
 interface DeskProps {
-  fixture: boolean;
+  /** ?hub=off: the sample ledger. Everything else reads the live hub. */
+  offline: boolean;
   /** ?merchant=0x…: whose ledger to read. */
   merchantQuery: string | null;
 }
@@ -80,22 +102,32 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function Unit() {
-  return <span className="mx-unit">USDT</span>;
+function hubLabel(base: string): string {
+  if (base.startsWith("/")) return "this console's hub";
+  try {
+    return new URL(base).host;
+  } catch {
+    return base;
+  }
 }
 
-export function Desk({ fixture, merchantQuery }: DeskProps) {
-  const [orders, setOrders] = useState<Order[]>(() => (fixture ? fixtureOrders : []));
-  const [merchant, setMerchant] = useState(() => (fixture ? fixtureMerchant : ""));
-  const [merchantError, setMerchantError] = useState<string | null>(null);
-  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(() => (fixture ? fixtureStatus : null));
-  const [relayFailed, setRelayFailed] = useState(false);
+function Unit({ symbol }: { symbol: string }) {
+  return <span className="mx-unit">{symbol}</span>;
+}
+
+export function Desk({ offline, merchantQuery }: DeskProps) {
+  const [sample, setSample] = useState<Sample | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  /** null until resolved; then the address, or "" when nothing names a merchant. */
+  const [merchant, setMerchant] = useState<string | null>(null);
+  const [source, setSource] = useState<OrdersSource | null>(null);
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(null);
   const [titles, setTitles] = useState<Record<string, string>>({});
-  const [loaded, setLoaded] = useState(fixture);
-  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [filter, setFilter] = useState<OrderFilter>("all");
+  const [asset, setAsset] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [refusals, setRefusals] = useState<Record<string, Refusal[]>>({});
   const [added, setAdded] = useState<Record<string, RefundRecord[]>>({});
@@ -103,12 +135,12 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<PanelView>("detail");
   const [detail, setDetail] = useState<ReceiptOrder | null>(null);
-  const [canSign, setCanSign] = useState(() => fixture || canSignRefunds());
+  const [access, setAccess] = useState<RefundAccess>(() => ({ kind: offline ? "sample" : "checking" }));
   const [unlockOpen, setUnlockOpen] = useState(false);
 
   const split = useMedia(SPLIT_QUERY);
   const touch = useMedia("(hover: none)");
-  const seenRef = useRef<Set<string> | null>(fixture ? new Set(fixtureOrders.map((order) => order.id)) : null);
+  const seenRef = useRef<Set<string> | null>(null);
   const timersRef = useRef<number[]>([]);
   const undoTimersRef = useRef(new Map<string, number>());
   const requestedTitlesRef = useRef(new Set<string>());
@@ -155,21 +187,8 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     }
     setOrders(next);
     setLoaded(true);
-    setServiceError(null);
+    setLoadError(null);
   }, []);
-
-  const refresh = useCallback(async () => {
-    if (fixture || !merchant || pollBusyRef.current) return;
-    pollBusyRef.current = true;
-    try {
-      const list = await fetchOrders(merchant);
-      if (mountedRef.current) applyOrders(list);
-    } catch (error) {
-      if (mountedRef.current) setServiceError(messageOf(error));
-    } finally {
-      pollBusyRef.current = false;
-    }
-  }, [applyOrders, fixture, merchant]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -182,27 +201,68 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     };
   }, []);
 
-  // Whose desk: ?merchant=, the hosted build's address, or the local merchant service.
+  // ?hub=off: the sample ledger, fetched as its own chunk. Nothing else ever loads it.
   useEffect(() => {
-    if (fixture) return;
+    if (!offline) return;
     let cancelled = false;
-    resolveMerchant(merchantQuery)
-      .then((address) => {
-        if (cancelled) return;
-        setMerchant(address);
-        setMerchantError(null);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setMerchantError(messageOf(error));
-      });
+    void import("./fixtures.ts").then((module) => {
+      if (cancelled) return;
+      setSample(module);
+      seenRef.current = new Set(module.fixtureOrders.map((order) => order.id));
+      setOrders(module.fixtureOrders);
+      setMerchant(module.fixtureMerchant);
+      setRelayStatus(module.fixtureStatus);
+      setLoaded(true);
+    });
     return () => {
       cancelled = true;
     };
-  }, [fixture, merchantQuery]);
+  }, [offline]);
 
-  // Orders, every 2.5 s while the tab is visible, so a payment shows up the moment it settles.
+  // Live: whose desk. ?merchant=, the hosted build's address, or the merchant's own service.
   useEffect(() => {
-    if (fixture || !merchant) return;
+    if (offline) return;
+    let cancelled = false;
+    void resolveMerchant(merchantQuery).then((address) => {
+      if (!cancelled) setMerchant(address ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [offline, merchantQuery]);
+
+  // Live: can this page refund? Only through the merchant service that signs for this merchant.
+  useEffect(() => {
+    if (offline || !merchant) return;
+    let cancelled = false;
+    void probeMerchantService().then((signer) => {
+      if (cancelled) return;
+      if (!signer || signer.toLowerCase() !== merchant.toLowerCase()) setAccess({ kind: "away", signer });
+      else setAccess({ kind: canSignRefunds() ? "ready" : "locked" });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [offline, merchant]);
+
+  const refresh = useCallback(async () => {
+    if (offline || !merchant || pollBusyRef.current) return;
+    pollBusyRef.current = true;
+    try {
+      const result = await fetchOrders(merchant);
+      if (!mountedRef.current) return;
+      setSource(result.source);
+      applyOrders(result.orders);
+    } catch (error) {
+      if (mountedRef.current) setLoadError(messageOf(error));
+    } finally {
+      pollBusyRef.current = false;
+    }
+  }, [applyOrders, offline, merchant]);
+
+  // Live orders, every few seconds while the tab is visible, so a payment shows up as it settles.
+  useEffect(() => {
+    if (offline || !merchant) return;
     void refresh();
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
@@ -215,31 +275,29 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [fixture, merchant, refresh]);
+  }, [offline, merchant, refresh]);
 
-  // The relayer's gas, every 5 s.
+  // The Whitechain relayer's gas, when this console can reach the relay. Silent otherwise.
   useEffect(() => {
-    if (fixture) return;
+    if (offline) return;
     const read = () => {
       if (document.visibilityState !== "visible") return;
       fetchRelayStatus()
         .then((next) => {
-          if (!mountedRef.current) return;
-          setRelayStatus(next);
-          setRelayFailed(false);
+          if (mountedRef.current) setRelayStatus(next);
         })
         .catch(() => {
-          if (mountedRef.current) setRelayFailed(true);
+          if (mountedRef.current) setRelayStatus(null);
         });
     };
     read();
     const interval = window.setInterval(read, STATUS_POLL_MS);
     return () => window.clearInterval(interval);
-  }, [fixture]);
+  }, [offline]);
 
-  // Offer titles from the hub, once per offer, for escrow orders that carry no description.
+  // Offer titles from the hub, once per offer, for orders that carry no description.
   useEffect(() => {
-    if (fixture) return;
+    if (offline) return;
     for (const order of orders) {
       const hash = order.offerHash;
       if (!hash || order.description || requestedTitlesRef.current.has(hash)) continue;
@@ -248,7 +306,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
         if (mountedRef.current && title) setTitles((current) => ({ ...current, [hash]: title }));
       });
     }
-  }, [fixture, orders]);
+  }, [offline, orders]);
 
   const selected = selectedId ? (orders.find((order) => order.id === selectedId) ?? null) : null;
   // The open order's full record, read again whenever the list says it changed.
@@ -260,12 +318,12 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
       setDetail(null);
       return;
     }
-    if (fixture) {
-      setDetail(fixtureDetail(selected, added[selected.id] ?? []));
+    if (offline) {
+      setDetail(sample ? sample.fixtureDetail(selected, added[selected.id] ?? []) : null);
       return;
     }
     let cancelled = false;
-    fetchRelayOrder(selected.id)
+    fetchOrder(selected.id)
       .then((record) => {
         if (!cancelled) setDetail(record);
       })
@@ -277,7 +335,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     };
     // `version` stands for `selected`: a new poll result with the same facts does not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, fixture, added]);
+  }, [version, offline, sample, added]);
 
   const openOrder = (id: string) => {
     setSelectedId(id);
@@ -309,29 +367,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     window.requestAnimationFrame(() => unlockInputRef.current?.focus());
   };
 
-  const handleExport = async () => {
-    if (exporting || (!fixture && !merchant)) return;
-    setExporting(true);
-    setExportError(null);
-    try {
-      const csv = fixture ? fixtureCsv() : await fetchOrdersCsv(merchant);
-      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `countersign-orders-${dateStamp(Date.now())}.csv`;
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) {
-      setExportError(messageOf(error));
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  /** The fixture desk's stand-in for the chain: the same changes the relay would report. */
+  /** The sample ledger's stand-in for the chain: the changes a relay would report, and nothing more. */
   const simulateRefund = (order: Order, amount: bigint, reason: RefundReason | null, txHash: string) => {
     const cancelled = order.status === "held";
     setOrders((current) =>
@@ -376,9 +412,10 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     setRow(order.id, { kind: "sending" });
     const cancelled = order.status === "held";
 
-    if (fixture) {
+    if (offline) {
+      if (!sample) return;
       await wait(700);
-      const txHash = fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
+      const txHash = sample.fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
       simulateRefund(order, BigInt(order.refundable), null, txHash);
       setRow(order.id, { kind: "done", txHash, amount: order.refundable, cancelled, before: order.refundable });
       return;
@@ -410,7 +447,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
 
   /** One click: the refund is on its way unless the merchant takes it back within the window. */
   const startRefund = (order: Order) => {
-    if (undoTimersRef.current.has(order.id)) return;
+    if (!canAct(access) || undoTimersRef.current.has(order.id)) return;
     setRow(order.id, { kind: "undo" });
     const timer = window.setTimeout(() => void sendRefund(order), UNDO_MS);
     undoTimersRef.current.set(order.id, timer);
@@ -425,9 +462,11 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
 
   /** A partial refund from the panel. Deliberate already (two steps), so it sends at once. */
   const refundPart = async (order: Order, amount: bigint, reason: RefundReason): Promise<PartOutcome> => {
-    if (fixture) {
+    if (!canAct(access)) return { ok: false, reason: "Refunds cannot be signed from this page." };
+    if (offline) {
+      if (!sample) return { ok: false, reason: "The sample ledger is still loading." };
       await wait(700);
-      const txHash = fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
+      const txHash = sample.fixtureRefundTx(order.id, (added[order.id]?.length ?? 0) + 1);
       simulateRefund(order, amount, reason, txHash);
       setRow(order.id, { kind: "done", txHash, amount: amount.toString(), cancelled: false, before: order.refundable });
       return { ok: true };
@@ -454,15 +493,41 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     }
   };
 
-  const sums = useMemo(() => equation(orders), [orders]);
-  const counts = useMemo(() => filterCounts(orders), [orders]);
-  const book = useMemo(() => ledger(orders), [orders]);
-  const visible = useMemo(() => book.filter((entry) => matchesFilter(entry.order, filter)), [book, filter]);
-  const amountPlaces = useMemo(() => decimalsFor(orders.map((order) => BigInt(order.amount))), [orders]);
-  const balancePlaces = useMemo(() => decimalsFor(book.map((entry) => entry.balance)), [book]);
-  const receiptQuery = fixture ? "?fixture=1" : "";
+  // One asset per ledger: a sum never mixes two currencies. The newest order's asset leads.
+  const symbols = useMemo(() => [...new Set(orders.map(assetOf))], [orders]);
+  const newest = useMemo(() => orders.reduce<Order | null>((a, b) => (a && a.createdAt >= b.createdAt ? a : b), null), [orders]);
+  const active = asset && symbols.includes(asset) ? asset : newest ? assetOf(newest) : "USDT";
+  const book = useMemo(() => orders.filter((order) => assetOf(order) === active), [orders, active]);
+
+  const sums = useMemo(() => equation(book), [book]);
+  const counts = useMemo(() => filterCounts(book), [book]);
+  const lines = useMemo(() => ledger(book), [book]);
+  const visible = useMemo(() => lines.filter((entry) => matchesFilter(entry.order, filter)), [lines, filter]);
+  const amountPlaces = useMemo(() => decimalsFor(book.map((order) => BigInt(order.amount))), [book]);
+  const balancePlaces = useMemo(() => decimalsFor(lines.map((entry) => entry.balance)), [lines]);
+  const networks = useMemo(() => [...new Set(book.map(networkNameOf))], [book]);
+  const explorer = book[0] ? explorerOf(book[0]) : undefined;
+  const showsGas = relayStatus !== null && (book.length === 0 || book.some(isWhitechain));
+  const receiptQuery = offline ? "?hub=off" : "";
   const titleOf = (order: Order) => itemLabel(order, order.offerHash ? titles[order.offerHash] : null);
   const panelOpen = selected !== null;
+
+  const handleExport = () => {
+    setExportError(null);
+    try {
+      const url = URL.createObjectURL(new Blob([ordersCsv(book)], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `countersign-orders-${dateStamp(Date.now())}.csv`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setExportError(messageOf(error));
+    }
+  };
 
   const panel = selected ? (
     <OrderPanel
@@ -471,7 +536,7 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
       item={titleOf(selected)}
       row={rows[selected.id]}
       refusals={refusals[selected.id] ?? []}
-      canSign={canSign}
+      access={access}
       view={view}
       receiptTo={`/merchant/receipt/${selected.id}${receiptQuery}`}
       headingRef={headingRef}
@@ -485,237 +550,274 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
     />
   ) : null;
 
+  let body;
+  if (merchant === "") {
+    body = <MerchantForm />;
+  } else if (!loaded && loadError) {
+    body = (
+      <div className="mx-empty" role="alert">
+        <p>{loadError}</p>
+        <p className="mx-muted">Nothing is shown in its place: no sample data, no zeros.</p>
+        <button type="button" className="mx-button" onClick={() => void refresh()}>
+          Try again
+        </button>
+      </div>
+    );
+  } else if (!loaded) {
+    body = merchant ? (
+      <p className="mx-note" role="status">
+        Reading orders…
+      </p>
+    ) : null;
+  } else if (book.length === 0) {
+    body = <FirstPayment merchant={merchant ?? ""} />;
+  } else if (visible.length === 0) {
+    body = (
+      <div className="mx-empty">
+        <p>No orders match this filter.</p>
+        <button type="button" className="mx-button" onClick={() => setFilter("all")}>
+          Show all orders
+        </button>
+      </div>
+    );
+  } else {
+    body = (
+      <table className="mx-table">
+        <caption className="sr-only">
+          Orders, newest first. Balance is the running total of money that reached you; held and settling orders are
+          pending and not counted.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" className="mx-col-date">
+              Date
+            </th>
+            <th scope="col" className="mx-col-item">
+              Item
+            </th>
+            <th scope="col" className="mx-col-customer">
+              Customer
+            </th>
+            <th scope="col" className="mx-col-status">
+              Status
+            </th>
+            <th scope="col" className="mx-col-amount mx-num">
+              Amount
+            </th>
+            <th scope="col" className="mx-col-balance mx-num">
+              Balance
+            </th>
+            <th scope="col" className="mx-col-actions">
+              <span className="sr-only">Refund</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map(({ order, balance, pending }) => {
+            const row = rows[order.id];
+            const item = titleOf(order);
+            const isOpen = order.id === selectedId;
+            const inFlight = order.status === "held" || order.status === "pending";
+            return (
+              <Fragment key={order.id}>
+                <tr
+                  className={`mx-row${newIds.has(order.id) ? " mx-row--new" : ""}${isOpen ? " mx-row--open" : ""}`}
+                  aria-current={isOpen ? "true" : undefined}
+                  onClick={() => openOrder(order.id)}
+                >
+                  <td className="mx-col-date num">
+                    <time dateTime={new Date(order.createdAt).toISOString()} title={humanDate(order.createdAt)}>
+                      {shortHumanDate(order.createdAt)}
+                    </time>
+                  </td>
+                  <td className="mx-col-item">
+                    <button
+                      type="button"
+                      className="mx-open"
+                      ref={(element) => {
+                        if (element) openRefs.current.set(order.id, element);
+                        else openRefs.current.delete(order.id);
+                      }}
+                      aria-haspopup={split ? undefined : "dialog"}
+                      title={item}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openOrder(order.id);
+                      }}
+                    >
+                      {item}
+                    </button>
+                  </td>
+                  <td className="mx-col-customer mono" title={order.customer}>
+                    {shortAddress(order.customer)}
+                  </td>
+                  <td className="mx-col-status">
+                    <span className="mx-status">
+                      <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
+                      {statusLabel(order.status)}
+                    </span>
+                  </td>
+                  <td className="mx-col-amount mx-num">
+                    <span className={`mono mx-amount${inFlight ? " mx-money" : ""}`}>
+                      {formatFixed(BigInt(order.amount), amountPlaces)}
+                      <Unit symbol={active} />
+                    </span>
+                    <Adjustments order={order} />
+                  </td>
+                  <td className="mx-col-balance mx-num">
+                    {pending ? (
+                      <span className="mx-quiet" title="Not counted until the money reaches you.">
+                        Pending
+                      </span>
+                    ) : (
+                      <span className="mono">
+                        {formatFixed(balance, balancePlaces)}
+                        <Unit symbol={active} />
+                      </span>
+                    )}
+                  </td>
+                  <td className="mx-col-actions">
+                    <RowAction
+                      order={order}
+                      row={row}
+                      access={access}
+                      onRefund={() => startRefund(order)}
+                      onUndo={() => undoRefund(order.id)}
+                    />
+                  </td>
+                </tr>
+                {row?.kind === "done" || row?.kind === "error" ? (
+                  <tr className="mx-result-row">
+                    <td colSpan={7}>
+                      {row.kind === "done" ? (
+                        <p className="mx-result" role="status">
+                          {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} {active} returned to{" "}
+                          <span className="mono">{shortAddress(order.customer)}</span>.{" "}
+                          <a
+                            className="mono mx-tx"
+                            href={txUrl(row.txHash, explorerOf(order))}
+                            title={row.txHash}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {shortHash(row.txHash)}
+                          </a>
+                        </p>
+                      ) : (
+                        <p className="mx-result mx-result--refused" role="alert">
+                          Refused. {refusalWords(row.message)}.
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    );
+  }
+
   return (
     <div className="mx-page">
       <header className="mx-head">
         <div className="mx-head__id">
           <h1 className="mx-title">Merchant</h1>
           <p className="mx-sub">
-            Whitechain Sepolia · USDT
+            {networks.length > 0 ? `${networks.join(", ")} · ${active}` : "Merchant ledger"}
             {merchant ? (
               <>
                 <span aria-hidden="true"> · </span>
-                <a className="mono" href={addressUrl(merchant)} title={merchant} target="_blank" rel="noreferrer">
+                <a className="mono" href={addressUrl(merchant, explorer)} title={merchant} target="_blank" rel="noreferrer">
                   {shortAddress(merchant)}
                 </a>
               </>
             ) : null}
           </p>
-          {fixture ? (
-            <p className="mx-note">
-              Sample ledger: four rows link to real Whitechain Sepolia transactions, two are made up, and the times are
-              illustrative.
-            </p>
-          ) : null}
+          <SourceLine offline={offline} source={source} />
         </div>
-        <GasLine status={relayStatus} failed={relayFailed} />
+        {showsGas && relayStatus ? <GasLine status={relayStatus} /> : null}
       </header>
 
-      <EquationBand sums={sums} ready={loaded} />
+      {symbols.length > 1 ? (
+        <div className="mx-filters" role="group" aria-label="Currency">
+          {symbols.map((symbol) => (
+            <button
+              key={symbol}
+              type="button"
+              className="mx-filter"
+              aria-pressed={symbol === active}
+              onClick={() => setAsset(symbol)}
+            >
+              {symbol}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {merchant === "" ? null : <EquationBand sums={sums} ready={loaded} unit={active} />}
 
       <div className={`mx-desk${panelOpen && split ? " mx-desk--split" : ""}`}>
         <section className="mx-orders" aria-labelledby="mx-orders-heading">
-          <div className="mx-toolbar">
-            <h2 className="mx-toolbar__title" id="mx-orders-heading">
+          {loaded && book.length > 0 ? (
+            <div className="mx-toolbar">
+              <h2 className="mx-toolbar__title" id="mx-orders-heading">
+                Orders
+              </h2>
+              <div className="mx-filters" role="group" aria-label="Show orders">
+                {ORDER_FILTERS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="mx-filter"
+                    aria-pressed={filter === key}
+                    onClick={() => setFilter(key)}
+                  >
+                    {label}
+                    <span className="mx-filter__count num">{counts[key]}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mx-toolbar__end">
+                {access.kind === "locked" && !unlockOpen ? (
+                  <button type="button" className="mx-button mx-button--quiet" onClick={openUnlock}>
+                    Unlock refunds
+                  </button>
+                ) : null}
+                <button type="button" className="mx-button" onClick={handleExport}>
+                  Export for accountant
+                </button>
+              </div>
+            </div>
+          ) : (
+            <h2 className="sr-only" id="mx-orders-heading">
               Orders
             </h2>
-            <div className="mx-filters" role="group" aria-label="Show orders">
-              {ORDER_FILTERS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  className="mx-filter"
-                  aria-pressed={filter === key}
-                  onClick={() => setFilter(key)}
-                >
-                  {label}
-                  <span className="mx-filter__count num">{counts[key]}</span>
-                </button>
-              ))}
-            </div>
-            <div className="mx-toolbar__end">
-              {!canSign && !unlockOpen ? (
-                <button type="button" className="mx-button mx-button--quiet" onClick={openUnlock}>
-                  Unlock refunds
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="mx-button"
-                onClick={() => void handleExport()}
-                disabled={exporting || (!fixture && !merchant)}
-              >
-                {exporting ? "Exporting…" : "Export for accountant"}
-              </button>
-            </div>
-          </div>
+          )}
 
-          {unlockOpen && !canSign ? (
+          {unlockOpen && access.kind === "locked" ? (
             <UnlockForm
               inputRef={unlockInputRef}
               onUnlocked={() => {
-                setCanSign(true);
+                setAccess({ kind: "ready" });
                 setUnlockOpen(false);
               }}
               onCancel={() => setUnlockOpen(false)}
             />
           ) : null}
+          {access.kind === "away" && merchant && loaded && book.length > 0 ? (
+            <p className="mx-note">Read only. {awayWords(access, merchant)}</p>
+          ) : null}
           {exportError ? <p className="mx-note">{exportError}</p> : null}
-          {serviceError ? (
+          {loaded && loadError ? (
             <p className="mx-note" role="status">
-              {serviceError}
+              {loadError} Showing the last answer.
             </p>
           ) : null}
 
-          {merchantError ? (
-            <div className="mx-empty">
-              <p>{merchantError}</p>
-            </div>
-          ) : loaded && orders.length === 0 && !serviceError ? (
-            <FirstPayment merchant={merchant} />
-          ) : visible.length === 0 && orders.length > 0 ? (
-            <div className="mx-empty">
-              <p>No orders match this filter.</p>
-              <button type="button" className="mx-button" onClick={() => setFilter("all")}>
-                Show all orders
-              </button>
-            </div>
-          ) : orders.length > 0 ? (
-            <table className="mx-table">
-              <caption className="sr-only">
-                Orders, newest first. Balance is the running total of money that reached you; held and settling orders are pending and not counted.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col" className="mx-col-date">
-                    Date
-                  </th>
-                  <th scope="col" className="mx-col-item">
-                    Item
-                  </th>
-                  <th scope="col" className="mx-col-customer">
-                    Customer
-                  </th>
-                  <th scope="col" className="mx-col-status">
-                    Status
-                  </th>
-                  <th scope="col" className="mx-col-amount mx-num">
-                    Amount
-                  </th>
-                  <th scope="col" className="mx-col-balance mx-num">
-                    Balance
-                  </th>
-                  <th scope="col" className="mx-col-actions">
-                    <span className="sr-only">Refund</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map(({ order, balance, pending }) => {
-                  const row = rows[order.id];
-                  const item = titleOf(order);
-                  const isOpen = order.id === selectedId;
-                  const inFlight = order.status === "held" || order.status === "pending";
-                  return (
-                    <Fragment key={order.id}>
-                      <tr
-                        className={`mx-row${newIds.has(order.id) ? " mx-row--new" : ""}${isOpen ? " mx-row--open" : ""}`}
-                        aria-current={isOpen ? "true" : undefined}
-                        onClick={() => openOrder(order.id)}
-                      >
-                        <td className="mx-col-date num">
-                          <time dateTime={new Date(order.createdAt).toISOString()} title={humanDate(order.createdAt)}>
-                            {shortHumanDate(order.createdAt)}
-                          </time>
-                        </td>
-                        <td className="mx-col-item">
-                          <button
-                            type="button"
-                            className="mx-open"
-                            ref={(element) => {
-                              if (element) openRefs.current.set(order.id, element);
-                              else openRefs.current.delete(order.id);
-                            }}
-                            aria-haspopup={split ? undefined : "dialog"}
-                            title={item}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openOrder(order.id);
-                            }}
-                          >
-                            {item}
-                          </button>
-                        </td>
-                        <td className="mx-col-customer mono" title={order.customer}>
-                          {shortAddress(order.customer)}
-                        </td>
-                        <td className="mx-col-status">
-                          <span className="mx-status">
-                            <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
-                            {statusLabel(order.status)}
-                          </span>
-                        </td>
-                        <td className="mx-col-amount mx-num">
-                          <span className={`mono mx-amount${inFlight ? " mx-money" : ""}`}>
-                            {formatFixed(BigInt(order.amount), amountPlaces)}
-                            <Unit />
-                          </span>
-                          <Adjustments order={order} />
-                        </td>
-                        <td className="mx-col-balance mx-num">
-                          {pending ? (
-                            <span className="mx-quiet" title="Not counted until the money reaches you.">
-                              Pending
-                            </span>
-                          ) : (
-                            <span className="mono">
-                              {formatFixed(balance, balancePlaces)}
-                              <Unit />
-                            </span>
-                          )}
-                        </td>
-                        <td className="mx-col-actions">
-                          <RowAction
-                            order={order}
-                            row={row}
-                            canSign={canSign}
-                            onRefund={() => startRefund(order)}
-                            onUndo={() => undoRefund(order.id)}
-                          />
-                        </td>
-                      </tr>
-                      {row?.kind === "done" || row?.kind === "error" ? (
-                        <tr className="mx-result-row">
-                          <td colSpan={7}>
-                            {row.kind === "done" ? (
-                              <p className="mx-result" role="status">
-                                {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} USDT returned to{" "}
-                                <span className="mono">{shortAddress(order.customer)}</span>.{" "}
-                                <a
-                                  className="mono mx-tx"
-                                  href={txUrl(row.txHash)}
-                                  title={row.txHash}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  {shortHash(row.txHash)}
-                                </a>
-                              </p>
-                            ) : (
-                              <p className="mx-result mx-result--refused" role="alert">
-                                Refused. {refusalWords(row.message)}.
-                              </p>
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : null}
+          {body}
         </section>
 
         {panel && split ? (
@@ -734,12 +836,27 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
   );
 }
 
+/** Says where the ledger came from, so a sample or a fallback is never mistaken for the hub. */
+function SourceLine({ offline, source }: { offline: boolean; source: OrdersSource | null }) {
+  if (offline) {
+    return (
+      <p className="mx-note">
+        Sample ledger (?hub=off): four rows link to real Whitechain Sepolia transactions, two are made up, and the times
+        are illustrative.
+      </p>
+    );
+  }
+  if (!source) return null;
+  if (source.kind === "hub") return <p className="mx-note">Live from {hubLabel(source.base)}.</p>;
+  return <p className="mx-note">Live from the Whitechain relay: this hub does not serve merchant orders yet.</p>;
+}
+
 /**
  * Released − refunded − toll = net, ruled like the top of a statement. Held escrow stands beside the
  * sum as pending, because it is not the merchant's until delivery releases it. Until the ledger
  * loads, the figures hold their place with dashes rather than flash a row of zeros.
  */
-function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
+function EquationBand({ sums, ready, unit }: { sums: Equation; ready: boolean; unit: string }) {
   const places = decimalsFor([sums.released, sums.refunded, sums.toll, sums.net, sums.held]);
   const show = (value: bigint) => (ready ? formatFixed(value, places) : "—");
   const terms = [
@@ -760,7 +877,7 @@ function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
             <dt className="mx-label">{term.label}</dt>
             <dd className="mx-eq__value mono">
               {show(term.value)}
-              <Unit />
+              <Unit symbol={unit} />
             </dd>
           </div>
         ))}
@@ -771,7 +888,7 @@ function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
             <dt className="mx-label">Held</dt>
             <dd className="mx-eq__value mono mx-money">
               {show(sums.held)}
-              <Unit />
+              <Unit symbol={unit} />
             </dd>
             <dd className="mx-eq__note">Pending. Releases on delivery.</dd>
           </div>
@@ -781,10 +898,7 @@ function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
   );
 }
 
-function GasLine({ status, failed }: { status: RelayStatus | null; failed: boolean }) {
-  if (!status) {
-    return failed ? <p className="mx-gas">Customers pay no gas. The relayer is unreachable.</p> : null;
-  }
+function GasLine({ status }: { status: RelayStatus }) {
   return (
     <p className="mx-gas">
       <span>Customers pay no gas.</span>{" "}
@@ -834,12 +948,12 @@ function Adjustments({ order }: { order: Order }) {
 interface RowActionProps {
   order: Order;
   row: RowState | undefined;
-  canSign: boolean;
+  access: RefundAccess;
   onRefund: () => void;
   onUndo: () => void;
 }
 
-function RowAction({ order, row, canSign, onRefund, onUndo }: RowActionProps) {
+function RowAction({ order, row, access, onRefund, onUndo }: RowActionProps) {
   const undoRef = useRef<HTMLButtonElement>(null);
   const startedHere = useRef(false);
   const held = order.status === "held";
@@ -852,7 +966,7 @@ function RowAction({ order, row, canSign, onRefund, onUndo }: RowActionProps) {
 
   if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} undoRef={undoRef} />;
   if (row?.kind === "sending") return <span className="mx-quiet">{held ? "Cancelling…" : "Refunding…"}</span>;
-  if (!canSign || !offersRefund(order, row)) {
+  if (!canAct(access) || !offersRefund(order, row)) {
     return row?.kind === "done" ? <span className="mx-quiet">{row.cancelled ? "Cancelled" : "Refunded"}</span> : null;
   }
   return (
@@ -865,7 +979,7 @@ function RowAction({ order, row, canSign, onRefund, onUndo }: RowActionProps) {
         onRefund();
       }}
     >
-      {refundLabel(order)} USDT
+      {refundLabel(order)} {assetOf(order)}
     </button>
   );
 }
@@ -876,7 +990,7 @@ interface UnlockFormProps {
   onCancel: () => void;
 }
 
-/** The hosted console reads without a key. Refunds need the merchant's token, kept for this tab only. */
+/** The merchant service answers reads without a key; a refund needs its token, kept for this tab only. */
 function UnlockForm({ inputRef, onUnlocked, onCancel }: UnlockFormProps) {
   const id = useId();
   const errorId = useId();
@@ -938,6 +1052,61 @@ function UnlockForm({ inputRef, onUnlocked, onCancel }: UnlockFormProps) {
   );
 }
 
+/** Nothing names a merchant (a hosted console has no merchant service): ask whose ledger to read. */
+function MerchantForm() {
+  const id = useId();
+  const errorId = useId();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const address = value.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      setError("Enter the seller's 0x address: 0x and 40 hex characters.");
+      return;
+    }
+    navigate(`/merchant?merchant=${address}`);
+  };
+
+  return (
+    <form className="mx-empty" onSubmit={submit} noValidate>
+      <p>Whose ledger?</p>
+      <p className="mx-muted">Name the seller. This console reads its orders from the hub and holds no keys.</p>
+      <div className="mx-unlock__row">
+        <label className="sr-only" htmlFor={id}>
+          Seller address
+        </label>
+        <input
+          id={id}
+          className="mx-input__field mono"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="0x…"
+          value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError(null);
+          }}
+        />
+        <button type="submit" className="mx-button">
+          Open the ledger
+        </button>
+      </div>
+      {error ? (
+        <p className="mx-field__error" id={errorId} role="alert">
+          {error}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 /** A merchant with no payments yet gets the next step, not a picture. */
 function FirstPayment({ merchant }: { merchant: string }) {
   const [copied, setCopied] = useState(false);
@@ -954,7 +1123,7 @@ function FirstPayment({ merchant }: { merchant: string }) {
   return (
     <div className="mx-empty mx-empty--first">
       <p>No payments yet.</p>
-      <p className="mx-muted">Add the paywall to your API in one line:</p>
+      <p className="mx-muted">The hub reports no orders for this seller. Add the paywall to your API in one line:</p>
       <div className="mx-snippet">
         <pre className="mono">
           <code>{snippet}</code>

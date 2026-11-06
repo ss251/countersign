@@ -2,24 +2,27 @@ import { useEffect, useId, useState } from "react";
 import type { ReceiptOrder } from "./model.ts";
 import {
   addressUrl,
+  assetOf,
   decimalsFor,
+  explorerOf,
   formatFixed,
   formatUsdt,
   humanDate,
   itemLabel,
+  networkNameOf,
   shortAddress,
   shortHash,
   statusLabel,
   statusTone,
   timeline,
 } from "./model.ts";
-import { fetchOfferTitle, fetchRelayOrder } from "./api.ts";
-import { findFixtureOrder } from "./fixtures.ts";
+import { fetchOfferTitle, fetchOrder } from "./api.ts";
 import { Timeline } from "./Timeline.tsx";
 
 interface ReceiptProps {
   id: string;
-  fixture: boolean;
+  /** ?hub=off: a sample receipt from the sample ledger, loaded only then. */
+  offline: boolean;
 }
 
 type ReceiptState =
@@ -27,11 +30,6 @@ type ReceiptState =
   | { kind: "ready"; order: ReceiptOrder }
   | { kind: "missing" }
   | { kind: "error"; message: string };
-
-function fixtureState(id: string): ReceiptState {
-  const order = findFixtureOrder(id);
-  return order ? { kind: "ready", order } : { kind: "missing" };
-}
 
 /** Money that went back to the customer: each transfer refund, or the whole amount on a cancel. */
 function returnedLines(order: ReceiptOrder): bigint[] {
@@ -43,24 +41,23 @@ function returnedLines(order: ReceiptOrder): bigint[] {
   });
 }
 
-function Unit() {
-  return <span className="mx-unit">USDT</span>;
+function Unit({ symbol }: { symbol: string }) {
+  return <span className="mx-unit">{symbol}</span>;
 }
 
-export function Receipt({ id, fixture }: ReceiptProps) {
-  const [state, setState] = useState<ReceiptState>(() => (fixture ? fixtureState(id) : { kind: "loading" }));
+export function Receipt({ id, offline }: ReceiptProps) {
+  const [state, setState] = useState<ReceiptState>({ kind: "loading" });
   const [hubTitle, setHubTitle] = useState<string | null>(null);
   const statusId = useId();
   const proofId = useId();
 
   useEffect(() => {
-    if (fixture) {
-      setState(fixtureState(id));
-      return;
-    }
     let cancelled = false;
     setState({ kind: "loading" });
-    fetchRelayOrder(id)
+    const read = offline
+      ? import("./fixtures.ts").then((sample) => sample.findFixtureOrder(id))
+      : fetchOrder(id);
+    read
       .then((order) => {
         if (!cancelled) setState(order ? { kind: "ready", order } : { kind: "missing" });
       })
@@ -72,11 +69,11 @@ export function Receipt({ id, fixture }: ReceiptProps) {
     return () => {
       cancelled = true;
     };
-  }, [fixture, id]);
+  }, [offline, id]);
 
   const offerHash = state.kind === "ready" && !state.order.description ? state.order.offerHash : undefined;
   useEffect(() => {
-    if (fixture || !offerHash) return;
+    if (offline || !offerHash) return;
     let cancelled = false;
     void fetchOfferTitle(offerHash).then((title) => {
       if (!cancelled) setHubTitle(title);
@@ -84,7 +81,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
     return () => {
       cancelled = true;
     };
-  }, [fixture, offerHash]);
+  }, [offline, offerHash]);
 
   if (state.kind !== "ready") {
     return (
@@ -105,18 +102,20 @@ export function Receipt({ id, fixture }: ReceiptProps) {
   const kept = amount > returnedTotal ? amount - returnedTotal : 0n;
   const places = decimalsFor([amount, kept, ...returned]);
   const inFlight = order.status === "held" || order.status === "pending";
+  const unit = assetOf(order);
+  const explorer = explorerOf(order);
 
   return (
     <div className="mx-receipt-page">
       <article className="mx-receipt" aria-labelledby={statusId}>
-        <p className="mx-receipt__brand">countersign · receipt{fixture ? " · sample" : ""}</p>
+        <p className="mx-receipt__brand">countersign · receipt{offline ? " · sample" : ""}</p>
         <h1 className="mx-receipt__status" id={statusId}>
           <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
           {statusLabel(order.status)}
         </h1>
         <p className={`mx-receipt__amount mono${inFlight ? " mx-money" : ""}`}>
           {formatUsdt(order.amount)}
-          <Unit />
+          <Unit symbol={unit} />
         </p>
         <p className="mx-receipt__item">{itemLabel(order, hubTitle)}</p>
         <ReceiptId id={order.id} />
@@ -127,7 +126,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
               <dt>Paid</dt>
               <dd className="mono">
                 {formatFixed(amount, places)}
-                <Unit />
+                <Unit symbol={unit} />
               </dd>
             </div>
             {returned.map((value, index) => (
@@ -137,7 +136,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
                   {value > 0n ? (
                     <>
                       −{formatFixed(value, places)}
-                      <Unit />
+                      <Unit symbol={unit} />
                     </>
                   ) : (
                     "Returned"
@@ -149,7 +148,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
               <dt>You paid</dt>
               <dd className="mono">
                 {formatFixed(kept, places)}
-                <Unit />
+                <Unit symbol={unit} />
               </dd>
             </div>
           </dl>
@@ -159,7 +158,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           <div className="mx-fact">
             <dt>Paid to</dt>
             <dd>
-              <a className="mono" href={addressUrl(order.merchant)} title={order.merchant} target="_blank" rel="noreferrer">
+              <a className="mono" href={addressUrl(order.merchant, explorer)} title={order.merchant} target="_blank" rel="noreferrer">
                 {shortAddress(order.merchant)}
               </a>
             </dd>
@@ -167,7 +166,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           <div className="mx-fact">
             <dt>From</dt>
             <dd>
-              <a className="mono" href={addressUrl(order.customer)} title={order.customer} target="_blank" rel="noreferrer">
+              <a className="mono" href={addressUrl(order.customer, explorer)} title={order.customer} target="_blank" rel="noreferrer">
                 {shortAddress(order.customer)}
               </a>
             </dd>
@@ -180,7 +179,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           </div>
           <div className="mx-fact">
             <dt>Network</dt>
-            <dd>Whitechain Sepolia</dd>
+            <dd>{networkNameOf(order)}</dd>
           </div>
         </dl>
 
@@ -188,12 +187,12 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           <h2 className="mx-label" id={proofId}>
             What happened
           </h2>
-          <Timeline events={timeline(order, "customer")} labelledBy={proofId} />
+          <Timeline events={timeline(order, "customer")} labelledBy={proofId} explorer={explorer} />
         </section>
 
         <p className="mx-receipt__footer">
-          Every step above is a transaction on Whitechain. Anyone can check it on the explorer, with or without
-          countersign.
+          Every step above is a transaction on {networkNameOf(order)}. Anyone can check it on the explorer, with or
+          without countersign.
         </p>
       </article>
     </div>

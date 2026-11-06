@@ -21,6 +21,16 @@ import {
 } from "../src/routes/merchant/model.ts";
 import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder } from "../src/routes/merchant/fixtures.ts";
 import { offersRefund } from "../src/routes/merchant/Panel.tsx";
+import { NOT_SERVED, fetchOrder, fetchOrders } from "../src/routes/merchant/api.ts";
+import {
+  ORDERS_CSV_HEADER,
+  assetOf,
+  explorerOf,
+  fromHubOrder,
+  fromHubRecord,
+  networkNameOf,
+  ordersCsv,
+} from "../src/routes/merchant/model.ts";
 import {
   adjustments,
   checkRefundAmount,
@@ -449,5 +459,130 @@ describe("offersRefund", () => {
   test("again once the list shows what is left after a partial refund", () => {
     expect(offersRefund(partly, done("1000000"))).toBe(true);
     expect(offersRefund({ ...partly, refundable: "0", status: "refunded" }, done("750000"))).toBe(false);
+  });
+});
+
+describe("hub records (wc/orders-contract.md)", () => {
+  const record = {
+    id: "0x" + "ab".repeat(32),
+    kind: "escrow",
+    rail: "escrow",
+    network: "eip155:5042002",
+    networkName: "Arc testnet",
+    asset: { symbol: "USDC", decimals: 6 },
+    explorer: "https://testnet.arcscan.app/",
+    customer: "0x" + "11".repeat(20),
+    merchant: "0x" + "22".repeat(20),
+    amount: "10000",
+    fee: "100",
+    refunded: "0",
+    refundable: "10000",
+    status: "released",
+    closeKind: "release",
+    createdAt: 1_793_960_010_000,
+    receivedAt: 1_793_960_014_000,
+    closedAt: 1_793_960_014_000,
+    settleTx: "0x" + "33".repeat(32),
+    closeTx: "0x" + "44".repeat(32),
+    refundTxs: [],
+    slipHash: "0x" + "55".repeat(32),
+    offerHash: "0x" + "66".repeat(32),
+    deadline: 1_793_963_610_000,
+    description: "use-usdc",
+  };
+
+  test("maps the contract shape, reading released as paid", () => {
+    const order = fromHubOrder(record)!;
+    expect(order).toMatchObject({ status: "paid", closeKind: "release", amount: "10000", fee: "100", description: "use-usdc" });
+    expect(assetOf(order)).toBe("USDC");
+    expect(networkNameOf(order)).toBe("Arc testnet");
+    expect(explorerOf(order)).toBe("https://testnet.arcscan.app");
+    expect(txUrl(order.settleTx, explorerOf(order))).toBe(`https://testnet.arcscan.app/tx/${record.settleTx}`);
+  });
+
+  test("a relay record without rail fields means Whitechain USDT", () => {
+    const order = fromHubOrder({ ...fixtureOrders[0]! })!;
+    expect(assetOf(order)).toBe("USDT");
+    expect(networkNameOf(order)).toBe("Whitechain Sepolia");
+    expect(explorerOf(order)).toBe("https://explorer.testnet.whitechain.io");
+  });
+
+  test("drops what cannot be an order instead of guessing", () => {
+    expect(fromHubOrder(null)).toBeNull();
+    expect(fromHubOrder({ ...record, status: "mystery" })).toBeNull();
+    expect(fromHubOrder({ ...record, amount: "1.5" })).toBeNull();
+    expect(fromHubOrder({ ...record, id: "" })).toBeNull();
+  });
+
+  test("a single record keeps its refunds with their reasons and times", () => {
+    const full = fromHubRecord({
+      ...record,
+      status: "partially_refunded",
+      refunds: [{ amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 5 }, { bad: true }],
+    })!;
+    expect(full.refunds).toEqual([
+      { amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 5 },
+    ]);
+  });
+
+  test("the export has the relay's columns and per-order explorer links", () => {
+    const csv = ordersCsv([fromHubOrder(record)!]).split("\n");
+    expect(csv[0]).toBe(ORDERS_CSV_HEADER);
+    expect(csv[1]).toContain("https://testnet.arcscan.app/tx/0x3333");
+    expect(csv[1]).toContain(",0.0099,");
+  });
+});
+
+describe("where the desk reads (STEER-1730)", () => {
+  const realFetch = globalThis.fetch;
+  const merchant = "0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c";
+  const answer = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const serve = (routes: Record<string, () => Response>) => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      const hit = Object.entries(routes).find(([prefix]) => url.startsWith(prefix));
+      if (!hit) throw new TypeError("network down");
+      return hit[1]();
+    }) as typeof fetch;
+    return seen;
+  };
+
+  test("the hub's /orders first, and the page is told it is the hub", async () => {
+    const seen = serve({ "/hub/orders?seller=": () => answer(200, { orders: [fixtureOrders[0]] }) });
+    const result = await fetchOrders(merchant);
+    expect(result.source).toEqual({ kind: "hub", base: "/hub" });
+    expect(result.orders).toHaveLength(1);
+    expect(seen[0]).toBe(`/hub/orders?seller=${merchant}&limit=200`);
+    globalThis.fetch = realFetch;
+  });
+
+  test("a hub without /orders falls back to the relay's live records, and says so", async () => {
+    serve({
+      "/hub/orders": () => new Response("404 Not Found", { status: 404 }),
+      "/relay/orders?merchant=": () => answer(200, { orders: fixtureOrders }),
+    });
+    const result = await fetchOrders(merchant);
+    expect(result.source.kind).toBe("relay");
+    expect(result.orders).toHaveLength(fixtureOrders.length);
+    globalThis.fetch = realFetch;
+  });
+
+  test("with neither, an honest error: never fixtures, never zeros", async () => {
+    serve({ "/hub/orders": () => new Response("404 Not Found", { status: 404 }) });
+    await expect(fetchOrders(merchant)).rejects.toThrow(NOT_SERVED);
+    serve({});
+    await expect(fetchOrders(merchant)).rejects.toThrow("The hub did not answer.");
+    globalThis.fetch = realFetch;
+  });
+
+  test("an unknown order is missing; a hub without the route is not", async () => {
+    serve({ "/hub/orders/": () => answer(404, { code: "not_found" }) });
+    expect(await fetchOrder("0x01")).toBeNull();
+    serve({ "/hub/orders/": () => new Response("404 Not Found", { status: 404 }) });
+    await expect(fetchOrder("0x01")).rejects.toThrow(NOT_SERVED);
+    globalThis.fetch = realFetch;
   });
 });

@@ -54,6 +54,13 @@ export interface Order {
   /** When an escrow order closed (released, cancelled or refunded), in ms. */
   closedAt?: number | null;
   closeReason?: RefundReason | null;
+  /** Hub records name their rail and chain; the Whitechain relay's do not, and mean these defaults. */
+  rail?: string;
+  network?: string;
+  networkName?: string;
+  asset?: { symbol: string; decimals: number };
+  /** Explorer base for this order's links. */
+  explorer?: string;
 }
 
 export interface RefundRecord {
@@ -283,12 +290,30 @@ export function normalizeRefundReply(body: unknown, httpStatus: number): RefundR
   return typeof reply.refunded === "string" ? { ok: true, txHash, refunded: reply.refunded } : { ok: true, txHash };
 }
 
-export function txUrl(hash: string): string {
-  return `${EXPLORER}/tx/${hash}`;
+export function txUrl(hash: string, explorer: string = EXPLORER): string {
+  return `${explorer}/tx/${hash}`;
 }
 
-export function addressUrl(address: string): string {
-  return `${EXPLORER}/address/${address}`;
+export function addressUrl(address: string, explorer: string = EXPLORER): string {
+  return `${explorer}/address/${address}`;
+}
+
+/* An order without these fields is a Whitechain relay record. */
+export function assetOf(order: Pick<Order, "asset">): string {
+  return order.asset?.symbol || "USDT";
+}
+
+export function networkNameOf(order: Pick<Order, "networkName" | "network">): string {
+  if (order.networkName) return order.networkName;
+  return !order.network || order.network === "eip155:1874" ? "Whitechain Sepolia" : order.network;
+}
+
+export function explorerOf(order: Pick<Order, "explorer">): string {
+  return order.explorer?.replace(/\/+$/, "") || EXPLORER;
+}
+
+export function isWhitechain(order: Pick<Order, "network">): boolean {
+  return !order.network || order.network === "eip155:1874";
 }
 
 function shortDate(ms: number): string {
@@ -563,6 +588,7 @@ export function timeline(
   refusals: readonly Refusal[] = [],
 ): TimelineEvent[] {
   const amount = formatUsdt(order.amount);
+  const unit = assetOf(order);
   const events: TimelineEvent[] = [];
 
   if (order.kind === "escrow") {
@@ -571,7 +597,7 @@ export function timeline(
     events.push({
       key: "fund",
       tone: "money",
-      title: order.status === "pending" ? `Funding escrow with ${amount} USDT` : `${amount} USDT held in escrow`,
+      title: order.status === "pending" ? `Funding escrow with ${amount} ${unit}` : `${amount} ${unit} held in escrow`,
       detail: deadline
         ? `Releases on delivery. Returns to ${back} if not delivered by ${deadline}.`
         : "Releases on delivery.",
@@ -582,8 +608,8 @@ export function timeline(
     events.push({
       key: "pay",
       tone: order.status === "pending" ? "money" : "settled",
-      title: `${who === "merchant" ? "Received" : "Paid"} ${amount} USDT`,
-      detail: order.status === "pending" ? "Settling on Whitechain." : null,
+      title: `${who === "merchant" ? "Received" : "Paid"} ${amount} ${unit}`,
+      detail: order.status === "pending" ? `Settling on ${networkNameOf(order)}.` : null,
       at: order.createdAt,
       txHash: order.settleTx,
     });
@@ -596,7 +622,7 @@ export function timeline(
       key: "release",
       tone: "settled",
       title: who === "merchant" ? "Released to you" : "Released to the merchant",
-      detail: fee > 0n ? `Toll ${formatUsdt(fee.toString())} USDT.` : null,
+      detail: fee > 0n ? `Toll ${formatUsdt(fee.toString())} ${unit}.` : null,
       at: order.receivedAt ?? closedAt,
       txHash: order.closeTx ?? null,
       slipHash: order.slipHash ?? null,
@@ -607,8 +633,8 @@ export function timeline(
       tone: "neutral",
       title:
         who === "merchant"
-          ? `Cancelled. ${amount} USDT returned to the customer`
-          : `Cancelled by the merchant. ${amount} USDT returned to you`,
+          ? `Cancelled. ${amount} ${unit} returned to the customer`
+          : `Cancelled by the merchant. ${amount} ${unit} returned to you`,
       detail: reasonLabel(order.closeReason),
       at: closedAt,
       txHash: order.closeTx ?? null,
@@ -617,7 +643,7 @@ export function timeline(
     events.push({
       key: "deadline",
       tone: "neutral",
-      title: `Not delivered in time. ${amount} USDT returned${who === "merchant" ? " to the customer" : " to you"}`,
+      title: `Not delivered in time. ${amount} ${unit} returned${who === "merchant" ? " to the customer" : " to you"}`,
       at: closedAt,
       txHash: order.closeTx ?? null,
     });
@@ -628,7 +654,7 @@ export function timeline(
     : order.refundTxs.map((txHash) => ({ txHash }));
   records.forEach((refund, index) => {
     const value = refund.amount ?? (records.length === 1 ? order.refunded : undefined);
-    const shown = value && value !== "0" ? `${formatUsdt(value)} USDT` : null;
+    const shown = value && value !== "0" ? `${formatUsdt(value)} ${unit}` : null;
     const pending = refund.status === "pending";
     events.push({
       key: `refund-${refund.txHash}-${index}`,
@@ -660,4 +686,150 @@ export function timeline(
   });
   timed.sort((a, b) => a.when - b.when);
   return timed.map((entry) => entry.event).reverse();
+}
+
+/* ------------------------------------------------------------- hub records */
+
+const STATUSES: readonly OrderStatus[] = [
+  "pending",
+  "held",
+  "paid",
+  "partially_refunded",
+  "refunded",
+  "refund_pending",
+  "cancelled",
+];
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function atomic(value: unknown, fallback = "0"): string {
+  if (typeof value === "string" && /^\d+$/.test(value)) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  return fallback;
+}
+
+function millis(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function statusOf(value: unknown): OrderStatus | null {
+  const raw = typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : "";
+  if (raw === "released" || raw === "settled") return "paid";
+  if (raw === "partly_refunded") return "partially_refunded";
+  return (STATUSES as readonly string[]).includes(raw) ? (raw as OrderStatus) : null;
+}
+
+/**
+ * One record from the hub's /orders (wc/orders-contract.md), or the Whitechain relay's, as the
+ * desk's Order. Anything that cannot be a real order (no id, no amount, no known status) is
+ * dropped rather than guessed at.
+ */
+export function fromHubOrder(raw: unknown): Order | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = text(r.id) ?? text(r.jobId);
+  const status = statusOf(r.status);
+  const amount = atomic(r.amount, "");
+  if (!id || !status || amount === "") return null;
+  const closeKind = r.closeKind === "release" || r.closeKind === "cancel" || r.closeKind === "deadline_refund" ? r.closeKind : null;
+  const asset =
+    r.asset && typeof r.asset === "object" && text((r.asset as Record<string, unknown>).symbol)
+      ? {
+          symbol: text((r.asset as Record<string, unknown>).symbol)!,
+          decimals: Number((r.asset as Record<string, unknown>).decimals ?? 6),
+        }
+      : undefined;
+  const refunded = atomic(r.refunded);
+  return {
+    id,
+    kind: r.kind === "exact" ? "exact" : "escrow",
+    customer: text(r.customer) ?? text(r.buyer) ?? "",
+    merchant: text(r.merchant) ?? text(r.seller) ?? "",
+    amount,
+    fee: atomic(r.fee),
+    refunded,
+    refundable: atomic(r.refundable, status === "held" || status === "paid" ? amount : "0"),
+    status,
+    closeKind: closeKind ?? (status === "paid" && r.kind !== "exact" ? "release" : null),
+    createdAt: millis(r.createdAt) ?? 0,
+    receivedAt: millis(r.receivedAt),
+    closedAt: millis(r.closedAt),
+    settleTx: text(r.settleTx) ?? "",
+    closeTx: text(r.closeTx),
+    refundTxs: Array.isArray(r.refundTxs) ? r.refundTxs.filter((tx): tx is string => typeof tx === "string") : [],
+    slipHash: text(r.slipHash),
+    offerHash: text(r.offerHash) ?? undefined,
+    deadline: millis(r.deadline) ?? undefined,
+    description: text(r.description) ?? text(r.offerTitle),
+    resource: text(r.resource),
+    rail: text(r.rail) ?? undefined,
+    network: text(r.network) ?? undefined,
+    networkName: text(r.networkName) ?? undefined,
+    asset,
+    explorer: text(r.explorer) ?? undefined,
+  };
+}
+
+/** A single record from /orders/:id, with every refund it reports. */
+export function fromHubRecord(raw: unknown): ReceiptOrder | null {
+  const order = fromHubOrder(raw);
+  if (!order) return null;
+  const list = (raw as { refunds?: unknown }).refunds;
+  const refunds: RefundRecord[] = Array.isArray(list)
+    ? list.flatMap((entry): RefundRecord[] => {
+        if (!entry || typeof entry !== "object") return [];
+        const e = entry as Record<string, unknown>;
+        const txHash = text(e.txHash);
+        if (!txHash) return [];
+        return [
+          {
+            txHash,
+            amount: atomic(e.amount, "") || undefined,
+            blockNumber: atomic(e.blockNumber, "") || undefined,
+            status: e.status === "pending" ? "pending" : "confirmed",
+            reason: text(e.reason),
+            at: millis(e.at),
+          },
+        ];
+      })
+    : [];
+  return { ...order, refunds };
+}
+
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+export const ORDERS_CSV_HEADER =
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+
+/** The accountant's export: the relay's orders.csv columns, built from whatever the desk is showing. */
+export function ordersCsv(orders: readonly Order[]): string {
+  const rows = [ORDERS_CSV_HEADER];
+  for (const order of orders) {
+    const net = contribution(order);
+    const explorer = explorerOf(order);
+    rows.push(
+      [
+        new Date(order.createdAt).toISOString(),
+        order.id,
+        order.kind,
+        order.customer,
+        order.merchant,
+        formatUsdt(order.amount),
+        formatUsdt(order.fee ?? "0"),
+        formatUsdt(order.refunded),
+        `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
+        order.status,
+        order.settleTx ? txUrl(order.settleTx, explorer) : "",
+        order.closeTx ? txUrl(order.closeTx, explorer) : "",
+        order.refundTxs.map((hash) => txUrl(hash, explorer)).join(" "),
+      ]
+        .map(csvField)
+        .join(","),
+    );
+  }
+  return `${rows.join("\n")}\n`;
 }

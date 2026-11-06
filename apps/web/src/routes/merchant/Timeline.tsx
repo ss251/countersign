@@ -6,7 +6,16 @@ import { formatBlock, humanDate, shortHash, shortHumanDate, txUrl } from "./mode
  * slip hash where the escrow released. The merchant's panel and the customer's receipt share it,
  * so both read the same evidence.
  */
-export function Timeline({ events, labelledBy }: { events: readonly TimelineEvent[]; labelledBy: string }) {
+export function Timeline({
+  events,
+  labelledBy,
+  explorer,
+}: {
+  events: readonly TimelineEvent[];
+  labelledBy: string;
+  /** The order's own explorer: every rail links to its own chain. */
+  explorer?: string;
+}) {
   return (
     <ol className="mx-tl" aria-labelledby={labelledBy}>
       {events.map((event) => (
@@ -20,8 +29,8 @@ export function Timeline({ events, labelledBy }: { events: readonly TimelineEven
                 {event.txHash ? (
                   <a
                     className="mono mx-tx"
-                    href={txUrl(event.txHash)}
-                    title={`${event.txHash} on the Whitechain explorer`}
+                    href={txUrl(event.txHash, explorer)}
+                    title={`${event.txHash} on the explorer`}
                     target="_blank"
                     rel="noreferrer"
                   >

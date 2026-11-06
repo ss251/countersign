@@ -1,10 +1,10 @@
+import { hubBase } from "../../lib/hub.ts";
 import type { Order, ReceiptOrder, RefundReason, RefundReply, RelayStatus } from "./model.ts";
-import { normalizeRefundReply } from "./model.ts";
+import { fromHubOrder, fromHubRecord, normalizeRefundReply } from "./model.ts";
 
 interface MerchantEnv {
   readonly VITE_MERCHANT_URL?: string;
   readonly VITE_RELAY_URL?: string;
-  readonly VITE_HUB_URL?: string;
   readonly VITE_MERCHANT_TOKEN?: string;
   readonly VITE_MERCHANT_ADDRESS?: string;
 }
@@ -18,7 +18,6 @@ function baseUrl(value: string): string {
 // Same-origin paths by default: the dev and preview servers proxy them, so one origin serves the page.
 export const MERCHANT_URL = baseUrl(env.VITE_MERCHANT_URL ?? "/merchant-api");
 export const RELAY_URL = baseUrl(env.VITE_RELAY_URL ?? "/relay");
-export const HUB_URL = baseUrl(env.VITE_HUB_URL ?? "/hub");
 /** A hosted console names its merchant here. It is an address, public, never a secret. */
 export const CONFIGURED_MERCHANT = env.VITE_MERCHANT_ADDRESS?.trim() ?? "";
 
@@ -89,46 +88,93 @@ export async function unlockRefunds(token: string): Promise<void> {
   sessionToken = trimmed;
 }
 
-/** Whose desk this is: the page's ?merchant=, the hosted build's address, or the merchant service. */
-export async function resolveMerchant(query: string | null): Promise<string> {
+/** Whose desk this is: the page's ?merchant=, the hosted build's address, or the merchant's own service. */
+export async function resolveMerchant(query: string | null): Promise<string | null> {
   const wanted = query?.trim() || CONFIGURED_MERCHANT;
   if (/^0x[0-9a-fA-F]{40}$/.test(wanted)) return wanted;
+  return probeMerchantService();
+}
+
+/**
+ * The merchant's own service: the one place a refund can be signed, because the merchant's key
+ * lives there and nowhere else. Answers the address it signs for, or null when this console cannot
+ * reach it (a hosted console never can).
+ */
+export async function probeMerchantService(): Promise<string | null> {
+  try {
+    const response = await fetch(`${MERCHANT_URL}/me`);
+    if (!response.ok) return null;
+    const me = (await response.json()) as { address?: unknown };
+    return typeof me.address === "string" && /^0x[0-9a-fA-F]{40}$/.test(me.address) ? me.address : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The hub this console reads: the shared choice (?hub=, VITE_HUB_URL), else this server's /hub. */
+export function deskHub(): string {
+  return hubBase() ?? "/hub";
+}
+
+/** Where the desk's orders came from, said on the page so nobody mistakes one source for another. */
+export type OrdersSource = { kind: "hub"; base: string } | { kind: "relay"; base: string };
+
+export const NOT_SERVED = "This hub does not serve merchant orders yet.";
+
+async function getJson(url: string): Promise<{ status: number; body: unknown }> {
   let response: Response;
   try {
-    response = await fetch(`${MERCHANT_URL}/me`);
+    response = await fetch(url, { headers: { accept: "application/json" } });
   } catch {
-    throw new Error("No merchant to show. Open this page with ?merchant=0x… or run the merchant service.");
+    return { status: 0, body: null };
   }
-  if (!response.ok) throw new Error(`The merchant service answered ${response.status}.`);
-  const me = await readJson<{ address?: unknown }>(response, "merchant service");
-  if (typeof me.address !== "string") throw new Error("The merchant service did not name its address.");
-  return me.address;
+  const body: unknown = await response.json().catch(() => null);
+  return { status: response.status, body };
 }
 
-export async function fetchOrders(merchant: string): Promise<Order[]> {
-  const response = await relayGet(`/orders?merchant=${encodeURIComponent(merchant)}`);
-  if (!response.ok) throw new Error(`The relay answered ${response.status}.`);
-  const body = await readJson<{ orders?: Order[] }>(response, "relay");
-  return body.orders ?? [];
+function listOf(body: unknown): Order[] {
+  const raw = (body as { orders?: unknown } | null)?.orders;
+  return Array.isArray(raw) ? raw.map(fromHubOrder).filter((order): order is Order => order !== null) : [];
 }
 
-export async function fetchOrdersCsv(merchant: string): Promise<string> {
-  const response = await relayGet(`/orders.csv?merchant=${encodeURIComponent(merchant)}`);
-  if (!response.ok) throw new Error(`The relay answered ${response.status}.`);
-  return response.text();
+/**
+ * The seller's orders from the chosen hub. A hub that predates /orders answers 404; then the
+ * Whitechain relay's own records are the next live source, and the page says which one it read.
+ * Never fixtures.
+ */
+export async function fetchOrders(merchant: string): Promise<{ orders: Order[]; source: OrdersSource }> {
+  const hub = deskHub();
+  const seller = encodeURIComponent(merchant);
+  const fromHub = await getJson(`${hub}/orders?seller=${seller}&limit=200`);
+  if (fromHub.status === 200) return { orders: listOf(fromHub.body), source: { kind: "hub", base: hub } };
+  if (fromHub.status === 404) {
+    const fromRelay = await getJson(`${RELAY_URL}/orders?merchant=${seller}`);
+    if (fromRelay.status === 200) return { orders: listOf(fromRelay.body), source: { kind: "relay", base: RELAY_URL } };
+    throw new Error(NOT_SERVED);
+  }
+  throw new Error(fromHub.status === 0 ? "The hub did not answer." : `The hub answered ${fromHub.status}.`);
 }
 
-/** The relayer's gas: its balance and this hour's ceiling. */
+/** One order with its refunds: the receipt anyone can check. Null when no such order exists. */
+export async function fetchOrder(id: string): Promise<ReceiptOrder | null> {
+  const hub = deskHub();
+  const key = encodeURIComponent(id);
+  const fromHub = await getJson(`${hub}/orders/${key}`);
+  if (fromHub.status === 200) return fromHubRecord(fromHub.body);
+  const code = (fromHub.body as { code?: unknown } | null)?.code;
+  if (fromHub.status === 404 && code === "not_found") return null;
+  if (fromHub.status === 404) {
+    const fromRelay = await getJson(`${RELAY_URL}/orders/${key}`);
+    if (fromRelay.status === 200) return fromHubRecord(fromRelay.body);
+    if (fromRelay.status === 404) return null;
+    throw new Error(NOT_SERVED);
+  }
+  throw new Error(fromHub.status === 0 ? "The hub did not answer." : `The hub answered ${fromHub.status}.`);
+}
+
+/** The Whitechain relayer's gas, read from the relay when this console can reach it. */
 export async function fetchRelayStatus(): Promise<RelayStatus> {
   const response = await relayGet("/status");
-  if (!response.ok) throw new Error(`The relay answered ${response.status}.`);
-  return readJson(response, "relay");
-}
-
-/** A single order with every refund, public: this is the receipt anyone can check. */
-export async function fetchRelayOrder(id: string, base = RELAY_URL): Promise<ReceiptOrder | null> {
-  const response = await relayGet(`/orders/${encodeURIComponent(id)}`, base);
-  if (response.status === 404) return null;
   if (!response.ok) throw new Error(`The relay answered ${response.status}.`);
   return readJson(response, "relay");
 }
@@ -163,7 +209,7 @@ export async function refundOrder(id: string, request: RefundRequest = {}): Prom
 const titles = new Map<string, Promise<string | null>>();
 
 /** The offer's title from the hub, cached per offer for the page's lifetime. A failure is cached as no title. */
-export function fetchOfferTitle(offerHash: string, base = HUB_URL): Promise<string | null> {
+export function fetchOfferTitle(offerHash: string, base = deskHub()): Promise<string | null> {
   const key = offerHash.toLowerCase();
   let pending = titles.get(key);
   if (!pending) {

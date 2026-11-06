@@ -7,9 +7,10 @@ import "./merchant.css";
 export const surface = (params: string[]) => (params[0] === "receipt" ? "bare" : "desk");
 
 export default function MerchantPage({ params, query }: PageProps) {
-  const fixture = query.get("fixture") === "1";
+  // Live by default. Only ?hub=off shows the sample ledger, loaded on demand (STEER-1730).
+  const offline = query.get("hub") === "off";
   if (params[0] === "receipt") {
-    return <Receipt id={params[1] ?? ""} fixture={fixture} />;
+    return <Receipt id={params[1] ?? ""} offline={offline} />;
   }
-  return <Desk fixture={fixture} merchantQuery={query.get("merchant")} />;
+  return <Desk offline={offline} merchantQuery={query.get("merchant")} />;
 }

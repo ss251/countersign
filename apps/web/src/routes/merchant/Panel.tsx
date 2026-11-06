@@ -5,13 +5,17 @@ import {
   REFUND_REASONS,
   addressUrl,
   adjustments,
+  assetOf,
   canRefund,
   checkRefundAmount,
   contribution,
   decimalsFor,
+  explorerOf,
   formatFixed,
   formatUsdt,
   humanDate,
+  isWhitechain,
+  networkNameOf,
   refundLabel,
   refusalWords,
   shortAddress,
@@ -45,6 +49,30 @@ export function offersRefund(order: Order, row: RowState | undefined): boolean {
 
 export type PartOutcome = { ok: true } | { ok: false; reason: string };
 
+/**
+ * Who can refund from this page. A refund is signed with the merchant's own key, which stays on the
+ * merchant's machine inside the merchant service; the page can only ask that service. "sample" is
+ * the ?hub=off ledger, where refunds are simulated and say so. Nothing else ever simulates one.
+ */
+export type RefundAccess =
+  | { kind: "sample" }
+  | { kind: "checking" }
+  | { kind: "ready" }
+  | { kind: "locked" }
+  /** The merchant service is out of reach, or it signs for another merchant (`signer`). */
+  | { kind: "away"; signer: string | null };
+
+export function canAct(access: RefundAccess): boolean {
+  return access.kind === "sample" || access.kind === "ready";
+}
+
+/** Why this page cannot refund, in one sentence the merchant can act on. */
+export function awayWords(access: Extract<RefundAccess, { kind: "away" }>, merchant: string): string {
+  return access.signer
+    ? `The merchant service here signs for ${shortAddress(access.signer)}, not ${shortAddress(merchant)}, so only that merchant's own service can refund these orders.`
+    : "Refunds are signed with the merchant's own key, on the merchant's own machine, and this page cannot reach that service. Open the desk where the merchant service runs to refund.";
+}
+
 export type PanelView = "detail" | "refund";
 
 interface OrderPanelProps {
@@ -54,7 +82,7 @@ interface OrderPanelProps {
   item: string;
   row: RowState | undefined;
   refusals: readonly Refusal[];
-  canSign: boolean;
+  access: RefundAccess;
   view: PanelView;
   receiptTo: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -86,8 +114,8 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Unit() {
-  return <span className="mx-unit">USDT</span>;
+function Unit({ symbol }: { symbol: string }) {
+  return <span className="mx-unit">{symbol}</span>;
 }
 
 function OrderDetail({
@@ -96,7 +124,7 @@ function OrderDetail({
   item,
   row,
   refusals,
-  canSign,
+  access,
   receiptTo,
   headingRef,
   onView,
@@ -105,6 +133,8 @@ function OrderDetail({
   onUndo,
   onUnlock,
 }: OrderPanelProps) {
+  const unit = assetOf(order);
+  const explorer = explorerOf(order);
   const headingId = useId();
   const breakdownId = useId();
   const activityId = useId();
@@ -131,11 +161,11 @@ function OrderDetail({
 
       <p className={`mx-panel__amount mono${held || order.status === "pending" ? " mx-money" : ""}`}>
         {formatUsdt(order.amount)}
-        <Unit />
+        <Unit symbol={unit} />
       </p>
       <p className="mx-panel__meta">
         From{" "}
-        <a className="mono" href={addressUrl(order.customer)} title={order.customer} target="_blank" rel="noreferrer">
+        <a className="mono" href={addressUrl(order.customer, explorer)} title={order.customer} target="_blank" rel="noreferrer">
           {shortAddress(order.customer)}
         </a>
         <span aria-hidden="true"> · </span>
@@ -146,7 +176,7 @@ function OrderDetail({
         <PanelRefund
           order={order}
           row={row}
-          canSign={canSign}
+          access={access}
           onRefundAll={onRefundAll}
           onUndo={onUndo}
           onPart={() => onView("refund")}
@@ -166,7 +196,7 @@ function OrderDetail({
             <dt>Amount</dt>
             <dd className="mono">
               {formatFixed(amount, places)}
-              <Unit />
+              <Unit symbol={unit} />
             </dd>
           </div>
           {lines.map((line) =>
@@ -183,7 +213,7 @@ function OrderDetail({
                 </dt>
                 <dd className="mono">
                   −{formatFixed(line.amount, places)}
-                  <Unit />
+                  <Unit symbol={unit} />
                 </dd>
               </div>
             ) : null,
@@ -192,7 +222,7 @@ function OrderDetail({
             <dt>{held ? "Held until delivery" : order.status === "pending" ? "Settling" : "Net"}</dt>
             <dd className={`mono${held || order.status === "pending" ? " mx-money" : ""}`}>
               {formatFixed(held || order.status === "pending" ? amount : net, places)}
-              <Unit />
+              <Unit symbol={unit} />
             </dd>
           </div>
         </dl>
@@ -202,7 +232,7 @@ function OrderDetail({
         <h3 className="mx-label" id={activityId}>
           Activity
         </h3>
-        <Timeline events={events} labelledBy={activityId} />
+        <Timeline events={events} labelledBy={activityId} explorer={explorer} />
       </section>
     </div>
   );
@@ -211,7 +241,7 @@ function OrderDetail({
 interface PanelRefundProps {
   order: Order;
   row: RowState | undefined;
-  canSign: boolean;
+  access: RefundAccess;
   onRefundAll: () => void;
   onUndo: () => void;
   onPart: () => void;
@@ -219,7 +249,7 @@ interface PanelRefundProps {
 }
 
 /** The panel's refund controls, in step with the row: the same undo window, the same result. */
-function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnlock }: PanelRefundProps) {
+function PanelRefund({ order, row, access, onRefundAll, onUndo, onPart, onUnlock }: PanelRefundProps) {
   const held = order.status === "held";
   if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} />;
   if (row?.kind === "sending") {
@@ -232,7 +262,7 @@ function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnloc
   const outcome =
     row?.kind === "done" ? (
       <p className="mx-outcome" role="status">
-        {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} USDT returned to{" "}
+        {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} {assetOf(order)} returned to{" "}
         <span className="mono">{shortAddress(order.customer)}</span>.
       </p>
     ) : row?.kind === "error" ? (
@@ -240,8 +270,16 @@ function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnloc
         Refused. {refusalWords(row.message)}.
       </p>
     ) : null;
-  if (!offersRefund(order, row)) return outcome;
-  if (!canSign) {
+  if (!offersRefund(order, row) || access.kind === "checking") return outcome;
+  if (access.kind === "away") {
+    return (
+      <>
+        {outcome}
+        <p className="mx-outcome">{awayWords(access, order.merchant)}</p>
+      </>
+    );
+  }
+  if (access.kind === "locked") {
     return (
       <>
         {outcome}
@@ -258,7 +296,7 @@ function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnloc
     <>
       {outcome}
       <button type="button" className="mx-button mx-button--money" onClick={onRefundAll}>
-        {refundLabel(order)} USDT
+        {refundLabel(order)} {assetOf(order)}
       </button>
       {held ? null : (
         <button type="button" className="mx-button mx-button--quiet" onClick={onPart}>
@@ -283,7 +321,7 @@ export function UndoStrip({
   return (
     <span className="mx-undo" role="status">
       <span className="mx-undo__text">
-        {held ? "Cancelling" : "Refunding"} <span className="mono">{formatUsdt(order.refundable)}</span> USDT
+        {held ? "Cancelling" : "Refunding"} <span className="mono">{formatUsdt(order.refundable)}</span> {assetOf(order)}
       </span>
       <button
         ref={undoRef}
@@ -317,6 +355,7 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
   const check = checkRefundAmount(amount, remainder);
   const error = touched && !check.ok ? check.message : null;
   const toll = BigInt((detail ?? order).fee ?? "0");
+  const unit = assetOf(order);
 
   // A desk gets the amount field ready to edit; a phone keeps its keyboard down until asked.
   useEffect(() => {
@@ -357,7 +396,7 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
           <dt>Left to refund</dt>
           <dd className="mono">
             {formatUsdt(order.refundable)}
-            <Unit />
+            <Unit symbol={unit} />
           </dd>
         </div>
       </dl>
@@ -388,7 +427,7 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
             onFocus={(event) => event.currentTarget.select()}
           />
           <span className="mx-input__unit" aria-hidden="true">
-            USDT
+            {unit}
           </span>
         </div>
         {error ? (
@@ -417,9 +456,9 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
       </div>
 
       <p className="mx-final">
-        A refund is a new USDT transfer from you to the customer on Whitechain. It settles in about a second and
-        cannot be undone.
-        {toll > 0n ? ` The ${formatUsdt(toll.toString())} USDT toll is not returned to you.` : ""}
+        A refund is a new {unit} transfer from you to the customer on {networkNameOf(order)}. It settles in{" "}
+        {isWhitechain(order) ? "about a second" : "seconds"} and cannot be undone.
+        {toll > 0n ? ` The ${formatUsdt(toll.toString())} ${unit} toll is not returned to you.` : ""}
       </p>
 
       {refused ? (
@@ -430,7 +469,7 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
 
       <div className="mx-panel__actions">
         <button type="submit" className="mx-button mx-button--money" disabled={sending}>
-          {sending ? "Refunding…" : check.ok ? `Refund ${formatUsdt(check.atomic.toString())} USDT` : "Refund"}
+          {sending ? "Refunding…" : check.ok ? `Refund ${formatUsdt(check.atomic.toString())} ${unit}` : "Refund"}
         </button>
       </div>
     </form>
