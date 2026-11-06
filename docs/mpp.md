@@ -6,8 +6,10 @@ challenge whose `request` parameter is base64url JSON. The buyer returns the
 credential in `Authorization: Payment ...`, and a successful response carries a
 `Payment-Receipt` header.
 
-The rail is testnet only: Tempo Moderato (chain 42431, pathUSD), Stripe test
-mode. There is no mainnet configuration.
+The rail leads with its native Tempo method: pathUSD on Tempo Moderato (chain
+42431), settled for real by mppx. Stripe's card method is implemented behind
+`MPP_STRIPE=1`, off by default, and gated on a Stripe sandbox business profile.
+There is no mainnet configuration.
 
 The rail keeps the same interface as every other rail: `declaration`,
 `challenge`, `verify`, `settle`. Hub wiring is a separate packet.
@@ -18,69 +20,109 @@ The rail keeps the same interface as every other rail: `declaration`,
 
 | Method | Network | Asset | Floor | Settlement |
 | --- | --- | --- | --- | --- |
-| Stablecoin (Tempo) | `mpp:tempo` | pathUSD on Tempo Moderato (6 decimals) | 0.01 pathUSD | Tempo transfer |
-| Card (Stripe) | `mpp:stripe` | USD cents | 0.50 USD | Stripe PaymentIntent |
+| Tempo (default) | `mpp:tempo` | pathUSD on Tempo Moderato, chain 42431 (6 decimals) | 0.01 pathUSD | Tempo transaction, checked or broadcast by mppx |
+| Card (opt-in) | `mpp:stripe` | USD cents | 0.50 USD | Stripe PaymentIntent (sandbox) |
 
-The stablecoin floor is 0.01 because that is the smallest useful Tempo charge.
-The card floor is 0.50 because Stripe charges whole cents and does not accept
-smaller card payments. A price below 0.01 is refused outright. A price from 0.01
-to 0.49 gets a stablecoin challenge only. A price of 0.50 or more, in whole
-cents, gets both methods in one challenge. A fractional-cent price gets the
-stablecoin method only, because Stripe cannot charge it.
+The Tempo floor is 0.01 because that is the smallest useful Tempo charge. A
+price below 0.01 is refused outright. A price of 0.01 or more always gets a
+Tempo challenge. The card method is offered only when the rail is constructed
+with a Stripe client and the price is at least 0.50 USD in whole cents; a
+fractional-cent price gets the Tempo method only, because Stripe cannot charge
+it.
 
-`challenge` returns the x402 requirements for the offer. `requirements.network`
-is `mpp:stripe` when the card method is offered, otherwise `mpp:tempo`.
-`extra.mpp.wwwAuthenticate` carries every eligible MPP method, and
-`extra.mpp.methods` lists them. `extra.offerHash` binds the challenge to the
-offer; the MPP challenges repeat it as `externalId`, so a receipt names the
-offer. When both methods are offered, `requirements.amount` is the card amount
-in cents; the stablecoin amount lives in the Tempo challenge, which the rail
-also HMAC-binds.
+`challenge` returns the x402 requirements for the offer. Tempo is always first
+in `extra.mpp.wwwAuthenticate`, and `extra.mpp.methods` lists every eligible
+method. `requirements.network` is `mpp:stripe` when the card method is offered,
+otherwise `mpp:tempo`. `extra.offerHash` binds the challenge to the offer; the
+MPP challenges repeat it as `externalId`, so a receipt names the offer. When
+both methods are offered, `requirements.amount` is the card amount in cents; the
+Tempo amount lives in the Tempo challenge, which the rail also HMAC-binds.
 
-## Why the declaration describes the stablecoin method
+The Tempo method is built once per rail with mppx's `testnet: true` and the
+pathUSD currency, so every Tempo challenge names chain 42431. There is no option
+that produces the mainnet chain or a mainnet currency address. A Tempo
+credential may carry a transaction hash the buyer already broadcast, a signed
+transaction mppx broadcasts at settlement, or a zero-amount proof.
+
+## The declaration
 
 A `RailDeclaration` has one network and one asset, but this rail can be paid by
-card or by stablecoin. The declaration describes the stablecoin method
-(`mpp:tempo`, pathUSD on Moderato) because it is the method whose asset is a
-concrete token and whose challenge can be built without Stripe credentials. Its
-asset is the pathUSD address on chain 42431, symbol `pathUSD`, 6 decimals. The
-card method is an additional path inside the same rail; its receipts still say
-`method: "stripe"`. The dashboard explorer template points at Stripe test
-payments because the card method is the one with a payment reference.
+card or by stablecoin. The declaration describes the Tempo method (`mpp:tempo`,
+pathUSD on Moderato) because that is the method that needs no Stripe account and
+whose asset is a concrete token. Its asset is the pathUSD address on chain
+42431, symbol `pathUSD`, 6 decimals. The declaration is `kind: "direct"`, and
+`gasPaidBy` is `"buyer"`: the payer's transaction pays its own fee in a
+stablecoin. Finality is the Tempo transaction's inclusion on Moderato, and the
+explorer template is `https://explore.testnet.tempo.xyz/tx/{tx}`. The card
+method is an additional path inside the same rail; its receipts still say
+`method: "stripe"`.
 
-The Tempo method is created with mppx's `testnet: true` and the pathUSD currency,
-so every Tempo challenge names chain 42431. There is no option that produces the
-mainnet chain or a mainnet currency address.
+## Stripe is opt-in
 
-## Mock mode
-
-The rail and the demo endpoint run against a mock Stripe client. The mock
-implements the only Stripe surface mppx uses,
-`paymentIntents.create()`, records every call, and returns `pi_mock_1`,
-`pi_mock_2`, and so on with status `succeeded`. It can also return
+The rail takes an optional Stripe client and business network profile id. When
+they are absent, the rail offers Tempo only and never touches a Stripe code
+path. The demo server enables the card method only when `MPP_STRIPE=1`, and then
+only through the mock Stripe client. The mock implements the only Stripe surface
+mppx uses, `paymentIntents.create()`, records every call, and returns
+`pi_mock_1`, `pi_mock_2`, and so on with status `succeeded`. It can also return
 `requires_payment_method` to exercise the failure path. No Stripe key is read,
 and no request leaves the process.
 
 `stripeClientFromKey(key)` is the only bridge to the real SDK. It throws unless
 the key starts with `sk_test_` or `rk_test_`. It is not used by the mock server
-or by tests. Real sandbox credentials are still outstanding; until they arrive,
-the rail stays in mock mode.
+or by tests. Real sandbox credentials and a sandbox business profile are still
+outstanding; until they arrive, the card method stays behind the flag and the
+mock.
 
 The HMAC secret passed to `createMppRail` and to `Mppx.create` binds challenge
-ids. It is a local secret of at least 32 bytes, not a Stripe key.
+ids. It is a local secret of at least 32 bytes, not a Stripe key. The rail reads
+no environment variable; the server reads `MPP_SECRET_KEY` and `MPP_RECIPIENT`.
+
+## Stateless inspection
+
+The hub re-issues the payment requirements on the paid retry, so the challenge
+ids in the 402 and in the retry are different. A rail that looked up the
+credential's challenge id inside `requirements.extra.mpp.wwwAuthenticate` would
+refuse every honest retry.
+
+The rail therefore proves the credential's challenge without an id lookup:
+`Challenge.verify` must accept the challenge's HMAC under the rail's secret, and
+the realm must match. That proves the challenge, including every request field,
+was issued by this rail. The rail then checks every field that decides the
+payment against the current requirements: the `externalId` equals the offer
+hash, the method is one the requirements offer, the Tempo amount, currency,
+recipient and chain id 42431 match, the Stripe amount and `usd` currency match,
+and the challenge has not expired. A recipient mismatch is `offer_mismatch`.
+The old challenge's id and expiry are not compared to the fresh ones, which is
+what lets the retry through.
 
 ## Running the demo endpoint
 
 ```
+MPP_SECRET_KEY="$(openssl rand -base64 32)" \
+MPP_RECIPIENT=0x00000000000000000000000000000000000000aa \
 bun scripts/mpp/server.ts 8798
 ```
 
-The first line says the server is in mock mode and makes no Stripe calls. The
-server generates a fresh HMAC secret for the process. `GET /openapi.json`
-advertises one paid operation, `GET /paid`, for 50 cents. Without a credential
-that route returns the MPP challenge; with a valid one it returns a JSON body
-and a `Payment-Receipt` header. The Stripe PaymentIntent is answered by the
-mock.
+`MPP_SECRET_KEY` needs at least 32 bytes once decoded, or at least 43
+characters. `MPP_RECIPIENT` must be a checksummed or lowercase 20-byte hex
+address that is not the zero address. A missing or malformed value exits 1 with
+a message naming the variable; the server never prints either value. Startup
+prints one line: the port, Tempo testnet (Moderato, chain 42431), pathUSD, 0.01
+per call, and whether the Stripe card method is on.
+
+`GET /paid` is the mppx-native endpoint. Its 402 carries the Tempo challenge;
+with a valid credential it answers `{ "ok": true, "resource": "countersign mpp
+demo" }` and a `Payment-Receipt` header. `GET /rail/paid` runs the same payment
+through `createMppRail`, which is the logic the hub will use: it issues the
+requirements from the demo offer, verifies and settles the credential, and
+returns the Tempo transaction hash. A refusal returns a fresh 402 challenge and
+the refusal reason.
+
+`GET /paid-card` exists only when the server starts with `MPP_STRIPE=1`; it
+charges 0.50 USD through the mock Stripe client. `GET /openapi.json` and
+`GET /llms.txt` describe the Tempo routes with mppx's `x-payment-info`
+discovery shape.
 
 ## Running `mppx validate` safely on this machine
 
@@ -115,29 +157,34 @@ are the two things missing for the stablecoin side.
 ## Verify and settle
 
 `verify` reads `payment.payload.credential`, the serialized MPP credential. It
-checks the HMAC-bound challenge id, the realm, the expiry, the offer hash, the
-amount, the currency, and the credential payload shape. It never creates a
-PaymentIntent.
+runs the stateless inspection for both methods and the replay check against the
+`seen` store. For Tempo it then calls `mppx.validateCredential`, mppx's
+non-mutating pre-check; a throw becomes `payment_failed`. The pre-check reads
+the Tempo chain for a hash credential or simulates a signed transaction, so it
+needs a live Tempo RPC. It never creates a PaymentIntent.
 
-`settle` runs the same checks, then claims the challenge id once in an in-memory
-store. A replayed credential is refused before Stripe is called. It then asks
-mppx to verify the credential, which records the payment through
-`client.paymentIntents.create()`. A client failure returns `success: false` with
-no receipt.
+`settle` runs the inspection, then claims the challenge id once in the `seen`
+store. A replayed credential is refused before mppx is called, and a claim is
+never released. It then calls `mppx.broadcastCredential`, which re-validates the
+credential and either checks the transaction on chain or broadcasts the signed
+transaction. For Tempo, `receipt.reference` is the transaction hash. A throw
+from mppx returns `success: false` with `payment_failed`, and the error text is
+never echoed. The Stripe settle path is unchanged: it records the
+PaymentIntent through `client.paymentIntents.create()`.
 
 ## Receipt mapping
 
 Settle maps to the slip like this:
 
-- `settlement.transaction` = `receipt.reference` (the Stripe PaymentIntent id,
-  `pi_...`).
+- `settlement.transaction` = `receipt.reference` (the Tempo transaction hash, or
+  the Stripe PaymentIntent id `pi_...` for the card method).
 - `settlement.receipt` = the serialized `Payment-Receipt` header.
-- `settlement.network` = `mpp:stripe`.
+- `settlement.network` = `mpp:tempo`, or `mpp:stripe` for the card method.
 
 The receipt deserializes to the MPP shape, for example:
 
 ```json
-{ "method": "stripe", "reference": "pi_mock_1", "status": "success" }
+{ "method": "tempo", "reference": "0x...", "status": "success" }
 ```
 
 mppx also adds the offer hash as `externalId` when the challenge carried it.
