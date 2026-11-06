@@ -87,6 +87,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
 const STATUS_LABEL: Record<JobStatus, string> = {
   countersigned: "Countersigned",
   held: "In escrow",
+  delivered: "Delivered",
   released: "Released",
   refunded: "Refunded",
   refused: "Refused",

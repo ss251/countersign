@@ -1,7 +1,7 @@
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatAmount, remaining } from "../../lib/format.ts";
+import { formatAmount, remainingAtomic, usd } from "../../lib/format.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { cx, FixtureNote } from "../../ui/primitives.tsx";
 import { Approvals } from "./Approvals.tsx";
@@ -33,7 +33,9 @@ export default function BuyerPage({ query }: PageProps) {
     return `/buyer${s ? `?${s}` : ""}`;
   };
 
-  const left = envelope.data ? remaining(envelope.data.cap, envelope.data.spent) : undefined;
+  const view = envelope.data;
+  const left = view ? usd(remainingAtomic(view.envelope.cap, view.spent.total)) : undefined;
+  const revoked = view?.envelope.revoked ?? false;
 
   return (
     <div className="phone">
@@ -44,17 +46,17 @@ export default function BuyerPage({ query }: PageProps) {
         </Link>
         <div className="phone__bar-end">
           <FixtureNote show={fixtures} />
-          {envelope.data && left ? (
+          {view && left ? (
             <Link
               to={tabHref("envelope")}
-              className={cx("phone__budget num", envelope.data.revoked && "phone__budget--revoked")}
+              className={cx("phone__budget num", revoked && "phone__budget--revoked")}
               aria-label={
-                envelope.data.revoked
+                revoked
                   ? "Envelope revoked"
                   : `${formatAmount(left)} ${left.asset.symbol} left today. Open the envelope.`
               }
             >
-              {envelope.data.revoked ? (
+              {revoked ? (
                 "Revoked"
               ) : (
                 <>

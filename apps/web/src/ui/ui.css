@@ -110,6 +110,9 @@ a.hash__value {
 .status--held {
   color: var(--usdc);
 }
+.status--delivered {
+  color: var(--ink);
+}
 
 /* Tags */
 

@@ -3,7 +3,7 @@ import type { Money, RailId } from "./types.ts";
 
 /**
  * Money for reading: never rounded, at least two decimals, thousands grouped.
- * 50000 atomic USDC is "0.05"; 1000 is "0.001"; 1 is "0.000001".
+ * 50000 atomic USDC reads "0.05"; 1000 reads "0.001"; 1 reads "0.000001".
  */
 export function formatAmount(money: Money, minDecimals = 2): string {
   const exact = formatUnits(BigInt(money.amount), money.asset.decimals);
@@ -17,10 +17,19 @@ export function formatMoney(money: Money): string {
   return `${formatAmount(money)} ${money.asset.symbol}`;
 }
 
+/** Offers price in a 6-decimal USD stablecoin: USDT on Whitechain, USDC everywhere else. */
+export function symbolFor(rail: RailId | undefined): string {
+  return rail === "whitechain" ? "USDT" : "USDC";
+}
+
+export function usd(atomic: string | bigint, rail?: RailId): Money {
+  return { amount: atomic.toString(), asset: { symbol: symbolFor(rail), decimals: 6 } };
+}
+
 /** Remaining budget, clamped at zero. */
-export function remaining(cap: Money, spent: Money): Money {
-  const left = BigInt(cap.amount) - BigInt(spent.amount);
-  return { amount: (left > 0n ? left : 0n).toString(), asset: cap.asset };
+export function remainingAtomic(cap: string, spent: string): string {
+  const left = BigInt(cap) - BigInt(spent);
+  return (left > 0n ? left : 0n).toString();
 }
 
 /** "0x8c1f9e…a20b": enough of each end to compare by eye. */
@@ -37,6 +46,7 @@ export function formatDuration(seconds: number): string {
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+const secondsFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const dayFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
 const fullFormat = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
@@ -47,17 +57,29 @@ const fullFormat = new Intl.DateTimeFormat(undefined, {
   second: "2-digit",
 });
 
-export function formatTime(iso: string): string {
-  return timeFormat.format(new Date(iso));
+/** Unix seconds to a Date. */
+export const fromUnix = (s: number) => new Date(s * 1000);
+export const nowUnix = () => Math.floor(Date.now() / 1000);
+
+export function formatTime(unix: number): string {
+  return timeFormat.format(fromUnix(unix));
 }
 
-export function formatDateTime(iso: string): string {
-  return fullFormat.format(new Date(iso));
+export function formatClock(unix: number): string {
+  return secondsFormat.format(fromUnix(unix));
+}
+
+export function formatDateTime(unix: number): string {
+  return fullFormat.format(fromUnix(unix));
+}
+
+export function isoOf(unix: number): string {
+  return fromUnix(unix).toISOString();
 }
 
 /** "Today", "Yesterday" or "5 Nov". */
-export function formatDay(iso: string, now = new Date()): string {
-  const d = new Date(iso);
+export function formatDay(unix: number, now = new Date()): string {
+  const d = fromUnix(unix);
   const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
   if (days === 0) return "Today";
@@ -66,17 +88,26 @@ export function formatDay(iso: string, now = new Date()): string {
 }
 
 export const RAIL_LABEL: Record<RailId, string> = {
-  arc: "Arc · escrow",
-  "arc-gateway": "Arc · gateway",
+  escrow: "Arc · escrow",
+  eip3009: "Arc · USDC transfer",
+  gateway: "Arc · Gateway",
+  erc8183: "Arc · ERC-8183",
   whitechain: "Whitechain · USDT",
   hedera: "Hedera · x402",
-  erc8183: "Arc · ERC-8183",
 };
 
-export const RAIL_NETWORK: Record<RailId, string> = {
-  arc: "Arc testnet",
-  "arc-gateway": "Circle Gateway",
-  whitechain: "Whitechain Sepolia",
-  hedera: "Hedera testnet",
-  erc8183: "Arc testnet",
-};
+/** "eip155:5042002" to a name people know. */
+export function networkName(network: string): string {
+  switch (network) {
+    case "eip155:5042002":
+      return "Arc testnet";
+    case "eip155:1874":
+      return "Whitechain Sepolia";
+    case "hedera:testnet":
+      return "Hedera testnet";
+    case "hedera:mainnet":
+      return "Hedera";
+    default:
+      return network;
+  }
+}

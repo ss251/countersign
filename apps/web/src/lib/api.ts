@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as fx from "../fixtures/index.ts";
-import type { Approval, Envelope, Money, Offer, Purchase, Slip, TreeNode } from "./types.ts";
+import type { Approval, EnvelopeView, Listing, Purchase, RailDeclaration, SlipView, TreeView } from "./types.ts";
 
 /**
  * Every read the screens make goes through here. Until a hub endpoint exists the
@@ -19,13 +19,14 @@ const settle = <T,>(data: T, ms = 120): Promise<Loaded<T>> =>
   new Promise((resolve) => window.setTimeout(() => resolve({ data, source: "fixtures" }), ms));
 
 export const api = {
-  offers: () => settle(fx.offers),
-  offer: (id: string) => settle<Offer | undefined>(fx.offerById(id)),
-  envelope: () => settle<Envelope>(structuredClone(fx.envelope)),
+  listings: () => settle<Listing[]>(fx.listings),
+  listing: (hash: string) => settle<Listing | undefined>(fx.listingByHash(hash) ?? fx.listingByTitle(hash)),
+  rails: () => settle<RailDeclaration[]>(Object.values(fx.rails)),
+  envelope: () => settle<EnvelopeView>(structuredClone(fx.envelope)),
   approvals: () => settle<Approval[]>(fx.approvals),
-  history: () => settle<Purchase[]>(fx.history),
-  slip: (id: string) => settle<Slip | undefined>(fx.slipById(id)),
-  tree: (_root: string) => settle<TreeNode>(fx.tree),
+  purchases: () => settle<Purchase[]>(fx.purchases),
+  slip: (hash: string) => settle<SlipView | undefined>(fx.slipByHash(hash)),
+  tree: (_root: string) => settle<TreeView>(fx.tree),
 };
 
 /* A job as the phone sees it after the hold. */
@@ -34,12 +35,14 @@ export type JobStep = "countersigned" | "funding" | "held" | "delivered" | "rele
 
 export interface JobView {
   step: JobStep;
-  times: Partial<Record<JobStep, string>>;
+  /** Unix seconds each step was reached. */
+  times: Partial<Record<JobStep, number>>;
   fundTx?: string;
-  slipId?: string;
-  /** For a refusal: what the seller tried to settle at. */
-  asked?: Money;
-  deadline?: string;
+  slipHash?: string;
+  /** For a refusal: the atomic amount the settlement tried to move. */
+  asked?: string;
+  /** Unix seconds. */
+  deadline?: number;
 }
 
 export type Scenario = "release" | "moved" | "deadline";
@@ -50,7 +53,7 @@ export type Scenario = "release" | "moved" | "deadline";
  */
 export function playJob(approval: Approval, scenario: Scenario, onChange: (job: JobView) => void): () => void {
   const timers: number[] = [];
-  const now = () => new Date().toISOString();
+  const now = () => Math.floor(Date.now() / 1000);
   let job: JobView = { step: "countersigned", times: { countersigned: now() } };
   const push = (patch: Partial<JobView>, step: JobStep) => {
     job = { ...job, ...patch, step, times: { ...job.times, [step]: now() } };
@@ -58,10 +61,10 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
   };
   onChange(job);
   const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-  const deadline = new Date(Date.now() + approval.offer.deadlineSeconds * 1000).toISOString();
+  const deadline = now() + approval.listing.offer.deadline;
 
   if (scenario === "moved") {
-    const asked = { ...approval.amount, amount: ((BigInt(approval.amount.amount) * 6n) / 5n).toString() };
+    const asked = ((BigInt(approval.amount) * 6n) / 5n).toString();
     at(700, () => push({}, "funding"));
     at(1900, () => push({ asked }, "refused"));
   } else {
@@ -69,7 +72,7 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
     at(1700, () => push({ fundTx: fx.fakeHex(`fund:${approval.id}`), deadline }, "held"));
     if (scenario === "release") {
       at(3300, () => push({}, "delivered"));
-      at(4300, () => push({ slipId: "slip-4" }, "released"));
+      at(4300, () => push({ slipHash: fx.slips[0]?.slip.hash }, "released"));
     } else {
       at(4300, () => push({}, "refunded"));
     }

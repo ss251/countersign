@@ -1,17 +1,11 @@
-import type { Approval, Asset, Envelope, Hex, Money, Offer, Purchase, Slip, TreeNode } from "../lib/types.ts";
+import { offerHash, type Offer, type RailId, type Slip, type SlipBody } from "@countersign/core";
+import type { RailDeclaration } from "@countersign/rail";
+import type { Address, Approval, EnvelopeView, Hex, Listing, Purchase, SlipView, TreeView } from "../lib/types.ts";
 
 /**
- * Stand-in data until the hub endpoints land. Every screen says when it is
- * showing fixtures. Hashes and addresses here are generated, not real.
+ * Stand-in data until the hub endpoints land. Every screen that shows these says
+ * "Fixture data". Hashes, addresses and signatures here are generated, not real.
  */
-
-export const USDC: Asset = { symbol: "USDC", decimals: 6 };
-export const USDT: Asset = { symbol: "USDT", decimals: 6 };
-
-export function usdc(decimal: string): Money {
-  const [w = "0", f = ""] = decimal.split(".");
-  return { amount: (BigInt(w) * 1_000_000n + BigInt(f.padEnd(6, "0") || "0")).toString(), asset: USDC };
-}
 
 /** Deterministic hex from a label, so fixtures are stable across reloads. */
 export function fakeHex(label: string, bytes = 32): Hex {
@@ -33,237 +27,364 @@ export function fakeHex(label: string, bytes = 32): Hex {
   return `0x${out.slice(0, bytes * 2)}`;
 }
 
-const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+const addr = (label: string) => fakeHex(`addr:${label}`, 20) as Address;
+const now = () => Math.floor(Date.now() / 1000);
+const ago = (minutes: number) => now() - Math.round(minutes * 60);
 
-const seller = (name: string) => ({ name, address: fakeHex(`seller:${name}`, 20) });
+/* Rails */
 
-const CIRCLE_SKILLS = "https://github.com/circlefin/skills";
+const ARC = "eip155:5042002" as const;
+const WHITECHAIN = "eip155:1874" as const;
 
-function skill(id: string, summary: string, price: string, extra: Partial<Offer> = {}): Offer {
+export const rails: Record<RailId, RailDeclaration> = {
+  escrow: {
+    id: "escrow",
+    network: ARC,
+    scheme: "countersign",
+    asset: { network: ARC, address: "0x3600000000000000000000000000000000000000", symbol: "USDC", decimals: 6 },
+    kind: "escrow",
+    escrow: addr("escrow-arc"),
+    gasPaidBy: "hub",
+    finality: "Final one Arc block after release.",
+    explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+  },
+  eip3009: {
+    id: "eip3009",
+    network: ARC,
+    scheme: "exact",
+    asset: { network: ARC, address: "0x3600000000000000000000000000000000000000", symbol: "USDC", decimals: 6 },
+    kind: "direct",
+    gasPaidBy: "hub",
+    finality: "Final one Arc block after the transfer.",
+    explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+  },
+  gateway: {
+    id: "gateway",
+    network: ARC,
+    scheme: "exact",
+    asset: { network: ARC, address: "0x3600000000000000000000000000000000000000", symbol: "USDC", decimals: 6 },
+    kind: "batched",
+    gasPaidBy: "gateway",
+    finality: "The buyer is debited at once. The seller is credited in Gateway's next batch.",
+    explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+  },
+  erc8183: {
+    id: "erc8183",
+    network: ARC,
+    scheme: "countersign",
+    asset: { network: ARC, address: "0x3600000000000000000000000000000000000000", symbol: "USDC", decimals: 6 },
+    kind: "escrow",
+    escrow: addr("escrow-8183"),
+    gasPaidBy: "hub",
+    finality: "Final one Arc block after the hook commits the slip.",
+    explorerTx: "https://testnet.arcscan.app/tx/{tx}",
+  },
+  whitechain: {
+    id: "whitechain",
+    network: WHITECHAIN,
+    scheme: "countersign",
+    asset: { network: WHITECHAIN, address: "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7", symbol: "USDT", decimals: 6 },
+    kind: "escrow",
+    escrow: addr("escrow-wc"),
+    gasPaidBy: "relayer",
+    finality: "Final one Whitechain block after release.",
+    explorerTx: "https://explorer.testnet.whitechain.io/tx/{tx}",
+  },
+  hedera: {
+    id: "hedera",
+    network: "hedera:testnet",
+    scheme: "exact",
+    asset: { network: "hedera:testnet", address: "0.0.429274", symbol: "USDC", decimals: 6 },
+    kind: "direct",
+    gasPaidBy: "facilitator",
+    finality: "Final when the facilitator's transfer reaches consensus, about three seconds.",
+    explorerTx: "https://hashscan.io/testnet/transaction/{tx}",
+  },
+};
+
+/* Offers: the catalogue */
+
+const SKILLS = "https://github.com/circlefin/skills";
+const SKILL_IO = {
+  input: {
+    type: "object",
+    required: ["task"],
+    properties: { task: { type: "string", description: "What the agent is trying to do" } },
+  },
+  output: {
+    type: "object",
+    required: ["guidance"],
+    properties: { guidance: { type: "string", description: "Guidance text from SKILL.md" } },
+  },
+};
+
+interface Draft {
+  title: string;
+  summary: string;
+  seller: string;
+  price: string;
+  adapter?: Offer["adapter"];
+  upstream: { url: string; licence: string };
+  rails: RailId[];
+  deadline?: number;
+  stats?: Listing["stats"];
+}
+
+function listing(d: Draft): Listing {
+  const offer: Offer = {
+    v: 1,
+    seller: addr(d.seller),
+    title: d.title,
+    summary: d.summary,
+    adapter: d.adapter ?? "skill",
+    upstream: d.upstream,
+    ...SKILL_IO,
+    price: d.price,
+    deadline: d.deadline ?? 60,
+    bond: "1000000",
+    rails: d.rails,
+    issuedAt: ago(300),
+  };
   return {
-    id,
-    hash: fakeHex(`offer:${id}`),
-    name: id,
-    summary,
-    adapter: "skill",
-    upstream: { label: "circlefin/skills", url: CIRCLE_SKILLS, licence: "Apache-2.0" },
-    seller: seller("circle-skills"),
-    price: usdc(price),
-    bond: usdc("1"),
-    deadlineSeconds: 60,
-    rails: ["arc", "arc-gateway"],
-    tollBps: 100,
-    input: {
-      type: "object",
-      required: ["task"],
-      properties: { task: { type: "string", description: "What the agent is trying to do" } },
-    },
-    output: {
-      type: "object",
-      required: ["guidance"],
-      properties: { guidance: { type: "string", description: "Markdown guidance from SKILL.md" } },
-    },
-    rating: { released: 0, refunded: 0 },
+    hash: offerHash(offer),
+    offer,
+    seller: { name: d.seller },
+    stats: d.stats ?? { calls: 0, released: 0, refunded: 0 },
     status: "listed",
-    publishedAt: minutesAgo(300),
-    ...extra,
   };
 }
 
-export const offers: Offer[] = [
-  skill("use-arc", "Build on Arc: chain facts, USDC as gas, deploy and verify.", "0.05", {
-    rating: { released: 41, refunded: 1 },
+export const listings: Listing[] = [
+  listing({
+    title: "use-arc",
+    summary: "Build on Arc: chain facts, USDC as gas, deploy and verify.",
+    seller: "circle-skills",
+    price: "50000",
+    upstream: { url: SKILLS, licence: "Apache-2.0" },
+    rails: ["escrow", "gateway"],
+    stats: { calls: 42, released: 41, refunded: 1 },
   }),
-  skill("use-usdc", "Move USDC correctly: transfers, approvals, authorisations.", "0.05", {
-    rating: { released: 18, refunded: 0 },
+  listing({
+    title: "use-usdc",
+    summary: "Move USDC correctly: transfers, approvals, authorisations.",
+    seller: "circle-skills",
+    price: "50000",
+    upstream: { url: SKILLS, licence: "Apache-2.0" },
+    rails: ["escrow", "gateway"],
+    stats: { calls: 18, released: 18, refunded: 0 },
   }),
-  skill("use-gateway", "Circle Gateway: deposit once, spend on any chain.", "0.04", {
-    rating: { released: 9, refunded: 0 },
+  listing({
+    title: "use-gateway",
+    summary: "Circle Gateway: deposit once, spend on any chain.",
+    seller: "circle-skills",
+    price: "40000",
+    upstream: { url: SKILLS, licence: "Apache-2.0" },
+    rails: ["gateway", "escrow"],
+    stats: { calls: 10, released: 9, refunded: 1 },
   }),
-  skill("use-smart-contract-platform", "Deploy and call contracts through Circle's platform.", "0.06"),
-  skill("bridge-stablecoin", "Bridge USDC between chains with CCTP.", "0.05"),
-  skill("whitechain-dev", "Build on Whitechain: network facts, tokens, deploy and verify.", "0.05", {
-    upstream: {
-      label: "whitechain-labs/skills",
-      url: "https://github.com/whitechain-labs/skills",
-      licence: "None published, reproduced verbatim (see NOTICE)",
-    },
-    seller: seller("whitechain-skills"),
+  listing({
+    title: "use-smart-contract-platform",
+    summary: "Deploy and call contracts through Circle's platform.",
+    seller: "circle-skills",
+    price: "60000",
+    upstream: { url: SKILLS, licence: "Apache-2.0" },
+    rails: ["escrow"],
+  }),
+  listing({
+    title: "bridge-stablecoin",
+    summary: "Bridge USDC between chains with CCTP.",
+    seller: "circle-skills",
+    price: "50000",
+    upstream: { url: SKILLS, licence: "Apache-2.0" },
+    rails: ["escrow"],
+  }),
+  listing({
+    title: "whitechain-dev",
+    summary: "Build on Whitechain: network facts, tokens, deploy and verify.",
+    seller: "whitechain-skills",
+    price: "50000",
+    upstream: { url: "https://github.com/whitechain-labs/skills", licence: "None published; reproduced verbatim, see NOTICE" },
     rails: ["whitechain"],
-    price: { amount: "50000", asset: USDT },
-    bond: { amount: "1000000", asset: USDT },
+    stats: { calls: 6, released: 6, refunded: 0 },
   }),
-  {
-    ...skill("hedera-agent-kit", "Hedera tools over MCP, returning unsigned transaction bytes.", "0.01"),
+  listing({
+    title: "hedera-agent-kit",
+    summary: "Hedera tools over MCP, returning unsigned transaction bytes.",
+    seller: "hedera-tools",
+    price: "10000",
     adapter: "mcp",
-    upstream: {
-      label: "@hashgraph/hedera-agent-kit-mcp",
-      url: "https://www.npmjs.com/package/@hashgraph/hedera-agent-kit-mcp",
-      licence: "Apache-2.0",
-    },
-    seller: seller("hedera-tools"),
+    upstream: { url: "https://www.npmjs.com/package/@hashgraph/hedera-agent-kit-mcp", licence: "Apache-2.0" },
     rails: ["hedera"],
-    deadlineSeconds: 30,
-    rating: { released: 12, refunded: 0 },
-  },
-  {
-    ...skill("circle-codegen", "Circle's codegen MCP server, metered per call.", "0.02"),
+    deadline: 30,
+    stats: { calls: 12, released: 12, refunded: 0 },
+  }),
+  listing({
+    title: "circle-codegen",
+    summary: "Circle's codegen MCP server, metered per call.",
+    seller: "codegen-proxy",
+    price: "20000",
     adapter: "mcp",
-    upstream: { label: "api.circle.com/v1/codegen/mcp", url: "https://api.circle.com/v1/codegen/mcp", licence: "n/a" },
-    seller: seller("circle-codegen-proxy"),
-    rails: ["arc-gateway"],
-    deadlineSeconds: 45,
-  },
-  {
-    ...skill("merchant-invoice", "Issue an invoice and refund it in one call.", "0.10"),
+    upstream: { url: "https://api.circle.com/v1/codegen/mcp", licence: "n/a" },
+    rails: ["gateway"],
+    deadline: 45,
+    stats: { calls: 7, released: 7, refunded: 0 },
+  }),
+  listing({
+    title: "merchant-invoice",
+    summary: "Issue an invoice and refund it in one call.",
+    seller: "merchant-desk",
+    price: "100000",
     adapter: "openapi",
-    upstream: { label: "this repository", url: "#/registry", licence: "MIT" },
-    seller: seller("merchant-desk"),
-    rails: ["whitechain", "arc"],
-  },
+    upstream: { url: "https://opensource.org/license/mit", licence: "MIT" },
+    rails: ["whitechain", "escrow"],
+  }),
 ];
 
-export function offerById(id: string): Offer | undefined {
-  return offers.find((o) => o.id === id);
-}
+export const listingByHash = (hash: string) => listings.find((l) => l.hash === hash);
+export const listingByTitle = (title: string) => listings.find((l) => l.offer.title === title);
+
+const L = (title: string) => listingByTitle(title)!;
+
+/* The buyer */
 
 const AGENT = "research-agent";
+const BUYER = addr("buyer-agent");
 
-export const envelope: Envelope = {
-  agent: AGENT,
-  period: "day",
-  cap: usdc("5"),
-  spent: usdc("0.42"),
-  perMerchant: usdc("1"),
-  askAbove: usdc("0.04"),
-  allowlist: [seller("circle-skills"), seller("hedera-tools"), seller("whitechain-skills")],
-  revoked: false,
-  gatewayBalance: usdc("4.58"),
+export const names: Record<string, string> = Object.fromEntries(
+  listings.map((l) => [l.offer.seller.toLowerCase(), l.seller.name]),
+);
+
+export const envelope: EnvelopeView = {
+  envelope: {
+    v: 1,
+    agent: BUYER,
+    cap: "5000000",
+    perMerchant: "1000000",
+    allowlist: [L("use-arc").offer.seller, L("hedera-agent-kit").offer.seller, L("whitechain-dev").offer.seller].map((a) =>
+      a.toLowerCase(),
+    ),
+    revoked: false,
+  },
+  spent: {
+    total: "420000",
+    bySeller: { [L("use-arc").offer.seller.toLowerCase()]: "150000" },
+  },
+  agentName: AGENT,
+  askAbove: "40000",
+  names,
+  gatewayBalance: "4580000",
 };
 
 export const approvals: Approval[] = [
   {
     id: "ap-1",
-    agent: AGENT,
-    offer: offers[0]!,
-    amount: usdc("0.05"),
-    rail: "arc",
+    agentName: AGENT,
+    listing: L("use-arc"),
+    amount: "50000",
+    rail: "escrow",
     discoveredVia: "circle",
-    requestedAt: minutesAgo(1),
+    requestedAt: ago(1),
   },
 ];
 
 function purchase(
   n: number,
-  offer: Offer,
+  title: string,
   status: Purchase["status"],
-  mins: number,
+  minutes: number,
   extra: Partial<Purchase> = {},
 ): Purchase {
+  const l = L(title);
   return {
-    id: `job-${n}`,
-    offerId: offer.id,
-    offerName: offer.name,
-    adapter: offer.adapter,
-    seller: offer.seller,
-    amount: offer.price,
+    jobId: fakeHex(`job:${n}`),
+    offerHash: l.hash,
+    title,
+    adapter: l.offer.adapter,
+    seller: { name: l.seller.name, address: l.offer.seller },
+    amount: l.offer.price,
+    rail: l.offer.rails[0]!,
     status,
-    rail: offer.rails[0]!,
-    at: minutesAgo(mins),
-    slipId: status === "released" ? `slip-${n}` : undefined,
+    at: ago(minutes),
+    slipHash: status === "released" ? fakeHex(`slip:${n}`) : undefined,
     approvedBy: "envelope",
     ...extra,
   };
 }
 
-const [useArc, useUsdc, useGateway, , , whitechainDev, hederaKit, codegen] = offers as [
-  Offer,
-  Offer,
-  Offer,
-  Offer,
-  Offer,
-  Offer,
-  Offer,
-  Offer,
+export const purchases: Purchase[] = [
+  purchase(8, "use-arc", "refused", 3, { approvedBy: "you", reason: "Refused. The price moved after you signed." }),
+  purchase(7, "hedera-agent-kit", "released", 9),
+  purchase(6, "circle-codegen", "released", 14),
+  purchase(5, "use-gateway", "refunded", 26, { rail: "escrow", reason: "Refunded. The deadline passed." }),
+  purchase(4, "use-usdc", "released", 41, { approvedBy: "you" }),
+  purchase(3, "whitechain-dev", "released", 70),
+  purchase(2, "use-arc", "released", 60 * 26),
+  purchase(1, "use-usdc", "released", 60 * 27),
 ];
 
-export const history: Purchase[] = [
-  purchase(8, useArc, "refused", 3, { approvedBy: "you", reason: "The price moved after you signed." }),
-  purchase(7, hederaKit, "released", 9),
-  purchase(6, codegen, "released", 14, { rail: "arc-gateway", amount: usdc("0.02") }),
-  purchase(5, useGateway, "refunded", 26, { reason: "The deadline passed. Anyone could return it." }),
-  purchase(4, useUsdc, "released", 41, { approvedBy: "you" }),
-  purchase(3, whitechainDev, "released", 70),
-  purchase(2, useArc, "released", 60 * 26),
-  purchase(1, useUsdc, "released", 60 * 27),
-];
+/* Slips */
 
-function slipFor(p: Purchase): Slip {
-  const offer = offerById(p.offerId)!;
-  const toll = ((BigInt(p.amount.amount) * BigInt(offer.tollBps)) / 10_000n).toString();
-  const funded = new Date(new Date(p.at).getTime() - 20_000).toISOString();
-  const deadline = new Date(new Date(funded).getTime() + offer.deadlineSeconds * 1000).toISOString();
-  const rail = p.rail;
-  return {
-    id: p.slipId!,
-    hash: fakeHex(`slip:${p.id}`),
-    jobId: fakeHex(`job:${p.id}`),
-    offerHash: offer.hash,
-    offerId: offer.id,
-    offerName: offer.name,
-    adapter: offer.adapter,
-    buyer: fakeHex(`buyer:${AGENT}`, 20),
-    seller: offer.seller,
+function slipOf(p: Purchase, children: Hex[] = []): SlipView {
+  const l = listingByHash(p.offerHash)!;
+  const decl = rails[p.rail];
+  const escrowRail = decl.kind === "escrow";
+  const chainId = decl.network.startsWith("eip155:") ? Number(decl.network.slice(7)) : undefined;
+  const body: SlipBody = {
+    v: 1,
+    rail: p.rail,
+    network: decl.network,
+    offerHash: p.offerHash,
+    jobId: p.jobId,
+    buyer: p.rail === "hedera" ? "0.0.11337064" : BUYER,
+    seller: l.offer.seller,
+    payTo: p.rail === "hedera" ? "0.0.11337065" : l.offer.seller,
+    asset: decl.asset.address,
     amount: p.amount,
-    toll: { amount: toll, asset: p.amount.asset },
-    rail: {
-      id: rail,
-      network: rail === "whitechain" ? "Whitechain Sepolia" : rail === "hedera" ? "Hedera testnet" : "Arc testnet",
-      chainId: rail === "whitechain" ? "1874" : rail === "hedera" ? "hedera:testnet" : "5042002",
-      tx: rail === "hedera" ? "0.0.5291847@1762415321.441203117" : fakeHex(`tx:${p.id}`),
-      explorer: "",
-    },
-    outputHash: fakeHex(`out:${p.id}`),
-    countersignature: fakeHex(`cs:${p.id}`, 65),
-    sellerSignature: fakeHex(`ss:${p.id}`, 65),
-    fundedAt: funded,
-    releasedAt: p.at,
-    deadline,
-    tree: p.id === "job-6" ? { root: fakeHex("tree:job-6") } : undefined,
+    inputHash: fakeHex(`in:${p.jobId}`),
+    outputHash: fakeHex(`out:${p.jobId}`),
+    deliveredAt: p.at - 2,
+    children,
+    ...(escrowRail && chainId ? { escrow: decl.escrow as Address, chainId } : {}),
   };
+  const tx = p.rail === "hedera" ? "0.0.9185802@1793957141.182486461" : fakeHex(`tx:${p.jobId}`);
+  const slip: Slip = {
+    body,
+    hash: p.slipHash!,
+    sellerSig: fakeHex(`sig:${p.jobId}`, 65),
+    payment: {
+      x402Version: 2,
+      accepted: {
+        scheme: decl.scheme,
+        network: decl.network,
+        amount: p.amount,
+        asset: decl.asset.address,
+        payTo: body.payTo,
+        maxTimeoutSeconds: l.offer.deadline,
+      },
+      payload: { signature: fakeHex(`cs:${p.jobId}`, 65) },
+    },
+    settlement: { transaction: tx, network: decl.network, url: decl.explorerTx.replace("{tx}", tx) },
+  };
+  return { slip, title: p.title, sellerName: p.seller.name, declaration: decl };
 }
 
-export const slips: Slip[] = history.filter((p) => p.slipId).map(slipFor);
+const released = purchases.filter((p) => p.status === "released");
 
-export function slipById(id: string): Slip | undefined {
-  return slips.find((s) => s.id === id);
-}
+const childA = { ...purchase(61, "use-arc", "released", 14), amount: "5000", rail: "gateway" as const };
+const childB = { ...purchase(62, "use-usdc", "released", 14), amount: "5000", rail: "gateway" as const };
+const childSlips = [slipOf(childA), slipOf(childB)];
 
-export const tree: TreeNode = {
-  slipId: "slip-6",
-  hash: fakeHex("tree:job-6"),
-  offerName: "circle-codegen",
-  seller: "circle-codegen-proxy",
-  amount: usdc("0.02"),
-  rail: "arc-gateway",
-  children: [
-    {
-      slipId: "slip-6a",
-      hash: fakeHex("slip:6a"),
-      offerName: "use-arc",
-      seller: "circle-skills",
-      amount: usdc("0.005"),
-      rail: "arc-gateway",
-      children: [],
-    },
-    {
-      slipId: "slip-6b",
-      hash: fakeHex("slip:6b"),
-      offerName: "use-usdc",
-      seller: "circle-skills",
-      amount: usdc("0.005"),
-      rail: "arc-gateway",
-      children: [],
-    },
-  ],
+export const slips: SlipView[] = released.map((p) =>
+  p.title === "circle-codegen" ? slipOf(p, childSlips.map((c) => c.slip.hash)) : slipOf(p),
+);
+
+export const slipByHash = (hash: string) => [...slips, ...childSlips].find((s) => s.slip.hash === hash);
+
+const treeRoot = slips.find((s) => s.title === "circle-codegen")!;
+
+export const tree: TreeView = {
+  root: treeRoot.slip.hash,
+  nodes: Object.fromEntries(
+    [treeRoot, ...childSlips].map((s) => [s.slip.hash, { slip: s.slip, title: s.title, sellerName: s.sellerName }]),
+  ),
 };
