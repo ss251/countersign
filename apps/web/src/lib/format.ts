@@ -38,6 +38,9 @@ export function shortHex(value: string, head = 6, tail = 4): string {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
+/** What the console says for a seller with no name: anonymity is the policy, not a fault. */
+export const ANONYMOUS = "anonymous by design";
+
 export function formatDuration(seconds: number): string {
   if (seconds < 90) return `${seconds} s`;
   if (seconds < 90 * 60) return `${Math.round(seconds / 60)} min`;
