@@ -1,2 +1,7 @@
 export * from "./amount.ts";
 export * from "./canonical.ts";
+export * from "./countersign.ts";
+export * from "./envelope.ts";
+export * from "./offer.ts";
+export * from "./slip.ts";
+export * from "./types.ts";

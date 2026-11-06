@@ -36,6 +36,9 @@
     "packages/buyer": {
       "name": "@countersign/buyer",
       "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+      },
     },
     "packages/core": {
       "name": "@countersign/core",
@@ -47,6 +50,10 @@
     "packages/rail": {
       "name": "@countersign/rail",
       "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+        "viem": "^2.57.16",
+      },
     },
     "packages/relay": {
       "name": "@countersign/relay",
@@ -55,10 +62,17 @@
     "packages/runner": {
       "name": "@countersign/runner",
       "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+      },
     },
     "packages/verify": {
       "name": "@countersign/verify",
       "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+        "viem": "^2.57.16",
+      },
     },
   },
   "packages": {
