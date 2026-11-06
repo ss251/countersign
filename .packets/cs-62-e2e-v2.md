@@ -1,7 +1,20 @@
 # cs-62-e2e-v2: the e2e suite on escrow v2 (Arc), phase 1
 
-Lane: cs-e2e. Base: `cs/e2e` after it has merged `cs/int` with PR #164 (escrow v2). Branch:
-`cs/cs-62`. Project lead, STEER-1950 answers: production Arc switches to v2 with one env change back to v1
+Lane: cs-e2e. Base: `cs/int` at `108cb4b`, which has PR #164 (escrow v2, 52b7c7c) and #198 merged and
+whose tree equals `cs/e2e` at 3b1d81e. Branch: `cs/cs-62`.
+
+Checked on this base before launch, so you need not rediscover them:
+
+- `apps/hub/src/rails.ts` reads `ARC_ESCROW_VERSION` ("2" means v2).
+- `packages/runner/src/cli.ts` takes `--known-escrow <chainId>=<address>`.
+- `packages/buyer` loads `KNOWN_RAILS` plus `state.loadRails()`.
+- `packages/rail/src/escrow/index.ts` exports `fundArgsV2`.
+- The v2 contract has `tollAccrued()` and `error SettleWindowOpen(bytes32 jobId, uint256 settleBy)`.
+  `refund` reverts with it until `deadline + DISPUTE_WINDOW` (600).
+- The 60 s floors and the seller's `Lock` apply only to bonded jobs.
+- `packages/verify/src/cli.ts` has no pin flag, so the verifier case below is "change nothing".
+
+Phase 1 uses bond 0 and window 0, so none of the bonded rules apply. Project lead, STEER-1950 answers: production Arc switches to v2 with one env change back to v1
 as the fallback, and the full e2e suite runs on v2.
 
 Phase 1 runs the claims the suite already proves on the v2 contract, with offers of review window 0 and
