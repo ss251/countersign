@@ -150,6 +150,8 @@ export interface Settlement {
   offerHash: string;
   title: string;
   seller: string;
+  /** The buyer's address, when the hub sends it. */
+  buyer?: string;
   /** Atomic. */
   amount: string;
   rail: RailId;
