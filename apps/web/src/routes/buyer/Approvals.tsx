@@ -69,6 +69,7 @@ function ApprovalFlow({
   const { listing } = approval;
   const { offer } = listing;
   const money = usd(approval.amount, approval.rail);
+  const toll = ESCROW_RAILS.has(approval.rail) ? splitToll(approval.amount) : null;
   const checks = envelopeChecks(seen, approval);
   const decision = checkEnvelope(
     seen.envelope,
@@ -111,13 +112,50 @@ function ApprovalFlow({
         ) : null}
       </header>
 
-      <div className="approval__price">
+      <section className="approval__amount" aria-label="Amount">
+        <p className="approval__exact">You countersign exactly</p>
         <Amount money={money} size="xl" />
-        <p className="approval__to">
-          to <span className="approval__seller">{listing.seller.name}</span>{" "}
-          <Hash value={offer.seller} label="seller address" copy={false} />
-        </p>
-      </div>
+        {toll ? (
+          <dl className="approval__split">
+            <div>
+              <dt>Toll, included ({TOLL_BPS / 100}%)</dt>
+              <dd>
+                <Amount money={usd(toll.toll, approval.rail)} size="sm" />
+              </dd>
+            </div>
+            <div>
+              <dt>{listing.seller.name} gets</dt>
+              <dd>
+                <Amount money={usd(toll.net, approval.rail)} size="sm" />
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </section>
+
+      <dl className="fromto">
+        <div className="fromto__row">
+          <dt>From</dt>
+          <dd>
+            <span className="fromto__name">{approval.agentName}</span>
+            <span className="fromto__sub num">
+              Your envelope, {formatAmount(usd(remainingAtomic(seen.envelope.cap, seen.spent.total)))} left
+            </span>
+          </dd>
+        </div>
+        <div className="fromto__row">
+          <dt>To</dt>
+          <dd>
+            <span className="fromto__name">{listing.seller.name}</span>
+            <span className="fromto__sub fromto__locked">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Payee locked <Hash value={offer.seller} label="payee address" copy={false} />
+            </span>
+          </dd>
+        </div>
+      </dl>
 
       {job ? null : (
         <>
@@ -153,6 +191,9 @@ function ApprovalFlow({
       ) : (
         <div className="approval__dock">
           <>
+            <p className="approval__dock-line">
+              <Amount money={money} size="sm" /> to {listing.seller.name}, for {offer.title}
+            </p>
             <HoldToSign
               ariaLabel={`Countersign ${formatMoney(money)} to ${offer.title}`}
               left={listing.seller.name}
@@ -175,6 +216,18 @@ function ApprovalFlow({
       )}
     </article>
   );
+}
+
+/** Rails that settle through CountersignedEscrow, which keeps a toll on release. */
+const ESCROW_RAILS = new Set(["escrow", "whitechain", "erc8183"]);
+/** Both escrow deployments set tollBps to 100 (docs/decisions.md). */
+const TOLL_BPS = 100;
+
+/** The toll comes out of the amount, rounded down, exactly as the contract computes it. */
+function splitToll(amount: string): { toll: string; net: string } {
+  const a = BigInt(amount);
+  const toll = (a * BigInt(TOLL_BPS)) / 10_000n;
+  return { toll: toll.toString(), net: (a - toll).toString() };
 }
 
 function upstreamLabel(url: string): string {

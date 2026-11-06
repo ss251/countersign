@@ -86,6 +86,7 @@
       "name": "@countersign/runner",
       "version": "0.0.0",
       "dependencies": {
+        "@countersign/buyer": "workspace:*",
         "@countersign/core": "workspace:*",
         "viem": "^2.57.16",
       },

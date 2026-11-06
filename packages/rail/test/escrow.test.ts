@@ -28,6 +28,7 @@ import {
   type PaymentPayload,
   type CountersignExtra,
   releaseTypedData,
+  ZERO_HASH,
 } from "@countersign/core";
 import { escrowAbi } from "../src/escrow/abi.ts";
 import { escrowRail, fundArgs } from "../src/escrow/index.ts";
@@ -193,6 +194,24 @@ describe("escrow rail on anvil", () => {
     expect(await rail.escrow!.status(jobId)).toBe("released");
     const paid = await pub.readContract({ address: token, abi: tokenAbi, functionName: "balanceOf", args: [seller.address] });
     expect(paid).toBe(1_500_000n - 15_000n);
+  }, 30_000);
+
+  test("a release of the zero hash is refused and sends nothing", async () => {
+    const { payment, jobId } = await pay("4");
+    expect((await rail.settle(payment, payment.accepted)).success).toBe(true);
+    expect(await rail.escrow!.status(jobId)).toBe("funded");
+
+    const zeroSig = await seller.signTypedData(releaseTypedData(31337, escrowAddr, jobId, ZERO_HASH));
+    const nonce = await pub.getTransactionCount({ address: deployer.address });
+    const released = await rail.escrow!.release(jobId, ZERO_HASH, zeroSig);
+    expect(released).toEqual({
+      success: false,
+      errorReason: "Refused. A release must commit a slip hash.",
+      transaction: "",
+      network: "eip155:31337",
+    });
+    expect(await pub.getTransactionCount({ address: deployer.address })).toBe(nonce);
+    expect(await rail.escrow!.status(jobId)).toBe("funded");
   }, 30_000);
 
   test("a moved price is refused off chain and reverted on chain", async () => {

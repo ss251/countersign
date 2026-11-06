@@ -102,7 +102,9 @@ All four must pass. `apps/web/test/seller.test.ts` must cover, with pure functio
 - price conversion `"0.05"` to `"50000"`, plus the refusals for `"0"`, `"abc"` and `"0.0000001"`;
 - the publish command string for a case with upstream, licence and two rails, including quoting a licence that contains a space.
 
-Commit on your branch with small present-tense messages, no emoji. Do not commit `bun.lock`. Write a report to `/Users/thescoho/Developer/countersign-mumbai/reports/ui-01-seller.md` covering what you built, the acceptance output, and anything left undone.
+Commit on your branch with small present-tense messages, no emoji. Do not commit `bun.lock`. Write a report to `$M/reports/ui-01-seller.md` covering what you built, the acceptance output, and anything left undone.
+
+`$M` is the fleet directory named in your brief.
 
 ## Stop conditions
 

@@ -3,7 +3,7 @@ import type { CountersignPayload, Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, formatMoney, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { formatCompleted, formatDateTime, formatMoney, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
 import { canReadChain, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { RailCard } from "../../ui/RailCard.tsx";
@@ -18,14 +18,35 @@ export default function SlipPage({ params }: PageProps) {
   const hash = params[0] ?? "";
   const view = useResource(() => api.slip(hash), [hash]);
   const children = view.data?.slip.body.children.length ?? 0;
-  const tree = useResource(() => api.tree(hash), [hash, children > 0]);
+  // Only a slip with children has a tree; asking for one otherwise refetches the same slip.
+  const tree = useResource(
+    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
+    [hash, children > 0],
+  );
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [reading, setReading] = useState(false);
 
   useEffect(() => {
     setVerdict(null);
-    if (view.data) void verifySlip(view.data.slip).then(setVerdict);
-  }, [view.data]);
+    if (!view.data) return;
+    const { slip } = view.data;
+    let live = true;
+    // Show what the slip proves by itself at once, then the fifth check: the chain holding its hash.
+    void verifySlip(slip).then((offline) => {
+      if (!live) return;
+      setVerdict(offline);
+      if (view.source !== "hub" || !canReadChain(slip)) return;
+      setReading(true);
+      void verifySlip(slip, { readChain: true }).then((onchain) => {
+        if (!live) return;
+        setVerdict(onchain);
+        setReading(false);
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [view.data, view.source]);
 
   const readChain = () => {
     if (!view.data) return;
@@ -59,24 +80,27 @@ export default function SlipPage({ params }: PageProps) {
             <span className="slip__brand">
               <Mark size={18} />
               <span className="mono">slip</span>
+              <Hash value={slip.hash} label="slip hash" />
             </span>
-            <span className="slip__head-end">
-              <FixtureNote show={view.source === "fixtures"} />
-              <span className="status status--released">Released</span>
-            </span>
+            <FixtureNote show={view.source === "fixtures"} />
           </header>
 
           <div className="slip__lead">
             <div className="slip__lead-text">
-              <h1 id="slip-title" className="slip__title">
-                {title}
+              <h1 id="slip-title" className="slip__status">
+                Released
               </h1>
-              <p className="slip__sub">
-                {sellerName} was paid on {RAIL_LABEL[body.rail]}, delivered {formatDateTime(body.deliveredAt)}
+              <p className="slip__what">
+                <span className="slip__offer">{title}</span> · {sellerName} was paid on {RAIL_LABEL[body.rail]}
               </p>
+              <p className="slip__when num">Completed on {formatCompleted(body.deliveredAt)}</p>
             </div>
             <Amount money={money} size="xl" />
           </div>
+          <p className="slip__promise">
+            {sellerName} was paid only after the output matched the schema. Had the deadline passed first, anyone could have
+            refunded the buyer, with no ticket and no one to ask.
+          </p>
 
           <Perforation />
 
@@ -85,7 +109,7 @@ export default function SlipPage({ params }: PageProps) {
               <h2 id="half-offer" className="slip__half-title">
                 Offer
               </h2>
-              <p className="slip__half-who">The seller's half</p>
+              <p className="slip__half-who">The seller’s half</p>
               <KV
                 rows={[
                   ["Offer hash", <Hash value={body.offerHash} label="offer hash" />],
@@ -99,7 +123,7 @@ export default function SlipPage({ params }: PageProps) {
               <h2 id="half-buyer" className="slip__half-title">
                 Countersignature
               </h2>
-              <p className="slip__half-who">The buyer's half</p>
+              <p className="slip__half-who">The buyer’s half</p>
               <BuyerHalf slip={slip} />
             </section>
           </div>
@@ -128,7 +152,7 @@ export default function SlipPage({ params }: PageProps) {
 
           <section className="slip__section" aria-labelledby="sec-seal">
             <h2 id="sec-seal" className="slip__section-title">
-              Seller's signature
+              Seller’s signature
             </h2>
             <KV
               rows={[
@@ -146,19 +170,19 @@ export default function SlipPage({ params }: PageProps) {
               </h2>
               <ReceiptTree tree={tree.data} current={slip.hash} />
               <p className="section__note">
-                To serve this call the seller bought {children} more. Their slip hashes sit inside this slip's body, so
+                To serve this call the seller bought {children} more. Their slip hashes sit inside this slip’s body, so
                 this signature commits to every one of them.
               </p>
             </section>
           ) : null}
 
           <footer className="slip__foot">
-            <Link to={`/verify/${slip.hash}`} className="btn btn--primary">
-              Verify this slip
-            </Link>
-            <Button variant="secondary" onClick={() => download(slip, title)}>
+            <Button variant="primary" onClick={() => download(slip, title)}>
               Download slip.json
             </Button>
+            <Link to={`/verify/${slip.hash}`} className="btn btn--secondary">
+              Verify it yourself
+            </Link>
           </footer>
         </article>
 
@@ -177,7 +201,7 @@ export default function SlipPage({ params }: PageProps) {
             }}
           />
           <p className="section__note">
-            Anyone can repeat this with the slip alone: the hash, the seller's signature and the buyer's countersignature
+            Anyone can repeat this with the slip alone: the hash, the seller’s signature and the buyer’s countersignature
             are all inside it. The chain answers the rest: whether {formatMoney(money)} was released on{" "}
             {networkName(body.network)}.
           </p>
