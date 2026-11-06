@@ -1,3 +1,5 @@
+import type { Slip } from "@countersign/core";
+import { explorerTemplate, networkName } from "../../lib/format.ts";
 import type { RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
 
 /*
@@ -53,9 +55,58 @@ export function newestOf(rows: Settlement[]): Settlement | undefined {
   return sorted[sorted.length - 1];
 }
 
-/** The newest escrow release. Only this kind may stand under the escrow claim; direct rails settle before delivery. */
+/** The newest release on any rail. The landing's escrow claims follow escrowRelease, never this. */
 export function newestRelease(rows: Settlement[]): Settlement | undefined {
   return newestOf(rows.filter((s) => s.kind === "released"));
+}
+
+/**
+ * The rails whose money waits in a contract: kind escrow, with the contract's address declared
+ * (Arc's escrow, Whitechain's). Held Hedera declares kind escrow but names no contract, and its
+ * payee's key alone can execute the schedule (audit A4), so it never stands under an escrow claim.
+ */
+export function contractRails(rails: RailDeclaration[] | undefined): RailId[] {
+  return (rails ?? []).filter((r) => r.kind === "escrow" && typeof r.escrow === "string" && r.escrow !== "").map((r) => r.id);
+}
+
+/**
+ * The newest release from an escrow contract: the only payment the landing follows under "nothing
+ * moves until the output checks out". With no rail declarations there is no contract to name, so none.
+ */
+export function escrowRelease(rows: Settlement[], rails: RailDeclaration[] | undefined): Settlement | undefined {
+  const contract = contractRails(rails);
+  return newestOf(rows.filter((s) => s.kind === "released" && contract.includes(s.rail)));
+}
+
+/** What a rail is called in a plain sentence. */
+const SAID: Partial<Record<RailId, string>> = {
+  gateway: "Gateway",
+  hedera: "Hedera x402",
+  eip3009: "Arc USDC transfers",
+  mpp: "Stripe MPP",
+  erc8183: "ERC-8183",
+};
+
+function listed(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The other rails, said plainly from their own declarations: the ones that pay before delivery,
+ * and a hold with no contract behind it in A4's plain words. Nothing when the hub declared no rails.
+ */
+export function otherRailsLines(rails: RailDeclaration[] | undefined): string[] {
+  const all = rails ?? [];
+  const first = all.filter((r) => r.kind === "direct" || r.kind === "batched").map((r) => SAID[r.id] ?? r.id);
+  const contract = contractRails(all);
+  const held = all.filter((r) => r.kind === "escrow" && !contract.includes(r.id));
+  const lines: string[] = [];
+  if (first.length) lines.push(`${listed(first)} ${first.length === 1 ? "pays" : "pay"} the seller before delivery.`);
+  if (held.some((r) => r.network.startsWith("hedera:"))) {
+    lines.push("Held Hedera waits for the seller's key, which can also release it without delivering.");
+  }
+  return lines;
 }
 
 /** The rails to group by: the hub's declared rails in its order, then any rail a settlement names that it no longer declares. */
@@ -182,4 +233,31 @@ export function labelSpots(order: RailId[], beat: number, narrow: boolean): Spot
   const at = beat >= 3 && !narrow ? centres(order.length, 0, 42) : centres(order.length);
   const o = beat === 2 ? 1 : beat === 3 ? (narrow ? 0.22 : 0.3) : 0;
   return at.map((x) => ({ x, y: g.base, dx: 0, dy: 10, s: 1, o }));
+}
+
+export interface HeldBy {
+  /** The escrow contract that held this payment, or undefined until a record names it. */
+  escrow: string | undefined;
+  escrowHref: string | undefined;
+  /** The chain's name, from the payment's own network. */
+  chain: string;
+  txHref: string | undefined;
+}
+
+/**
+ * Where this payment waited, from its own records only: the escrow from the seller's slip, else from
+ * its own rail's declaration; the chain from its network; links from its own explorer. A record that
+ * names no escrow leaves the line out rather than borrow another rail's contract.
+ */
+export function heldBy(release: Settlement, rails: RailDeclaration[] | undefined, slip: Slip | undefined): HeldBy {
+  const declared = rails?.find((r) => r.id === release.rail);
+  const escrow = slip?.body.escrow ?? declared?.escrow;
+  const template = declared?.explorerTx || explorerTemplate(release.network);
+  const at = (path: string) => (template.includes("/tx/{tx}") ? template.replace("/tx/{tx}", path) : undefined);
+  return {
+    escrow,
+    escrowHref: escrow ? at(`/address/${encodeURIComponent(escrow)}`) : undefined,
+    chain: networkName(release.network),
+    txHref: release.explorer ?? (release.tx ? at(`/tx/${encodeURIComponent(release.tx)}`) : undefined),
+  };
 }

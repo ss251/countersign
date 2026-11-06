@@ -185,7 +185,7 @@ All four green. Then start `bun run --cwd apps/web dev` in the background, `curl
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-03-merchant-view.md`. Cover:
+Write `$M/reports/wc-03-merchant-view.md`. Cover:
 
 - what was built;
 - the files;
