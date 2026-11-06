@@ -7,6 +7,7 @@ import {
   canonicalHash,
   canaryMessage,
   checkSchema,
+  lockTypedData,
   offerHash,
   RUNNER_PATH,
   runnerAuthMessage,
@@ -95,6 +96,63 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
 
   const fail = (target: WebSocket, order: JobOrder, reason: string): void => {
     send(target, { t: "fail", jobId: order.jobId, reason });
+  };
+
+  const handleLock = async (
+    target: WebSocket,
+    frame: Extract<HubToRunner, { t: "lock" }>,
+  ): Promise<void> => {
+    if (typeof frame.funder !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(frame.funder)) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "bad-funder",
+      });
+      return;
+    }
+
+    const entry = served.find(
+      (item) => item.hash.toLowerCase() === frame.offerHash.toLowerCase(),
+    );
+    if (!entry) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. This runner does not serve that offer.",
+      });
+      return;
+    }
+
+    let matches = false;
+    try {
+      const offered = BigInt(entry.offer.bond);
+      matches = offered !== 0n && offered === BigInt(frame.bond);
+    } catch {
+      matches = false;
+    }
+    if (!matches) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. The bond does not match this offer.",
+      });
+      return;
+    }
+
+    try {
+      // The account signs any EIP-712 payload; its type names the slip because that was its only use.
+      const typed = lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder) as unknown as Parameters<
+        RunnerAccount["signTypedData"]
+      >[0];
+      const sig = await cfg.account.signTypedData(typed);
+      send(target, { t: "locked", jobId: frame.jobId, sig });
+    } catch {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. The runner could not sign.",
+      });
+    }
   };
 
   const handleJob = async (target: WebSocket, order: JobOrder): Promise<void> => {
@@ -231,6 +289,9 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         return;
       case "job":
         await handleJob(target, message.order);
+        return;
+      case "lock":
+        await handleLock(target, message);
         return;
       case "canary": {
         const entry = served.find(
