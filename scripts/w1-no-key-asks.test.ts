@@ -20,7 +20,7 @@ const DOCS = [
 ];
 
 /** Source trees whose strings reach a user of the CLI or the MCP server (usage, errors, prompts, tool results). */
-const SOURCES = ["packages/cli/src", "packages/mcp/src", "packages/buyer/src/cli.ts", "packages/runner/src/cli.ts"];
+const SOURCES = ["packages/cli/src", "packages/mcp/src", "packages/buyer/src", "packages/runner/src"];
 
 function files(path: string): string[] {
   const full = join(ROOT, path);
