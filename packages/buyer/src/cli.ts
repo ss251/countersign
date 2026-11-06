@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
-import { formatUnits, parseUnits, RAIL_IDS, sepoliaEnsResolver, type Envelope, type RailId } from "@countersign/core";
+import { formatUnits, parseUnits, RAIL_IDS, rpcUrlsFrom, sepoliaEnsResolver, type Envelope, type RailId } from "@countersign/core";
 import { BuyError, buy } from "./buy.ts";
 import { CIRCLE_CATALOGUE, hubCallOf, payableVia, readCatalogue } from "./catalogue.ts";
 import { HubClient } from "./hub-client.ts";
@@ -108,7 +108,7 @@ async function main(): Promise<void> {
       now: Math.floor(Date.now() / 1000),
       approve: flags.has("approve"),
       known,
-      ens: sepoliaEnsResolver(process.env.CS_ENS_RPC_URL ? { rpcUrl: process.env.CS_ENS_RPC_URL } : {}),
+      ens: buyerEns(),
       account,
       mirror: flags.has("hub"),
       ...(rail !== undefined ? { rail } : {}),
@@ -184,6 +184,12 @@ function parseApprovals(raw: string | undefined): "local" | "hub" | undefined {
   if (raw === undefined) return undefined;
   if (raw === "local" || raw === "hub") return raw;
   throw new Error(`Unknown approvals mode ${raw}.`);
+}
+
+/** Sepolia ENS lookups for the buyer. Pin your own endpoints with CS_ENS_RPC_URLS; all must agree. */
+function buyerEns() {
+  const rpcUrls = rpcUrlsFrom(process.env.CS_ENS_RPC_URLS ?? process.env.CS_ENS_RPC_URL);
+  return sepoliaEnsResolver(rpcUrls ? { rpcUrls } : {});
 }
 
 function parseRail(raw: string | undefined): RailId | undefined {
