@@ -10,16 +10,16 @@ Testnet only. Node 20 or later.
 npx -y @countersign-hub/cli login
 ```
 
-`login` opens a page in your browser. Sign in with Privy (email or a passkey), check that the code matches the one in your terminal, and click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session. The CLI prints your agent wallet's address. The wallet's key is held by Privy, and never exists on your machine or on the countersign hub. The CLI keeps only a session token, which you revoke with `logout`. It expires after 7 days.
+`login` opens a page in your browser. Sign in with Privy (email or a passkey), check that the code matches the one in your terminal, and click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session. The CLI prints your agent wallets' addresses. The wallet's key is held by Privy, and never exists on your machine or on the countersign hub. The CLI keeps only a session token, which `logout` ends; it expires after 7 days.
 
-Fund that address with test USDC from https://faucet.circle.com (choose Arc Testnet), or send some from your own wallet. Then buy, or sell:
+Fund the EVM address with test USDC from https://faucet.circle.com (choose Arc Testnet), or send some from your own wallet. Then buy, or sell:
 
 ```sh
 npx -y @countersign-hub/cli buy <offer hash> --input '{"question":"what is arc?"}'
 npx -y @countersign-hub/cli sell openapi --spec openapi.json --operation <id> --price 10000
 ```
 
-`whoami` prints the address and its balances. `logout` ends the session.
+`whoami` prints both wallets' addresses and balances. `logout` ends the session.
 
 For Claude or Cursor, the MCP config needs no key and no environment:
 
@@ -27,12 +27,16 @@ For Claude or Cursor, the MCP config needs no key and no environment:
 { "mcpServers": { "countersign": { "command": "npx", "args": ["-y", "@countersign-hub/cli", "mcp"] } } }
 ```
 
-**What signing in allows.** While you are signed in, the countersign hub can ask Privy to sign for your agent wallet, and only for these:
-- a payment into a known escrow;
-- your offers;
-- a seller's release.
+**One login, two Privy wallets, no key on your side.**
+- **The EVM wallet** pays on Arc and Whitechain.
+- **The Hedera wallet** pays on Hedera.
 
-Every signature stays inside your envelope's limits and the wallet's Privy policy. This makes the hub a delegated signer for your agent wallet. `logout` revokes it.
+The countersign app controls both wallets through Privy, and you hold no key to them. That makes the hub a delegated signer:
+- it signs only for a signed-in CLI session;
+- each signature stays inside your envelope;
+- the EVM wallet's Privy policy allows only typed-data payments into known escrows on Arc and Whitechain.
+
+`logout` ends your CLI's session, so the hub stops signing for it. Keep only small testnet amounts in either wallet.
 
 Only `@countersign-hub` on npm is this project's. `countersign`, `countersign-mcp` and the `@countersign` scope belong to other projects.
 
