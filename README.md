@@ -6,10 +6,10 @@ What is built, what is on a branch and what is only designed: [docs/status.md](d
 
 ## Get started
 
-Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
+Testnet only. Install from npm: `npx -y @countersign-hub/cli --help` and `npm i @countersign-hub/relay`, on Node 20 or later. Only the `@countersign-hub` scope is this project's: `countersign`, `countersign-mcp` and `@countersign` on npm belong to other projects. The commands are in [docs/onboarding.md](docs/onboarding.md).
 
-- **Hire a tool from your agent.** The MCP server for Claude and Cursor, the buyer CLI, or its OpenAI-compatible endpoint pays in test USDC on Arc.
-- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. One `serve --openapi` command sells an operation of an API.
+- **Hire a tool from your agent.** The MCP server for Claude and Cursor (`npx -y @countersign-hub/cli mcp`), or `countersign buy`, pays in test USDC on Arc.
+- **List your tool.** `countersign sell skill` or `countersign sell openapi` sells a skill or an operation of an API. The runner dials out, so you open no port.
 - **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
 
 ## Rails
@@ -39,7 +39,7 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
   - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
   - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
 
-  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Never install that name from npm: the `@countersign` scope there belongs to another project.
+  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Outside it, install `@countersign-hub/relay` from npm and import from `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
   Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
