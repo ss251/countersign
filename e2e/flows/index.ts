@@ -5,6 +5,7 @@ import { arcSpine } from "./arc-spine.flow.ts";
 import { arcWrongAmount } from "./arc-wrong-amount.flow.ts";
 import { discovery } from "./discovery.flow.ts";
 import { erc8004Arc, erc8004Identity } from "./erc8004-identity.flow.ts";
+import { hederaHeldPaid, hederaHeldUndelivered } from "./hedera-held.flow.ts";
 import { hederaSchedule } from "./hedera-schedule.flow.ts";
 import { hedera } from "./hedera.flow.ts";
 import { hederaMcp } from "./hedera-mcp.flow.ts";
@@ -43,6 +44,8 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "18b", flow: erc8004Arc },
   { n: "19", flow: mpp },
   { n: "20", flow: hederaSchedule },
+  { n: "21", flow: hederaHeldPaid },
+  { n: "21b", flow: hederaHeldUndelivered },
   { n: "14a", flow: productionConsole },
   { n: "14b", flow: productionHub },
   { n: "14c", flow: productionApprovals },

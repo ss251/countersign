@@ -65,7 +65,7 @@ export const arcGateway: Flow = {
       equal(r.code, 0, "envelope set exit code");
     });
 
-    const before = await ctx.step("buyer's Gateway balance before", () => gatewayAvailable(s, buyer));
+    const before = await ctx.step("buyer's Gateway balance before", () => gatewayAvailable(s, buyer, (why) => ctx.note(`a Gateway balance read was repeated after a transport failure: ${why}`)));
 
     const bought = await ctx.step("buyer pays through Gateway", async () => {
       const r = await buyerCli(ctx, "buy", hub.url, state, "CS_BUYER_KEY", ["buy", seller.offerHash, "--input", "{}", "--rail", "gateway"]);
@@ -82,7 +82,7 @@ export const arcGateway: Flow = {
     await ctx.step("Gateway debits the buyer at once", async () => {
       let after = before;
       for (let i = 0; i < 10 && before - after < PRICE; i++) {
-        after = await gatewayAvailable(s, buyer);
+        after = await gatewayAvailable(s, buyer, (why) => ctx.note(`a Gateway balance read was repeated after a transport failure: ${why}`));
         if (before - after < PRICE) await sleep(1500);
       }
       equal(before - after, PRICE, "Gateway balance drop");
