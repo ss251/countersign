@@ -11,7 +11,10 @@
   "dependencies": {
     "@circle-fin/x402-batching": "4.0.0",
     "@countersign/core": "workspace:*",
+    "@hashgraph/hedera-agent-kit": "4.2.0",
+    "@hashgraph/hedera-agent-kit-mcp": "1.2.0",
     "@hiero-ledger/sdk": "2.90.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@x402/core": "2.30.0",
     "@x402/evm": "2.30.0",
     "@x402/hedera": "2.30.0",
