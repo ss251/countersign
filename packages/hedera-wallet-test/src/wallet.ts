@@ -1,5 +1,7 @@
 // A real WalletConnect v2 wallet for hedera:testnet. It pairs by URI, approves a session,
 // and answers hedera_signAndExecuteTransaction by signing with a local key and executing.
+// The dist/lib index re-exports the library's dApp/modal graph, which calls window.matchMedia
+// while loading under `bun test`. The shared entry has the same constants without that graph.
 import { HederaChainId, HederaJsonRpcMethod } from "@hashgraph/hedera-wallet-connect/dist/lib/shared/index.js";
 import { Client, Status, Transaction, TransferTransaction, type PrivateKey } from "@hiero-ledger/sdk";
 import { WalletKit, type WalletKitTypes } from "@reown/walletkit";

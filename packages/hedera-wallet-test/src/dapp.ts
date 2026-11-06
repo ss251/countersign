@@ -1,5 +1,7 @@
 // The dApp side of the headless round trip: WalletConnect's SignClient directly, because the
 // library's dApp classes do not load under Bun (W5). The wire protocol is the one HashPack speaks.
+// The dist/lib index re-exports the library's dApp/modal graph, which calls window.matchMedia
+// while loading under `bun test`. The shared entry has the same constants without that graph.
 import { HederaChainId, HederaJsonRpcMethod } from "@hashgraph/hedera-wallet-connect/dist/lib/shared/index.js";
 import { SignClient } from "@walletconnect/sign-client";
 import { getSdkError } from "@walletconnect/utils";
