@@ -1,0 +1,11 @@
+# gitleaks configuration for this repository: the default rules, plus an allowlist of exact
+# public values that are not secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public contract addresses (not secrets)"
+regexes = [
+  # Tether USD on Whitechain Sepolia, chain 1874
+  '''0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7''',
+]

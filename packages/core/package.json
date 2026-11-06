@@ -1,0 +1,13 @@
+{
+  "name": "@countersign/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "viem": "^2.57.16"
+  }
+}

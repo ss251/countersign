@@ -1,0 +1,104 @@
+/*
+ * countersign tokens. PLAN §3.
+ *
+ * Colour law: blue is money, green is settled, red is refused or countersigned,
+ * and nothing else borrows them. Links, focus rings and chrome use ink and slate.
+ * "Settled" means the seller was paid: released is green. A refund returns the money
+ * and settles nothing, so refunded is neutral slate, here and in the Studio console.
+ * No gradients, no glow, no glassmorphism.
+ */
+
+:root {
+  color-scheme: light;
+
+  --paper: #f3f0e9;
+  --ink: #17170f;
+  --slate: #6a675c;
+  --seal: #a8341c;
+  --settle: #1d6b45;
+  --usdc: #1b4f8f;
+  --line: #dad5c9;
+
+  /* Neutrals derived from paper and ink only. */
+  --raised: #faf8f3;
+  --sunk: #ebe7dd;
+
+  /* A semantic hue at low strength, used only behind its own state. */
+  --seal-wash: color-mix(in oklab, var(--seal) 9%, var(--paper));
+  --settle-wash: color-mix(in oklab, var(--settle) 9%, var(--paper));
+  --usdc-wash: color-mix(in oklab, var(--usdc) 8%, var(--paper));
+
+  --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --t-11: 0.6875rem;
+  --t-12: 0.75rem;
+  --t-13: 0.8125rem;
+  --t-14: 0.875rem;
+  --t-15: 0.9375rem;
+  --t-17: 1.0625rem;
+  --t-20: 1.25rem;
+  --t-24: 1.5rem;
+  --t-32: 2rem;
+  --t-44: 2.75rem;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  --r-1: 4px;
+  --r-2: 8px;
+  --r-3: 12px;
+  --r-pill: 999px;
+
+  --ease-out: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --d-1: 120ms;
+  --d-2: 200ms;
+  --d-3: 320ms;
+
+  --phone: 390px;
+  --content: 1180px;
+  --bar: 56px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #121210;
+    --ink: #efede6;
+    --slate: #a5a197;
+    --seal: #d9573b;
+    --settle: #3fa574;
+    --usdc: #5e97d0;
+    --line: #2e2d28;
+    --raised: #1a1a17;
+    --sunk: #0b0b0a;
+    --seal-wash: color-mix(in oklab, var(--seal) 14%, var(--paper));
+    --settle-wash: color-mix(in oklab, var(--settle) 14%, var(--paper));
+    --usdc-wash: color-mix(in oklab, var(--usdc) 13%, var(--paper));
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #121210;
+  --ink: #efede6;
+  --slate: #a5a197;
+  --seal: #d9573b;
+  --settle: #3fa574;
+  --usdc: #5e97d0;
+  --line: #2e2d28;
+  --raised: #1a1a17;
+  --sunk: #0b0b0a;
+  --seal-wash: color-mix(in oklab, var(--seal) 14%, var(--paper));
+  --settle-wash: color-mix(in oklab, var(--settle) 14%, var(--paper));
+  --usdc-wash: color-mix(in oklab, var(--usdc) 13%, var(--paper));
+}

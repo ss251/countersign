@@ -1,0 +1,29 @@
+# The Foundry project lives under contracts/. This file sits at the root so that
+# `forge test` works from the repository root, which is where every gate runs.
+[profile.default]
+src = "contracts/src"
+test = "contracts/test"
+script = "contracts/script"
+out = "contracts/out"
+cache_path = "contracts/cache"
+broadcast = "contracts/broadcast"
+libs = ["node_modules"]
+auto_detect_remappings = false
+remappings = [
+  "forge-std/=node_modules/forge-std/src/",
+  "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+]
+solc_version = "0.8.28"
+# One bytecode for every chain we deploy to. Arc testnet and Whitechain Sepolia both
+# produce Prague-era headers, and OpenZeppelin 5.6 needs MCOPY, so cancun.
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+fs_permissions = [{ access = "read-write", path = "./contracts/deployments" }]
+
+[fuzz]
+runs = 256
+
+[rpc_endpoints]
+arc_testnet = "${ARC_RPC_URL}"
+whitechain_sepolia = "${WHITECHAIN_RPC_URL}"

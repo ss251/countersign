@@ -1,0 +1,13 @@
+{
+  "name": "@countersign/verify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@countersign/core": "workspace:*",
+    "viem": "^2.57.16"
+  }
+}

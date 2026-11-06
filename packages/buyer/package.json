@@ -1,0 +1,15 @@
+{
+  "name": "@countersign/buyer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@countersign/core": "workspace:*",
+    "@countersign/rail": "workspace:*",
+    "@hiero-ledger/sdk": "2.90.1",
+    "viem": "^2.57.16"
+  }
+}

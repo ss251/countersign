@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# secrets: every .env file stays local; only the example is tracked
+.env
+.env*
+!.env.example
+
+# build output
+dist/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+subgraph/generated/
+subgraph/build/
+
+# local tooling
+.claude/
+.DS_Store
+*.log
+
+# runtime data (sqlite, journals)
+data/
+*.sqlite
+*.sqlite-*
