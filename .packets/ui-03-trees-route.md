@@ -2,7 +2,7 @@
 
 ## Setup
 
-Run `bun install` at the worktree root before anything else. You are on `cs/ui-03`, cut from `cs/int`.
+Run `bun install --linker hoisted` at the worktree root before anything else. You are on `cs/ui-03`, cut from `cs/int`.
 
 ## The design is decided (cs-ui)
 
@@ -67,13 +67,14 @@ No network.
 - **Never launch a browser of any kind on this machine:** no Chrome or Chromium, headless or not, no Playwright, Puppeteer or screenshot tools. UI checks go back to the lane, which raises NEEDS-BROWSER.
 - **No view code:** nothing under `apps/web/src/routes/**` or `apps/web/src/ui/**`.
 - TypeScript strict, no `any`. No new dependencies. Never deploy, never use a public RPC in tests.
+- Never run `git stash`; use a temporary commit or a second worktree. All worktrees of a clone share one stash stack, on both machines.
 
 ## Acceptance
 
 From the worktree root:
 
 ```
-bun install && bun run typecheck && bun test apps/hub apps/web/test && bun test
+bun install --linker hoisted && bun run typecheck && bun test apps/hub apps/web/test && bun test
 ```
 
 Every command passes.
