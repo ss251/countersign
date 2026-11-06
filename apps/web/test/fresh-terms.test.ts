@@ -4,6 +4,7 @@ import { ARC_PIN } from "../src/lib/arc-pin.ts";
 import {
   buildAuthorization,
   freshTerms,
+  makeOnce,
   pendingOf,
   SIGN_SLACK_SECONDS,
   type PendingPurchase,
@@ -189,5 +190,49 @@ describe("freshTerms", () => {
     const deadline = result.pending.authorization.terms.deadline;
     expect(deadline).toBeGreaterThanOrEqual(signNow + 120 - 15);
     expect(deadline).toBeLessThanOrEqual(signNow + 120 + 300);
+  });
+});
+
+describe("makeOnce", () => {
+  test("a call started while another is in flight does not run the work", async () => {
+    let finish = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let calls = 0;
+    const once = makeOnce(async () => {
+      calls += 1;
+      await inFlight;
+    });
+
+    const first = once();
+    const second = once();
+    expect(calls).toBe(1);
+    finish();
+    await Promise.all([first, second]);
+    expect(calls).toBe(1);
+  });
+
+  test("after the work settles, the next call runs it again", async () => {
+    let calls = 0;
+    const once = makeOnce(async () => {
+      calls += 1;
+    });
+
+    await once();
+    await once();
+    expect(calls).toBe(2);
+  });
+
+  test("work that throws still releases the guard", async () => {
+    let calls = 0;
+    const once = makeOnce(async () => {
+      calls += 1;
+      throw new Error("the wallet did not sign");
+    });
+
+    await expect(once()).rejects.toThrow("the wallet did not sign");
+    await expect(once()).rejects.toThrow("the wallet did not sign");
+    expect(calls).toBe(2);
   });
 });
