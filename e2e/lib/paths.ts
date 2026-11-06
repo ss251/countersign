@@ -1,9 +1,10 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** Repository root: every child process runs from here. */
-export const ROOT = resolve(import.meta.dir, "..", "..");
+export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /** The same root with symlinks resolved: the form it takes in a captured stack trace. */
 export const REAL_ROOT = realpathSync(ROOT);
 export const E2E_DIR = resolve(ROOT, "e2e");
