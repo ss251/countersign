@@ -4,6 +4,7 @@ import { api, useResource } from "../../lib/api.ts";
 import { formatDay, formatTime, shortHex, symbolFor, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
 import type { Listing, Purchase } from "../../lib/types.ts";
+import { Absent } from "../../ui/Absent.tsx";
 import { Amount, CopyButton, Empty, FixtureNote, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
 import { absoluteHub, publishCommand, releaseTotals } from "./logic.ts";
 
@@ -13,13 +14,14 @@ import { absoluteHub, publishCommand, releaseTotals } from "./logic.ts";
  */
 export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const listings = useResource(() => api.listings(), []);
-  const purchases = useResource(() => api.purchases(), []);
   const pickerId = useId();
 
   const sellers = useMemo(() => sellersOf(listings.data ?? []), [listings.data]);
   const asked = query.get("seller")?.toLowerCase();
   const seller = sellers.find((s) => s.address === asked) ?? sellers[0];
+  const purchases = useResource(() => api.sales(seller?.address), [seller?.address]);
   const fixtures = listings.source === "fixtures" || purchases.source === "fixtures";
+  const salesMissing = purchases.source === "absent" ? purchases.reason : undefined;
 
   if (listings.loading && !listings.data) return <div className="page" aria-busy="true" />;
   if (listings.error) {
@@ -37,8 +39,9 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const released = sales.filter((p) => p.status === "released").length;
   const refunded = sales.filter((p) => p.status === "refunded").length;
   const recent = [...sales].sort((a, b) => b.at - a.at).slice(0, 6);
-  // Calls are counted from slips. Until the hub reports them, say so; never show a zero it did not count.
-  const counted = listings.source === "fixtures" || offers.some((l) => l.stats !== undefined);
+  // Calls are counted from the hub's own record of this seller's jobs. Until it serves them, say so;
+  // never show a zero it did not count.
+  const counted = purchases.source === "fixtures" || purchases.source === "hub";
 
   return (
     <div className="page seller">
@@ -96,7 +99,9 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
             <Sparkline sales={sales} />
               </>
             ) : (
-              <p className="totals__line">This hub does not report calls per seller yet, so totals are not counted here.</p>
+              <p className="totals__line">
+                {salesMissing ?? "Reading this seller’s sales…"} Totals are not counted here until it does, so none is shown as zero.
+              </p>
             )}
           </section>
 
@@ -128,8 +133,10 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
             <h2 id="sales-title" className="section__title">
               Latest sales
             </h2>
-            {recent.length === 0 ? (
-              <p className="seller__quiet">No sales yet. Each paid call lands here with its slip.</p>
+            {salesMissing ? (
+              <Absent reason={salesMissing} onRetry={purchases.reload} />
+            ) : recent.length === 0 ? (
+              <p className="seller__quiet">{counted ? "No sales yet. Each paid call lands here with its slip." : "Reading this seller’s sales…"}</p>
             ) : (
               <ul className="sales">
                 {recent.map((p) => (

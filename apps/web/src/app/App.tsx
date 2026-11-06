@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
+import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
 import { Wordmark } from "../ui/Mark.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
@@ -12,6 +13,20 @@ export function App() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+  }, [location.path]);
+
+  // ⌘K (Ctrl+K off a Mac) opens the palette from any screen; on the assistant's page it focuses that one.
+  const [palette, setPalette] = useState(false);
+  useEffect(() => setPalette(false), [location.path]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      if (location.path === "/assistant") window.dispatchEvent(new Event("countersign:palette"));
+      else setPalette((open) => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [location.path]);
 
   const surface = match?.surface ?? "desk";
@@ -27,6 +42,7 @@ export function App() {
           {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}
         </PageBoundary>
       </main>
+      {palette ? <PaletteDialog onClose={() => setPalette(false)} /> : null}
     </div>
   );
 }

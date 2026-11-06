@@ -332,8 +332,8 @@
   display: grid;
   gap: 2px;
   padding: var(--sp-4);
-  border-radius: var(--r-3);
-  background: var(--raised);
+  border-radius: var(--r-1);
+  background: none;
   box-shadow: var(--elev-1);
 }
 
@@ -467,8 +467,8 @@ button.steps__button {
   display: grid;
   gap: 2px;
   padding: var(--sp-4) var(--sp-5);
-  border-radius: var(--r-3);
-  background: var(--raised);
+  border-radius: var(--r-1);
+  background: none;
   box-shadow: var(--elev-1);
 }
 
@@ -545,9 +545,10 @@ button.steps__button {
   transition: box-shadow var(--d-1) ease, background-color var(--d-1) ease;
 }
 
+/* A chosen rail: a darker rule, not a fill. */
 .rails-pick__row.is-on {
-  background: var(--raised);
-  box-shadow: var(--elev-1);
+  background: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 55%);
 }
 
 .rails-pick__row input {
@@ -576,8 +577,8 @@ button.steps__button {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-radius: var(--r-3);
-  background: var(--raised);
+  border-radius: var(--r-1);
+  background: none;
   box-shadow: var(--elev-1);
 }
 
