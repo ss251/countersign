@@ -65,9 +65,12 @@ export const CANCEL_TYPES = {
   Cancel: [{ name: "jobId", type: "bytes32" }],
 } as const;
 
-/** Escrow v2: the payee accepts a bonded job, unlocking its bond before the escrow takes it. */
+/** Escrow v2: the payee names the funder who may open a bonded job. */
 export const LOCK_TYPES = {
-  Lock: [{ name: "jobId", type: "bytes32" }],
+  Lock: [
+    { name: "jobId", type: "bytes32" },
+    { name: "funder", type: "address" },
+  ],
 } as const;
 
 /** Escrow v2: the buyer accepts a delivered job, paying the seller before the review window ends. */
@@ -257,15 +260,15 @@ export function cancelTypedData(chainId: number, escrow: Address, jobId: Hex) {
 }
 
 /**
- * Typed data the payee signs to accept a bonded job. Escrow v2 requires it before the bond
- * moves, so the payee consents to the lock. Sign it under the escrow of a pinned rail.
+ * Typed data the payee signs to accept a bonded job. The Lock names the funder who submits
+ * fund, so only that address can open the job. Sign it under the escrow of a pinned rail.
  */
-export function lockTypedData(chainId: number, escrow: Address, jobId: Hex) {
+export function lockTypedData(chainId: number, escrow: Address, jobId: Hex, funder: Address) {
   return {
     domain: escrowDomain(chainId, escrow),
     types: LOCK_TYPES,
     primaryType: "Lock" as const,
-    message: { jobId },
+    message: { jobId, funder: getAddress(funder) },
   };
 }
 

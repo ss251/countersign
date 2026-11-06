@@ -135,7 +135,7 @@ export class RunnerLink {
   }
 
   async lock(
-    req: { jobId: Hex; offerHash: Hex; escrow: Address; chainId: number; bond: string },
+    req: { jobId: Hex; offerHash: Hex; escrow: Address; chainId: number; bond: string; funder: Address },
     timeoutMs: number,
   ): Promise<{ sig: Hex } | { refused: string }> {
     const conn = this.find(req.offerHash);
@@ -162,6 +162,7 @@ export class RunnerLink {
         escrow: req.escrow,
         chainId: req.chainId,
         bond: req.bond,
+        funder: req.funder,
       };
       try {
         conn.ws.send(JSON.stringify(frame));

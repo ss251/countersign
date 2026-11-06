@@ -246,9 +246,24 @@ export async function paidCall(
   let lockSig: Hex | undefined;
   const bond = bondOfTerms(payment);
   if (bond !== null && match.rail.escrow !== undefined && match.rail.declaration.escrow !== undefined && nonce !== null) {
+    if (match.rail.funder === undefined) {
+      return failure(
+        503,
+        "rail-unavailable",
+        "Refused. This rail cannot fund a bonded job right now. Nothing was charged.",
+        railId,
+      );
+    }
     const chainId = eip155ChainId(match.rail.declaration.network);
     const lock = chainId === null ? { refused: "unknown chain" } : await deps.runners.lock(
-      { jobId: nonce, offerHash: stored.offerHash, escrow: match.rail.declaration.escrow as Address, chainId, bond },
+      {
+        jobId: nonce,
+        offerHash: stored.offerHash,
+        escrow: match.rail.declaration.escrow as Address,
+        chainId,
+        bond,
+        funder: match.rail.funder,
+      },
       10_000,
     );
     if ("refused" in lock) {

@@ -9,7 +9,7 @@ import {
   type Offer,
   type RunnerToHub,
 } from "@countersign/core";
-import { verifyTypedData } from "viem";
+import { recoverTypedDataAddress, verifyTypedData } from "viem";
 import { startRunner, type RunnerHandle } from "../src/daemon.ts";
 import { readSkill, skillOffer } from "../src/skill.ts";
 import type { Address, Hex, RunnerAccount } from "../src/account.ts";
@@ -22,6 +22,7 @@ const FIXTURE = join(import.meta.dir, "fixtures", "SKILL.md");
 const ESCROW = "0x4444444444444444444444444444444444444444" as Address;
 const CHAIN_ID = 5042002;
 const JOB_ID = `0x${"ab".repeat(32)}` as Hex;
+const FUNDER = "0x5555555555555555555555555555555555555555" as Address;
 
 const viem: Viem = await loadViem();
 
@@ -116,10 +117,29 @@ describe("the runner's lock handler", () => {
     expect(reply.jobId).toBe(JOB_ID);
     const verified = await verifyTypedData({
       address: seller.address,
-      ...lockTypedData(CHAIN_ID, ESCROW, JOB_ID),
+      ...lockTypedData(CHAIN_ID, ESCROW, JOB_ID, FUNDER),
       signature: reply.sig,
     });
     expect(verified).toBe(true);
+  });
+
+  test("a lock naming funder F recovers to the seller over that lock", async () => {
+    const funder = "0x6666666666666666666666666666666666666666" as Address;
+    const reply = await sendLock({ funder });
+    if (reply.t !== "locked") throw new Error(`expected locked, got ${reply.t}`);
+
+    const recovered = await recoverTypedDataAddress({
+      ...lockTypedData(CHAIN_ID, ESCROW, JOB_ID, funder),
+      signature: reply.sig,
+    });
+    expect(recovered).toBe(seller.address);
+  });
+
+  test("a malformed funder is lock-refused with bad-funder", async () => {
+    const reply = await sendLock({ funder: "0x1234" as Address });
+    if (reply.t !== "lock-refused") throw new Error(`expected lock-refused, got ${reply.t}`);
+    expect(reply.jobId).toBe(JOB_ID);
+    expect(reply.reason).toBe("bad-funder");
   });
 
   test("refuses a bond that is not the served offer's", async () => {
@@ -155,6 +175,7 @@ function sendLock(
     escrow: ESCROW,
     chainId: CHAIN_ID,
     bond: "100",
+    funder: FUNDER,
     ...overrides,
   };
   const reply = new Promise<RunnerToHub>((resolve) => {

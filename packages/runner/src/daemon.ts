@@ -100,6 +100,15 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
     target: WebSocket,
     frame: Extract<HubToRunner, { t: "lock" }>,
   ): Promise<void> => {
+    if (typeof frame.funder !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(frame.funder)) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "bad-funder",
+      });
+      return;
+    }
+
     const entry = served.find(
       (item) => item.hash.toLowerCase() === frame.offerHash.toLowerCase(),
     );
@@ -130,7 +139,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
 
     try {
       // The account signs any EIP-712 payload; its type names the slip because that was its only use.
-      const typed = lockTypedData(frame.chainId, frame.escrow, frame.jobId) as unknown as Parameters<
+      const typed = lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder) as unknown as Parameters<
         RunnerAccount["signTypedData"]
       >[0];
       const sig = await cfg.account.signTypedData(typed);

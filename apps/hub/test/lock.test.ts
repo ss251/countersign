@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PrivateKeyAccount } from "viem/accounts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 import {
   canonicalHash,
   lockTypedData,
@@ -30,8 +30,17 @@ import {
   type TestHub,
 } from "./support.ts";
 
+/** The address that would submit fund. A payee's Lock names it. */
+const SUBMITTER = "0x6666666666666666666666666666666666666666" as Address;
+
 class RecordingRail extends FakeRail {
+  readonly funder?: Address;
   readonly settleOpts: Array<{ lockSig?: Hex } | undefined> = [];
+
+  constructor(funder?: Address) {
+    super();
+    if (funder !== undefined) this.funder = funder;
+  }
 
   override async settle(
     payment: PaymentPayload,
@@ -202,7 +211,7 @@ describe("the hub's lock step", () => {
   let runners: LockRunner[];
 
   beforeEach(() => {
-    rail = new RecordingRail();
+    rail = new RecordingRail(SUBMITTER);
     hub = startHub({ rails: [rail] });
     runners = [];
   });
@@ -230,7 +239,7 @@ describe("the hub's lock step", () => {
     let expected: Hex | undefined;
     const runner = await connect(hash, async (frame) => {
       expected = await seller.signTypedData(
-        lockTypedData(frame.chainId, frame.escrow, frame.jobId),
+        lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder),
       );
       return { sig: expected };
     });
@@ -252,6 +261,7 @@ describe("the hub's lock step", () => {
       escrow: ESCROW,
       chainId: CHAIN_ID,
       bond: "100",
+      funder: SUBMITTER,
     });
     expect(rail.settleOpts).toEqual([{ lockSig: expected }]);
   });
@@ -300,6 +310,33 @@ describe("the hub's lock step", () => {
     expect(response.status).toBe(409);
     const body = (await response.json()) as ErrorBody;
     expect(body.code).toBe("seller-declined");
+    expect(runner.locks).toHaveLength(0);
+    expect(rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a bonded call on a rail with no funder answers 503 and sends no lock", async () => {
+    hub.close();
+    rail = new RecordingRail();
+    hub = startHub({ rails: [rail] });
+
+    const hash = await publishOk(hub, makeOffer({ bond: "100", reviewWindow: 300 }));
+    const runner = await connect(hash, async () => ({ sig: `0x${"ab".repeat(65)}` }));
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const response = await call(
+      hub,
+      hash,
+      { q: "hello" },
+      termsPayment(entry, { bond: "100", reviewWindow: 300 }),
+    );
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as ErrorBody;
+    expect(body.code).toBe("rail-unavailable");
+    expect(body.message).toBe(
+      "Refused. This rail cannot fund a bonded job right now. Nothing was charged.",
+    );
     expect(runner.locks).toHaveLength(0);
     expect(rail.settleCalls).toHaveLength(0);
   });
