@@ -10,7 +10,7 @@ import type { Hex } from "viem";
 import { canonicalJson, type Slip } from "@countersign/core";
 import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC, verifyCli } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
-import { ARC, escrowEvents, explorerTx, JOB, jobOf, receipt, sameAddress, tokenBalance, tokenTransfers, tollOf, treasuryOf } from "../lib/chains.ts";
+import { ARC, escrowEvents, explorerTx, JOB, jobOf, receipt, sameAddress, tokenBalance, tokenTransfers, tollAccruedOf, tollOf, treasuryOf } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow } from "../lib/flow.ts";
 import { linkStatus, portClosed } from "../lib/http.ts";
 
@@ -70,6 +70,7 @@ export const arcSpine: Flow = {
     const sellerBefore = await ctx.step("seller balance before", () => tokenBalance(ARC, seller.seller));
 
     const bought = await ctx.step("countersign, fund, deliver, release", async () => {
+      const tollBefore = ARC.escrowVersion === 2 ? await tollAccruedOf(ARC) : 0n;
       const r = await buyerCli(ctx, "buy", hub.url, state, "CS_BUYER_KEY", ["buy", seller.offerHash, "--input", "{}"]);
       equal(r.code, 0, `buy exit code (stderr ${JSON.stringify(r.stderr.trim().slice(0, 300))})`);
       check(r.stdout.includes("Released. Slip minted."), "buy prints Released. Slip minted.");
@@ -85,9 +86,9 @@ export const arcSpine: Flow = {
       sameHex(released.slipHash, slipHash, "journal slip hash");
       sameHex(released.closeTx, closeTx, "journal close tx");
       equal(released.rail, "escrow", "journal rail");
-      return { jobId: signed.jobId as Hex, slipHash, releaseTx: closeTx };
+      return { jobId: signed.jobId as Hex, slipHash, releaseTx: closeTx, tollBefore };
     });
-    const { jobId, slipHash, releaseTx } = bought;
+    const { jobId, slipHash, releaseTx, tollBefore } = bought;
 
     const job = await ctx.step("hub job record", async () => {
       const res = await ctx.http("job", `${hub.url}/jobs/${jobId}`);
@@ -132,7 +133,13 @@ export const arcSpine: Flow = {
       const treasury = await treasuryOf(ARC);
       const out = tokenTransfers(ARC, rel);
       check(out.some((t) => sameAddress(t.from, ARC.escrow) && sameAddress(t.to, seller.seller) && t.value === r.paid), "escrow pays the seller");
-      if (r.toll > 0n) check(out.some((t) => sameAddress(t.from, ARC.escrow) && sameAddress(t.to, treasury) && t.value === r.toll), "escrow pays the toll to the treasury");
+      if (ARC.escrowVersion === 2) {
+        // v2 accrues the toll in tollAccrued and pays it only through sweepToll.
+        check(!out.some((t) => sameAddress(t.to, treasury)), "the release tx moves no toll to the treasury");
+        equal(await tollAccruedOf(ARC), tollBefore + r.toll, "tollAccrued rose by Released.toll");
+      } else if (r.toll > 0n) {
+        check(out.some((t) => sameAddress(t.from, ARC.escrow) && sameAddress(t.to, treasury) && t.value === r.toll), "escrow pays the toll to the treasury");
+      }
 
       const onchain = await jobOf(ARC, jobId);
       equal(onchain.status, JOB.Released, "jobOf status");

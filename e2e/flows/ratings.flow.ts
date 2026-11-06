@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { Hex } from "viem";
 import { buyerCli, readJournal, startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
 import { units, wallets, type Wallet } from "../lib/budget.ts";
-import { ARC, escrowEvents, JOB, jobOf, receipt, sameAddress, tokenBalance, waitChainTimePast } from "../lib/chains.ts";
+import { ARC, disputeWindowOf, escrowEvents, JOB, jobOf, receipt, sameAddress, tokenBalance, waitChainTimePast } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { sleep } from "../lib/http.ts";
 import { PRICE } from "./arc-spine.flow.ts";
@@ -46,6 +46,11 @@ export const ratings: Flow = {
   title: "Ratings and stats derived from slips",
   owner: "orch-cs",
   network: "arc",
+  onDemand:
+    ARC.escrowVersion === 2
+      ? "on escrow v2 it waits the 600 s settle window; run it with --with ratings"
+      : undefined,
+  timeoutMs: ARC.escrowVersion === 2 ? 15 * 60_000 : undefined,
   spends(env) {
     const w = wallets(env.secrets);
     const seller: Wallet = { ...w.arcBuyer(), id: "arc.seller.usdc", label: "Arc e2e seller", address: env.secrets.address("E2E_SELLER_ADDRESS"), read: () => tokenBalance(ARC, env.secrets.address("E2E_SELLER_ADDRESS")) };
@@ -113,7 +118,10 @@ export const ratings: Flow = {
     await ctx.step("the hub's janitor refunds the failed call after its deadline", async () => {
       const job = await jobOf(ARC, failedJob);
       equal(job.status, JOB.Funded, "the failed call's money is still in escrow");
-      await waitChainTimePast(ARC, job.deadline, (DEADLINE_SECONDS + 60) * 1000);
+      // The janitor's v2 refund opens only after deadline + DISPUTE_WINDOW (600 s).
+      const settleBy = ARC.escrowVersion === 2 ? job.deadline + (await disputeWindowOf(ARC)) : job.deadline;
+      const settleWindow = settleBy - job.deadline;
+      await waitChainTimePast(ARC, settleBy, (DEADLINE_SECONDS + Number(settleWindow) + 60) * 1000);
       let status = "";
       let closeTx: Hex | null = null;
       for (let i = 0; i < 30 && status !== "refunded"; i++) {
