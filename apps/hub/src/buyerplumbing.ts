@@ -1,3 +1,4 @@
+import { reviewFields } from "./orders.ts";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { recoverMessageAddress, type Hex } from "viem";
@@ -45,14 +46,25 @@ export function registerBuyerPlumbing(app: Hono, deps: BuyerPlumbingDeps): void 
 }
 
 function listJobs(c: Context, deps: BuyerPlumbingDeps): Response {
-  const buyer = c.req.query("buyer");
-  if (buyer === undefined || buyer.trim() === "") {
-    return fail(400, "bad-request", "Refused. Name the buyer.");
-  }
-  const limit = parseLimit(c.req.query("limit"));
+  const rawBuyer = c.req.query("buyer");
+  const rawSeller = c.req.query("seller");
+  const buyer = rawBuyer === undefined || rawBuyer.trim() === "" ? null : rawBuyer;
+  const seller = rawSeller === undefined || rawSeller.trim() === "" ? null : rawSeller;
   const rails = new Map(deps.rails.map((rail) => [rail.declaration.id, rail]));
-  const jobs = deps.store.listJobsByBuyer(buyer, limit).map((job) => {
+  let records: ReturnType<Store["listJobsByBuyer"]>;
+  if (buyer !== null && seller === null) {
+    records = deps.store.listJobsByBuyer(buyer, parseLimit(c.req.query("limit")));
+  } else if (seller !== null && buyer === null) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(seller)) {
+      return fail(400, "bad-request", "Refused. Name the seller.");
+    }
+    records = deps.store.listJobsBySeller(seller, parseLimit(c.req.query("limit")));
+  } else {
+    return fail(400, "bad-request", "Refused. Name the buyer or the seller.");
+  }
+  const jobs = records.map((job) => {
     const slip = job.slipHash === null ? null : deps.store.getSlip(job.slipHash);
+    const offer = deps.store.getOffer(job.offerHash);
     let explorer: string | null = null;
     if (slip?.settlement.url !== undefined) {
       explorer = slip.settlement.url;
@@ -66,16 +78,19 @@ function listJobs(c: Context, deps: BuyerPlumbingDeps): Response {
     return {
       jobId: job.jobId,
       offerHash: job.offerHash,
-      title: deps.store.getOffer(job.offerHash)?.offer.title ?? "",
+      title: offer?.offer.title ?? "",
       amount: job.amount,
       rail: job.rail,
       network: job.payment.accepted.network,
       status: job.status,
       at: job.createdAt,
+      buyer: job.buyer,
+      seller: offer?.seller ?? job.payment.accepted.payTo,
       settleTx: job.settleTx,
       closeTx: job.closeTx,
       slipHash: job.slipHash,
       explorer,
+      ...reviewFields(rails.get(job.rail)?.declaration.kind === "escrow"),
     };
   });
   return json({ jobs });

@@ -461,6 +461,23 @@ export class Store {
       .map(jobFromRow);
   }
 
+  /** One seller's jobs, newest first. The offer's seller is compared case-insensitively. */
+  listJobsBySeller(seller: string, limit: number): JobRecord[] {
+    return this.db
+      .query<JobRow, [string, number]>(
+        `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.deadline,
+                jobs.status, jobs.payment_json, jobs.settle_tx, jobs.close_tx, jobs.slip_hash,
+                jobs.created_at, jobs.closed_at
+           FROM jobs
+           JOIN offers ON offers.offer_hash = jobs.offer_hash
+          WHERE lower(offers.seller) = lower(?)
+          ORDER BY jobs.created_at DESC, jobs.rowid DESC
+          LIMIT ?`,
+      )
+      .all(seller, limit)
+      .map(jobFromRow);
+  }
+
   putEnvelopeMirror(record: EnvelopeMirrorRecord): void {
     this.db
       .query(
