@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { Slip } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, shortHex, usd } from "../../lib/format.ts";
+import { explorerTemplate, formatDateTime, networkName, shortHex, usd } from "../../lib/format.ts";
 import type { Listing, RailDeclaration, Settlement } from "../../lib/types.ts";
 import { verifySlip, type Verdict } from "../../lib/verify.ts";
 import { Amount, cx, Hash } from "../../ui/primitives.tsx";
@@ -38,12 +38,11 @@ const LABELS = ["Published", "Countersigned", "Held", "Verified"] as const;
 const HUB_DOWN = "The hub did not answer, so there is no live payment to follow right now.";
 const NO_RELEASE = "No escrow payment has cleared on this hub yet. The first one shows here, step by step.";
 
-const ARC = "https://testnet.arcscan.app";
 
 type StepState = "is-on" | "is-done" | "is-next" | "is-exit";
 
 export interface LifecycleProps {
-  /** The newest escrow release: the same one stage two shows. */
+  /** The newest release from an escrow contract (escrowRelease): the same one stage two shows. */
   release: Settlement | undefined;
   rails: RailDeclaration[] | undefined;
   /** Some read the landing needs has never come back from the hub. */
@@ -173,10 +172,11 @@ function LifecycleFrame({ release, rails, narrow, listing, slip, verdict, beat, 
   };
   const state = (i: number): StepState => (beat === EXIT ? "is-exit" : i < beat ? "is-done" : i === beat ? "is-on" : "is-next");
 
-  const escrow = rails?.find((r) => r.id === "escrow")?.escrow;
+  // Everything about where the money waited comes from this payment's own records: the slip the seller
+  // signed names its escrow, and the settlement its network. Its rail's declaration fills in only what
+  // the slip has not loaded yet. Never another rail's contract or chain.
+  const own = heldBy(release, rails, slip);
   const buyer = release.buyer ?? slip?.body.buyer;
-  const escrowHref = escrow ? `${ARC}/address/${encodeURIComponent(escrow)}` : undefined;
-  const txHref = release.tx ? `${ARC}/tx/${encodeURIComponent(release.tx)}` : undefined;
 
   return (
     <div className="story__frame" data-beat={beat}>
@@ -241,11 +241,11 @@ function LifecycleFrame({ release, rails, narrow, listing, slip, verdict, beat, 
 
             <LifeStep state={state(2)} n={3} label={LABELS[2]} onFocus={bring(2)}>
               <dl className="story__lines story__lines--two">
-                {escrow ? (
+                {own.escrow ? (
                   <div>
                     <dt className="label">Escrow</dt>
                     <dd>
-                      <Hash value={escrow} href={escrowHref} label="escrow address" copy={false} />
+                      <Hash value={own.escrow} href={own.escrowHref} label="escrow address" copy={false} />
                     </dd>
                   </div>
                 ) : null}
@@ -257,7 +257,7 @@ function LifecycleFrame({ release, rails, narrow, listing, slip, verdict, beat, 
                 </div>
               </dl>
               <p className="story__quiet life__quiet">
-                Held on Arc testnet by the escrow contract until the output checks out.
+                {`Held on ${own.chain} by the escrow contract until the output checks out.`}
               </p>
             </LifeStep>
 
@@ -274,7 +274,7 @@ function LifecycleFrame({ release, rails, narrow, listing, slip, verdict, beat, 
                 <div>
                   <dt className="label">Release</dt>
                   <dd>
-                    <Hash value={release.tx} href={txHref} tx label="release transaction" />
+                    <Hash value={release.tx} href={own.txHref} tx label="release transaction" />
                   </dd>
                 </div>
                 <div className="story__wide">
@@ -318,6 +318,33 @@ function LifeStep({
       {children}
     </li>
   );
+}
+
+export interface HeldBy {
+  /** The escrow contract that held this payment, or undefined until a record names it. */
+  escrow: string | undefined;
+  escrowHref: string | undefined;
+  /** The chain's name, from the payment's own network. */
+  chain: string;
+  txHref: string | undefined;
+}
+
+/**
+ * Where this payment waited, from its own records only: the escrow from the seller's slip, else from
+ * its own rail's declaration; the chain from its network; links from its own explorer. A record that
+ * names no escrow leaves the line out rather than borrow another rail's contract.
+ */
+export function heldBy(release: Settlement, rails: RailDeclaration[] | undefined, slip: Slip | undefined): HeldBy {
+  const declared = rails?.find((r) => r.id === release.rail);
+  const escrow = slip?.body.escrow ?? declared?.escrow;
+  const template = declared?.explorerTx || explorerTemplate(release.network);
+  const at = (path: string) => (template.includes("/tx/{tx}") ? template.replace("/tx/{tx}", path) : undefined);
+  return {
+    escrow,
+    escrowHref: escrow ? at(`/address/${encodeURIComponent(escrow)}`) : undefined,
+    chain: networkName(release.network),
+    txHref: release.explorer ?? (release.tx ? at(`/tx/${encodeURIComponent(release.tx)}`) : undefined),
+  };
 }
 
 /** Step 4's word: the verifier's verdict, or that it is still running. */

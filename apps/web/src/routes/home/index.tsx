@@ -7,7 +7,7 @@ import type { HubStats, RailDeclaration, Settlement } from "../../lib/types.ts";
 import { Wordmark } from "../../ui/Mark.tsx";
 import { ClearsStage } from "./Clears.tsx";
 import { EvidenceStage } from "./Evidence.tsx";
-import { newestRelease } from "./field.ts";
+import { escrowRelease, otherRailsLines } from "./field.ts";
 import { LifecycleStage } from "./Lifecycle.tsx";
 import { useNarrow, useReducedMotion } from "./stage.ts";
 import "./home.css";
@@ -50,6 +50,8 @@ export default function Landing(_props: PageProps) {
   const hubRails = rails.source === "hub" ? rails.data : undefined;
   const listed = (listings.data ?? []).filter((l) => l.status === "listed");
   const featured = listed.find((l) => l.online) ?? listed[0];
+  // Both escrow stages follow one payment, and only one an escrow contract held (audit A4, firstmate 16:07Z).
+  const release = escrowRelease(rows, hubRails);
 
   return (
     <div className="landing">
@@ -81,12 +83,13 @@ export default function Landing(_props: PageProps) {
       <ClearsStage
         envelope={envelope.source === "hub" && envelope.data ? envelope.data : undefined}
         featured={featured}
-        release={newestRelease(rows)}
+        release={release}
+        others={otherRailsLines(hubRails)}
         pinned={pinned}
         narrow={narrow}
       />
 
-      <LifecycleStage release={newestRelease(rows)} rails={hubRails} hubDown={missing !== undefined} pinned={pinned} narrow={narrow} />
+      <LifecycleStage release={release} rails={hubRails} hubDown={missing !== undefined} pinned={pinned} narrow={narrow} />
 
       <Proof rails={hubRails} />
     </div>
