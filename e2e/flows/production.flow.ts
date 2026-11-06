@@ -17,6 +17,9 @@ import { ROOT } from "../lib/paths.ts";
 
 const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
 
+/** The rails that return money: production keeps exactly these. */
+const RETURN_MONEY_RAILS = ["escrow", "hedera-scheduled", "whitechain"];
+
 function consoleUrl(): string {
   return (process.env.E2E_PUBLIC_WEB ?? DEFAULT_CONSOLE).replace(/\/+$/, "");
 }
@@ -151,13 +154,15 @@ export const productionHub: Flow = {
       };
     });
 
-    await ctx.step("production declares every rail it claims", async () => {
-      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,gateway,hedera,hedera-scheduled,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
+    await ctx.step("production declares exactly the rails that return money", async () => {
+      const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,hedera-scheduled,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
       const res = await ctx.http("rails", `${hub}/rails`);
       equal(res.status, 200, "rails status");
       const ids = ((res.json as { rails?: Array<{ id: string }> }).rails ?? []).map((r) => r.id);
       const missing = want.filter((id) => !ids.includes(id));
       check(missing.length === 0, `production does not declare ${missing.join(", ")} (it declares ${ids.join(", ") || "none"})`);
+      const extra = ids.filter((id) => !RETURN_MONEY_RAILS.includes(id));
+      check(extra.length === 0, `production declares ${extra.join(", ")} beyond the rails that return money (${RETURN_MONEY_RAILS.join(", ")})`);
     });
 
     await ctx.step("every endpoint a screen calls answers 200, open to the console", async () => {

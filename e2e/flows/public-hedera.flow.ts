@@ -20,7 +20,7 @@ export const publicHedera: Flow = {
   title: "A Hedera agent pays through the public hub",
   owner: "cs-hd",
   network: "hedera",
-  notRun: (env) => (env.options.publicHub ? null : "no public hub configured"),
+  notRun: () => "retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed",
   spends(env) {
     const w = wallets(env.secrets);
     return [
