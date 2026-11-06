@@ -33,6 +33,14 @@ Two refusals protect the money.
 
 Reproduce it with the commands under "Setup": the hub with `HEDERA_RAIL=1`, a runner serving the skill on the hedera rail, and `scripts/hedera/beat --hub <hub>`.
 
+### On the public hub
+
+The same beat runs against the production hub that the console reads, [`hub-production-e85e.up.railway.app`](https://hub-production-e85e.up.railway.app/settlements). There, Circle's `use-usdc` is offer `0x41536222…0ae0`, payable on escrow, Gateway and Hedera for 0.01 USDC. The production hub holds no Hedera key.
+
+- **Payment.** The agent paid with no human step: [`0.0.9185802@1793966332.720364516`](https://hashscan.io/testnet/transaction/0.0.9185802@1793966332.720364516), settled by the x402.org facilitator. Result `SUCCESS` at `1793966342.154129104`: agent -0.01 USDC, seller `0.0.11337065` +0.01 USDC, memo `cs1:41536222…`.
+- **Slip.** The hub lists the job at `/settlements`. Its seller-signed slip `0xe15834f1a7d4916894f6778a8922f0b325787e6d4a89a6a941f15df28c56cb74` is served at `/slips/<hash>`.
+- **Spend log and audit.** Spend entry #26, cap refusal #27 ("Refused. This would spend 0.19 of a 0.185 budget."). Audit: matched 1, unbacked 0, unlogged 0.
+
 ## Live facts (testnet, checked 2026-11-06)
 
 | What | Value |
