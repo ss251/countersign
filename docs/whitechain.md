@@ -84,6 +84,46 @@ WC_SWAP_SIGNER=RELAYER WC_SWAP_RECIPIENT=$WC_BUYER_ADDRESS WC_SWAP_WBT_WEI=20000
   forge script contracts/script/whitechain/BuyTestUsdt.s.sol:BuyTestUsdt --rpc-url https://rpc.testnet.whitechain.io --broadcast --slow
 ```
 
+## Payments on chain
+
+Every payment below was settled in USDT `0xcedf…55a7` through the relay (`packages/relay`). That relay is the x402 facilitator countersign runs for Whitechain. Neither the buyer nor the merchant has ever held WBT: the relayer paid every gas fee.
+
+| When (UTC) | What | Tx |
+|---|---|---|
+| 2026-11-06 09:41 | Buyer `0xcb39…4298` pays merchant `0xd588…C71c` 0.25 USDT with x402 `exact`, one EIP-3009 signature, no gas | [`0x4dc46065…42bc`](https://explorer.testnet.whitechain.io/tx/0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc) |
+| 2026-11-06 09:42 | Merchant refunds the full 0.25 USDT in one click. The merchant signs an EIP-3009 transfer back, and the relay pays its gas | [`0x565830d7…88e5`](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5) |
+
+To reproduce, run the relay, the merchant's server and the buyer, each with only its own key in its environment:
+
+```
+# relay (holds WBT, pays gas)       -> :8402
+( set -a; . ~/.config/countersign/wc.env; set +a; unset WC_DEPLOYER_PRIVATE_KEY WC_MERCHANT_PRIVATE_KEY WC_BUYER_PRIVATE_KEY
+  exec bun run packages/relay/src/server.ts )
+# merchant's own backend (holds the merchant key, signs refunds) -> :8403
+( set -a; . ~/.config/countersign/wc.env; set +a; unset WC_DEPLOYER_PRIVATE_KEY WC_RELAYER_PRIVATE_KEY WC_BUYER_PRIVATE_KEY
+  RELAY_URL=http://127.0.0.1:8402 exec bun run packages/relay/src/merchant-server.ts )
+# buyer pays 0.25 USDT, then the merchant refunds it
+( set -a; . ~/.config/countersign/wc.env; set +a; bun run packages/relay/scripts/pay-exact.ts --amount 0.25 )
+curl -X POST http://127.0.0.1:8403/refund/<settlement tx>
+curl http://127.0.0.1:8403/payments.csv
+```
+
+## What stops the relayer being drained
+
+The relayer pays gas for strangers, so every call goes through `Relayer.submit` (`packages/relay/src/relayer.ts`), which applies these checks in order. Each refusal happens before anything is broadcast:
+
+1. **Allowlist.** It only ever calls the USDT token's `transferWithAuthorization` and the countersign escrow. Arbitrary calldata is never accepted.
+2. **Simulation first.** A call that would revert is refused before it is sent, so a bad signature, a spent nonce or an empty balance costs the relayer nothing.
+3. **Fee cap.** Nothing is sent while the network asks more than `RELAY_MAX_FEE_GWEI` (default 50 gwei).
+4. **Hourly ceiling.** The worst-case cost of each call is reserved against a rolling one-hour budget before it is sent. The defaults are 0.05 WBT, 200 transactions, and 30 per payer. A call past any of them is refused with `relay_ceiling_reached`. `GET /status` shows what is used and what remains.
+5. **Balance floor.** The relayer never spends below `RELAY_MIN_BALANCE_WEI` (default 0.02 WBT). Past that it answers `relay_balance_low`.
+6. **One transaction at a time.** Submissions are serialised, so nonces never race and a burst cannot fan out.
+7. **Refunds must point at a real payment.** The refund path only carries a transfer that runs from a recorded payment's merchant back to that payment's payer, for no more than what is still refundable. It cannot be used as a free transfer service.
+
+The relay also refuses to start if its RPC does not answer as chain 1874.
+
+**Where the relayer's WBT comes from.** Today it comes from the testnet faucet. On every escrow payment, half of the 1% toll goes through `FeeSplit` to the relayer's address. The business's fee pays for the gas, and the relayer can swap that USDT for WBT on the same pool.
+
 ## Verifying contracts
 
 Blockscout takes Foundry's `blockscout` verifier on the Etherscan-compatible endpoint:

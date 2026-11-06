@@ -10,6 +10,8 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 - **15:02** — Forking 1874 locally worked well. We ran our escrow against the real `TetherTokenV2` and the live WWBT/USDT pool in a forge simulation before spending any gas, and the token's EIP-3009 `receiveWithAuthorization` behaved exactly as on USDC.
 - **15:04** — Verification took one command. `forge script --verify --verifier blockscout --verifier-url https://explorer.testnet.whitechain.io/api/` verified both contracts (one of them with dynamic-array constructor args) about 20 seconds after deploy, with no API key.
 
+- **15:12** — The first gasless USDT payment and its one-click refund each confirmed within about a second, using 1 s blocks. The buyer and the merchant still hold zero WBT. EIP-3009 on `0xcedf…` made the "payer never sees gas" flow simple to build, and permit was not needed.
+
 ## Where we got stuck
 
 - **14:50** — Two different tokens called USDT. The prize requires `0xcedfB561…f55a7`, but the token list in the docs gives `0xaa7962d0…8f46` as USDT. That contract reports `USDT.e` (bridged from Tron). The docs never mention `0xcedf…`. We only confirmed it was the right token by reading its proxy and its minter (`USDTBridge`) on the explorer.
