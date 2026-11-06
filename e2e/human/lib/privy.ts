@@ -28,6 +28,36 @@ function dialog(page: Page): Locator {
   return page.getByRole("dialog").filter({ visible: true }).first();
 }
 
+/** Whether Privy's dialog is visible within `timeoutMs`; a timeout is not an error. */
+export async function dialogVisible(page: Page, timeoutMs: number): Promise<boolean> {
+  return dialog(page)
+    .waitFor({ state: "visible", timeout: timeoutMs })
+    .then(() => true)
+    .catch(() => false);
+}
+
+export const PRIVY_SECOND_CLICK_NOTE =
+  "Privy needed a second click: the first came before it was ready (UX gap, cs-ui)";
+
+export interface PrivyAttempt {
+  clickSignIn(): Promise<void>;
+  clickMenu(): Promise<void>;
+  dialogVisible(): Promise<boolean>;
+  note(text: string): void;
+}
+
+/**
+ * Click sign-in and retry once when Privy's dialog does not appear. The first click can land
+ * before Privy's SDK is ready, and Privy drops it silently.
+ */
+export async function openPrivy(attempt: PrivyAttempt): Promise<void> {
+  await attempt.clickSignIn();
+  if (await attempt.dialogVisible()) return;
+  await attempt.clickMenu();
+  await attempt.clickSignIn();
+  attempt.note(PRIVY_SECOND_CLICK_NOTE);
+}
+
 function privyHost(url: string): string | undefined {
   try {
     const host = new URL(url).hostname;
@@ -51,9 +81,15 @@ export function recordPrivyRequestFailure(failures: string[], url: string, error
   if (host) failures.push(`${host} ${errorText ?? "failed"}`);
 }
 
-export async function signIn(page: Page, email: string, otp: string): Promise<void> {
+export async function signIn(
+  page: Page,
+  email: string,
+  otp: string,
+  beforeTyping?: () => Promise<void>,
+): Promise<void> {
   const box = dialog(page);
   await expect(box).toBeVisible({ timeout: 30_000 });
+  await beforeTyping?.();
 
   const emailInput = await firstVisible(
     [box.getByRole("textbox", { name: /email/i }), box.locator('input[type="email"]')],

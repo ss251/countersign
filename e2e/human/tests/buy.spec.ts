@@ -20,7 +20,14 @@ import { parseAbiItem, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
 import { raiseIfFailed } from "../lib/failure.ts";
-import { approveIfPrompted, recordPrivyRequestFailure, recordPrivyResponse, signIn } from "../lib/privy.ts";
+import {
+  approveIfPrompted,
+  dialogVisible,
+  openPrivy,
+  recordPrivyRequestFailure,
+  recordPrivyResponse,
+  signIn,
+} from "../lib/privy.ts";
 import {
   afterFunding,
   arcClient,
@@ -281,6 +288,8 @@ const runHuman = async (
     });
 
     await step(rec, page, "01", "sign-in", "sign in", async () => {
+      // Privy's login() does nothing before the SDK is ready; give the page a person's pause.
+      await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined);
       await testId(page, "wallet-menu").click();
       if (injected) {
         await testId(page, "wallet-connect-injected").click();
@@ -301,10 +310,14 @@ const runHuman = async (
       }
 
       privyFailures.length = 0;
-      await option.click();
-      await rec.screenshot(page, "01", "privy-modal");
+      await openPrivy({
+        clickSignIn: () => option.click(),
+        clickMenu: () => testId(page, "wallet-menu").click(),
+        dialogVisible: () => dialogVisible(page, 10_000),
+        note: (text) => rec.note(text),
+      });
       try {
-        await signIn(page, email, otp);
+        await signIn(page, email, otp, () => rec.screenshot(page, "01", "privy-modal"));
       } catch (error) {
         if (privyFailures.length > 0) throw new SkipRun(`Privy unavailable: ${privyFailures[0]}`);
         throw error;
