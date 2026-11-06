@@ -208,4 +208,12 @@ contract GrokFindingsTest is GrokEscrowSigning {
         vm.prank(stranger);
         escrow.fund(OFFER, cs, "");
     }
+
+    // ------------------------------------------------------------------ W
+
+    function test_W_a_bond_needs_a_review_window() public {
+        vm.prank(seller);
+        vm.expectRevert();
+        escrow.setTerms(OFFER, PRICE, BOND, 0, 0);
+    }
 }
