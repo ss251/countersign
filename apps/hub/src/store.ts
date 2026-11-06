@@ -10,7 +10,21 @@ import type {
 } from "./deps.ts";
 import type { Hex } from "viem";
 
-export type JobStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
+export type JobStatus =
+  | "funded"
+  | "paid"
+  | "released"
+  | "settled"
+  | "failed"
+  | "refunded"
+  | "delivered"
+  | "disputed";
+
+/** How a delivered job's review ended (escrow v2, D12). */
+export type ReviewOutcome = "accepted" | "disputed" | "window-elapsed";
+
+/** The closed-or-open states ratings understand. Delivered jobs are open, disputed jobs refunded. */
+type RatingStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
 
 /**
  * Who a failed delivery is on. `seller`: the runner took the job and refused it, answered
@@ -41,6 +55,16 @@ export interface JobRecord {
   slipHash: Hex | null;
   createdAt: number;
   closedAt?: number | null;
+  /** Escrow v2: the countersigned review window in seconds. Null on v1 jobs. */
+  reviewWindow?: number | null;
+  /** Escrow v2: when the delivery was committed, unix seconds. Null until delivered. */
+  deliveredAt?: number | null;
+  /** Escrow v2: deliveredAt + reviewWindow, unix seconds. Null until delivered. */
+  endsAt?: number | null;
+  /** Escrow v2: how the review ended. Null until it does. */
+  reviewOutcome?: ReviewOutcome | null;
+  /** Escrow v2: the accept, dispute or window release transaction. */
+  reviewTx?: string | null;
 }
 
 export interface JobPatch {
@@ -50,6 +74,11 @@ export interface JobPatch {
   slipHash?: Hex | null;
   closedAt?: number | null;
   fault?: Fault | null;
+  reviewWindow?: number | null;
+  deliveredAt?: number | null;
+  endsAt?: number | null;
+  reviewOutcome?: ReviewOutcome | null;
+  reviewTx?: string | null;
 }
 
 /** A buyer agent's signed statement of its limits and spend, as the hub received it. */
@@ -91,7 +120,7 @@ export interface RatingJob {
   rail: RailId;
   buyer: string;
   amount: string;
-  status: JobStatus;
+  status: RatingStatus;
   slipHash: Hex | null;
   slip: Slip | null;
   fault: Fault | null;
@@ -120,6 +149,11 @@ interface JobRow {
   slip_hash: string | null;
   created_at: number;
   closed_at: number | null;
+  review_window: number | null;
+  delivered_at: number | null;
+  ends_at: number | null;
+  review_outcome: string | null;
+  review_tx: string | null;
 }
 
 interface RatingJobRow {
@@ -196,7 +230,12 @@ export class Store {
         close_tx TEXT NULL,
         slip_hash TEXT NULL,
         created_at INTEGER NOT NULL,
-        closed_at INTEGER NULL
+        closed_at INTEGER NULL,
+        review_window INTEGER NULL,
+        delivered_at INTEGER NULL,
+        ends_at INTEGER NULL,
+        review_outcome TEXT NULL,
+        review_tx TEXT NULL
       )
     `);
     const jobColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -205,6 +244,21 @@ export class Store {
     }
     if (!jobColumns.some((column) => column.name === "fault")) {
       this.db.run("ALTER TABLE jobs ADD COLUMN fault TEXT NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "review_window")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN review_window INTEGER NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "delivered_at")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN delivered_at INTEGER NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "ends_at")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN ends_at INTEGER NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "review_outcome")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN review_outcome TEXT NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "review_tx")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN review_tx TEXT NULL");
     }
     this.db.run(`
       CREATE TABLE IF NOT EXISTS slips (
@@ -297,7 +351,7 @@ export class Store {
   putJob(job: JobRecord): void {
     this.db
       .query(
-        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -313,6 +367,11 @@ export class Store {
         job.slipHash,
         job.createdAt,
         closedAtFor(job),
+        job.reviewWindow ?? null,
+        job.deliveredAt ?? null,
+        job.endsAt ?? null,
+        job.reviewOutcome ?? null,
+        job.reviewTx ?? null,
       );
   }
 
@@ -323,7 +382,7 @@ export class Store {
   claimJob(job: JobRecord): boolean {
     const result = this.db
       .query(
-        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -339,6 +398,11 @@ export class Store {
         job.slipHash,
         job.createdAt,
         closedAtFor(job),
+        job.reviewWindow ?? null,
+        job.deliveredAt ?? null,
+        job.endsAt ?? null,
+        job.reviewOutcome ?? null,
+        job.reviewTx ?? null,
       );
     return result.changes > 0;
   }
@@ -397,6 +461,26 @@ export class Store {
       sets.push("fault = ?");
       values.push(patch.fault);
     }
+    if (patch.reviewWindow !== undefined) {
+      sets.push("review_window = ?");
+      values.push(patch.reviewWindow);
+    }
+    if (patch.deliveredAt !== undefined) {
+      sets.push("delivered_at = ?");
+      values.push(patch.deliveredAt);
+    }
+    if (patch.endsAt !== undefined) {
+      sets.push("ends_at = ?");
+      values.push(patch.endsAt);
+    }
+    if (patch.reviewOutcome !== undefined) {
+      sets.push("review_outcome = ?");
+      values.push(patch.reviewOutcome);
+    }
+    if (patch.reviewTx !== undefined) {
+      sets.push("review_tx = ?");
+      values.push(patch.reviewTx);
+    }
     if (sets.length === 0) return;
     this.db.query(`UPDATE jobs SET ${sets.join(", ")} WHERE job_id = ?`).run(...values, jobId);
   }
@@ -435,7 +519,12 @@ export class Store {
         rail: row.rail as RailId,
         buyer: row.buyer,
         amount: row.amount,
-        status: row.status as JobStatus,
+        status:
+          row.status === "delivered"
+            ? "funded"
+            : row.status === "disputed"
+              ? "refunded"
+              : (row.status as RatingStatus),
         slipHash: row.slip_hash as Hex | null,
         slip: row.slip_json === null ? null : (JSON.parse(row.slip_json) as Slip),
         fault: row.fault === "seller" || row.fault === "hub" ? row.fault : null,
@@ -447,6 +536,14 @@ export class Store {
   fundedJobsPastDeadline(now: number): JobRecord[] {
     return this.db
       .query<JobRow, [number]>("SELECT * FROM jobs WHERE status IN ('funded', 'failed') AND deadline <= ?")
+      .all(now)
+      .map(jobFromRow);
+  }
+
+  /** Delivered jobs whose review window has closed (strictly after ends_at). */
+  deliveredJobsPastWindow(now: number): JobRecord[] {
+    return this.db
+      .query<JobRow, [number]>("SELECT * FROM jobs WHERE status = 'delivered' AND ends_at IS NOT NULL AND ends_at < ?")
       .all(now)
       .map(jobFromRow);
   }
@@ -467,7 +564,8 @@ export class Store {
       .query<JobRow, [string, number]>(
         `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.deadline,
                 jobs.status, jobs.payment_json, jobs.settle_tx, jobs.close_tx, jobs.slip_hash,
-                jobs.created_at, jobs.closed_at
+                jobs.created_at, jobs.closed_at, jobs.review_window, jobs.delivered_at, jobs.ends_at,
+                jobs.review_outcome, jobs.review_tx
            FROM jobs
            JOIN offers ON offers.offer_hash = jobs.offer_hash
           WHERE lower(offers.seller) = lower(?)
@@ -596,6 +694,11 @@ function jobFromRow(row: JobRow): JobRecord {
     slipHash: row.slip_hash as Hex | null,
     createdAt: row.created_at,
     closedAt: row.closed_at,
+    reviewWindow: row.review_window,
+    deliveredAt: row.delivered_at,
+    endsAt: row.ends_at,
+    reviewOutcome: row.review_outcome as ReviewOutcome | null,
+    reviewTx: row.review_tx,
   };
 }
 
