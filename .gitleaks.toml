@@ -26,6 +26,7 @@ regexes = [
   '''(?i)0xa2EEfc657138eE5367291F8e2Ac45BAC28486006''', # the relayer, 1874 v2 arbiter
   '''(?i)0xca4Fde0786758681d083E6515C7E3584BE75D11C''', # the 1874 deployer, a relay payee
   '''(?i)0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c''', # the demo merchant
+  '''(?i)0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298''', # the test buyer, customer of the 1874 purchases
   # anvil's published development keys #0-#4 (test fixtures only; they hold nothing anywhere)
   '''ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
   '''59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d''',
