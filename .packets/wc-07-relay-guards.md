@@ -65,6 +65,13 @@ Touch nothing else. View code is out of bounds: nothing under `apps/web`. Never 
    - **Should-fix 1 — serve before settle.** Add `settle: "after" | "before"` to `whitechainPaywall`, defaulting to `"after"`. With `"before"` it settles first and only then runs the handler, for handlers with side effects. Document both in a JSDoc block on the function. Test `"before"`.
    - **Should-fix 2 — pay only known merchants.** Add an optional `payTo: string[]` allowlist to `createPayFetch`. When it is set, any other `payTo` throws `SpendLimitError` before anything is signed. Test it, and use it in `examples/agent.ts`, which stays at 25 lines or fewer.
 
+5. **When the merchant received the money.** In `packages/relay/src/ledger.ts` (add it to the lease), `Order` gains `receivedAt: number | null`, in ms:
+   - for an exact payment that is not pending, its `createdAt`;
+   - for an escrow order with `closeKind === "release"`, the job's `closed_at`;
+   - otherwise `null`. That covers held, pending, cancelled and deadline-refunded orders.
+
+   `GET /orders` and `GET /orders/:id` return it. Tests: one per case.
+
 ## Constraints
 
 - **No browser of any kind on this machine.** No headless Chrome, Playwright, Puppeteer or screenshot tools. Verify with tests and `curl` only.
