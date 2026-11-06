@@ -256,6 +256,14 @@ export async function paidCall(
     buyer,
     entry: match.entry,
     deadline,
+    ...(railId === "hedera-scheduled"
+      ? {
+          schedule: {
+            id: String(payment.payload.scheduleId),
+            createTx: String(payment.payload.createTxId),
+          },
+        }
+      : {}),
     lineage: hexList(call.lineage),
   });
 
@@ -282,7 +290,12 @@ export async function paidCall(
       const gate = await failOnGate(match.rail, jobId, deps.store);
       return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
     }
-    const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
+    const release = await escrow.release(
+      jobId,
+      slipHash,
+      delivered.slip.sellerSig,
+      delivered.countersign,
+    );
     if (!release.success) {
       return failure(502, "release-failed", "Refused. The escrow did not release.", railId);
     }
@@ -347,9 +360,11 @@ function failedDelivery(
   // failDelivery's own message wins: the buyer already has the payment and any bond back.
   const message =
     gateMessage ??
-    (escrow
-      ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
-      : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
+    (railId === "hedera-scheduled"
+      ? "Not delivered. Nothing was charged: the scheduled payment was never countersigned, so it expires unsigned and no money moves."
+      : escrow
+        ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
+        : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
   return failure(502, "failed-delivery", message, railId);
 }
 
