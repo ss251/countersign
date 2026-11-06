@@ -14,6 +14,7 @@ import {
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
+import { registerBuyerPlumbing } from "./buyerplumbing.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
@@ -30,6 +31,8 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Bearer token the human's phone presents to decide an approval. */
+  humanApprovalToken?: string;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -50,6 +53,8 @@ export function createHub(deps: HubDeps) {
   };
 
   app.use("*", cors({ origin: "*", exposeHeaders: PAYMENT_HEADERS }));
+
+  registerBuyerPlumbing(app, deps);
 
   app.get("/healthz", (c) =>
     json({

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { Offer, PaymentPayload, RailId, Slip } from "./deps.ts";
+import type { Envelope, EnvelopeSpend, Offer, PaymentPayload, RailId, Slip } from "./deps.ts";
 import type { Hex } from "viem";
 
 export type JobStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
@@ -34,6 +34,31 @@ export interface JobPatch {
   closeTx?: string | null;
   slipHash?: Hex | null;
   closedAt?: number | null;
+}
+
+/** A buyer agent's signed statement of its limits and spend, as the hub received it. */
+export interface EnvelopeMirrorRecord {
+  agent: string;
+  envelope: Envelope;
+  spent: EnvelopeSpend;
+  signedAt: number;
+  sig: Hex;
+}
+
+export type ApprovalStatus = "pending" | "countersign" | "decline";
+
+/** A call the buyer agent held for a human decision. */
+export interface ApprovalRecord {
+  id: string;
+  agent: string;
+  offerHash: Hex;
+  title: string;
+  amount: string;
+  rail: RailId;
+  terms: unknown;
+  status: ApprovalStatus;
+  createdAt: number;
+  decidedAt: number | null;
 }
 
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
@@ -86,6 +111,27 @@ interface SlipRow {
   created_at: number;
 }
 
+interface EnvelopeRow {
+  agent: string;
+  envelope_json: string;
+  spent_json: string;
+  signed_at: number;
+  sig: string;
+}
+
+interface ApprovalRow {
+  id: string;
+  agent: string;
+  offer_hash: string;
+  title: string;
+  amount: string;
+  rail: string;
+  terms_json: string;
+  status: string;
+  created_at: number;
+  decided_at: number | null;
+}
+
 export class Store {
   private readonly db: Database;
 
@@ -128,6 +174,29 @@ export class Store {
         job_id TEXT NOT NULL,
         slip_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
+      )
+    `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS envelopes (
+        agent TEXT PRIMARY KEY,
+        envelope_json TEXT NOT NULL,
+        spent_json TEXT NOT NULL,
+        signed_at INTEGER NOT NULL,
+        sig TEXT NOT NULL
+      )
+    `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        offer_hash TEXT NOT NULL,
+        title TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        rail TEXT NOT NULL,
+        terms_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER NULL
       )
     `);
   }
@@ -322,6 +391,90 @@ export class Store {
       .all(now)
       .map(jobFromRow);
   }
+
+  /** One buyer's jobs, newest first. The address is compared case-insensitively. */
+  listJobsByBuyer(buyer: string, limit: number): JobRecord[] {
+    return this.db
+      .query<JobRow, [string, number]>(
+        "SELECT * FROM jobs WHERE lower(buyer) = lower(?) ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(buyer, limit)
+      .map(jobFromRow);
+  }
+
+  putEnvelopeMirror(record: EnvelopeMirrorRecord): void {
+    this.db
+      .query(
+        "INSERT INTO envelopes (agent, envelope_json, spent_json, signed_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(agent) DO UPDATE SET envelope_json = excluded.envelope_json, spent_json = excluded.spent_json, signed_at = excluded.signed_at, sig = excluded.sig",
+      )
+      .run(
+        record.agent.toLowerCase(),
+        JSON.stringify(record.envelope),
+        JSON.stringify(record.spent),
+        record.signedAt,
+        record.sig,
+      );
+  }
+
+  getEnvelopeMirror(agent: string): EnvelopeMirrorRecord | null {
+    const row = this.db
+      .query<EnvelopeRow, [string]>("SELECT * FROM envelopes WHERE agent = ?")
+      .get(agent.toLowerCase());
+    if (!row) return null;
+    return {
+      agent: row.agent,
+      envelope: JSON.parse(row.envelope_json) as Envelope,
+      spent: JSON.parse(row.spent_json) as EnvelopeSpend,
+      signedAt: row.signed_at,
+      sig: row.sig as Hex,
+    };
+  }
+
+  putApproval(approval: ApprovalRecord): void {
+    this.db
+      .query(
+        "INSERT INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        approval.id,
+        approval.agent.toLowerCase(),
+        approval.offerHash,
+        approval.title,
+        approval.amount,
+        approval.rail,
+        JSON.stringify(approval.terms),
+        approval.status,
+        approval.createdAt,
+        approval.decidedAt,
+      );
+  }
+
+  getApproval(id: string): ApprovalRecord | null {
+    const row = this.db.query<ApprovalRow, [string]>("SELECT * FROM approvals WHERE id = ?").get(id);
+    return row ? approvalFromRow(row) : null;
+  }
+
+  /** Approvals newest first, optionally for one agent. */
+  listApprovals(agent?: string): ApprovalRecord[] {
+    const rows = agent
+      ? this.db
+          .query<ApprovalRow, [string]>(
+            "SELECT * FROM approvals WHERE lower(agent) = lower(?) ORDER BY created_at DESC, rowid DESC",
+          )
+          .all(agent)
+      : this.db
+          .query<ApprovalRow, []>("SELECT * FROM approvals ORDER BY created_at DESC, rowid DESC")
+          .all();
+    return rows.map(approvalFromRow);
+  }
+
+  /** Set a pending approval's decision. False when it was already decided. */
+  decideApproval(id: string, status: Exclude<ApprovalStatus, "pending">, decidedAt: number): boolean {
+    const result = this.db
+      .query("UPDATE approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
+      .run(status, decidedAt, id);
+    return result.changes > 0;
+  }
 }
 
 function jobFromRow(row: JobRow): JobRecord {
@@ -345,4 +498,19 @@ function jobFromRow(row: JobRow): JobRecord {
 function closedAtFor(job: JobRecord): number | null {
   if (job.closedAt !== undefined) return job.closedAt;
   return job.closeTx !== null ? job.createdAt : null;
+}
+
+function approvalFromRow(row: ApprovalRow): ApprovalRecord {
+  return {
+    id: row.id,
+    agent: row.agent,
+    offerHash: row.offer_hash as Hex,
+    title: row.title,
+    amount: row.amount,
+    rail: row.rail as RailId,
+    terms: JSON.parse(row.terms_json) as unknown,
+    status: row.status as ApprovalStatus,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+  };
 }
