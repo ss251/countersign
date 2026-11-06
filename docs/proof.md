@@ -53,7 +53,7 @@ Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Product
 
 See [whitechain.md](whitechain.md) for the full list.
 
-Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production does not use it yet: the `whitechain` rail still settles through v1, `0x9279…7eb4`.
+Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production's `whitechain` rail settles through it since 06 Nov 21:35Z, for unbonded jobs. The first purchase funded [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5) and released [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31). Its slip `0xb17f830162e819ad2f6ef16ca2ea652059c1e6288495bc71597065ef42ea8d70` is `VALID` with the chain read, and v2's `Released` event carries its hash.
 
 | | |
 |---|---|
