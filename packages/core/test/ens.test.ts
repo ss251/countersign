@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Address } from "viem";
-import { assertOffer, checkEnsLock, ensLockProblem, isEnsName, sepoliaEnsResolver, type Offer } from "../src/index.ts";
+import { assertOffer, checkEnsLock, ensLockProblem, isEnsName, rpcUrlsFrom, sepoliaEnsResolver, type Offer } from "../src/index.ts";
 
 const SELLER: Address = "0x1111111111111111111111111111111111111111";
 const OTHER: Address = "0x2222222222222222222222222222222222222222";
@@ -101,5 +101,32 @@ describe("sepoliaEnsResolver", () => {
     await expect(resolve("alice.eth")).rejects.toThrow("rpc down");
     expect(await resolve("alice.eth")).toBeNull();
     expect(calls).toBe(2);
+  });
+});
+
+describe("sepoliaEnsResolver across endpoints", () => {
+  test("returns the answer when every endpoint agrees", async () => {
+    const resolve = sepoliaEnsResolver({ cacheMs: 0, lookups: [async () => SELLER, async () => SELLER.toLowerCase() as Address] });
+    expect(await resolve("alice.eth")).toBe(SELLER);
+    const none = sepoliaEnsResolver({ cacheMs: 0, lookups: [async () => null, async () => null] });
+    expect(await none("alice.eth")).toBeNull();
+  });
+
+  test("throws when endpoints disagree, so the caller refuses", async () => {
+    for (const lookups of [
+      [async () => SELLER, async () => OTHER],
+      [async () => SELLER, async () => null],
+      [async () => null, async () => OTHER],
+    ]) {
+      const resolve = sepoliaEnsResolver({ cacheMs: 0, lookups });
+      await expect(resolve("alice.eth")).rejects.toThrow("disagree");
+      expect(await checkEnsLock(offer(), resolve)).toMatchObject({ ok: false, code: "ens-unavailable" });
+    }
+  });
+
+  test("rpcUrlsFrom reads a comma-separated list", () => {
+    expect(rpcUrlsFrom(" https://a , https://b,, ")).toEqual(["https://a", "https://b"]);
+    expect(rpcUrlsFrom("")).toBeUndefined();
+    expect(rpcUrlsFrom(undefined)).toBeUndefined();
   });
 });

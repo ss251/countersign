@@ -50,8 +50,10 @@ describe("W1 B13: an ENS lookup follows the name owner's gateway URL", () => {
     }) as typeof fetch;
 
     const resolve = sepoliaEnsResolver({ rpcUrl: nodeUrl, cacheMs: 0 });
-    await resolve("attacker.eth").catch(() => undefined);
+    const answer = await resolve("attacker.eth").catch(() => "threw");
 
     expect(seen.filter((u) => u.includes("169.254.169.254"))).toEqual([]);
+    // A name that needs offchain data is unresolved: the hub answers ens-unresolved.
+    expect(answer).toBeNull();
   });
 });
