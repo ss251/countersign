@@ -66,6 +66,8 @@ export interface EscrowOps {
   /** The payee's free (unlocked) bond, in atomic units. */
   bondOfPayee?(payee: Hex): Promise<string>;
   status(jobId: Hex): Promise<"none" | "funded" | "released" | "refunded" | "failed">;
+  /** The contract's toll in basis points. Reads the view once per rail instance, then caches it. */
+  tollBps?(): Promise<number>;
 }
 
 export interface Rail {
