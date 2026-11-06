@@ -280,10 +280,25 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
 
   const rail: HederaRail = {
     declaration: HEDERA_DECLARATION,
+    settlesAfterDelivery: true,
     get active() {
       return active;
     },
     refresh,
+
+    pending(payment: PaymentPayload): { transaction: string; validUntil: number } | null {
+      const transaction = payment.payload?.transaction;
+      if (typeof transaction !== "string") return null;
+      try {
+        const inspected = decodeTransfer(transaction);
+        return {
+          transaction: inspected.transactionId,
+          validUntil: inspected.validStart + inspected.validDurationSeconds,
+        };
+      } catch {
+        return null;
+      }
+    },
 
     challenge(offer: Offer, _ctx: ChallengeContext): PaymentRequirements {
       const payTo = offer.payTo?.hedera;

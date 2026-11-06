@@ -221,6 +221,7 @@ function statusView(
 ): { status: string; closeKind: string | null } {
   switch (status) {
     case "funded":
+    case "verified":
       return { status: "held", closeKind: null };
     case "paid":
     case "settled":

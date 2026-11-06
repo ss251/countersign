@@ -35,6 +35,11 @@ import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
 const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
+const SETTLE_FAILED_AFTER_DELIVERY =
+  "Not charged. The seller delivered, but the payment could not be settled, so the hub withholds the output. Nothing moved; sign a fresh payment to retry.";
+
+/** How much of its validity window a payment that settles after delivery must keep past the deadline. */
+export const SETTLE_MARGIN_SECONDS = 30;
 
 export interface CallDeps {
   store: Store;
@@ -244,6 +249,143 @@ export async function paidCall(
     return failure(403, "envelope-revoked", REVOKED, railId);
   }
 
+  const payer = verify.payer ?? "";
+  const deadline = termsDeadline(payment.payload) ?? now + offer.deadline;
+  const pending =
+    match.rail.settlesAfterDelivery === true ? (match.rail.pending?.(payment) ?? null) : null;
+
+  // A rail that settles after delivery: verify, dispatch, gate, then settle. The buyer's signed
+  // transfer is never submitted when the seller fails or the gate refuses, so nothing moves.
+  if (pending !== null) {
+    if (pending.validUntil < deadline + SETTLE_MARGIN_SECONDS) {
+      return paymentRequired(
+        offer,
+        resource,
+        accepts,
+        "Refused. Your signed Hedera transfer expires before this offer's deadline. Sign a fresh one and retry. Nothing was charged.",
+        railId,
+        route,
+      );
+    }
+
+    const jobId = nonce ?? keccak256(toBytes(pending.transaction));
+    const buyer = verify.payer ?? "";
+    const claimed = deps.store.claimJob({
+      jobId,
+      offerHash: stored.offerHash,
+      rail: railId,
+      buyer,
+      amount: match.entry.amount,
+      deadline,
+      status: "verified",
+      payment,
+      settleTx: pending.transaction,
+      closeTx: null,
+      slipHash: null,
+      createdAt: now,
+      reviewWindow: termsReviewWindow(payment),
+      parentJobId: parentOf(deps.store, lineage),
+    });
+    if (!claimed) return duplicatePayment(railId);
+
+    const order = buildOrder({
+      jobId,
+      offerHash: stored.offerHash,
+      input,
+      railId,
+      network: match.rail.declaration.network,
+      buyer,
+      entry: match.entry,
+      deadline,
+      ...(railId === "hedera-scheduled"
+        ? {
+            schedule: {
+              id: String(payment.payload.scheduleId),
+              createTx: String(payment.payload.createTxId),
+            },
+          }
+        : {}),
+      lineage,
+    });
+
+    const deadlineMs = (deadline - now - 5) * 1000;
+    const hubLimitMs = deps.jobTimeoutMs ?? 120_000;
+    const timeoutMs = Math.max(0, Math.min(hubLimitMs, deadlineMs));
+    const delivered = await deps.runners.dispatch(order, timeoutMs);
+    if ("fail" in delivered) {
+      return failedDelivery(
+        deps,
+        jobId,
+        railId,
+        dispatchFault(delivered, hubLimitMs < deadlineMs),
+        false,
+        undefined,
+        true,
+      );
+    }
+
+    const provisional: SettleResult = {
+      success: true,
+      payer: buyer,
+      transaction: pending.transaction,
+      network: match.rail.declaration.network,
+    };
+    if (!(await checksOut(offer.seller, offer.output, order, payment, provisional, delivered))) {
+      return failedDelivery(deps, jobId, railId, "seller", false, undefined, true);
+    }
+
+    let settle: SettleResult;
+    try {
+      settle = await match.rail.settle(payment, match.entry);
+    } catch (error) {
+      console.warn(`[hub] rail ${railId} settle failed: ${firstLine(error)}`);
+      deps.router.recordFailure(stored.offerHash, railId, now);
+      deps.router.recordAttempt(stored.offerHash, payer, railId, "settle-failed", now);
+      deps.store.updateJob(jobId, { status: "failed", fault: "hub" });
+      return failure(502, "settle-failed", SETTLE_FAILED_AFTER_DELIVERY, railId);
+    }
+    if (!settle.success) {
+      deps.router.recordFailure(stored.offerHash, railId, now);
+      deps.router.recordAttempt(stored.offerHash, settle.payer ?? payer, railId, "settle-failed", now);
+      deps.store.updateJob(jobId, { status: "failed", fault: "hub" });
+      return failure(502, "settle-failed", SETTLE_FAILED_AFTER_DELIVERY, railId);
+    }
+
+    deps.router.recordSuccess(stored.offerHash, railId);
+    deps.router.recordAttempt(stored.offerHash, settle.payer ?? buyer, railId, "settled", now);
+
+    const closeTx = settle.transaction;
+    const closing: SettleResult = settle;
+    const settlement: Slip["settlement"] = {
+      transaction: closeTx,
+      network: match.rail.declaration.network,
+      route: {
+        chosen: railId,
+        reason: route.chosen === railId ? route.reason : `${railId}: chosen by the buyer`,
+        attempts: deps.router.slipAttempts(stored.offerHash, buyer, now),
+      },
+    };
+    if (match.rail.declaration.explorerTx !== "") {
+      settlement.url = explorerUrl(match.rail.declaration, closing.explorerRef ?? closeTx);
+    }
+    const slip: Slip = {
+      body: delivered.slip.body,
+      hash: delivered.slip.hash,
+      sellerSig: delivered.slip.sellerSig,
+      payment,
+      settlement,
+    };
+    deps.store.putSlip(slip.hash, jobId, slip, now);
+    deps.store.updateJob(jobId, { status: "settled", closeTx, slipHash: slip.hash });
+
+    return {
+      status: 200,
+      body: { output: delivered.output, slip },
+      headers: { [PAYMENT_RESPONSE_HEADER]: toBase64Json(closing) },
+      railId,
+    };
+  }
+
   let lockSig: Hex | undefined;
   const bond = bondOfTerms(payment);
   if (bond !== null && match.rail.escrow !== undefined && match.rail.declaration.escrow !== undefined && nonce !== null) {
@@ -274,7 +416,6 @@ export async function paidCall(
     lockSig = lock.sig;
   }
 
-  const payer = verify.payer ?? "";
   let settle: SettleResult;
   try {
     settle = await match.rail.settle(payment, match.entry, lockSig ? { lockSig } : undefined);
@@ -313,7 +454,6 @@ export async function paidCall(
   }
 
   const jobId = nonce ?? keccak256(toBytes(settle.transaction));
-  const deadline = termsDeadline(payment.payload) ?? now + offer.deadline;
   const buyer = settle.payer ?? verify.payer ?? "";
   const escrowRail = match.rail.escrow !== undefined;
   deps.router.recordSuccess(stored.offerHash, railId);
@@ -562,6 +702,7 @@ function failedDelivery(
   fault: Fault,
   escrow: boolean,
   gateMessage?: string,
+  settlesAfterDelivery = false,
 ): CallOutcome {
   deps.store.updateJob(jobId, { status: "failed", fault });
   // failDelivery's own message wins: the buyer already has the payment and any bond back.
@@ -571,7 +712,9 @@ function failedDelivery(
       ? "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires."
       : escrow
         ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
-        : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
+        : settlesAfterDelivery
+          ? "Not delivered. Nothing was charged: this hub settles a Hedera payment only after delivery, so your signed transfer was never submitted and expires unused."
+          : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
   return failure(502, "failed-delivery", message, railId);
 }
 

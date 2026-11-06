@@ -269,6 +269,7 @@ export class Ratings {
     if (selfDealt(job)) return { job, outcome: "selfDealt", deliveredAt: null };
     switch (job.status) {
       case "funded":
+      case "verified":
       case "paid":
         return { job, outcome: "open", deliveredAt: null };
       case "failed":
