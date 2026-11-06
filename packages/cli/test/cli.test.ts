@@ -270,7 +270,7 @@ describe("run", () => {
     });
     await run(["mcp"], deps);
     expect(process.exitCode).toBe(2);
-    expect(stderr.join("")).toContain("needs @countersign/mcp");
+    expect(stderr.join("")).toContain("needs @countersign-hub/mcp");
   });
 
   test("mcp refuses a package with no main", async () => {
