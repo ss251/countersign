@@ -461,6 +461,18 @@ kbd {
   font-size: var(--t-13);
 }
 
+.pcard__why,
+.pcard__phase {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.pcard__input {
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  overflow-wrap: anywhere;
+}
+
 .pcard__next {
   display: grid;
   gap: var(--sp-2);

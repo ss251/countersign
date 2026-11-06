@@ -1,18 +1,24 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { checkEnvelope } from "@countersign/core";
+import { useAccount, useSwitchChain } from "wagmi";
 import { Link } from "../../app/router.tsx";
 import { api, useResource, type Resource } from "../../lib/api.ts";
+import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { envelopeChecklist } from "../../lib/checklist.ts";
-import { formatDuration, formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
+import { formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
-import type { EnvelopeView, Listing } from "../../lib/types.ts";
+import { usePurchase } from "../../lib/purchase.ts";
+import { deadlineWords, termsKind } from "../../lib/terms.ts";
+import type { EnvelopeView, Listing, RailId } from "../../lib/types.ts";
 import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
 import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { NeedsSignature } from "../../ui/NeedsSignature.tsx";
-import { Amount, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
+import { PurchaseResult } from "../../ui/PurchaseResult.tsx";
+import { Amount, Button, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
 import { rank, type Match } from "../buyer/assistant.ts";
-import { buyCommand } from "../offer/index.tsx";
+import { buyCommand, exampleInput } from "../offer/index.tsx";
+import { cardMode } from "./cardMode.ts";
 import { exampleNeeds, groupMatches, modKey, plainReason, selectable, type Verdict } from "./palette.ts";
 import "./assistant.css";
 
@@ -429,6 +435,11 @@ function Row({
 /** The purchase card: exactly what the agent signs, your envelope's checklist, the hold, then the call it makes. */
 function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView | null }) {
   const [signed, setSigned] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const rails = useResource(() => api.rails(), []);
+  const account = useAccount();
+  const { switchChain } = useSwitchChain();
+  const purchase = usePurchase();
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
   const money = usd(offer.price, offer.rails[0]);
@@ -436,6 +447,17 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const base = hub && /^https?:/.test(hub) ? hub : `${window.location.origin}${hub ?? ""}`;
   const command = buyCommand(listing.hash, offer.input, base);
   const agent = view?.agentName ?? "Your agent";
+  const mode = cardMode({ connected: account.status === "connected", chainId: account.chainId, rails: offer.rails });
+  const wallet = mode.wallet;
+  const why = mode.wallet ? null : mode.why;
+  // A connected wallet whose only obstacle is the chain gets the switch button.
+  const chainOnly = why !== null && offer.rails.includes("escrow");
+  const declared = (id: RailId) => rails.data?.find((d) => d.id === id);
+  const rail: RailId = wallet ? "escrow" : offer.rails[0]!;
+  const declaration = declared(rail);
+  const kind = declaration ? termsKind(declaration) : undefined;
+  const input = exampleInput(offer.input);
+  const retryable = purchase.note !== null || purchase.outcome?.kind === "refused";
   const checks = view
     ? envelopeChecklist(view, {
         seller: offer.seller,
@@ -469,11 +491,11 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         </div>
         <div>
           <dt className="label">Rail</dt>
-          <dd>{RAIL_LABEL[offer.rails[0]!]}</dd>
+          <dd>{RAIL_LABEL[rail]}</dd>
         </div>
         <div>
           <dt className="label">Deadline</dt>
-          <dd className="num">{formatDuration(offer.deadline)}, then anyone can refund</dd>
+          <dd className="num">{deadlineWords(kind, offer.deadline)}</dd>
         </div>
         <div>
           <dt className="label">Offer hash</dt>
@@ -490,21 +512,82 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
           <p className="pcard__unchecked">Your envelope is not on this hub, so this purchase is not checked here. Your agent checks it before it pays.</p>
         )}
       </div>
-      <HoldToSign ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`} left={listing.seller.name} right="you" onSigned={() => setSigned(true)} />
-      <NeedsSignature />
-      {signed ? (
-        <div className="pcard__next" role="status">
-          <p className="pcard__next-title">Ready for {agent}. Run this on its machine to countersign:</p>
-          <p className="pcard__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
-          <div className="command">
-            <div className="command__head">
-              <p className="label">The call it makes</p>
-              <CopyButton value={command} label="buy command" />
+      {wallet ? (
+        <>
+          <HoldToSign
+            key={attempt}
+            ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`}
+            left={listing.seller.name}
+            right="you"
+            label="Hold to countersign with your wallet"
+            holdingLabel="Keep holding"
+            doneLabel="Your wallet takes it from here"
+            onSigned={() => void purchase.buy(listing.hash, exampleInput(offer.input))}
+          />
+          <p className="pcard__input">
+            Input <span className="mono">{JSON.stringify(input)}</span>
+          </p>
+          {purchase.phase === "signing" ? (
+            <p className="pcard__phase" role="status">
+              Signing in your wallet
+            </p>
+          ) : purchase.phase === "sending" ? (
+            <p className="pcard__phase" role="status">
+              Sending to the hub
+            </p>
+          ) : null}
+          <PurchaseResult signature={purchase.signature} note={purchase.note} outcome={purchase.outcome} testIdPrefix="pcard" />
+          {retryable ? (
+            <Button
+              data-testid="pcard-again"
+              variant="secondary"
+              onClick={() => {
+                purchase.reset();
+                setAttempt((n) => n + 1);
+              }}
+            >
+              Hold again
+            </Button>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {why !== null ? (
+            <p className="pcard__why" data-testid="pcard-why">
+              {why}
+            </p>
+          ) : null}
+          {chainOnly ? (
+            <Button data-testid="pcard-switch" variant="secondary" onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}>
+              Switch to Arc testnet
+            </Button>
+          ) : null}
+          <HoldToSign
+            key={attempt}
+            ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`}
+            left={listing.seller.name}
+            right="you"
+            label="Hold to get your agent's command"
+            holdingLabel="Keep holding"
+            doneLabel={`Ready for ${agent}`}
+            onSigned={() => setSigned(true)}
+          />
+          <NeedsSignature />
+          {signed ? (
+            <div className="pcard__next" role="status">
+              <p className="pcard__next-title">Ready for {agent}. Run this on its machine to countersign:</p>
+              <p className="pcard__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
+              <div className="command">
+                <div className="command__head">
+                  <p className="label">The call it makes</p>
+                  <CopyButton value={command} label="buy command" />
+                </div>
+                <pre className="command__body mono">{command}</pre>
+              </div>
             </div>
-            <pre className="command__body mono">{command}</pre>
-          </div>
-        </div>
-      ) : null}
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
