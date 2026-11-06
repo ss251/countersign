@@ -30,7 +30,7 @@ So the default Hedera path is now the **`hedera-scheduled`** rail. The router ra
 
 ### Traced live on the public hub
 
-On the production hub, `https://hub-production-e85e.up.railway.app`, with the Agent Kit offer [`0xc0ceb0a0…443a`](https://hub-production-e85e.up.railway.app/offers/0xc0ceb0a067fdb0cfbb169c3ac6b9c4d91b681726f9abe66ad63556b0aeb4443a). Its 402 lists `hedera-scheduled` first, paying `0.0.11338176` and held for 300 s, then the direct `hedera` rail.
+On the production hub, `https://hub-production-e85e.up.railway.app`, with the Agent Kit offer [`0xc0ceb0a0…443a`](https://hub-production-e85e.up.railway.app/offers/0xc0ceb0a067fdb0cfbb169c3ac6b9c4d91b681726f9abe66ad63556b0aeb4443a). Its 402 then listed `hedera-scheduled` first, paying `0.0.11338176` and held for 300 s, then the direct `hedera` rail. Production has not declared the direct rail since main 7565080, so the 402 now lists `hedera-scheduled` alone.
 
 - **Held purchase.**
   - The agent `0.0.11337064` created schedule [`0.0.11341327`](https://hashscan.io/testnet/schedule/0.0.11341327) in [`0.0.11337064@1793978974.115868685`](https://hashscan.io/testnet/transaction/0.0.11337064@1793978974.115868685), and logged it as entry [#85](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/85).
@@ -91,7 +91,7 @@ Reproduce it with the commands under "Setup": the hub with `HEDERA_RAIL=1`, a ru
 
 ### On the public hub
 
-The same beat runs against the production hub that the console reads, [`hub-production-e85e.up.railway.app`](https://hub-production-e85e.up.railway.app/settlements). There, Circle's `use-usdc` is offer `0x41536222…0ae0`, payable on escrow, Gateway and Hedera for 0.01 USDC. The production hub holds no Hedera key.
+The same beat ran on 06 Nov against the production hub that the console reads, [`hub-production-e85e.up.railway.app`](https://hub-production-e85e.up.railway.app/settlements), while it still declared the direct rail. There, Circle's `use-usdc` is offer `0x41536222…0ae0`, 0.01 USDC, then payable on escrow, Gateway and Hedera. Since main 7565080, production declares only escrow of those three, so this beat no longer runs there. The production hub held no Hedera key then; since #197 it holds the release key of the held rail's 2-of-2 payee.
 
 - **Payment.** The agent paid with no human step: [`0.0.9185802@1793966332.720364516`](https://hashscan.io/testnet/transaction/0.0.9185802@1793966332.720364516), settled by the x402.org facilitator. Result `SUCCESS` at `1793966342.154129104`: agent -0.01 USDC, seller `0.0.11337065` +0.01 USDC, memo `cs1:41536222…`.
 - **Slip.** The hub lists the job at `/settlements`. Its seller-signed slip `0xe15834f1a7d4916894f6778a8922f0b325787e6d4a89a6a941f15df28c56cb74` is served at `/slips/<hash>`.
