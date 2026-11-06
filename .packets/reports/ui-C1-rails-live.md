@@ -27,3 +27,9 @@ The 3 skips are the pre-existing Arc RPC suite, gated behind `CS_LIVE=1`.
 
 - `packages/cli/src/bin.ts` was already modified in the worktree before this packet and is not part of these commits.
 - No browser was launched. No dependencies added.
+
+## C1b: live is every hub rail
+
+- `railGroups` builds `live` from every id in the hub's `/rails`, in the hub's order and once each, whether or not an offer names it. `listed` is the offer rails outside that set, in offer order, once each. Hub ids that are not keys of `RAIL_LABEL` are dropped, so the `RailId[]` cast is safe.
+- `RailFilters` needed no markup change: a live rail with no offers still renders its toggle, with count `0`.
+- The tests add hub rails no offer names, an unknown hub id, the hero/Registry agreement for 1 and 3 hub rails, and `Live (3)` with no `Listed only` for a rail-less offer set. The full suite is 242 pass, 4 skip, 0 fail; the build passes.
