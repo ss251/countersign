@@ -740,10 +740,16 @@ const runHuman = async (
       });
 
       await step(rec, page, "11", "envelope-tab", "The envelope tab shows the envelope", async () => {
-        await page
-          .getByRole("navigation", { name: "Buyer" })
-          .getByRole("link", { name: /envelope/i })
-          .click();
+        const nav = page.getByRole("navigation", { name: "Buyer" });
+        const card = page.getByRole("region", { name: "Your envelope" });
+        await expect(nav.or(card).first()).toBeVisible({ timeout: 30_000 });
+        if (await nav.isVisible()) {
+          await nav.getByRole("link", { name: /envelope/i }).click();
+          rec.note("envelope opened from the Buyer tab bar");
+        } else {
+          await card.getByRole("link", { name: /^(view|edit limits)$/i }).click();
+          rec.note("envelope opened from the page's envelope card (the tab bar is phone-only)");
+        }
         await expect(page.getByRole("region", { name: "Budget" })).toBeVisible({ timeout: 30_000 });
         if (!new URL(page.url()).hash.startsWith("#/buyer")) {
           throw new Error("the page left the buyer route on the envelope tab");
