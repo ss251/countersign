@@ -61,7 +61,7 @@ Read first: `packages/rail/src/mpp/rail.ts` (`createMppRail`, `inspectMppPayment
 bun install && bun run typecheck && bun test packages/rail/src/mpp && bun test
 ```
 
-Every test passes, with none skipped. Commit on `cs/hd-06` with short present-tense messages ending `refs #5`, and no trailers. Write the report. Do not push, merge or deploy.
+Every test passes, with none skipped. Commit on `cs/hd-06d` with short present-tense messages ending `refs #5`, and no trailers. Write the report. Do not push, merge or deploy.
 
 ## Stop conditions
 
