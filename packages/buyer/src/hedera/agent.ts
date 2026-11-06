@@ -56,8 +56,10 @@ export interface HederaAgentOptions {
   /** Append one entry. When given, used instead of appending with `logClient` and `topicId`. */
   appendLog?: (entry: SpendEntry) => Promise<{ sequence: number }>;
   spent?: EnvelopeSpend;
-  /** Fee payers the agent will sign for. Omitted: read once from `FACILITATORS` on the first buy. */
+  /** Fee payers the agent will sign for. Omitted: read from `FACILITATORS` on the first buy; an empty read is retried on the next. */
   trustedFeePayers?: string[];
+  /** Test seam: read the facilitators' fee payers. Defaults to reading `FACILITATORS`. */
+  lookupFeePayers?: () => Promise<Set<string>>;
   /** Test seam: build and submit a schedule. Defaults to createScheduledPayment. */
   createSchedule?: typeof createScheduledPayment;
   fetch?: typeof fetch;
@@ -193,11 +195,9 @@ export function createHederaAgent(opts: HederaAgentOptions) {
   let nextReservation = 0;
   let trusted: Set<string> | null = opts.trustedFeePayers ? new Set(opts.trustedFeePayers) : null;
   let trustLookup: Promise<Set<string>> | null = null;
-
-  /** Fee payers this agent will sign for, read from the hosted facilitators once when not configured. */
-  function trustedFeePayers(): Promise<Set<string>> {
-    if (trusted) return Promise.resolve(trusted);
-    trustLookup ??= (async () => {
+  const lookupFeePayers =
+    opts.lookupFeePayers ??
+    (async (): Promise<Set<string>> => {
       const found = new Set<string>();
       await Promise.all(
         FACILITATORS.map(async ({ name, url }) => {
@@ -207,7 +207,20 @@ export function createHederaAgent(opts: HederaAgentOptions) {
           if (feePayer) found.add(feePayer);
         }),
       );
-      trusted = found;
+      return found;
+    });
+
+  /** Fee payers this agent will sign for, read from the hosted facilitators when not configured. */
+  function trustedFeePayers(): Promise<Set<string>> {
+    if (trusted) return Promise.resolve(trusted);
+    trustLookup ??= (async () => {
+      const found = await lookupFeePayers();
+      if (found.size === 0) {
+        // Every facilitator failed: fail this call closed, but let the next call look again.
+        trustLookup = null;
+      } else {
+        trusted = found;
+      }
       return found;
     })();
     return trustLookup;
