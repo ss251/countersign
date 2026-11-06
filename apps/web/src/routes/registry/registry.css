@@ -47,7 +47,6 @@
   background: var(--raised);
   box-shadow: var(--elev-1);
   color: var(--ink);
-  font-weight: 600;
 }
 
 @media (hover: hover) and (pointer: fine) {

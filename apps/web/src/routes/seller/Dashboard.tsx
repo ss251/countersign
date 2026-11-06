@@ -8,8 +8,8 @@ import { Amount, CopyButton, Empty, FixtureNote, RailTag, Status, Tag, cx } from
 import { absoluteHub, publishCommand, releaseTotals } from "./logic.ts";
 
 /**
- * A seller's desk, one seller at a time. Totals first, with the failures counted right beside
- * them; then each offer's record in a table; then the latest sales with their slips.
+ * A seller’s desk, one seller at a time. Totals first, with the failures counted right beside
+ * them; then each offer’s record in a table; then the latest sales with their slips.
  */
 export function SellerDashboard({ query }: { query: URLSearchParams }) {
   const listings = useResource(() => api.listings(), []);

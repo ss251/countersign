@@ -6,7 +6,7 @@ import "./hold.css";
  * The countersignature, as a gesture. A signature line on the page: the left
  * stroke is already there in ink (the offer, signed by the seller). Holding
  * draws the right stroke in seal across the seam. Let go early and it retracts.
- * The geometry is the mark's, stretched along the line.
+ * The geometry is the mark’s, stretched along the line.
  */
 
 const VIEW_W = 300;

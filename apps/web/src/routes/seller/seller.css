@@ -270,9 +270,7 @@
   color: var(--ink);
 }
 
-.steps__item.is-current {
-  font-weight: 700;
-}
+/* State by colour and the filled number, never by weight: weight changes reflow the row. */
 
 .steps__button {
   display: inline-flex;

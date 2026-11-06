@@ -83,7 +83,7 @@ export default function BuyerPage({ query }: PageProps) {
     <div className="phone-stage">
     <aside className="phone-note" aria-label="About this view">
       <p className="phone-note__eyebrow">Buyer · phone</p>
-      <p className="phone-note__title">The human side of an agent's purchase.</p>
+      <p className="phone-note__title">The human side of an agent’s purchase.</p>
       <p className="phone-note__body">
         Your agent buys inside the envelope you set. Above your limit it waits, and you hold to countersign the exact offer
         and amount.
@@ -134,7 +134,7 @@ export default function BuyerPage({ query }: PageProps) {
       </header>
       {viewsOpen ? (
         <nav id="phone-views" className="phone__views" aria-label="Views">
-          <p className="phone__views-label">You are on the buyer's phone. Other views:</p>
+          <p className="phone__views-label">You are on the buyer’s phone. Other views:</p>
           <Link to="/" className="phone__views-link">
             Overview
           </Link>

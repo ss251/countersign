@@ -119,7 +119,7 @@ export default function OfferPage({ params }: PageProps) {
                 It calls <span className="mono">POST /offers/…/call</span> with the input.
               </li>
               <li>The hub answers 402 with the price. The envelope checks it, then the agent countersigns the offer hash and the amount.</li>
-              <li>The money waits in escrow while the seller's runner does the work, and the output comes back with a slip.</li>
+              <li>The money waits in escrow while the seller’s runner does the work, and the output comes back with a slip.</li>
             </ol>
             <div className="command">
               <div className="command__head">
@@ -128,7 +128,7 @@ export default function OfferPage({ params }: PageProps) {
               </div>
               <pre className="command__body mono">{command}</pre>
             </div>
-            <p className="offer__muted">The agent's key comes from CS_BUYER_KEY and never appears in a command.</p>
+            <p className="offer__muted">The agent’s key comes from CS_BUYER_KEY and never appears in a command.</p>
           </section>
           <section className="section">
             <h2 className="section__title">Record</h2>

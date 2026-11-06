@@ -12,7 +12,7 @@ import "../../ui/page.css";
 import "./verify.css";
 
 /**
- * Paste a slip, open a file, or arrive with a hash. The check runs here, from the slip's
+ * Paste a slip, open a file, or arrive with a hash. The check runs here, from the slip’s
  * own bytes, which is why it still answers when the hub is down.
  */
 export default function VerifyPage({ params }: PageProps) {
@@ -204,15 +204,15 @@ export default function VerifyPage({ params }: PageProps) {
               <ol className="verify__steps">
                 <li>The slip hash is the keccak-256 of its body in canonical JSON, so no field can change.</li>
                 <li>The seller signed Release over that hash. On escrow rails it is the same signature the contract checked.</li>
-                <li>The buyer's one countersignature binds this offer hash and this amount.</li>
+                <li>The buyer’s one countersignature binds this offer hash and this amount.</li>
                 <li>
-                  The settlement is not taken on trust. Press Check the chain to read the escrow's Released event for this
+                  The settlement is not taken on trust. Press Check the chain to read the escrow’s Released event for this
                   job and slip from a public RPC.
                 </li>
               </ol>
               <p className="section__note">
                 A slip from a call opens here too: follow <span className="mono">/verify/&lt;slip hash&gt;</span>, or
-                use <Link to="/buyer?tab=history">the buyer's history</Link>.
+                use <Link to="/buyer?tab=history">the buyer’s history</Link>.
               </p>
             </div>
           )}

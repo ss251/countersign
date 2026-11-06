@@ -137,7 +137,9 @@
 }
 
 .topbar__sheet-link[aria-current="page"] {
-  font-weight: 700;
+  color: var(--ink);
+  box-shadow: inset 2px 0 0 var(--ink);
+  padding-left: var(--sp-3);
 }
 
 @media (max-width: 720px) {

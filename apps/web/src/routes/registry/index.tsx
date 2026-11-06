@@ -92,14 +92,14 @@ export default function RegistryPage(_props: PageProps) {
         </p>
         <h1 className="page__title">Every seller on this hub, and what they sell.</h1>
         <p className="page__lede">
-          An offer is a price and two schemas; the code behind it stays on the seller's machine. Each record is counted
+          An offer is a price and two schemas; the code behind it stays on the seller’s machine. Each record is counted
           from slips, never reported by the seller.
         </p>
       </header>
 
       {listings.error ? (
         <Empty title="The hub did not answer.">
-          The registry lists the hub's offers live. Check the hub is running, or open this page with{" "}
+          The registry lists the hub’s offers live. Check the hub is running, or open this page with{" "}
           <span className="mono">?hub=off</span> for fixture data.
         </Empty>
       ) : listings.loading && !listings.data ? (

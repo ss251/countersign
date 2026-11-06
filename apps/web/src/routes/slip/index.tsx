@@ -109,7 +109,7 @@ export default function SlipPage({ params }: PageProps) {
               <h2 id="half-offer" className="slip__half-title">
                 Offer
               </h2>
-              <p className="slip__half-who">The seller's half</p>
+              <p className="slip__half-who">The seller’s half</p>
               <KV
                 rows={[
                   ["Offer hash", <Hash value={body.offerHash} label="offer hash" />],
@@ -123,7 +123,7 @@ export default function SlipPage({ params }: PageProps) {
               <h2 id="half-buyer" className="slip__half-title">
                 Countersignature
               </h2>
-              <p className="slip__half-who">The buyer's half</p>
+              <p className="slip__half-who">The buyer’s half</p>
               <BuyerHalf slip={slip} />
             </section>
           </div>
@@ -152,7 +152,7 @@ export default function SlipPage({ params }: PageProps) {
 
           <section className="slip__section" aria-labelledby="sec-seal">
             <h2 id="sec-seal" className="slip__section-title">
-              Seller's signature
+              Seller’s signature
             </h2>
             <KV
               rows={[
@@ -170,7 +170,7 @@ export default function SlipPage({ params }: PageProps) {
               </h2>
               <ReceiptTree tree={tree.data} current={slip.hash} />
               <p className="section__note">
-                To serve this call the seller bought {children} more. Their slip hashes sit inside this slip's body, so
+                To serve this call the seller bought {children} more. Their slip hashes sit inside this slip’s body, so
                 this signature commits to every one of them.
               </p>
             </section>
@@ -201,7 +201,7 @@ export default function SlipPage({ params }: PageProps) {
             }}
           />
           <p className="section__note">
-            Anyone can repeat this with the slip alone: the hash, the seller's signature and the buyer's countersignature
+            Anyone can repeat this with the slip alone: the hash, the seller’s signature and the buyer’s countersignature
             are all inside it. The chain answers the rest: whether {formatMoney(money)} was released on{" "}
             {networkName(body.network)}.
           </p>

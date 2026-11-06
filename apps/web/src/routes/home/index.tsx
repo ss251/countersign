@@ -39,7 +39,7 @@ export default function HomePage(_props: PageProps) {
           </p>
           <div className="button-row">
             <Link to="/buyer" className="btn btn--primary">
-              Open the buyer's phone
+              Open the buyer’s phone
             </Link>
             <Link to="/registry" className="btn btn--secondary">
               Browse the registry
@@ -56,7 +56,7 @@ export default function HomePage(_props: PageProps) {
             onSigned={() => undefined}
           />
           <figcaption className="home__sign-caption">
-            The ink stroke is the seller's offer. Holding draws yours across the seam: the two together are the purchase.{" "}
+            The ink stroke is the seller’s offer. Holding draws yours across the seam: the two together are the purchase.{" "}
             <button type="button" className="link-button" onClick={() => setRound((n) => n + 1)}>
               Clear it
             </button>
@@ -84,7 +84,7 @@ export default function HomePage(_props: PageProps) {
         </div>
         {listed.length === 0 && !listings.error && !listings.loading ? (
           <p className="live__empty">
-            No offers yet. A seller's runner publishes one with a single command; <Link to="/seller/publish">here is how</Link>.
+            No offers yet. A seller’s runner publishes one with a single command; <Link to="/seller/publish">here is how</Link>.
           </p>
         ) : null}
       </section>
