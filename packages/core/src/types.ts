@@ -11,7 +11,8 @@ import type { Address, Hex } from "viem";
 // Networks, assets, rails
 
 /** CAIP-2 network id: "eip155:5042002" (Arc testnet), "eip155:1874" (Whitechain Sepolia), "hedera:testnet". */
-export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet";
+/** MPP is not a chain: "mpp:stripe" is a card through a shared payment token, "mpp:tempo" its stablecoin method. */
+export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" | "mpp:stripe" | "mpp:tempo";
 
 /**
  * A settlement path. The id matches its directory in packages/rail/src.
@@ -21,10 +22,11 @@ export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet";
  * - erc8183:    ERC-8183 job escrow with the JobHook committing the slip
  * - whitechain: CountersignedEscrow on Whitechain Sepolia, USDT, gas paid by our relayer
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
+ * - mpp:        Stripe Machine Payments Protocol, the fourth rail; the slip carries the MPP receipt id
  */
-export type RailId = "escrow" | "eip3009" | "gateway" | "erc8183" | "whitechain" | "hedera";
+export type RailId = "escrow" | "eip3009" | "gateway" | "erc8183" | "whitechain" | "hedera" | "mpp";
 
-export const RAIL_IDS: readonly RailId[] = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera"];
+export const RAIL_IDS: readonly RailId[] = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "mpp"];
 
 export interface Asset {
   network: Network;
@@ -114,9 +116,11 @@ export interface SettleResult {
   success: boolean;
   errorReason?: string;
   payer?: string;
-  /** EVM tx hash, or a Hedera transaction id such as "0.0.1234@1730880000.123456789". */
+  /** EVM tx hash, a Hedera transaction id such as "0.0.1234@1730880000.123456789", or a Stripe payment reference. */
   transaction: string;
   network: Network;
+  /** A receipt id the rail returns besides the transaction, e.g. the MPP Payment-Receipt id. */
+  receipt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +202,8 @@ export interface Slip {
   sellerSig: Hex;
   /** The buyer's payment exactly as it was sent. */
   payment: PaymentPayload;
-  /** Where the money finished: release tx hash, transfer tx hash or Hedera tx id. */
-  settlement: { transaction: string; network: Network; url?: string };
+  /** Where the money finished: release tx hash, transfer tx hash, Hedera tx id or Stripe payment reference. */
+  settlement: { transaction: string; network: Network; url?: string; receipt?: string };
 }
 
 // ---------------------------------------------------------------------------

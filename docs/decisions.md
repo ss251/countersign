@@ -21,3 +21,13 @@ An amount is a bigint of the token's smallest unit everywhere in TypeScript. In 
 ## D5 — canonical JSON is a strict subset of RFC 8785
 
 Keys are sorted by UTF-16 code unit, there is no whitespace, strings are escaped as `JSON.stringify` escapes them, and only safe integers are allowed as numbers. Hashes are keccak256 over the UTF-8 bytes. Anything with two possible spellings is an error rather than a normalisation.
+
+## D6 — the live console is on Railway; the Studio project URL is a risk, not a pass (06 Nov, 16:05 IST)
+
+The Arc Studio project is app `16e0b317-ec5f-406a-8d7d-24bf6d96533b` at `https://studio.arc.io/app/16e0b317-ec5f-406a-8d7d-24bf6d96533b`. In a clean browser profile that URL redirects to the Studio landing page. Studio's Share control only offers to deploy the app through Netlify, Hugging Face or Vercel, and it says a link anyone can open exists only after such a deploy. Studio has no public-project switch, and the `arc-studio` CLI has no share command.
+
+By captain decision (15:30 IST), the console a judge opens runs on Railway, in a new project `countersign`. The README carries both the Railway console URL and the Studio project URL, and Studio appears on screen in the video. Until a Studio-native public link exists, the Arc requirement for a shareable Studio project URL is **at risk**, not met. Nothing in this repository claims otherwise.
+
+## D7 — escrow pulls with receiveWithAuthorization, and the payee can cancel early (06 Nov)
+
+PLAN §6 says the escrow pulls by `transferWithAuthorization`. It uses `receiveWithAuthorization` instead: the buyer signs the same EIP-3009 message, but only the escrow can submit it. With `transferWithAuthorization`, anyone holding the signature could move the buyer's funds into the escrow without opening a job. `cancel(jobId, sellerSig)` was added so the payee can hand the money back before the deadline, which is the merchant's one-click refund on Whitechain.
