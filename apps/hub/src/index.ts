@@ -1,14 +1,27 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
+import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
+import { createPrivyVerifier } from "./privy.ts";
 
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
 const ARC_ERC8004_IDENTITY = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 import { runJanitor } from "./janitor.ts";
+import { assertBootable, BootRefused } from "./network.ts";
 import { railsFromEnv } from "./rails.ts";
 import { Store } from "./store.ts";
+
+// Fail closed before anything else: an unknown network, or a mainnet with anything pending, stops here.
+try {
+  assertBootable(process.env);
+} catch (error) {
+  if (!(error instanceof BootRefused)) throw error;
+  console.error("[hub] refused to boot:");
+  for (const problem of error.problems) console.error(`[hub]   - ${problem}`);
+  process.exit(1);
+}
 
 const port = Number(process.env.PORT ?? 8787);
 const dbPath = process.env.HUB_DB ?? "data/hub.sqlite";
@@ -19,9 +32,19 @@ const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
 
+// Forward ENS lookups on Sepolia. Every endpoint in HUB_ENS_RPC_URLS (comma-separated; HUB_ENS_RPC_URL
+// for one) must agree, or the lookup fails and a named offer is refused. Unset: two public endpoints.
+const ensRpcUrls = rpcUrlsFrom(process.env.HUB_ENS_RPC_URLS ?? process.env.HUB_ENS_RPC_URL);
+const ens = sepoliaEnsResolver(ensRpcUrls ? { rpcUrls: ensRpcUrls } : {});
+
 // The human's approver token guards approval decisions and the envelope and approval reads. Unset, the
 // decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
 const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined;
+
+// Privy checks the signed-in person on the routes that act for them. Unset, the Privy header is ignored.
+const privyAppId = process.env.PRIVY_APP_ID?.trim() ?? "";
+const privySecret = process.env.PRIVY_APP_SECRET?.trim() ?? "";
+const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(privyAppId, privySecret) : undefined;
 
 // The Whitechain relay's public order records, read by /orders for refunds after release.
 const relayUrl = process.env.WC_RELAY_URL?.trim() || undefined;
@@ -39,14 +62,30 @@ const identity =
       })
     : undefined;
 
+// The full commit this image was built from: deploy-hub.sh writes COMMIT into the stage.
+const commitFromFile = ((): string | undefined => {
+  try {
+    return readFileSync(resolve(process.cwd(), "COMMIT"), "utf8").trim();
+  } catch {
+    return undefined;
+  }
+})();
+const commitCandidate = process.env.HUB_COMMIT?.trim() || commitFromFile;
+const commit =
+  commitCandidate !== undefined && /^[0-9a-f]{40}$/.test(commitCandidate) ? commitCandidate : undefined;
+console.log(`[hub] commit ${commit ? commit.slice(0, 7) : "unknown"}`);
+
 const { app, websocket } = createHub({
   store,
   rails,
   now,
   publicUrl,
+  ens,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
+  ...(privy ? { privy } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),
+  ...(commit ? { commit } : {}),
 });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
@@ -55,3 +94,4 @@ setInterval(() => {
 }, 30_000);
 
 console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
+console.log(`[hub] privy sign-in: ${privy === undefined ? "off" : "on"}`);

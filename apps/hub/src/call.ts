@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  checkEnsLock,
   checkSchema,
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -7,6 +8,9 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   slipCommitHash,
   toBase64Json,
+  type EnsResolve,
+  isV2Terms,
+  type CountersignTerms,
   type Offer,
   type PaymentPayload,
   type PaymentRequired,
@@ -22,9 +26,10 @@ import { keccak256, toBytes, type Hex } from "viem";
 import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, firstLine, resourceFor } from "./discovery.ts";
+import { owns, personFrom, type PrivyVerifier } from "./privy.ts";
 import type { HubRouter } from "./route.ts";
 import type { RunnerLink } from "./runners.ts";
-import type { Fault, Store } from "./store.ts";
+import type { Fault, StoredOffer, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
@@ -37,6 +42,10 @@ export interface CallDeps {
   now: () => number;
   publicUrl: string;
   jobTimeoutMs?: number;
+  /** Sepolia ENS lookups. A named offer is served only while its name still locks its payees. */
+  ens?: EnsResolve;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
 }
 
 export interface CallOutcome {
@@ -57,9 +66,26 @@ export async function paidCall(
   if (!stored || stored.delistedAt !== null) {
     return failure(404, "unknown-offer", "Refused. That offer is not listed.");
   }
+  const privyCheck = await personFrom(headers, deps.privy);
+  if (privyCheck.kind === "refused") return failure(privyCheck.status, privyCheck.code, privyCheck.message);
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
+
+  if (lineageCycle(deps.store, stored, hexList(call.lineage))) {
+    return failure(
+      409,
+      "lineage-cycle",
+      "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged.",
+    );
+  }
+
+  // A name checked at listing can be re-pointed later. Check it again before any 402 or payment,
+  // so the hub never takes money for a named offer whose name no longer locks its payees.
+  const lock = await checkEnsLock(offer, deps.ens);
+  if (lock && !lock.ok) {
+    return failure(lock.code === "ens-unavailable" ? 503 : 409, lock.code, `${lock.message} Nothing was charged.`);
+  }
 
   const inputCheck = checkSchema(offer.input, input);
   if (!inputCheck.ok) {
@@ -186,6 +212,18 @@ export async function paidCall(
     return duplicatePayment(railId);
   }
 
+  if (
+    privyCheck.kind === "person" &&
+    !(/^0x[0-9a-fA-F]{40}$/.test(verify.payer ?? "") && owns(privyCheck.person, verify.payer))
+  ) {
+    return failure(
+      403,
+      "not-your-wallet",
+      "Refused. This payment is not from one of your wallets. Nothing was charged.",
+      railId,
+    );
+  }
+
   const payer = verify.payer ?? "";
   let settle: SettleResult;
   try {
@@ -244,6 +282,7 @@ export async function paidCall(
     closeTx: null,
     slipHash: null,
     createdAt: now,
+    reviewWindow: termsReviewWindow(payment),
   });
   if (!claimed) return duplicatePayment(railId);
 
@@ -256,6 +295,14 @@ export async function paidCall(
     buyer,
     entry: match.entry,
     deadline,
+    ...(railId === "hedera-scheduled"
+      ? {
+          schedule: {
+            id: String(payment.payload.scheduleId),
+            createTx: String(payment.payload.createTxId),
+          },
+        }
+      : {}),
     lineage: hexList(call.lineage),
   });
 
@@ -268,29 +315,47 @@ export async function paidCall(
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    const gate = await failOnGate(match.rail, jobId, deps.store);
+    const gate = await failOnGate(match.rail, jobId, deps.store, now);
     return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
   }
 
   let closeTx = settle.transaction;
   let closing: SettleResult = settle;
+  let review: ReviewRecord | null = null;
   const escrow = match.rail.escrow;
   const slipHash = delivered.slip.hash;
   if (escrow) {
     const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
     if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
-      const gate = await failOnGate(match.rail, jobId, deps.store);
+      const gate = await failOnGate(match.rail, jobId, deps.store, now);
       return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
     }
-    const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
+    const release = await escrow.release(
+      jobId,
+      slipHash,
+      delivered.slip.sellerSig,
+      delivered.countersign,
+    );
     if (!release.success) {
       return failure(502, "release-failed", "Refused. The escrow did not release.", railId);
     }
     closeTx = release.transaction;
     closing = release;
+    const window = termsReviewWindow(payment);
+    if (window !== null && window > 0 && escrow.reviewOf) {
+      // The release has landed, so the job is Delivered on chain whatever this read says. A failed read
+      // must not strand it as funded (cs-w1, review of ba868fa): fall back to the countersigned window
+      // from the hub's clock. The janitor's releaseAfterWindow retries if this runs ahead of the chain.
+      try {
+        const state = await escrow.reviewOf(jobId);
+        review = state.window > 0 ? state : { window, deliveredAt: now, endsAt: now + window };
+      } catch {
+        review = { window, deliveredAt: now, endsAt: now + window };
+      }
+    }
   }
 
-  const settlement: Slip["settlement"] = {
+  const settlement: Slip["settlement"] & { review?: ReviewRecord } = {
     transaction: closeTx,
     network: match.rail.declaration.network,
     route: {
@@ -300,8 +365,9 @@ export async function paidCall(
     },
   };
   if (match.rail.declaration.explorerTx !== "") {
-    settlement.url = explorerUrl(match.rail.declaration, closeTx);
+    settlement.url = explorerUrl(match.rail.declaration, closing.explorerRef ?? closeTx);
   }
+  if (review !== null) settlement.review = review;
   const slip: Slip = {
     body: delivered.slip.body,
     hash: slipHash,
@@ -310,11 +376,23 @@ export async function paidCall(
     settlement,
   };
   deps.store.putSlip(slip.hash, jobId, slip, now);
-  deps.store.updateJob(jobId, {
-    status: escrowRail ? "released" : "settled",
-    closeTx,
-    slipHash: slip.hash,
-  });
+  deps.store.updateJob(
+    jobId,
+    review === null
+      ? {
+          status: escrowRail ? "released" : "settled",
+          closeTx,
+          slipHash: slip.hash,
+        }
+      : {
+          status: "delivered",
+          closeTx,
+          slipHash: slip.hash,
+          reviewWindow: review.window,
+          deliveredAt: review.deliveredAt,
+          endsAt: review.endsAt,
+        },
+  );
 
   return {
     status: 200,
@@ -322,6 +400,35 @@ export async function paidCall(
     headers: { [PAYMENT_RESPONSE_HEADER]: toBase64Json(closing) },
     railId,
   };
+}
+
+/** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
+export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
+  for (const jobId of lineage) {
+    const ancestor = store.getJob(jobId);
+    if (ancestor === null) continue;
+    if (ancestor.offerHash.toLowerCase() === target.offerHash.toLowerCase()) return true;
+    const bought = store.getOffer(ancestor.offerHash);
+    if (bought !== null && sameText(bought.seller, target.seller)) return true;
+  }
+  return false;
+}
+
+/** The review a v2 escrow opens at delivery, stored on the slip outside the committed hash (D12). */
+interface ReviewRecord {
+  window: number;
+  deliveredAt: number;
+  endsAt: number;
+}
+
+/** The countersigned review window: null for v1 terms, 0 for a v2 offer without one. */
+function termsReviewWindow(payment: PaymentPayload): number | null {
+  const payload = payment.payload as { terms?: unknown };
+  const terms = payload.terms;
+  if (typeof terms !== "object" || terms === null) return null;
+  const signed = terms as CountersignTerms;
+  if (!isV2Terms(signed)) return null;
+  return signed.reviewWindow ?? 0;
 }
 
 /**
@@ -347,9 +454,11 @@ function failedDelivery(
   // failDelivery's own message wins: the buyer already has the payment and any bond back.
   const message =
     gateMessage ??
-    (escrow
-      ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
-      : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
+    (railId === "hedera-scheduled"
+      ? "Not delivered. This hub will not submit the seller's countersignature. Your USDC stays in your account unless the seller signs the schedule itself before it expires."
+      : escrow
+        ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
+        : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
   return failure(502, "failed-delivery", message, railId);
 }
 

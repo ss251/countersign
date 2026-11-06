@@ -3,6 +3,8 @@ import type { RailDeclaration, RailId, Settlement } from "../src/lib/types.ts";
 import {
   byTime,
   centres,
+  contractRails,
+  escrowRelease,
   EXIT,
   groups,
   keyOf,
@@ -10,6 +12,7 @@ import {
   NARROW,
   newestOf,
   newestRelease,
+  otherRailsLines,
   railOrder,
   receiptX,
   tape,
@@ -99,6 +102,31 @@ describe("the landing's evidence field", () => {
     }
   });
 
+  test("with five rails no two marks touch, at 1440 or at 390, grouped or stepped back", () => {
+    // Tonight the hub can declare five rails: no group may run into its neighbour as they multiply.
+    const five: Array<[RailId, number]> = [["escrow", 9], ["gateway", 4], ["hedera", 8], ["whitechain", 6], ["eip3009", 7]];
+    const rows = five.flatMap(([rail, n], r) =>
+      Array.from({ length: n }, (_, j) => row(r * 100 + j, rail, rail === "escrow" ? "released" : "settled", 1_793_960_000 + r * 1000 + j * 60)),
+    );
+    const order = railOrder(five.map(([id]) => ({ id }) as RailDeclaration), rows);
+    expect(order).toHaveLength(5);
+    for (const [narrow, width, height, g] of [[false, 1180, 464, WIDE], [true, 358, 528, NARROW]] as const) {
+      for (const beat of [2, 3]) {
+        const seen = [...markSpots(rows, order, beat, narrow).values()]
+          .filter((p) => p.o > 0)
+          .map((p) => ({ x: (p.x / 100) * width + p.dx, y: (p.y / 100) * height + p.dy, size: g.mark * p.s }));
+        for (let a = 0; a < seen.length; a++) {
+          for (let b = a + 1; b < seen.length; b++) {
+            const [p, q] = [seen[a]!, seen[b]!];
+            const reach = (p.size + q.size) / 2;
+            const apart = Math.abs(p.x - q.x) >= reach || Math.abs(p.y - q.y) >= reach;
+            if (!apart) throw new Error(`beat ${beat} ${narrow ? "390" : "1440"}: marks at ${p.x.toFixed(0)},${p.y.toFixed(0)} and ${q.x.toFixed(0)},${q.y.toFixed(0)} touch`);
+          }
+        }
+      }
+    }
+  });
+
   test("the escrow beat only ever shows an escrow release, never a newer direct-rail payment", () => {
     const later = [...ROWS, row(99, "hedera", "settled", 1_799_999_999)];
     expect(newestOf(later)!.rail).toBe("hedera");
@@ -112,5 +140,49 @@ describe("the landing's evidence field", () => {
     const order = railOrder(RAILS.slice(0, 1), ROWS);
     expect(order).toEqual(["escrow", "gateway", "hedera"]);
     expect(byTime(ROWS)[0]!.at).toBeLessThanOrEqual(byTime(ROWS)[1]!.at);
+  });
+});
+
+describe("the escrow claims follow only an escrow contract's release", () => {
+  // Production's five rails on 06 Nov, as /rails declares them (only the fields the landing reads).
+  const PROD = [
+    { id: "escrow", network: "eip155:5042002", kind: "escrow", escrow: "0x19c27D770969291E6A0a305dc1Be1a845E7c1b76" },
+    { id: "whitechain", network: "eip155:1874", kind: "escrow", escrow: "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4" },
+    { id: "gateway", network: "eip155:5042002", kind: "batched" },
+    { id: "hedera", network: "hedera:testnet", kind: "direct" },
+    { id: "hedera-scheduled", network: "hedera:testnet", kind: "escrow" },
+  ] as unknown as RailDeclaration[];
+
+  // The 21:45 mix: the newest release is a held Hedera payment, and direct payments land after it.
+  const mixed: Settlement[] = [
+    row(1, "escrow", "released", 1_793_979_619),
+    row(2, "whitechain", "released", 1_793_979_650),
+    row(3, "hedera-scheduled", "released", 1_793_979_700),
+    row(4, "hedera", "settled", 1_793_979_656),
+    row(5, "gateway", "settled", 1_793_979_800),
+  ];
+
+  test("a newer held Hedera release or direct payment never stands under the escrow claim", () => {
+    expect(newestRelease(mixed)?.rail).toBe("hedera-scheduled");
+    expect(escrowRelease(mixed, PROD)?.rail).toBe("whitechain");
+    expect(escrowRelease(mixed.filter((s) => s.rail !== "whitechain"), PROD)?.rail).toBe("escrow");
+  });
+
+  test("only rails that declare a contract count, and no declarations means no claim", () => {
+    expect(contractRails(PROD)).toEqual(["escrow", "whitechain"]);
+    expect(escrowRelease(mixed, undefined)).toBeUndefined();
+    expect(escrowRelease(mixed.filter((s) => s.rail.startsWith("hedera") || s.rail === "gateway"), PROD)).toBeUndefined();
+  });
+
+  test("the other rails are said from their declarations, with the held rail's plain limit", () => {
+    expect(otherRailsLines(PROD)).toEqual([
+      "Gateway and Hedera x402 pay the seller before delivery.",
+      "Held Hedera waits for the seller's key, which can also release it without delivering.",
+    ]);
+    for (const line of otherRailsLines(PROD)) {
+      expect(line).not.toMatch(/escrow|refund|until the output checks out/i);
+    }
+    expect(otherRailsLines(undefined)).toEqual([]);
+    expect(otherRailsLines(PROD.slice(0, 2))).toEqual([]);
   });
 });

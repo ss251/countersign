@@ -36,6 +36,11 @@ export interface SellerGroup {
   counted: boolean;
   /** False when the hub has no name for this seller. */
   named: boolean;
+  /**
+   * Rails whose payee the seller's ENS name does not cover. The name locks EVM payees only,
+   * so a Hedera account id, for one, is not checked against it.
+   */
+  outsideName?: string[];
 }
 
 /** Take the hub's own counts and identity where it reports them; they come from slips and jobs. */
@@ -55,9 +60,18 @@ export function withRecords(groups: SellerGroup[], records: SellerRecord[] | nul
         failed: r.failed,
         counted: true,
         named: r.name !== null || g.named,
+        ...(r.name !== null ? { outsideName: payeesOutsideName(r.payees) } : {}),
       };
     })
     .sort((a, b) => b.released - a.released || a.name.localeCompare(b.name));
+}
+
+/** The rails whose payee is not an EVM address, so the ENS payee lock does not reach it. */
+export function payeesOutsideName(payees: Partial<Record<string, string>>): string[] {
+  return Object.entries(payees)
+    .filter(([, payee]) => typeof payee === "string" && !/^0x[0-9a-fA-F]{40}$/.test(payee))
+    .map(([rail]) => rail)
+    .sort();
 }
 
 /** Group listings by seller, live offers first, sellers with more delivered calls first. */
@@ -253,6 +267,11 @@ function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: n
           </h2>
           <Hash value={g.address} head={8} tail={6} label={`${g.named ? g.name : "seller"} address`} />
           <p className="scard__id">{g.agentId ? <>ERC-8004 agent <span className="num">#{g.agentId}</span></> : "Not registered with ERC-8004"}</p>
+          {g.outsideName && g.outsideName.length > 0 ? (
+            <p className="scard__id">
+              The ENS name locks EVM payees only. The {g.outsideName.join(" and ")} payee is not checked against it.
+            </p>
+          ) : null}
         </div>
       </header>
 

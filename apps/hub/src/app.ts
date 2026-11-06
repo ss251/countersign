@@ -4,6 +4,8 @@ import { cors } from "hono/cors";
 import {
   assertOffer,
   assertSchema,
+  checkEnsLock,
+  type EnsResolve,
   offerHash,
   publishMessage,
   RUNNER_PATH,
@@ -20,7 +22,9 @@ import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
+import type { PrivyVerifier } from "./privy.ts";
 import { Ratings } from "./ratings.ts";
+import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
@@ -33,12 +37,18 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Sepolia ENS lookups. Without it, an offer that names an ENS seller is refused. */
+  ens?: EnsResolve;
   /** Bearer token the human's phone presents to decide an approval. */
   humanApprovalToken?: string;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
+  /** The full git commit this hub was deployed from, or undefined when unknown. */
+  commit?: string;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -56,6 +66,7 @@ export function createHub(deps: HubDeps) {
       isOnline: (offerHash) => runners.isOnline(offerHash),
     };
     if (deps.identity) view.identity = deps.identity;
+    if (deps.ens) view.ens = deps.ens;
     return view;
   };
 
@@ -63,10 +74,12 @@ export function createHub(deps: HubDeps) {
 
   registerBuyerPlumbing(app, deps);
   registerOrders(app, deps);
+  registerReview(app, deps);
 
   app.get("/healthz", (c) =>
     json({
       ok: true,
+      commit: deps.commit ?? null,
       rails: deps.rails.map((rail) => rail.declaration),
       runners: runners.count,
       router: router.healthz(),
@@ -107,6 +120,10 @@ export function createHub(deps: HubDeps) {
     if (signer.toLowerCase() !== request.offer.seller.toLowerCase()) {
       return fail(401, "bad-signature", "Refused. The offer signature is not the seller's.");
     }
+
+    // A named seller is listed only while its name resolves to it and locks its EVM payees.
+    const lock = await checkEnsLock(request.offer, deps.ens);
+    if (lock && !lock.ok) return fail(lock.code === "ens-unavailable" ? 503 : 422, lock.code, lock.message);
 
     const fresh = deps.store.putOffer(hash, request.offer.seller, request.offer, deps.now());
     return json({ offerHash: hash }, fresh ? 201 : 200);

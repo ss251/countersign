@@ -2,6 +2,7 @@ export * from "./amount.ts";
 export * from "./approval.ts";
 export * from "./canonical.ts";
 export * from "./countersign.ts";
+export * from "./ens.ts";
 export * from "./envelope.ts";
 export * from "./offer.ts";
 export * from "./slip.ts";

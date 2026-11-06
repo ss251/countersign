@@ -19,7 +19,10 @@ import {
 } from "@countersign/core";
 import type { RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
+import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
 import { substituteBuyer } from "./mcp.ts";
+
+export type { FundingConfig, JobReader, PinnedEscrow } from "./funding.ts";
 
 export interface ServedOffer {
   offer: Offer;
@@ -44,7 +47,12 @@ export interface RunnerConfig {
   served: ServedOffer[];
   limits?: RunnerLimits;
   now?: () => number;
+  /** When present, an escrow order must show its funded job on chain before work starts. */
+  funding?: FundingConfig;
   onJob?: (event: RunnerJobEvent) => void;
+  /** Signs, never submits, the seller's release of a held payment (rail "hedera-scheduled").
+   *  Called only after the output passed the offer's schema and the slip is signed. */
+  countersign?: (order: JobOrder) => Promise<string>;
 }
 
 export interface RunnerHandle {
@@ -60,6 +68,10 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const maxOutputBytes = cfg.limits?.maxOutputBytes ?? 1_000_000;
   const served = cfg.served.map((entry) => ({ ...entry, hash: offerHash(entry.offer) }));
   const url = connectUrl(cfg.hubUrl);
+  const funding =
+    cfg.funding === undefined
+      ? null
+      : { ...cfg.funding, read: fundingReader(cfg.funding) };
 
   let stopped = false;
   let socket: WebSocket | null = null;
@@ -96,11 +108,38 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       return fail(target, order, "Refused. The deadline has passed.");
     }
 
+    if (order.rail === "hedera-scheduled") {
+      if (!cfg.countersign || !order.schedule) {
+        const reason = "Refused. This runner cannot countersign a held Hedera payment.";
+        notify(order, entry.offer.title, false, reason);
+        return fail(target, order, reason);
+      }
+      if (order.amount !== entry.offer.price || order.payTo !== entry.offer.payTo?.["hedera-scheduled"]) {
+        const reason = "Refused. The held order's terms differ from the served offer.";
+        notify(order, entry.offer.title, false, reason);
+        return fail(target, order, reason);
+      }
+    }
+
     const inputCheck = checkSchema(entry.offer.input, order.input);
     if (!inputCheck.ok) {
       const reason = "Refused. The input does not match the offer's schema.";
       notify(order, entry.offer.title, false, reason);
       return fail(target, order, reason);
+    }
+
+    if (funding !== null) {
+      const unpaid = await fundingRefusal(order, entry.offer, {
+        now: clock,
+        known: funding.known,
+        read: funding.read,
+        retries: funding.retries,
+        retryMs: funding.retryMs,
+      });
+      if (unpaid !== null) {
+        notify(order, entry.offer.title, false, unpaid);
+        return fail(target, order, unpaid);
+      }
     }
 
     let output: unknown;
@@ -133,7 +172,20 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       );
       const hash = slipHash(body);
       const sellerSig = await cfg.account.signTypedData(slipTypedData(body));
-      send(target, { t: "result", jobId: order.jobId, output, slip: { body, hash, sellerSig } });
+      let countersign: string | undefined;
+      if (order.rail === "hedera-scheduled") {
+        if (!cfg.countersign || !order.schedule) {
+          throw new Error("Refused. This runner cannot countersign a held Hedera payment.");
+        }
+        countersign = await cfg.countersign(order);
+      }
+      send(target, {
+        t: "result",
+        jobId: order.jobId,
+        output,
+        slip: { body, hash, sellerSig },
+        ...(countersign === undefined ? {} : { countersign }),
+      });
       notify(order, entry.offer.title, true);
     } catch (error) {
       const reason = messageOf(error);

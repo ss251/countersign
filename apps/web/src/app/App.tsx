@@ -3,8 +3,12 @@ import { Link, useLocation } from "./router.tsx";
 import { hasRoute, resolve, VIEWS } from "./routes.ts";
 import { PaletteDialog } from "../routes/assistant/PaletteDialog.tsx";
 import { Wordmark } from "../ui/Mark.tsx";
+import { SiteFooter } from "./SiteFooter.tsx";
+import { SiteLinks } from "./SiteLinks.tsx";
+import { WalletButton } from "../ui/WalletButton.tsx";
 import { useTheme } from "./theme.ts";
 import "./shell.css";
+import "./nav.css";
 
 export function App() {
   const location = useLocation();
@@ -36,12 +40,13 @@ export function App() {
       <a className="shell__skip" href="#main" onClick={(e) => skipToMain(e)}>
         Skip to content
       </a>
-      {surface === "desk" ? <TopBar active={match?.name ?? ""} /> : null}
+      {surface === "desk" || surface === "story" ? <TopBar active={match?.name ?? ""} /> : null}
       <main id="main" className="shell__main" tabIndex={-1}>
         <PageBoundary key={location.path}>
           {match ? <match.Page params={match.params} query={location.query} /> : <NotFound path={location.path} />}
         </PageBoundary>
       </main>
+      <SiteFooter />
       {palette ? <PaletteDialog onClose={() => setPalette(false)} /> : null}
     </div>
   );
@@ -85,7 +90,9 @@ function TopBar({ active }: { active: string }) {
         </Link>
         <nav className="topbar__nav" aria-label="Views">
           {links("topbar__link")}
+          <SiteLinks.GitHub className="topbar__link" />
         </nav>
+        <WalletButton />
         <button
           type="button"
           className="topbar__menu"
@@ -99,6 +106,7 @@ function TopBar({ active }: { active: string }) {
       {open ? (
         <nav id="topbar-sheet" className="topbar__sheet" aria-label="Views">
           {links("topbar__sheet-link")}
+          <WalletButton />
         </nav>
       ) : null}
     </header>

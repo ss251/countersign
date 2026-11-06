@@ -39,14 +39,6 @@
   font-size: var(--t-15);
 }
 
-.phone-note__nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-4);
-  padding-top: var(--sp-2);
-  font-weight: 500;
-}
-
 /*
  * An app shell: the bar and the tab bar frame one scroller, and the page itself never scrolls, so
  * nothing can render past the tab bar. dvh follows the browser chrome and the keyboard.
@@ -58,7 +50,7 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--phone);
-  height: 100dvh;
+  height: calc(100dvh - var(--bar) - 1px);
   margin: 0 auto;
   overflow: hidden;
   background: var(--paper);
@@ -83,58 +75,6 @@
   padding: env(safe-area-inset-top) var(--sp-4) 0;
   background: var(--paper);
   border-bottom: var(--hair) solid var(--line);
-}
-
-.phone__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: var(--t-15);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-
-.phone__chevron {
-  color: var(--slate);
-  transition: transform var(--d-2) var(--ease-out);
-}
-
-.phone__chevron.is-open {
-  transform: rotate(180deg);
-}
-
-.phone__views {
-  position: relative;
-  z-index: 9;
-  flex: none;
-  max-height: 60dvh;
-  overflow-y: auto;
-  display: grid;
-  padding: var(--sp-2) var(--sp-4) var(--sp-3);
-  border-bottom: var(--hair) solid var(--line);
-  background: var(--paper);
-}
-
-.phone__views-label {
-  padding: var(--sp-1) 0 var(--sp-2);
-  color: var(--slate);
-  font-size: var(--t-13);
-}
-
-.phone__views-link {
-  display: flex;
-  align-items: center;
-  min-height: 48px;
-  border-top: var(--hair) solid var(--line);
-  color: var(--ink);
-  font-weight: 500;
-  text-decoration: none;
 }
 
 .phone__bar-end {
@@ -1024,6 +964,25 @@
   gap: var(--sp-2);
 }
 
+/* This phone's approver key: made once, named in the envelope, shown under the hold. */
+.approver {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.approver__what,
+.approver__named,
+.approver__line {
+  color: var(--slate);
+  font-size: var(--t-13);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.approver__line.is-stranger {
+  color: var(--ink);
+}
+
 /* The agent's signed envelope: read here, changed on the agent's machine. */
 
 .env__mirror {
@@ -1058,4 +1017,43 @@
 
 .approval .check__glyph {
   margin-top: 0;
+}
+
+/* The buyer's phone, inside the console's shell (STEER-2058). */
+
+.phone__title {
+  font-weight: 600;
+  font-size: var(--t-15);
+}
+
+.phone__who,
+.phone__chosen,
+.phone__newcomer {
+  color: var(--slate);
+  font-size: var(--t-13);
+  padding: var(--sp-2) var(--sp-4);
+}
+
+.phone__chosen button {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.disclose summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.disclose__body {
+  color: var(--slate);
+  font-size: var(--t-13);
 }

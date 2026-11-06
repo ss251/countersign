@@ -6,8 +6,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { PaymentRequired, PaymentRequirements } from "@countersign/core";
+import { agentTakes, hederaExact, hederaHeld } from "../lib/agent.ts";
 import { formatAmount, planBudget, units, type Wallet } from "../lib/budget.ts";
 import { check, equal, NotRun, runFlow, type Flow, type RunEnv } from "../lib/flow.ts";
+import { readWithRetry } from "../lib/http.ts";
 import { spawnProc, runCmd } from "../lib/procs.ts";
 import { renderRun } from "../lib/report.ts";
 import { parseEnv, Secrets } from "../lib/secrets.ts";
@@ -228,4 +231,67 @@ describe("run lock", () => {
     taken();
     delete process.env.E2E_LOCK_DIR;
   }, 20_000);
+});
+
+describe("hedera agent", () => {
+  const accept = (scheme: string, payTo: string, extra?: Record<string, unknown>): PaymentRequirements =>
+    ({ scheme, network: "hedera:testnet", amount: "30000", asset: "0.0.429274", payTo, maxTimeoutSeconds: 120, extra }) as PaymentRequirements;
+  // The Agent Kit offer lists the held rail first (#157); its accept pays the seller's signing account.
+  const required = {
+    x402Version: 2,
+    accepts: [
+      accept("countersign", "0.0.2", { name: "hedera-scheduled", holdSeconds: 300 }),
+      accept("countersign", "0.0.3", { name: "something-else" }),
+      accept("exact", "0.0.1"),
+    ],
+  } as unknown as PaymentRequired;
+
+  test("the exact accept is found by scheme, not by position", () => {
+    expect(hederaExact(required)?.payTo).toBe("0.0.1");
+  });
+
+  test("the held accept is the countersign scheme named hedera-scheduled", () => {
+    expect(hederaHeld(required)?.payTo).toBe("0.0.2");
+    expect(hederaHeld({ ...required, accepts: [accept("exact", "0.0.1")] })).toBeUndefined();
+  });
+
+  test("a flag is passed only when the branch's agent takes it", () => {
+    expect(agentTakes("--json")).toBe(true);
+    expect(agentTakes("--no-such-flag")).toBe(false);
+  });
+});
+
+describe("third-party reads", () => {
+  test("a read is repeated while the server never answered", async () => {
+    let calls = 0;
+    const why: string[] = [];
+    const v = await readWithRetry(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("The socket connection was closed unexpectedly. For more information, pass `verbose: true`");
+      return 7;
+    }, (w) => why.push(w));
+    expect(v).toBe(7);
+    expect(calls).toBe(2);
+    expect(why).toHaveLength(1);
+  });
+
+  test("an answer, even an error, is never repeated", async () => {
+    let calls = 0;
+    const read = async () => {
+      calls += 1;
+      throw new Error("Gateway API answered 500: internal error");
+    };
+    await expect(readWithRetry(read)).rejects.toThrow("answered 500");
+    expect(calls).toBe(1);
+  });
+
+  test("it gives up after three attempts", async () => {
+    let calls = 0;
+    const read = async () => {
+      calls += 1;
+      throw new Error("fetch failed: ECONNRESET");
+    };
+    await expect(readWithRetry(read)).rejects.toThrow("ECONNRESET");
+    expect(calls).toBe(3);
+  });
 });

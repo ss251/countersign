@@ -24,7 +24,7 @@ export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" |
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
  * - mpp:        Machine Payments Protocol: Tempo testnet first, Stripe's card method behind a flag; the slip carries the MPP receipt id (in progress, #84)
  */
-export const RAIL_IDS = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "mpp"] as const;
+export const RAIL_IDS = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "hedera-scheduled", "mpp"] as const;
 
 /** Derived from RAIL_IDS, so any list built by mapping RAIL_IDS is exhaustive by construction. */
 export type RailId = (typeof RAIL_IDS)[number];
@@ -43,7 +43,7 @@ export interface Asset {
 /** A JSON Schema document (draft 2020-12 subset). Kept opaque here; validation lives in the runner and buyer. */
 export type JsonSchema = { [key: string]: unknown };
 
-/** The runner serves "skill" and "mcp" (one MCP tool per offer, spawned per job, #42); "openapi" is not built. */
+/** The runner serves "skill", "mcp" and "openapi" (one MCP tool or one OpenAPI operation per offer, spawned per job, #42). */
 export type AdapterKind = "skill" | "mcp" | "openapi";
 
 /**
@@ -67,10 +67,20 @@ export interface Offer {
   deadline: number;
   /** Atomic amount the seller puts up as bond. A supporting escrow collects and locks it at funding. */
   bond: string;
+  /**
+   * Escrow v2 (D16): seconds the buyer has to review a delivery before payment releases, 0 to 86400.
+   * Absent means 0. Covered by offerHash; an offer without it hashes exactly as before.
+   */
+  reviewWindow?: number;
   /** Accepted rails, most preferred first. */
   rails: RailId[];
   /** Payee per rail where it is not `seller`, e.g. a Hedera account id "0.0.1234". */
   payTo?: Partial<Record<RailId, string>>;
+  /**
+   * The seller's ENS name on Sepolia, in normal form. When present it must resolve to
+   * `seller`, and every EVM payee must be that address (the payee lock, see ens.ts).
+   */
+  ens?: string;
   issuedAt: number;
 }
 
@@ -120,6 +130,9 @@ export interface SettleResult {
   payer?: string;
   /** EVM tx hash, a Hedera transaction id such as "0.0.1234@1730880000.123456789", or a Stripe payment reference. */
   transaction: string;
+  /** What the hub puts into the rail's explorer template instead of `transaction`, when the transaction that
+   *  moved the money is not `transaction` itself (a held Hedera payment: the scheduled execution's consensus time). */
+  explorerRef?: string;
   network: Network;
   /** A receipt id the rail returns besides the transaction, e.g. the MPP Payment-Receipt id. */
   receipt?: string;

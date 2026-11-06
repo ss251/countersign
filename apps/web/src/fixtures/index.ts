@@ -98,6 +98,18 @@ export const rails: Record<RailId, RailDeclaration> = {
     finality: "Final at consensus, about three seconds after the facilitator submits it.",
     explorerTx: "https://hashscan.io/testnet/transaction/{tx}",
   },
+  "hedera-scheduled": {
+    id: "hedera-scheduled",
+    network: "hedera:testnet",
+    scheme: "countersign",
+    asset: { network: "hedera:testnet", address: "0.0.429274", symbol: "USDC", decimals: 6 },
+    kind: "escrow",
+    gasPaidBy: "buyer",
+    finality: "Hedera consensus when the seller's countersignature lands",
+    explorerTx: "https://hashscan.io/testnet/transaction/{tx}",
+    finalitySeconds: 5,
+    cost: { tollBps: 0, fixed: "0" },
+  },
   mpp: {
     id: "mpp",
     network: "mpp:stripe",

@@ -1,6 +1,7 @@
-import { getAddress, type Hex } from "viem";
+import { getAddress, isAddress, type Hex } from "viem";
 import {
   canonicalHash,
+  checkEnsLock,
   checkEnvelope,
   checkSchema,
   needsHuman,
@@ -9,6 +10,8 @@ import {
   slipSigner,
   type CallResult,
   type CountersignExtra,
+  type CountersignPayload,
+  type EnsResolve,
   type Envelope,
   type PaymentPayload,
   type PaymentRequirements,
@@ -44,6 +47,8 @@ export interface BuyArgs {
   known?: KnownRail[];
   /** Restrict the choice to one rail id, e.g. "gateway". */
   rail?: RailId;
+  /** Sepolia ENS lookups. Without it, an offer that names an ENS seller is refused. */
+  ens?: EnsResolve;
   /** "local" refuses above askAbove; "hub" asks the human through the hub first. */
   approvals?: "local" | "hub";
   /** The agent key, needed to sign hub approvals and envelope mirrors. */
@@ -84,6 +89,13 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
     }
     if (listing.status === "delisted") throw new BuyError("Refused. The offer is delisted.");
     if (!listing.online) throw new BuyError("Refused. The seller is offline.");
+
+    // A named seller: resolve the name here, never on the hub's word, and pay only its address.
+    const lock = await checkEnsLock(offer, a.ens);
+    if (lock && !lock.ok) {
+      journal.append({ at: a.now, kind: "refused", offerHash, seller: offer.seller, amount: offer.price, reason: lock.code });
+      throw new BuyError(lock.message);
+    }
 
     if (!checkSchema(offer.input, input).ok) {
       throw new BuyError("Refused. The input does not match the offer's schema.");
@@ -161,6 +173,11 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
         throw new BuyError(refusal);
       }
       throw new BuyError("Refused. No rail here that this agent can pay.");
+    }
+
+    if (lock?.ok && isAddress(entry.payTo, { strict: false }) && getAddress(entry.payTo) !== getAddress(lock.address)) {
+      journal.append({ at: a.now, kind: "refused", offerHash, seller: offer.seller, amount: entry.amount, reason: "ens-mismatch" });
+      throw new BuyError(`Refused. The payment terms pay someone other than ${offer.ens}.`);
     }
 
     const rail = chosen.kind === "countersign" ? chosen.rail : undefined;
@@ -266,12 +283,15 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       throw e;
     }
     const { payment, jobId } = signed;
+    const signedTerms = (payment.payload as unknown as Partial<CountersignPayload>).terms;
     await record({
       ...base,
       kind: "signed",
       reservationId,
       jobId,
       ...(rail !== undefined ? { escrow: rail.escrow, chainId: rail.chainId } : {}),
+      ...(signedTerms?.bond !== undefined ? { bond: signedTerms.bond } : {}),
+      ...(signedTerms?.reviewWindow !== undefined ? { reviewWindow: signedTerms.reviewWindow } : {}),
     });
 
     const paid = await hub.call(offerHash, input, payment, a.lineage);
