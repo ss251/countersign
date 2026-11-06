@@ -4,11 +4,15 @@ Issue: #98. **Design: decided.** cs-wc wrote it on Opus against Rajdeep's v2 con
 
 This replaces the earlier wc-09, which followed a design the captain replaced at 19:40 IST: an arbiter-supplied bond in `fundBonded`, and a hub token on funding.
 
-## Starts only when all three hold
+## Starts only when both hold
 
-1. **#164 is merged** into `cs/int`, with the v2 contract.
-2. **v2 is deployed on 1874.** cs-wc has deployed it per `$M/wc/DEPLOY-1874-v2.md` and filled in the address below. Until then `<V2_ADDRESS>` is a placeholder; do not start.
-3. **The captain picked production on v2** (STEER-2050, decision 3). Otherwise this waits until after the recording.
+1. **#164 is merged** into `cs/int`, with the v2 contract and option (d).
+2. **v2 is deployed on 1874.** cs-wc has deployed and verified it per `$M/wc/DEPLOY-1874-v2.md` and filled in the address below. Until then `<V2_ADDRESS>` is a placeholder; do not start.
+
+**Decided by the captain at about 21:20 IST:**
+
+- **Production on v2: yes.** After the deploy, the live Whitechain path switches to v2. v1 is the one-step fallback.
+- **Option (d):** a bonded job (`cs.bond > 0`) funds only through the arbiter. That is the relay key, which already submits every fund on 1874.
 
 `WHITECHAIN_ESCROW_V2 = <V2_ADDRESS>`, with the relay key `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` as its arbiter.
 
@@ -16,7 +20,7 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 
 | Function | Who can submit | What it does |
 |---|---|---|
-| `fund(offerHash, cs)` | Anyone. The relay pays the gas. | `cs` is the 12-field `Countersignature`, which includes `bond` and `reviewWindow`. The jobId uses the v2 typehash. |
+| `fund(offerHash, cs)` | Unbonded: anyone. **Bonded (`cs.bond > 0`): only the arbiter (option d), which is the relay key.** The relay submits every fund, so both work through it. | `cs` is the 12-field `Countersignature`, which includes `bond` and `reviewWindow`. The jobId uses the v2 typehash. |
 | `release(jobId, slipHash, sellerSig)` | Anyone with the payee's `Release` signature | Window 0: pays out. Window > 0: the job becomes **Delivered** and no money moves. |
 | `accept(jobId, buyerSig)` | Anyone with the buyer's `Accept(jobId, slipHash)` signature | Delivered → Released |
 | `dispute(jobId, buyerSig)` | Anyone with the buyer's `Dispute(jobId)` signature | Funded (until the deadline) or Delivered (until `endsAt`) → Disputed, and the buyer is refunded |
@@ -55,6 +59,16 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 
    If `apps/hub/src/network.ts` exists on your base (PR #97's guard), list `WC_ESCROW_VERSION` and `WC_RELAY_TOKEN` there as config of the `whitechain` rail. `WC_RELAY_TOKEN` is a secret. **Do not edit any test to make the guard pass.**
 
+### A2. The buyer's pins and the one-step fallback
+
+4b. **Pin both escrows.** In `packages/buyer/src/known-rails.ts`, add a 1874 v2 entry beside the existing v1 entry. Leave the v1 entry exactly as it is, so a buyer accepts whichever escrow the hub quotes. The v2 entry is:
+
+   ```ts
+   { network: "eip155:1874", chainId: 1874, escrow: "<V2_ADDRESS>", token: "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7", tokenName: "Tether USD", tokenVersion: "1", rpcUrl: "https://rpc.ankr.com/whitechain_testnet", version: 2 }
+   ```
+
+4c. **The fallback is one env change.** With `WC_ESCROW_VERSION` unset or `1`, the hub quotes v1 again. The relay keeps both escrows allowed and buyers keep both pins, so nothing else moves. Jobs already funded on v2 keep closing on v2, because every operation uses the job's own escrow (decision 10).
+
 ### B. The relay: `packages/relay`
 
 5. **Two escrows.**
@@ -78,6 +92,8 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
    | `escrowFailDelivery` | `failDelivery(jobId)` |
 
    `escrowFund` gains `version`. On 2 it calls v2 `fund` with `fundArgsV2`.
+
+   **Each job uses its own escrow.** The existing `escrowRelease`, `escrowCancel` and `escrowRefund` call the escrow the job was funded on, v1 or v2. Their signatures are identical on both. A bonded job's runner `Cancel` (option d: the runner signs `Cancel` on a refusal or an error) arrives through `/escrow/cancel` as today, and the relay submits it on the job's escrow.
 9. **New routes in `server.ts`.** All of them answer like `/escrow/release` does today:
    - 200 `{ ok: true, transaction, url, status }`;
    - 404 `job_not_found` for a job the ledger does not hold;
@@ -123,6 +139,7 @@ This replaces the earlier wc-09, which followed a design the captain replaced at
 - `packages/relay/src/*` and `packages/relay/test/*`.
 - `packages/rail/src/whitechain/*` and `packages/rail/test/whitechain*.test.ts`.
 - `packages/rail/src/index.ts`, for exports only (`escrowV2Abi`, `fundArgsV2`).
+- `packages/buyer/src/known-rails.ts`, to add the 1874 v2 entry only (decision 4b), and its test.
 - `apps/hub/src/rails.ts`, the whitechain line only.
 - `apps/hub/src/network.ts`, to classify the two env names only, if it exists.
 
@@ -151,6 +168,8 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - `failDelivery` sends the bearer token, and is absent without `relayToken`.
    - `disputeWindowSeconds` is 600 on v2.
    - The version 1 rail is unchanged.
+7b. **The fallback.** A buyer with both 1874 pins accepts a v1 quote and a v2 quote. A v2 job's release, cancel and refund go to the v2 escrow, and a v1 job's go to v1.
+7c. **Option (d).** A bonded v2 settle funds through the relay. In the simulated chain, its account is the arbiter.
 8. **Existing tests.** All of them pass **unedited**. Do not rewrite, weaken, skip or delete a test (captain's rule, STEER-2050). If a test asserts something genuinely wrong, stop and report it.
 
 ## Constraints
