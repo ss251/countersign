@@ -35,3 +35,27 @@
   font-size: var(--t-13);
   max-width: 68ch;
 }
+
+/*
+ * The twenty-line block's long code lines scroll inside their own box, never the page (firstmate 23:24:44Z).
+ * .mx-integrate is a grid with an implicit auto column, which grows to its longest line's min-content
+ * (837px at 390). Here its column and children may shrink, and the wrapper keeps the page's own cap.
+ */
+.developers {
+  min-width: 0;
+  max-width: min(100%, var(--content));
+}
+
+.developers .mx-integrate {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.developers .mx-integrate > *,
+.developers .mx-snippet {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.developers .mx-snippet__code {
+  overflow-x: auto;
+}
