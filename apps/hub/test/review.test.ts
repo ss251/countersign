@@ -332,6 +332,34 @@ describe("the v2 call path opens a review", () => {
     expect(job?.endsAt).toBe(NOW + 300);
     expect(job?.closeTx).toBe(rail.releaseTx);
   });
+
+  test("a failed reviewOf read after the release still records delivered from the countersigned window", async () => {
+    const { hub, rail } = startV2();
+    const escrow = rail.escrow;
+    if (!escrow) throw new Error("the test rail has no escrow");
+    escrow.reviewOf = async () => {
+      throw new Error("the RPC dropped");
+    };
+    const offer = makeOffer();
+    const hash = await publishOk(hub, offer);
+    runners.push(await connect(hub, hash));
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const payment = paymentFor(entry);
+    payment.payload = {
+      authorization: { nonce: NONCE },
+      terms: { deadline: NOW + 60, bond: "0", reviewWindow: 300 },
+    };
+
+    const response = await call(hub, hash, { q: "hello" }, payment);
+    expect(response.status).toBe(200);
+    const job = hub.store.getJob(NONCE);
+    // Never stranded as funded: the janitor can release it after endsAt.
+    expect(job?.status).toBe("delivered");
+    expect(job?.reviewWindow).toBe(300);
+    expect(job?.endsAt).toBe(NOW + 300);
+  });
 });
 
 describe("the janitor and the review window", () => {

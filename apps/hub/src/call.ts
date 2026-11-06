@@ -294,8 +294,15 @@ export async function paidCall(
     closing = release;
     const window = termsReviewWindow(payment);
     if (window !== null && window > 0 && escrow.reviewOf) {
-      const state = await escrow.reviewOf(jobId);
-      if (state.window > 0) review = state;
+      // The release has landed, so the job is Delivered on chain whatever this read says. A failed read
+      // must not strand it as funded (cs-w1, review of ba868fa): fall back to the countersigned window
+      // from the hub's clock. The janitor's releaseAfterWindow retries if this runs ahead of the chain.
+      try {
+        const state = await escrow.reviewOf(jobId);
+        review = state.window > 0 ? state : { window, deliveredAt: now, endsAt: now + window };
+      } catch {
+        review = { window, deliveredAt: now, endsAt: now + window };
+      }
     }
   }
 
