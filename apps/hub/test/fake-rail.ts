@@ -43,6 +43,9 @@ export class FakeRail implements Rail {
   failSettle = false;
   failRelease = false;
   failRefund = false;
+  failChallenge = false;
+  throwVerify = false;
+  throwSettle = false;
 
   settleTx = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   releaseTx = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -80,6 +83,7 @@ export class FakeRail implements Rail {
 
   challenge(offer: Offer, _ctx: { resource: string; now: number }): PaymentRequirements {
     this.challengeCalls += 1;
+    if (this.failChallenge) throw new Error("this rail cannot make a challenge");
     const requirements: PaymentRequirements = {
       scheme: "countersign",
       network: this.declaration.network,
@@ -94,12 +98,14 @@ export class FakeRail implements Rail {
 
   async verify(payment: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResult> {
     this.verifyCalls.push({ payment, requirements });
+    if (this.throwVerify) throw new Error("the test rail exploded\nsecond line");
     if (this.failVerify) return { isValid: false, invalidReason: "Refused. The test rail refused it." };
     return { isValid: true, payer: BUYER };
   }
 
   async settle(payment: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResult> {
     this.settleCalls.push({ payment, requirements });
+    if (this.throwSettle) throw new Error("the test rail could not settle\nsecond line");
     if (this.failSettle) {
       return {
         success: false,
