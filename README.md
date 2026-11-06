@@ -8,20 +8,20 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 
 | Rail | Network | Token | Kind | Status |
 |---|---|---|---|---|
-| Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://testnet.arcscan.app/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
+| Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
 | Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The rail and relay code are in review in [#17](https://github.com/ss251/countersign/pull/17). |
 | Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631), see [Hedera payment flow](#hedera-payment-flow). |
 | Stripe MPP | `mpp:stripe` | | | In progress, built against a mock until test keys arrive ([#5](https://github.com/ss251/countersign/issues/5)). Not live. |
 
-A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://testnet.arcscan.app/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
+A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
 - Console: [web-production-a58de.up.railway.app](https://web-production-a58de.up.railway.app)
-- Hub: [hub-production-e85e.up.railway.app](https://hub-production-e85e.up.railway.app/healthz). A purchase through it [released on Arc](https://testnet.arcscan.app/tx/0x0a0118e9e81c21517eaf0f387e7801e1fafef947cfccd1c05ff989201433ed69), slip `0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85`.
+- Hub: [hub-production-e85e.up.railway.app](https://hub-production-e85e.up.railway.app/healthz). A purchase through it [released on Arc](https://explorer.testnet.arc.io/tx/0x0a0118e9e81c21517eaf0f387e7801e1fafef947cfccd1c05ff989201433ed69), slip `0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85`.
 - Arc Studio project: `https://studio.arc.io/app/16e0b317-ec5f-406a-8d7d-24bf6d96533b`. It opens only when signed in to Studio ([docs/decisions.md](docs/decisions.md), D6). The Railway console above is the logged-out view.
-- Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://testnet.arcscan.app/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
+- Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
 - Whitechain escrow: [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4)
 - Hedera spend log: HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070)
 - More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/hedera.md](docs/hedera.md) for Hedera.
@@ -33,7 +33,7 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behi
 3. **The countersignature.** The buyer signs one message. On escrow rails it is the token's EIP-3009 `ReceiveWithAuthorization`, whose nonce is the `jobId` derived from the offer hash, buyer, payee, amount, deadline and salt under the escrow's EIP-712 domain. Change any of them and the signature no longer matches ([countersignature.md](docs/spec/countersignature.md)).
 4. **The escrow.** `CountersignedEscrow` pulls the amount on `fund`, pays the seller on `release` with the seller's signature over the slip hash, and returns the full amount to the buyer on `refund` after the deadline or on the seller's `cancel`. It has no owner, no pause and no proxy ([escrow.md](docs/spec/escrow.md)).
 
-A moved price reverts on chain: [Arc, price moved](https://testnet.arcscan.app/tx/0xca61627848d1ea952c5953ac58df7b8bd780777563e24ebccf5bb90315d20e76). A missed deadline refunds the buyer in full: [fund](https://testnet.arcscan.app/tx/0x6a103973020747af341e008ec5b317cc97ac0ffef059c381fb19d9cdf9ca2eb7), [refund](https://testnet.arcscan.app/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35).
+A moved price reverts on chain: [Arc, price moved](https://explorer.testnet.arc.io/tx/0xca61627848d1ea952c5953ac58df7b8bd780777563e24ebccf5bb90315d20e76). A missed deadline refunds the buyer in full: [fund](https://explorer.testnet.arc.io/tx/0x6a103973020747af341e008ec5b317cc97ac0ffef059c381fb19d9cdf9ca2eb7), [refund](https://explorer.testnet.arc.io/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35).
 
 ## The receipt
 
