@@ -47,7 +47,10 @@ describe("which orders the connected wallet may refund", () => {
     expect(walletRefusal(order({ kind: "exact", status: "paid" }), MERCHANT, status())).toBeNull();
     expect(walletRefusal(order({ kind: "exact", status: "partially_refunded" }), MERCHANT, status())).toBeNull();
     // An allowlist the relay does not report is not a refusal; the relay still checks.
-    expect(walletRefusal(order(), MERCHANT, status([]))).toBeNull();
+    const unreported = status();
+    delete unreported.policy?.allowedPayees;
+    expect(walletRefusal(order(), MERCHANT, unreported)).toBeNull();
+    expect(walletRefusal(order(), MERCHANT, { ...status(), policy: undefined })).toBeNull();
     expect(walletRefusal(order(), MERCHANT, null)).toBeNull();
   });
 
@@ -56,6 +59,8 @@ describe("which orders the connected wallet may refund", () => {
     expect(walletRefusal(order(), CUSTOMER, status())).toMatch(/is not this order's merchant/);
     expect(walletRefusal(order({ network: "eip155:5042002" }), MERCHANT, status())).toMatch(/another chain/);
     expect(walletRefusal(order(), MERCHANT, status([CUSTOMER]))).toMatch(/allowlist/);
+    // The relay's allowlist check is .some(): an empty list it reports allows no one.
+    expect(walletRefusal(order(), MERCHANT, status([]))).toMatch(/allowlist/);
   });
 
   test("a delivered job in its review window is refused: the escrow cancels only a job still Funded", () => {

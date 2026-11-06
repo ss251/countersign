@@ -46,8 +46,10 @@ export function walletRefusal(order: Order, wallet: string | undefined, status: 
   if (!same(wallet, order.merchant)) {
     return `The connected wallet ${shortAddress(wallet)} is not this order's merchant, ${shortAddress(order.merchant)}.`;
   }
-  const payees = status?.policy?.allowedPayees ?? [];
-  if (payees.length > 0 && !payees.some((payee) => same(payee, wallet))) {
+  // The relay pays gas only for listed payees, and an empty list allows none. An allowlist the
+  // relay does not report is no refusal here: the relay still checks it.
+  const payees = status?.policy?.allowedPayees;
+  if (payees !== undefined && !payees.some((payee) => same(payee, wallet))) {
     return "The relayer pays gas only for the merchants on its allowlist, and this wallet is not on it.";
   }
   if (order.kind === "escrow" && order.status === "in_review") {

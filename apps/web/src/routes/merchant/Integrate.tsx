@@ -36,11 +36,12 @@ function Snippet({ title, path, code }: { title: string; path: string; code: str
         <span className="mx-snippet__title">{title}</span>
         <span className="mono mx-quiet mx-snippet__path">{path}</span>
         <span className="num mx-quiet">{lineCount(code)} lines</span>
-        <button type="button" className="mx-button mx-button--small mx-button--quiet" onClick={() => void copy()}>
+        <button type="button" className="mx-button mx-button--small mx-button--quiet mx-snippet__copy" onClick={() => void copy()}>
           {copied ? "Copied" : "Copy"}
         </button>
       </figcaption>
-      <pre className="mx-snippet__code">
+      {/* Focusable, so a keyboard can scroll a line wider than the page. */}
+      <pre className="mx-snippet__code" tabIndex={0} aria-label={`${title}: ${path}`}>
         <code>{code.replace(/\n$/, "")}</code>
       </pre>
     </figure>
@@ -61,7 +62,7 @@ export function Integrate(): ReactNode {
         </p>
       </div>
       <Snippet title="On your server" path={SNIPPET_PATHS.merchant} code={MERCHANT_SNIPPET} />
-      <Snippet title="In your customer's browser" path={SNIPPET_PATHS.customer} code={CUSTOMER_SNIPPET} />
+      <Snippet title="In your customer’s browser" path={SNIPPET_PATHS.customer} code={CUSTOMER_SNIPPET} />
       <p className="mx-quiet mx-integrate__note">
         {INSTALL_LINE
           ? `Install with ${INSTALL_LINE}`

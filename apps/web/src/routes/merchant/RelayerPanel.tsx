@@ -24,8 +24,9 @@ function Address({ value }: { value: string }) {
   );
 }
 
-function List({ values }: { values: string[] | undefined }) {
-  if (!values || values.length === 0) return <span className="mx-quiet">Any</span>;
+/** An allowlist as the relay reports it. Its check is .some(), so an empty list allows no one. */
+function List({ values }: { values: string[] }) {
+  if (values.length === 0) return <span className="mx-quiet">None</span>;
   return (
     <span className="mx-relayer__list">
       {values.map((value, index) => (
@@ -61,12 +62,8 @@ export function RelayerPanel({ status }: { status: RelayStatus }): ReactNode {
         <div className="mx-fact">
           <dt>Relayer</dt>
           <dd>
-            <Address value={status.address} />
+            <Address value={status.address} /> <span className="mx-quiet">Fund it by sending WBT here, on Whitechain.</span>
           </dd>
-        </div>
-        <div className="mx-fact">
-          <dt>Fund it</dt>
-          <dd>Send WBT to the relayer on Whitechain</dd>
         </div>
         <div className="mx-fact">
           <dt>Balance</dt>
@@ -91,27 +88,30 @@ export function RelayerPanel({ status }: { status: RelayStatus }): ReactNode {
             <dd className="num">{formatGwei(policy.maxFeePerGasWei)} gwei max fee per gas</dd>
           </div>
         ) : null}
-        {policy ? (
-          <>
-            <div className="mx-fact">
-              <dt>Tokens</dt>
-              <dd>
-                <List values={policy.allowedTokens} />
-              </dd>
-            </div>
-            <div className="mx-fact">
-              <dt>Escrows</dt>
-              <dd>
-                <List values={policy.allowedEscrows} />
-              </dd>
-            </div>
-            <div className="mx-fact">
-              <dt>Merchants</dt>
-              <dd>
-                <List values={policy.allowedPayees} />
-              </dd>
-            </div>
-          </>
+        {/* An allowlist the relay does not report gets no row: nothing is claimed about it. */}
+        {policy?.allowedTokens ? (
+          <div className="mx-fact">
+            <dt>Tokens</dt>
+            <dd>
+              <List values={policy.allowedTokens} />
+            </dd>
+          </div>
+        ) : null}
+        {policy?.allowedEscrows ? (
+          <div className="mx-fact">
+            <dt>Escrows</dt>
+            <dd>
+              <List values={policy.allowedEscrows} />
+            </dd>
+          </div>
+        ) : null}
+        {policy?.allowedPayees ? (
+          <div className="mx-fact">
+            <dt>Merchants</dt>
+            <dd>
+              <List values={policy.allowedPayees} />
+            </dd>
+          </div>
         ) : null}
       </dl>
 

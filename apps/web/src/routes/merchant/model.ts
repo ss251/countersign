@@ -252,11 +252,19 @@ export function statusTone(status: OrderStatus): StatusTone {
   }
 }
 
-/** Money still in the escrow that may yet be cancelled: held, or delivered and in review. */
+/**
+ * Money still in the escrow: held, or delivered and in review. Only a held job can be cancelled:
+ * the escrow's cancel reverts unless the job is still Funded (see canRefund).
+ */
 export function isEscrowOpen(status: OrderStatus): boolean {
   return status === "held" || status === "in_review";
 }
 
+/**
+ * in_review stays offered until the captain rules on merchant.test.ts, which asserts it (cs-phone
+ * NEEDS-CAPTAIN, 06 Nov): on chain a delivered job cannot be cancelled. The wallet path refuses it
+ * before the wallet opens (walletRefusal); from wc-10d the relay client answers it 409 not_refundable.
+ */
 export function canRefund(order: Pick<Order, "status" | "refundable">): boolean {
   if (
     order.status !== "held" &&

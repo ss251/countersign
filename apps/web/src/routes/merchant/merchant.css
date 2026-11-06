@@ -1540,6 +1540,11 @@
   font-weight: 600;
 }
 
+/* "Copy" and "Copied" take the same width, so the path beside it never jumps. */
+.mx-snippet__copy {
+  min-width: 10ch;
+}
+
 .mx-snippet__path {
   flex: 1 1 auto;
   min-width: 0;
