@@ -228,6 +228,11 @@ export interface Envelope {
   expiresAt?: number;
   /** Atomic amount above which the agent holds the call for the human's countersignature. Absent: never holds. */
   askAbove?: string;
+  /**
+   * The key whose signature countersigns a held call from another device.
+   * Absent: a held call can be approved only on the agent's machine.
+   */
+  approver?: Address;
 }
 
 /** What has been spent so far under an envelope. */
