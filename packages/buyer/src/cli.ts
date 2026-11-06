@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   } else if (cmd === "buy") {
     const hash = pos[1] as Hex | undefined;
     const raw = one("input");
-    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
+    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
     const rail = parseRail(one("rail"));
     const approvals = parseApprovals(one("approvals"));
     const account = agentAccount();
@@ -136,7 +136,7 @@ async function main(): Promise<void> {
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
-    console.log("Usage: cli.ts discover | buy <offerHash> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | envelope show|set | publish-envelope | journal | resume");
+    console.log("Usage: cli.ts discover [--catalogue <url|circle> [query] [--category <c>] [--limit <n>]] | buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub] | envelope show|set | publish-envelope | journal | resume");
     console.log("Flags: --hub <url> --state <dir>. The agent key comes from CS_BUYER_KEY.");
   }
 }

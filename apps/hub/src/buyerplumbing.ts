@@ -2,6 +2,8 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { recoverMessageAddress, type Hex } from "viem";
 import {
+  approvalDecisionBody,
+  approvalDecisionSigner,
   canonicalJson,
   explorerUrl,
   RAIL_IDS,
@@ -25,6 +27,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const CLOCK_SKEW = 300;
 const APPROVAL_TTL = 15 * 60;
+const MAX_BODY_BYTES = 16 * 1024;
+const MAX_PENDING_APPROVALS = 20;
 
 export function registerBuyerPlumbing(app: Hono, deps: BuyerPlumbingDeps): void {
   app.get("/jobs", (c) => listJobs(c, deps));
@@ -87,7 +91,10 @@ async function putEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Respons
   if (agentParam === undefined || agentParam === "") {
     return fail(400, "bad-request", "Refused. Name the agent.");
   }
-  const body = await readJson(c);
+  const parsed = await readJsonLimited(c);
+  if (parsed.kind === "too-large") return fail(413, "too-large", "Refused. The request body is too large.");
+  if (parsed.kind === "malformed") return fail(400, "bad-request", "Refused. The mirror is malformed.");
+  const body = parsed.value;
   if (!isRecord(body)) return fail(400, "bad-request", "Refused. The mirror is malformed.");
 
   const { envelope, spent, signedAt, sig } = body;
@@ -137,6 +144,8 @@ async function putEnvelope(c: Context, deps: BuyerPlumbingDeps): Promise<Respons
 }
 
 function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Response {
+  const refused = requireToken(c, deps);
+  if (refused !== null) return refused;
   const agent = c.req.param("agent");
   if (agent === undefined || agent === "") {
     return fail(400, "bad-request", "Refused. Name the agent.");
@@ -153,7 +162,10 @@ function getEnvelope(c: Context, deps: BuyerPlumbingDeps): Response {
 }
 
 async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
-  const body = await readJson(c);
+  const parsed = await readJsonLimited(c);
+  if (parsed.kind === "too-large") return fail(413, "too-large", "Refused. The request body is too large.");
+  if (parsed.kind === "malformed") return fail(400, "bad-request", "Refused. The approval is malformed.");
+  const body = parsed.value;
   if (!isRecord(body)) return fail(400, "bad-request", "Refused. The approval is malformed.");
 
   const { agent, offerHash, title, amount, rail, terms, requestedAt, sig } = body;
@@ -187,24 +199,47 @@ async function createApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   if (Math.abs(deps.now() - at) > CLOCK_SKEW) {
     return fail(409, "stale-approval", "Refused. The approval request is not fresh.");
   }
+  if (deps.store.getEnvelopeMirror(agent) === null) {
+    return fail(
+      409,
+      "unknown-agent",
+      "Refused. Publish this agent's envelope before asking for approvals.",
+    );
+  }
+  if (deps.store.hasApprovalRequestSig(sig)) {
+    return fail(409, "duplicate-request", "Refused. This approval request was already received.");
+  }
+  if (
+    deps.store.countPendingApprovals(agent, deps.now() - APPROVAL_TTL) >= MAX_PENDING_APPROVALS
+  ) {
+    return fail(429, "too-many-pending", "Refused. This agent has too many pending approvals.");
+  }
 
   const id = randomBytes(16).toString("hex");
-  deps.store.putApproval({
-    id,
-    agent,
-    offerHash: offerHash as Hex,
-    title,
-    amount,
-    rail: rail as RailId,
-    terms,
-    status: "pending",
-    createdAt: at,
-    decidedAt: null,
-  });
+  if (
+    !deps.store.putApproval({
+      id,
+      agent,
+      offerHash: offerHash as Hex,
+      title,
+      amount,
+      rail: rail as RailId,
+      terms,
+      status: "pending",
+      createdAt: at,
+      decidedAt: null,
+      requestSig: sig,
+      decisionSig: null,
+    })
+  ) {
+    return fail(409, "duplicate-request", "Refused. This approval request was already received.");
+  }
   return json({ id }, 201);
 }
 
 function listApprovals(c: Context, deps: BuyerPlumbingDeps): Response {
+  const refused = requireToken(c, deps);
+  if (refused !== null) return refused;
   const agent = c.req.query("agent");
   const filter = c.req.query("status") ?? "pending";
   if (filter !== "pending" && filter !== "decided" && filter !== "all") {
@@ -230,15 +265,8 @@ function getApproval(c: Context, deps: BuyerPlumbingDeps): Response {
 }
 
 async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Response> {
-  const expected = deps.humanApprovalToken;
-  if (expected === undefined || expected === "") {
-    return fail(503, "no-approver", "Refused. No human approver is configured.");
-  }
-  const header = c.req.header("authorization") ?? "";
-  const match = /^Bearer (.+)$/i.exec(header);
-  if (match === null || !sameToken(match[1] ?? "", expected)) {
-    return fail(401, "unauthorized", "Refused. The approver token is not valid.");
-  }
+  const refused = requireToken(c, deps);
+  if (refused !== null) return refused;
 
   const id = c.req.param("id");
   const row = id === undefined ? null : deps.store.getApproval(id);
@@ -254,8 +282,38 @@ async function decideApproval(c: Context, deps: BuyerPlumbingDeps): Promise<Resp
   if (decision !== "countersign" && decision !== "decline") {
     return fail(400, "bad-request", "Refused. The decision is not countersign or decline.");
   }
+  const decidedAt = body.decidedAt;
+  const sig = body.sig;
+  if (!Number.isSafeInteger(decidedAt) || typeof sig !== "string") {
+    return fail(400, "bad-request", "Refused. The decision needs a signed decision time.");
+  }
+  if (Math.abs(now - (decidedAt as number)) > CLOCK_SKEW) {
+    return fail(400, "bad-request", "Refused. The decision time is not the hub's clock.");
+  }
 
-  if (!deps.store.decideApproval(row.id, decision, now)) {
+  const approver = deps.store.getEnvelopeMirror(row.agent)?.envelope.approver;
+  if (approver === undefined) {
+    return fail(409, "no-approver", "Refused. This agent's envelope names no approver key.");
+  }
+
+  const signer = await approvalDecisionSigner(
+    approvalDecisionBody({
+      approvalId: row.id,
+      agent: row.agent,
+      offerHash: row.offerHash,
+      amount: row.amount,
+      rail: row.rail,
+      terms: row.terms,
+      decision,
+      decidedAt: decidedAt as number,
+    }),
+    sig,
+  );
+  if (signer === null || signer.toLowerCase() !== approver.toLowerCase()) {
+    return fail(401, "bad-signature", "Refused. The decision is not signed by the envelope's approver.");
+  }
+
+  if (!deps.store.decideApproval(row.id, decision, decidedAt as number, sig)) {
     return fail(409, "already-decided", "Refused. This approval is already decided.");
   }
   return json({ ok: true });
@@ -278,6 +336,7 @@ function view(row: ApprovalRecord, now: number): {
   createdAt: number;
   requestedAt: number;
   decidedAt: number | null;
+  decisionSig: string | null;
 } {
   return {
     id: row.id,
@@ -291,6 +350,7 @@ function view(row: ApprovalRecord, now: number): {
     createdAt: row.createdAt,
     requestedAt: row.createdAt,
     decidedAt: row.decidedAt,
+    decisionSig: row.decisionSig,
   };
 }
 
@@ -300,6 +360,20 @@ async function recover(message: string, sig: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Null when the caller may read or decide; otherwise the refusal response. */
+function requireToken(c: Context, deps: BuyerPlumbingDeps): Response | null {
+  const expected = deps.humanApprovalToken;
+  if (expected === undefined || expected === "") {
+    return fail(503, "no-approver", "Refused. No human approver is configured.");
+  }
+  const header = c.req.header("authorization") ?? "";
+  const match = /^Bearer (.+)$/i.exec(header);
+  if (match === null || !sameToken(match[1] ?? "", expected)) {
+    return fail(401, "unauthorized", "Refused. The approver token is not valid.");
+  }
+  return null;
 }
 
 function sameToken(provided: string, expected: string): boolean {
@@ -317,6 +391,26 @@ async function readJson(c: Context): Promise<unknown> {
     return await c.req.json<unknown>();
   } catch {
     return undefined;
+  }
+}
+
+type LimitedJson =
+  | { kind: "ok"; value: unknown }
+  | { kind: "too-large" }
+  | { kind: "malformed" };
+
+async function readJsonLimited(c: Context): Promise<LimitedJson> {
+  let text: string;
+  try {
+    text = await c.req.text();
+  } catch {
+    return { kind: "malformed" };
+  }
+  if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) return { kind: "too-large" };
+  try {
+    return { kind: "ok", value: JSON.parse(text) as unknown };
+  } catch {
+    return { kind: "malformed" };
   }
 }
 
