@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { offerHash as hashOf, type Offer, type PaymentRequirements } from "@countersign/core";
 import { ARC_PIN } from "../src/lib/arc-pin.ts";
 import type { Listing } from "../src/lib/types.ts";
-import { trustedRequirement } from "../src/routes/start/index.tsx";
+
+// The purchase path lives in start/index.tsx on cs/ui-B and moves to lib/purchase.ts on cs/ui-A13 (#196).
+const { trustedRequirement } = (await import("../src/lib/purchase.ts").catch(
+  () => import("../src/routes/start/index.tsx"),
+)) as {
+  trustedRequirement: (accepts: PaymentRequirements[], listing?: Listing) => { ok: boolean };
+};
 
 // cs-w1 adversarial test (B24; runs on cs/ui-B). A failing test here is a blocker.
 // The start page shows the listing's price and seller, but signs the payee, amount and offer hash
