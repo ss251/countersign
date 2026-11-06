@@ -3,6 +3,22 @@
 Lane: cs-w4. Base: `cs/cs-70` (continue on it). Branch: `cs/cs-70`. Lease as before: `scripts/release/**`
 only. Do not touch any package. This packet starts after cs-70f has exited (both use the cs-70 worktree).
 
+## Update at 20:17Z (read this first)
+
+K2's branch `cs/tr-09` now contains K1 (cs-truth merged K1's final head 32a8f5d into it), and
+`packages/cli/src/cli.ts` loads the MCP server by **relative path**: `loadMcp: () => import("../../mcp/src/main.ts")`.
+So the MCP server is **inlined into the CLI bundle** and the CLI no longer needs `@countersign-hub/mcp` at runtime.
+Therefore:
+
+- **Remove the `cli` entry from `extraDependencies` in `surface.ts`** (the one that declares
+  `@countersign-hub/mcp`). Keep the `extraDependencies` mechanism and its tests; the table is simply empty
+  for every package afterwards. Update only the tests that assert the `cli` table entry (not the mechanism's
+  tests), and list each changed assertion in the report.
+- In every gate step below, the base is **`origin/cs/tr-09` alone**; it already contains K1, so do **not**
+  merge `origin/cs/hd-k1` (it would conflict or duplicate).
+- The CLI tarball's staged `dependencies` should now be whatever it truly imports (probably none, because
+  every third-party package is inlined); say what you see, and the new tarball size.
+
 ## What was found (the real K1 package, `cs/hd-k1` merged into a throw-away worktree, Node 25 and Node 20)
 
 `bun scripts/release/build.ts --only mcp` works: `countersign-hub-mcp-0.1.0.tgz`, 19.5 KB, dependencies
@@ -67,11 +83,12 @@ Stripe into every install. The right tool is an explicit, reasoned table.
    git fetch origin
    git worktree add --detach "$HOME/Developer/countersign-wt/k3-all" origin/cs/tr-09
    cd "$HOME/Developer/countersign-wt/k3-all"
-   git merge --no-edit origin/cs/hd-k1 && git merge --no-edit origin/cs/cs-70
+   git merge --no-edit origin/cs/cs-70
    ```
-   (`origin/cs/tr-09` already carries `bin` in `packages/cli/package.json`; if it does not, add
-   `"bin": { "countersign": "./src/bin.ts" }` in that worktree only and never commit it. If a merge
-   conflicts, stop and paste the conflict; do not resolve it by editing another lane's file.)
+   (`origin/cs/tr-09` already carries `bin` in `packages/cli/package.json` and contains K1's `packages/mcp`.
+   `bun install` may mark `packages/cli/src/bin.ts` executable, which git shows as a mode change; that is
+   `bun install`, not the build. Do not commit it. If a merge conflicts, stop and paste the conflict; do not
+   resolve it by editing another lane's file.)
    Then `bun install --linker hoisted && rm -rf .release &&
    bun scripts/release/build.ts --require mcp,cli,relay --out .release`. It must build **all three**:
    `countersign-hub-mcp-0.1.0.tgz`, `countersign-hub-cli-0.1.0.tgz` and `countersign-hub-relay-0.1.0.tgz`.
@@ -79,7 +96,7 @@ Stripe into every install. The right tool is an explicit, reasoned table.
    every `packed files clean`, every tarball size and file list). Then
    `bun scripts/release/smoke.ts --dir .release` must pass **every check for all three on the installed Node
    and the package's floor Node** (`mcp` and `relay` Node 20, `cli` Node 22). Paste every PASS line and the
-   number of packages each install added, and show the `install: cli + mcp` line. Remove the worktree afterwards (`git worktree remove --force` and
+   number of packages each install added. Remove the worktree afterwards (`git worktree remove --force` and
    `git worktree prune`).
    **If anything fails because of another lane's code, paste the failure and stop; do not edit it.**
 4. `bun scripts/release/build.ts --require mcp,cli,relay --out .release-req` in the **main** `cs-70`
