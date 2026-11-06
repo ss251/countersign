@@ -1,0 +1,92 @@
+.verify__form {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.verify__label {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.verify__input {
+  width: 100%;
+  min-height: 360px;
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--sunk);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.verify__input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+}
+
+.verify__input[aria-invalid="true"] {
+  border-color: var(--seal);
+}
+
+.verify__error {
+  color: var(--seal);
+  font-weight: 500;
+}
+
+.verify__notice {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.verify__examples {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+}
+
+@media (hover: hover) {
+  .link-button:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+.verify__idle {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-3);
+}
+
+.verify__idle-title {
+  font-weight: 600;
+}
+
+.verify__steps {
+  display: grid;
+  gap: var(--sp-2);
+  padding-left: var(--sp-5);
+  list-style: decimal;
+  color: var(--ink);
+  font-size: var(--t-14);
+}
+
+.verify__steps li::marker {
+  color: var(--slate);
+}

@@ -1,0 +1,89 @@
+/* Desktop pages: one centred column with an optional side rail. */
+
+.page {
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: var(--sp-10) var(--sp-6) var(--sp-16);
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: var(--sp-6) var(--sp-4) var(--sp-12);
+  }
+}
+
+.page__head {
+  display: grid;
+  gap: var(--sp-2);
+  max-width: 68ch;
+  margin-bottom: var(--sp-8);
+}
+
+.page__eyebrow {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.page__title {
+  font-size: var(--t-32);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.page__lede {
+  color: var(--slate);
+  font-size: var(--t-17);
+}
+
+.page__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--sp-8);
+  align-items: start;
+}
+
+.page__rail {
+  position: sticky;
+  top: calc(var(--bar) + var(--sp-6));
+  display: grid;
+  gap: var(--sp-4);
+}
+
+@media (max-width: 960px) {
+  .page__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page__rail {
+    position: static;
+    order: -1;
+  }
+}
+
+.section {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.section__title {
+  font-size: var(--t-13);
+  font-weight: 600;
+  color: var(--slate);
+}
+
+.section__note {
+  color: var(--slate);
+  font-size: var(--t-13);
+  max-width: 64ch;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.rail-card__id {
+  margin-left: var(--sp-1);
+  color: var(--slate);
+}

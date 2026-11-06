@@ -1,0 +1,666 @@
+/* The phone. One column, 390 px, chrome at the top, thumb actions at the bottom. */
+
+.phone {
+  --tabbar-h: 56px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--phone);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+}
+
+@media (min-width: 520px) {
+  .phone {
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+}
+
+.phone__bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 52px;
+  padding: env(safe-area-inset-top) var(--sp-4) 0;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.phone__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-15);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.phone__bar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.phone__budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.phone__budget-amount {
+  color: var(--usdc);
+  font-weight: 600;
+}
+
+.phone__budget--revoked {
+  color: var(--seal);
+  font-weight: 600;
+  border-color: color-mix(in oklab, var(--seal) 40%, var(--line));
+}
+
+.phone__body {
+  flex: 1;
+  padding: var(--sp-5) var(--sp-4) var(--sp-8);
+}
+
+.tabbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.tabbar__tab {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  height: var(--tabbar-h);
+  color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tabbar__tab[aria-current="page"] {
+  color: var(--ink);
+}
+
+.tabbar__tab:focus-visible {
+  outline-offset: -3px;
+}
+
+.tabbar__badge {
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 7px);
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.skeleton {
+  height: 420px;
+  border-radius: var(--r-3);
+  background: var(--sunk);
+  animation: breathe 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* An approval: the offer, the envelope's verdict, the hold. */
+
+.approval {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.approval__who {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.approval__agent {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.approval__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 2px;
+}
+
+.approval__title {
+  font-size: var(--t-24);
+  line-height: 1.2;
+}
+
+.approval__summary {
+  margin-top: var(--sp-1);
+  color: var(--ink);
+}
+
+.approval__source {
+  margin-top: var(--sp-1);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.approval__price {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.approval__to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.approval__seller {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* The hold and Decline stay above the tab bar while the terms scroll beneath them. */
+.approval__dock {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-8));
+  padding: var(--sp-3) var(--sp-4) var(--sp-1);
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.approval__dock .hold {
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.approval__decline {
+  min-height: 40px;
+}
+
+.checks__refusal {
+  color: var(--seal);
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.checks {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.checks__title {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.checks__list {
+  display: grid;
+  gap: 6px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--t-14);
+}
+
+.check__glyph {
+  flex: none;
+  margin-top: 2px;
+}
+
+.check--pass {
+  color: var(--ink);
+}
+
+.check--fail {
+  color: var(--seal);
+  font-weight: 500;
+}
+
+.check--ask {
+  color: var(--ink);
+}
+
+.check--ask .check__glyph {
+  color: var(--slate);
+}
+
+/* After the hold */
+
+.ledger {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.ledger__step {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  column-gap: var(--sp-3);
+  row-gap: 2px;
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger__marker {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+}
+
+.ledger__step.is-done .ledger__marker {
+  border-color: transparent;
+  background: var(--ink);
+}
+
+.ledger__step--countersigned.is-done .ledger__marker {
+  background: var(--seal);
+}
+
+.ledger__step--held.is-done .ledger__marker {
+  background: var(--usdc);
+}
+
+.ledger__step--released.is-done .ledger__marker {
+  background: var(--settle);
+}
+
+.ledger__step.is-active .ledger__marker {
+  border-color: var(--ink);
+  animation: breathe 1.1s var(--ease-in-out) infinite;
+}
+
+.ledger__label {
+  font-weight: 500;
+}
+
+.ledger__step:not(.is-done):not(.is-active) .ledger__label {
+  color: var(--slate);
+}
+
+.ledger__detail {
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-align: right;
+}
+
+.ledger__sub {
+  grid-column: 2 / -1;
+  font-size: var(--t-13);
+}
+
+.outcome {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.outcome__title {
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.outcome--settled .outcome__title {
+  color: var(--settle);
+}
+
+.outcome--refused .outcome__title {
+  color: var(--seal);
+}
+
+.outcome--neutral .outcome__title {
+  color: var(--ink);
+}
+
+.outcome__body {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.outcome__buttons {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+/* Signed against asked, either side of the seam. */
+.seam {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.seam__half {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2) 0 0 var(--r-2);
+  background: var(--raised);
+}
+
+.seam__half--seal {
+  border-color: color-mix(in oklab, var(--seal) 50%, var(--line));
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+  background: var(--seal-wash);
+}
+
+.seam__label {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.seam__half--seal .seam__label {
+  color: var(--seal);
+}
+
+/* Envelope */
+
+.env {
+  display: grid;
+  gap: var(--sp-8);
+}
+
+.env__budget {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.env__eyebrow {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.env__budget-note {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.env__section {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.env__heading {
+  font-size: var(--t-13);
+  font-weight: 600;
+  color: var(--slate);
+}
+
+.env__rows {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.env__muted {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.env__gateway {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.env__danger {
+  gap: var(--sp-2);
+}
+
+.env__revoked {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid color-mix(in oklab, var(--seal) 45%, var(--line));
+  border-radius: var(--r-3);
+  background: var(--seal-wash);
+}
+
+.env__revoked-title {
+  color: var(--seal);
+  font-size: var(--t-20);
+  font-weight: 600;
+}
+
+.env__revoked-body {
+  color: var(--ink);
+  font-size: var(--t-14);
+}
+
+.limit {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.limit__text {
+  display: grid;
+  min-width: 0;
+}
+
+.limit__label {
+  font-weight: 500;
+}
+
+.limit__hint {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.limit__change {
+  min-height: 36px;
+  font-size: var(--t-14);
+}
+
+.limit--editing {
+  grid-template-columns: 1fr;
+  gap: var(--sp-2);
+}
+
+.limit__input-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.limit__asset {
+  position: absolute;
+  right: var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-13);
+  pointer-events: none;
+}
+
+.limit__error {
+  color: var(--seal);
+  font-size: var(--t-13);
+}
+
+.limit__buttons {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.allow {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.allow__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.allow__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.allow__row .hash__value {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.allow__remove {
+  min-height: 36px;
+  font-size: var(--t-14);
+}
+
+.allow__form {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+/* History */
+
+.history {
+  display: grid;
+  gap: var(--sp-6);
+}
+
+.history__summary {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.history__day {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.history__day-title {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.history__list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.hrow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.hrow--link {
+  transition: background-color var(--d-1) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .hrow--link:hover .hrow__name {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+}
+
+.hrow__main {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.hrow__name {
+  font-weight: 500;
+}
+
+.hrow__meta {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.hrow__reason {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.hrow__reason--refused {
+  color: var(--seal);
+}
+
+.hrow__end {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  align-content: start;
+  gap: 1px;
+}
+
+.hrow__status {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.hrow__status .status {
+  font-size: var(--t-12);
+}
