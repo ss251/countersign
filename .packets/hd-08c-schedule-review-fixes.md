@@ -16,7 +16,7 @@ Review of `25e508b` (hd-08b, the scheduled checkout, issue #41) found 0 blockers
 - `packages/rail/src/hedera/schedule.ts`: `countersignSchedule`, `ScheduleRefusedError`'s reason type, and one doc comment
 - `packages/buyer/src/hedera/agent.ts`: `releaseExpired`, `spentFromLog` and one exported constant only
 - New tests only, in two new files: `packages/rail/src/hedera/test/schedule-review.test.ts` and `packages/buyer/src/hedera/test/release.test.ts`. Do not edit the existing test files.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-08c-schedule-review-fixes.md`
+- Report: `$M/reports/hd-08c-schedule-review-fixes.md`
 
 ## Required (decided)
 

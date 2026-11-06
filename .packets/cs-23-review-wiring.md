@@ -1,4 +1,4 @@
-# cs-23-review-wiring: the hub serves escrow v2 as the captain decided at 19:40 (refs #98)
+# cs-23-review-wiring: the hub serves escrow v2 as the project lead decided at 19:40 (refs #98)
 
 ## Setup
 

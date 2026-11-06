@@ -1,6 +1,6 @@
 # wc-10: the merchant console's checkout runs on our own drop-in
 
-Issue: #14 (the drop-in). This implements cs-wc's part of STEER-2210's amendment, the captain's at about 22:15 IST:
+Issue: #14 (the drop-in). This implements cs-wc's part of STEER-2210's amendment, the project lead's at about 22:15 IST:
 - the merchant console serves its checkout through our own paywall and pay-fetch;
 - the "integrate this in twenty lines" block shows the code the console actually runs;
 - refunds go through one path;
@@ -157,7 +157,6 @@ Touch nothing else. No view code under `apps/web/src`. Never commit `bun.lock`.
 - **Never run `git stash`.** Use a temporary commit or a second worktree.
 - **No network** in tests, except the live fixture behind `LIVE_WHITECHAIN=1`.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

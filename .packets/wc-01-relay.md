@@ -231,7 +231,6 @@ Use `generatePrivateKey()`/`privateKeyToAccount()` for throwaway keys, and an in
 - No network access in tests. No real keys anywhere, and no `.env` files committed.
 - No floats for money. Every bigint crosses JSON as a digit string.
 - Small present-tense commit messages, no emoji, no `Co-authored-by`. Commit as you go, at least every hour.
-- Do not write the word for any prior project anywhere. Product names in prose are lowercase `countersign`.
 - Keep the code plain and readable. No framework beyond Hono and viem.
 
 ## Acceptance

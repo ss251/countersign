@@ -150,11 +150,10 @@ Add a test.
 
 ## Constraints
 
-- **No browser of any kind on this machine.** No Chrome, Chromium, headless browsers, Playwright or Puppeteer, and no screenshots. Verify with tests and `curl` only. This is the captain's standing rule; a breach stops the run.
+- **No browser of any kind on this machine.** No Chrome, Chromium, headless browsers, Playwright or Puppeteer, and no screenshots. Verify with tests and `curl` only. This is the project lead's standing rule; a breach stops the run.
 - Never log tokens, signatures or keys.
 - No floats for money.
 - Small present-tense commits, no emoji, no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

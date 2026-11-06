@@ -52,7 +52,6 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
 - **No browser** of any kind on this machine.
 - **No network** in tests.
 - **Commits:** small, present tense, ending `refs #14`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
