@@ -13,6 +13,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { explorerTx } from "../../lib/chains.ts";
+import { redactPaths } from "../../lib/paths.ts";
 import type { Secrets } from "../../lib/secrets.ts";
 import { Keyring, SECRET_NAMES } from "./keys.ts";
 
@@ -105,7 +106,7 @@ export function statePath(runId: string, project: string, artifactsDir: string =
 export function writeProjectState(project: ProjectRun, runId: string, artifactsDir: string = ARTIFACTS_DIR): void {
   const file = statePath(runId, project.project, artifactsDir);
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(project, null, 2));
+  writeFileSync(file, redactPaths(JSON.stringify(project, null, 2)));
 }
 
 export function readProjectStates(runId: string, artifactsDir: string = ARTIFACTS_DIR): ProjectRun[] {
@@ -351,7 +352,7 @@ export function finalizeReport(options: FinalizeOptions): FinalizeResult {
     return { ...project, artifacts };
   });
 
-  const text = options.secrets.redact(renderReport(options.meta, projects));
+  const text = redactPaths(options.secrets.redact(renderReport(options.meta, projects)));
   mkdirSync(runsDir, { recursive: true });
   const path = join(runsDir, `${options.meta.runId}.md`);
   writeFileSync(path, text);

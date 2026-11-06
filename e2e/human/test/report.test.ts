@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { REAL_ROOT } from "../../lib/paths.ts";
 import { Secrets } from "../../lib/secrets.ts";
 import {
   finalizeReport,
@@ -10,6 +11,8 @@ import {
   HumanReporter,
   renderReport,
   REPO_ROOT,
+  statePath,
+  writeProjectState,
   type ProjectRun,
   type RunMeta,
 } from "../lib/report.ts";
@@ -111,6 +114,41 @@ describe("the run report", () => {
     expect(written).not.toContain(secret);
     expect(written).not.toContain("planted.json");
     expect(readFileSync(join(runsDir, "LATEST.md"), "utf8").split("\n")[0]).toContain(`${RUN_ID}.md`);
+  });
+
+  test("the report and LATEST rewrite the repository and home paths", () => {
+    const root = tempDir();
+    const artifactsDir = join(root, "artifacts");
+    const runsDir = join(root, "runs");
+    const error = `boom at ${REAL_ROOT}/e2e/human/lib/report.ts:85 and ${homedir()}/.config/countersign/e2e.env`;
+    const result = finalizeReport({
+      meta: meta(),
+      projects: [project({ status: "FAIL", failedStep: "05-buy", error })],
+      secrets: Secrets.fromEntries({}),
+      artifactsDir,
+      runsDir,
+    });
+
+    expect(result.text).toContain("$R/e2e/human/lib/report.ts:85");
+    expect(result.text).toContain("~/.config/countersign/e2e.env");
+    expect(result.text).not.toContain(REAL_ROOT);
+    for (const file of [join(runsDir, `${RUN_ID}.md`), join(runsDir, "LATEST.md")]) {
+      const written = readFileSync(file, "utf8");
+      expect(written).toContain("$R/e2e/human/lib/report.ts:85");
+      expect(written).toContain("~/.config/countersign/e2e.env");
+      expect(written).not.toContain(REAL_ROOT);
+    }
+  });
+
+  test("a state file rewrites local paths before it is written", () => {
+    const root = tempDir();
+    const artifactsDir = join(root, "artifacts");
+    const state = project({ status: "FAIL", failedStep: "05-buy", error: `boom at ${REAL_ROOT}/e2e/human/lib/report.ts:85` });
+    writeProjectState(state, RUN_ID, artifactsDir);
+
+    const written = readFileSync(statePath(RUN_ID, state.project, artifactsDir), "utf8");
+    expect(written).toContain("$R/e2e/human/lib/report.ts:85");
+    expect(written).not.toContain(REAL_ROOT);
   });
 
   test("the leak scan runs when no result.json exists and still deletes a planted file", () => {

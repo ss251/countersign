@@ -4,13 +4,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PaymentRequired, PaymentRequirements } from "@countersign/core";
 import { agentTakes, hederaExact, hederaHeld } from "../lib/agent.ts";
 import { formatAmount, planBudget, units, type Wallet } from "../lib/budget.ts";
 import { check, equal, NotRun, runFlow, type Flow, type RunEnv } from "../lib/flow.ts";
 import { readWithRetry } from "../lib/http.ts";
+import { REAL_ROOT, redactPaths } from "../lib/paths.ts";
 import { spawnProc, runCmd } from "../lib/procs.ts";
 import { renderRun } from "../lib/report.ts";
 import { parseEnv, Secrets } from "../lib/secrets.ts";
@@ -49,6 +50,31 @@ describe("secrets", () => {
     const s = Secrets.fromEntries({ BAD_KEY: "not-a-key-but-long-enough" });
     expect(() => s.key("BAD_KEY")).toThrow("BAD_KEY is not a 32-byte hex key");
     expect(() => s.get("MISSING_KEY")).toThrow("MISSING_KEY is not set");
+  });
+
+  test("a stack trace names the repository root as $R", () => {
+    const s = Secrets.fromEntries({});
+    const text = `    at readEntries (${REAL_ROOT}/e2e/lib/hedera.ts:85:26)`;
+    expect(s.redact(text)).toBe("    at readEntries ($R/e2e/lib/hedera.ts:85:26)");
+  });
+
+  test("the home directory becomes ~", () => {
+    const s = Secrets.fromEntries({});
+    expect(s.redact(`${homedir()}/.config/countersign/e2e.env`)).toBe("~/.config/countersign/e2e.env");
+  });
+
+  test("a sibling worktree path becomes $R", () => {
+    const parent = join(tmpdir(), "countersign-wt");
+    const root = join(parent, "cs-64");
+    expect(redactPaths(join(parent, "cs-60", "e2e", "x.ts"), root, join(tmpdir(), "home"))).toBe("$R/e2e/x.ts");
+  });
+
+  test("plain text is unchanged and secret redaction runs before paths", () => {
+    const secret = `${REAL_ROOT}/private/value-long-enough`;
+    const s = Secrets.fromEntries({ X_TOKEN: secret, MERCHANT_TOKEN: TOKEN });
+    expect(s.redact("nothing to rewrite")).toBe("nothing to rewrite");
+    expect(s.redact(`x=${secret}`)).toBe("x=[redacted]");
+    expect(s.redact(`${REAL_ROOT}/e2e/lib/hedera.ts:85 ${TOKEN}`)).toBe("$R/e2e/lib/hedera.ts:85 [redacted]");
   });
 });
 

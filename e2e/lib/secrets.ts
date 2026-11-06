@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { redactPaths } from "./paths.ts";
 
 /** Read in this order; the first file that defines a name wins. */
 /** approval.env holds the production approver token, placed for this suite by cs-ui. */
@@ -117,11 +118,15 @@ export class Secrets {
 
   /** True when the text holds any secret value, in any letter case. */
   leaks(text: string): boolean {
-    return this.redact(text) !== text;
+    return this.redactSecrets(text) !== text;
   }
 
-  /** Replace every secret value, with or without its 0x and in any letter case, by [redacted]. */
+  /** Replace every secret value, then this machine's paths, by [redacted], $R or ~. */
   redact(text: string): string {
+    return redactPaths(this.redactSecrets(text));
+  }
+
+  private redactSecrets(text: string): string {
     let out = text;
     for (const v of this.hidden) {
       if (!this.patterns.has(v)) {
