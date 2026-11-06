@@ -15,14 +15,14 @@ import type { Address, Hex } from "viem";
 export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" | "mpp:stripe" | "mpp:tempo";
 
 /**
- * A settlement path. The id matches its directory in packages/rail/src.
+ * A settlement path. Shipped ids (escrow, gateway, whitechain, hedera) match a directory in packages/rail/src; eip3009 and mpp are in progress (#19, #84) and erc8183 is not built (#24).
  * - escrow:     CountersignedEscrow on Arc, USDC, the buyer's EIP-3009 authorisation names the escrow
- * - eip3009:    direct USDC transfer on Arc, no escrow
+ * - eip3009:    direct USDC transfer on Arc, no escrow (in progress, #19)
  * - gateway:    Circle Gateway nanopayment on Arc, credited to the seller in a batch
- * - erc8183:    ERC-8183 job escrow with the JobHook committing the slip
+ * - erc8183:    reserved: ERC-8183 job escrow with a JobHook committing the slip (not built, #24)
  * - whitechain: CountersignedEscrow on Whitechain Sepolia, USDT, gas paid by our relayer
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
- * - mpp:        Stripe Machine Payments Protocol, the fourth rail; the slip carries the MPP receipt id
+ * - mpp:        Machine Payments Protocol: Tempo testnet first, Stripe's card method behind a flag; the slip carries the MPP receipt id (in progress, #84)
  */
 export const RAIL_IDS = ["escrow", "eip3009", "gateway", "erc8183", "whitechain", "hedera", "mpp"] as const;
 
@@ -43,6 +43,7 @@ export interface Asset {
 /** A JSON Schema document (draft 2020-12 subset). Kept opaque here; validation lives in the runner and buyer. */
 export type JsonSchema = { [key: string]: unknown };
 
+/** The runner serves "skill" only today; "mcp" is in progress (cs/hd-09) and "openapi" is not built. */
 export type AdapterKind = "skill" | "mcp" | "openapi";
 
 /**
@@ -64,7 +65,7 @@ export interface Offer {
   price: string;
   /** Seconds the seller has to deliver once the escrow is funded. */
   deadline: number;
-  /** Atomic amount the seller declares as bond. Declared only; no contract collects it yet. */
+  /** Atomic amount the seller puts up as bond. A supporting escrow collects and locks it at funding. */
   bond: string;
   /** Accepted rails, most preferred first. */
   rails: RailId[];
@@ -189,7 +190,7 @@ export interface SlipBody {
   inputHash: Hex;
   outputHash: Hex;
   deliveredAt: number;
-  /** Slip hashes of purchases the seller made while serving this call. The root commits its children. */
+  /** Slip hashes of purchases the seller made while serving this call. Always empty today: receipt trees are not built (#18). */
   children: Hex[];
   /** EIP-712 domain of the seller signature: present on escrow rails, where the contract checks it. */
   escrow?: Address;
@@ -239,6 +240,11 @@ export interface Envelope {
   expiresAt?: number;
   /** Atomic amount above which the agent holds the call for the human's countersignature. Absent: never holds. */
   askAbove?: string;
+  /**
+   * The key whose signature countersigns a held call from another device.
+   * Absent: a held call can be approved only on the agent's machine.
+   */
+  approver?: Address;
 }
 
 /** What has been spent so far under an envelope. */

@@ -14,10 +14,12 @@ import {
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
+import { registerBuyerPlumbing } from "./buyerplumbing.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
+import { registerOrders } from "./orders.ts";
 import { Ratings } from "./ratings.ts";
 import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
@@ -31,6 +33,10 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** Bearer token the human's phone presents to decide an approval. */
+  humanApprovalToken?: string;
+  /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
+  relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
   ratingsCacheSeconds?: number;
 }
@@ -54,6 +60,9 @@ export function createHub(deps: HubDeps) {
   };
 
   app.use("*", cors({ origin: "*", exposeHeaders: PAYMENT_HEADERS }));
+
+  registerBuyerPlumbing(app, deps);
+  registerOrders(app, deps);
 
   app.get("/healthz", (c) =>
     json({

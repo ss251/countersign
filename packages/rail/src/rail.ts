@@ -65,7 +65,13 @@ export interface EscrowOps {
   refund(jobId: Hex): Promise<SettleResult>;
   /** The seller hands the money back before the deadline. */
   cancel(jobId: Hex, sellerSig: Hex): Promise<SettleResult>;
-  status(jobId: Hex): Promise<"none" | "funded" | "released" | "refunded">;
+  /** The arbiter's verdict that delivery failed; the buyer is paid the amount plus the bond. */
+  failDelivery?(jobId: Hex): Promise<SettleResult>;
+  /** The payee's free (unlocked) bond, in atomic units. */
+  bondOfPayee?(payee: Hex): Promise<string>;
+  status(jobId: Hex): Promise<"none" | "funded" | "released" | "refunded" | "failed">;
+  /** The contract's toll in basis points. Reads the view once per rail instance, then caches it. */
+  tollBps?(): Promise<number>;
 }
 
 export interface Rail {

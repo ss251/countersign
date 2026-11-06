@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Every flow countersign claims has a test here. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees.
+Each flow below runs end to end. Every payment path [status.md](status.md) lists as shipped has a flow here, except the USDT paywall drop-in, which `packages/relay/test/dropin-e2e.test.ts` covers. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees. What the suite does not cover yet is listed at the end.
 
 ```
 bun run e2e                      # every flow, in order
@@ -35,7 +35,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
-Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
+Flow 9 needs a browser, and a browser driver for it is cut ([decisions.md](decisions.md), D14). It reports `NOT RUN (browser rule)`, and the screens are checked by hand in a real browser instead. Its 28 cases are the seven routes in `e2e/flows/web.flow.ts`, each at 390 and 1440 px, light and dark.
 
 ## What each flow asserts
 
@@ -202,3 +202,17 @@ A test that fails is not edited to pass. A product bug goes to the owning lane a
 ## Schedule
 
 A full run goes through the shared gate lock about once an hour from a clean checkout of `cs/e2e`. Its summary is committed and becomes `LATEST.md`; a new failure, or a flow that passes again, is posted to the owning lane.
+
+## Not covered yet
+
+These parts of the product have no end-to-end flow:
+
+- ERC-8004 identity and feedback;
+- the Stripe MPP rail;
+- receipt trees and lineage;
+- ENS seller names;
+- the mainnet guard;
+- the `mcp` runner adapter;
+- the Escrow v2 review window, dispute and bond.
+
+The web routes are written but not run on the build machine. A part moves into the flows table only once its flow passes.

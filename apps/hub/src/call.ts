@@ -1,4 +1,5 @@
 import {
+  canonicalJson,
   checkSchema,
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -18,6 +19,7 @@ import {
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
+import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, firstLine, resourceFor } from "./discovery.ts";
 import type { HubRouter } from "./route.ts";
@@ -67,6 +69,23 @@ export async function paidCall(
         code: "bad-input",
         message: "Refused. The input does not match the offer's schema.",
         errors: inputCheck.errors,
+      },
+    };
+  }
+
+  // The seller hashes the input into its slip with canonical JSON. An input the schema accepts but
+  // canonical JSON refuses (a fractional or unsafe number, for example) would only fail after a
+  // direct rail had already settled, so it is refused here, before any 402 or payment.
+  try {
+    canonicalJson(input);
+  } catch (error) {
+    return {
+      status: 422,
+      body: {
+        code: "bad-input",
+        message:
+          "Refused. The input holds a value the slip cannot hash, such as a fractional number. Nothing was charged.",
+        errors: [firstLine(error)],
       },
     };
   }
@@ -238,11 +257,12 @@ export async function paidCall(
   const timeoutMs = Math.max(0, Math.min(hubLimitMs, deadlineMs));
   const delivered = await deps.runners.dispatch(order, timeoutMs);
   if ("fail" in delivered) {
-    return failedDelivery(deps, jobId, railId, dispatchFault(delivered, hubLimitMs < deadlineMs));
+    return failedDelivery(deps, jobId, railId, dispatchFault(delivered, hubLimitMs < deadlineMs), escrowRail);
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    return failedDelivery(deps, jobId, railId, "seller");
+    const gate = await failOnGate(match.rail, jobId, deps.store);
+    return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
   }
 
   let closeTx = settle.transaction;
@@ -252,7 +272,8 @@ export async function paidCall(
   if (escrow) {
     const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
     if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
-      return failedDelivery(deps, jobId, railId, "seller");
+      const gate = await failOnGate(match.rail, jobId, deps.store);
+      return failedDelivery(deps, jobId, railId, "seller", escrowRail, gate ?? undefined);
     }
     const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
@@ -307,14 +328,22 @@ function dispatchFault(result: { fail: string; byRunner?: true }, hubCutShort: b
   return "hub";
 }
 
-function failedDelivery(deps: CallDeps, jobId: Hex, railId: string, fault: Fault): CallOutcome {
+function failedDelivery(
+  deps: CallDeps,
+  jobId: Hex,
+  railId: string,
+  fault: Fault,
+  escrow: boolean,
+  gateMessage?: string,
+): CallOutcome {
   deps.store.updateJob(jobId, { status: "failed", fault });
-  return failure(
-    502,
-    "failed-delivery",
-    "Refused. The seller's output does not match the offer. Your money returns at the deadline.",
-    railId,
-  );
+  // failDelivery's own message wins: the buyer already has the payment and any bond back.
+  const message =
+    gateMessage ??
+    (escrow
+      ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
+      : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.");
+  return failure(502, "failed-delivery", message, railId);
 }
 
 function duplicatePayment(railId: string): CallOutcome {

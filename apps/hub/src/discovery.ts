@@ -74,7 +74,7 @@ export interface DiscoveryParams {
   type?: string | undefined;
 }
 
-const PROVIDER_DESCRIPTION = "Escrowed, countersigned x402 calls to software that sells itself.";
+const PROVIDER_DESCRIPTION = "Countersigned x402 calls to software that sells itself, escrowed on the escrow rails.";
 const CATEGORY = "INFRASTRUCTURE";
 
 export function resourceFor(publicUrl: string, offerHash: Hex): string {
