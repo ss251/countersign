@@ -3,9 +3,11 @@ import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
 import { runCanary } from "./canary.ts";
+import { CliAuthStore } from "./cli-auth/store.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
 import { createPrivyVerifier } from "./privy.ts";
+import { privyWalletApi } from "./wallets/privy-wallets.ts";
 
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
 const ARC_ERC8004_IDENTITY = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
@@ -46,6 +48,18 @@ const humanApprovalToken = process.env.HUMAN_APPROVAL_TOKEN?.trim() || undefined
 const privyAppId = process.env.PRIVY_APP_ID?.trim() ?? "";
 const privySecret = process.env.PRIVY_APP_SECRET?.trim() ?? "";
 const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(privyAppId, privySecret) : undefined;
+
+// The CLI signs through the hub's Privy server wallets when the same app credentials are set.
+const cliAuth =
+  privyAppId !== "" && privySecret !== ""
+    ? {
+        store: new CliAuthStore(process.env.HUB_CLI_DB ?? ":memory:"),
+        wallets: privyWalletApi(privyAppId, privySecret, {
+          policyId: process.env.PRIVY_WALLET_POLICY_ID,
+        }),
+        consoleUrl: process.env.CONSOLE_URL ?? "https://web-production-a58de.up.railway.app",
+      }
+    : undefined;
 
 // The Whitechain relay's public order records, read by /orders for refunds after release.
 const relayUrl = process.env.WC_RELAY_URL?.trim() || undefined;
@@ -88,6 +102,7 @@ const { app, websocket, runners } = createHub({
   ens,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
   ...(privy ? { privy } : {}),
+  ...(cliAuth ? { cliAuth } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),
   ...(commit ? { commit } : {}),
