@@ -169,11 +169,14 @@ export function RailFilters({
   );
 }
 
+/** How many recent settlements the Registry reads for its per-offer counts and last-settlement times. */
+export const SETTLEMENT_PAGE = 100;
+
 /** Every seller this hub knows and what each sells, with who they are and how they have delivered. */
 export default function RegistryPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
   const sellers = useResource(() => api.sellers(), []);
-  const settlements = useResource(() => api.settlements(100), []);
+  const settlements = useResource(() => api.settlements(SETTLEMENT_PAGE), []);
   const hubRails = useResource(() => api.rails(), []);
   const now = useNow();
   const [text, setText] = useState("");
@@ -278,7 +281,14 @@ export default function RegistryPage(_props: PageProps) {
           ) : (
             <div className="sellers">
               {groups.map((g) => (
-                <SellerCard key={g.address} g={g} ledger={ledger} now={now} />
+                <SellerCard
+                  key={g.address}
+                  g={g}
+                  ledger={ledger}
+                  now={now}
+                  reading={sellers.loading && sellers.data === undefined}
+                  ledgerComplete={Array.isArray(settlements.data) && settlements.data.length < SETTLEMENT_PAGE}
+                />
               ))}
             </div>
           )}
@@ -288,7 +298,21 @@ export default function RegistryPage(_props: PageProps) {
   );
 }
 
-export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
+export function SellerCard({
+  g,
+  ledger,
+  now,
+  reading = false,
+  ledgerComplete = true,
+}: {
+  g: SellerGroup;
+  ledger: Ledger;
+  now: number;
+  /** The hub's seller records have not answered yet: a missing count is still loading, not absent. */
+  reading?: boolean;
+  /** The console's own settlements ledger holds every payment (fewer rows than it asked for), so its per-offer counts are whole. */
+  ledgerComplete?: boolean;
+}) {
   const last = ledger.lastBySeller.get(g.address);
   const calls = g.released + g.refunded + g.failed;
   const titleId = `seller-${g.address}`;
@@ -318,7 +342,7 @@ export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger;
       <dl className="scard__strip">
         <div>
           <dt className="label">Record</dt>
-          <dd className="num">{!g.counted ? "Not counted yet" : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
+          <dd className="num">{!g.counted ? (reading ? "Reading…" : "Not counted yet") : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
         </div>
         <div>
           <dt className="label">Delivered</dt>
@@ -336,7 +360,8 @@ export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger;
 
       <ul className="scard__offers">
         {g.offers.map((l) => {
-          const c = ledger.byOffer.get(l.hash.toLowerCase()) ?? (l.stats ? { paid: l.stats.released, refunded: l.stats.refunded } : undefined);
+          // The hub's own per-offer count first; the console's ledger only when it is whole, since a truncated one undercounts.
+          const c = (l.stats ? { paid: l.stats.released, refunded: l.stats.refunded } : undefined) ?? (ledgerComplete ? ledger.byOffer.get(l.hash.toLowerCase()) : undefined);
           return (
             <li key={l.hash} className={cx("orow", l.status === "delisted" && "is-delisted")}>
               <div className="orow__main">
