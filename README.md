@@ -57,12 +57,19 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
 
   Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
 - **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://web-production-a58de.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
-  - the live order list, with a one-click refund on each paid order;
+  - the live list of the hub's escrow orders, with a one-click refund on each paid one;
   - the CSV export;
   - the gas relayer's panel, read from the relay's live `/status`;
   - the twenty-line block, with `npm i @countersign-hub/relay`.
 
-  The merchant refunds from the order's row. It reads the terms, then signs once in its own wallet, and the relayer pays the gas. A real purchase through the public checkout, with #233 live, paid from the npm package: [`0x112a…4e5b`](https://explorer.testnet.whitechain.io/tx/0x112a574797aa3df30969a8578e8e4c44fb0bae1226495a14ed795d356c874e5b). The relayer submitted it, and the buyer holds no WBT.
+  The merchant refunds from the order's row. It reads the terms, then signs once in its own wallet, and the relayer pays the gas.
+
+  **Refunded from the public screen, on production.** An escrow order paid through the hub was refunded in full with one wallet signature, and the relayer paid the gas:
+  - fund [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5);
+  - release [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31);
+  - refund [`0xe414…3b62`](https://explorer.testnet.whitechain.io/tx/0xe414f5314d2792b463e4fa4ab7feddb753b6a8bdecebf4abcc3406414ac13b62).
+
+  A purchase through the public checkout, paid from the npm package, also settled: [`0x112a…4e5b`](https://explorer.testnet.whitechain.io/tx/0x112a574797aa3df30969a8578e8e4c44fb0bae1226495a14ed795d356c874e5b). Checkout orders like it are in the relay's `orders.csv`, but they are not on the screen yet, so they have no one-click refund there.
 - **The accountant's export.** The production relay serves [`orders.csv`](https://whitechain-relay-production.up.railway.app/orders.csv?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c). It has one row per order, with the amount, fee, refunded and net amounts, and links to each transaction. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain.
 
 ### Scale: the payer holds zero WBT
