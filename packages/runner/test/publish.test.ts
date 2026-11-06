@@ -130,3 +130,27 @@ describe("--pay-to", () => {
     ).toThrow("Unknown rail solana.");
   });
 });
+
+describe("--ens", () => {
+  test("writes the seller's ENS name into the offer", async () => {
+    const account = privateKeyToAccount(PRIVATE_KEY);
+    const skill = await readSkill(FIXTURE);
+    const options = parseOptions(["--hub", hubUrl, "--skill", FIXTURE, "--price", "1000", "--ens", "alice.eth"]);
+    const offer = skillOffer({
+      seller: account.address,
+      skill,
+      price: options.price,
+      deadline: options.deadline,
+      rails: options.rails,
+      ens: options.ens,
+      now: 1_700_000_000,
+    });
+    expect(offer.ens).toBe("alice.eth");
+  });
+
+  test("refuses a name that is not in normal form", () => {
+    expect(() => parseOptions(["--hub", hubUrl, "--skill", FIXTURE, "--price", "1000", "--ens", "Alice.eth"])).toThrow(
+      "--ens must be an ENS name in normal form",
+    );
+  });
+});

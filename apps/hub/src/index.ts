@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
+import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
 
 /** The official ERC-8004 IdentityRegistry on Arc testnet. */
@@ -18,6 +19,11 @@ const store = new Store(dbPath);
 const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
+
+// Forward ENS lookups on Sepolia. Every endpoint in HUB_ENS_RPC_URLS (comma-separated; HUB_ENS_RPC_URL
+// for one) must agree, or the lookup fails and a named offer is refused. Unset: two public endpoints.
+const ensRpcUrls = rpcUrlsFrom(process.env.HUB_ENS_RPC_URLS ?? process.env.HUB_ENS_RPC_URL);
+const ens = sepoliaEnsResolver(ensRpcUrls ? { rpcUrls: ensRpcUrls } : {});
 
 // The human's approver token guards approval decisions and the envelope and approval reads. Unset, the
 // decision route answers 503 no-approver: a held call can then be approved only on the agent's machine.
@@ -44,6 +50,7 @@ const { app, websocket } = createHub({
   rails,
   now,
   publicUrl,
+  ens,
   ...(humanApprovalToken !== undefined ? { humanApprovalToken } : {}),
   ...(relayUrl !== undefined ? { relayUrl } : {}),
   ...(identity !== undefined ? { identity } : {}),

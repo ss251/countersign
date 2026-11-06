@@ -12,6 +12,7 @@ import {
   shortHex,
   usd,
 } from "../../lib/format.ts";
+import { approverAddress, makeApprover, SigningError } from "../../lib/approver.ts";
 import { approvalToken, HubError, rememberApprovalToken } from "../../lib/hub.ts";
 import { envelopeChecklist, type Check } from "../../lib/checklist.ts";
 import type { Approval, EnvelopeView } from "../../lib/types.ts";
@@ -118,6 +119,10 @@ function ApprovalFlow({
     : { ok: true };
   const final = job && (job.step === "released" || job.step === "refused" || job.step === "refunded" || job.step === "failed");
   const [token, setToken] = useState(approvalToken);
+  // This phone's approver key, and the approver the agent's signed envelope names: they must be one key.
+  const [approver, setApprover] = useState(approverAddress);
+  const named = live && seen?.mirror ? seen.envelope.approver : undefined;
+  const stranger = Boolean(approver && named && approver.toLowerCase() !== named.toLowerCase());
   const [sending, setSending] = useState<"countersign" | "decline" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /** Decided elsewhere or expired: nothing more can happen to this request. */
@@ -126,7 +131,17 @@ function ApprovalFlow({
   const [attempt, setAttempt] = useState(0);
 
   const fail = (e: unknown) => {
-    if (e instanceof HubError && e.status === 401) {
+    if (e instanceof SigningError) {
+      // Nothing left this phone. Without a key, the dock offers to make one.
+      if (e.problem === "no-key") setApprover(null);
+      setProblem(e.problem === "no-key" ? null : e.message);
+    } else if (e instanceof HubError && e.code === "bad-signature") {
+      setProblem("The hub did not take this phone's countersignature: your agent's envelope names another approver. Nothing was paid.");
+    } else if (e instanceof HubError && e.status === 409 && e.code === "no-approver") {
+      setProblem("Your agent's envelope names no approver yet. Name this phone's key in it, then hold again. Nothing was paid.");
+    } else if (e instanceof HubError && e.status === 400) {
+      setProblem(`${e.message} Nothing was paid.`);
+    } else if (e instanceof HubError && e.status === 401) {
       rememberApprovalToken(null);
       setToken(null);
       setProblem(e.code === "no-token" ? null : "The hub did not accept that token. Nothing was signed. Paste it again.");
@@ -154,7 +169,7 @@ function ApprovalFlow({
     setProblem(null);
     try {
       const known = await api.jobIds(approval.agent!);
-      await api.decide(approval.id, "countersign");
+      await api.decide(approval, "countersign");
       onSigned();
       stop.current = followJob(approval, known, setJob);
     } catch (e) {
@@ -170,7 +185,7 @@ function ApprovalFlow({
     setSending("decline");
     setProblem(null);
     try {
-      await api.decide(approval.id, "decline");
+      await api.decide(approval, "decline");
       onClose();
     } catch (e) {
       fail(e);
@@ -345,18 +360,29 @@ function ApprovalFlow({
                 setProblem(null);
               }}
             />
-          ) : (
-            <HoldToSign
-              key={attempt}
-              ariaLabel={`Countersign ${formatMoney(money)} to ${offer.title}`}
-              left={listing.seller.name}
-              right="you"
-              disabled={!decision.ok || sending !== null}
-              signed={job !== null}
-              label={decision.ok ? "Hold to countersign" : "The envelope refuses this call"}
-              doneLabel={sending === "countersign" ? "Sending to the hub" : "Countersigned"}
-              onSigned={() => void countersign()}
+          ) : live && !approver ? (
+            <ApproverKey
+              named={named}
+              onMade={(address) => {
+                setApprover(address);
+                setProblem(null);
+              }}
             />
+          ) : (
+            <>
+              <HoldToSign
+                key={attempt}
+                ariaLabel={`Countersign ${formatMoney(money)} to ${offer.title}`}
+                left={listing.seller.name}
+                right="you"
+                disabled={!decision.ok || sending !== null || stranger}
+                signed={job !== null}
+                label={stranger ? "This phone is not your agent's approver" : decision.ok ? "Hold to countersign" : "The envelope refuses this call"}
+                doneLabel={sending === "countersign" ? "Sending to the hub" : "Countersigned"}
+                onSigned={() => void countersign()}
+              />
+              {live && approver ? <ApproverLine address={approver} named={named} /> : null}
+            </>
           )}
         </div>
       )}
@@ -369,6 +395,68 @@ const AGENT_CHECKED: Check[] = [
   { kind: "pass", text: "Within budget, under the per-seller cap and on the allowlist: your agent checked before asking" },
   { kind: "ask", text: "Above your ask threshold, so it needs you" },
 ];
+
+/*
+ * This phone's approver key, made once and kept in this browser. Its address goes into the agent's
+ * envelope as `approver`; only a decision signed with that key clears a held call.
+ */
+function ApproverKey({ named, onMade }: { named: string | undefined; onMade: (address: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const make = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onMade(await makeApprover());
+    } catch {
+      setError("This browser could not keep a key, so none was made.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="approver">
+      <p className="approver__what">
+        To countersign from this phone, it needs its own approver key. The key is made here and never leaves this browser;
+        your agent's envelope names its address as the approver.
+      </p>
+      {named ? (
+        <p className="approver__named">
+          Your agent's envelope names <Hash value={named} label="approver address" />.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="field__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button variant="primary" block disabled={busy} onClick={() => void make()}>
+        {busy ? "Making the key" : "Make this phone's key"}
+      </Button>
+    </div>
+  );
+}
+
+/** Which key this phone signs with, and what to do when the envelope names another. */
+function ApproverLine({ address, named }: { address: string; named: string | undefined }) {
+  const stranger = named !== undefined && named.toLowerCase() !== address.toLowerCase();
+  return (
+    <p className={cx("approver__line", stranger && "is-stranger")}>
+      {stranger ? (
+        <>
+          Your agent's envelope names <Hash value={named} label="the envelope's approver" />, not this phone's key{" "}
+          <Hash value={address} label="this phone's approver address" />. Name this phone's key as the approver to countersign
+          here.
+        </>
+      ) : (
+        <>
+          Signed with this phone's key <Hash value={address} label="this phone's approver address" />
+          {named ? ", the approver your agent's envelope names." : "."}
+        </>
+      )}
+    </p>
+  );
+}
 
 /** The human's approval token for this hub. Pasted once; it stays on this phone. */
 export function TokenForm({ onSave }: { onSave: (token: string) => void }) {
