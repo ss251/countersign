@@ -222,7 +222,7 @@ contract W1V21Test is Test {
         bytes memory releaseSig = _releaseSig(jobId);
         bytes memory cancelSig = _cancelSig(jobId);
         bytes memory disputeSig = _disputeSig(jobId, DELIVERED);
-        vm.prank(relayer);
+        vm.prank(arbiter); // 52b7c7c: only the arbiter (the hub, after its gate) submits a release
         escrow.release(jobId, SLIP, releaseSig);
         assertEq(_status(jobId), DELIVERED);
 
@@ -295,12 +295,12 @@ contract W1V21Test is Test {
         bytes memory junkSig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, junk)));
         uint256 deadline = uint256(escrow.jobOf(jobId).deadline);
         uint256 settleBy = deadline + 600;
-        bytes4 late = bytes4(keccak256("LateReleaseNeedsArbiter(bytes32)"));
+        bytes4 late = bytes4(keccak256("ReleaseNeedsArbiter(bytes32)"));
 
-        // At the deadline itself (inclusive) the payee's release is still anyone's to submit.
-        // Past it, the seller, the job's funder and a stranger are all refused, at deadline+1 and at settleBy.
+        // 52b7c7c: only the arbiter submits a release, at any time. The seller, the job's funder and a
+        // stranger are all refused, on time (cs-audit's Medium 2), at the deadline, past it, and at settleBy.
         address[3] memory callers = [seller, relayer, makeAddr("w1 late stranger")];
-        uint256[2] memory times = [deadline + 1, settleBy];
+        uint256[4] memory times = [deadline - 1, deadline, deadline + 1, settleBy];
         for (uint256 t; t < times.length; ++t) {
             vm.warp(times[t]);
             for (uint256 i; i < callers.length; ++i) {
@@ -318,11 +318,21 @@ contract W1V21Test is Test {
         assertEq(escrow.bondOf(seller), 0, "the late seller kept its bond");
     }
 
-    function test_W1_B_a_release_at_the_deadline_itself_is_still_anyones_to_submit() public {
+    function test_W1_B_a_release_at_the_deadline_is_the_arbiters_alone() public {
         bytes32 jobId = _fundBonded(14, WINDOW);
         bytes memory releaseSig = _releaseSig(jobId);
+        bytes4 needsArbiter = bytes4(keccak256("ReleaseNeedsArbiter(bytes32)"));
+        address stranger = makeAddr("w1 on-time stranger");
         vm.warp(uint256(escrow.jobOf(jobId).deadline)); // "until T" is inclusive (L3)
-        vm.prank(makeAddr("w1 on-time stranger"));
+        // Even the payee's own honest signature is the arbiter's to submit (52b7c7c).
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(needsArbiter, jobId));
+        escrow.release(jobId, SLIP, releaseSig);
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(needsArbiter, jobId));
+        escrow.release(jobId, SLIP, releaseSig);
+        assertEq(_status(jobId), FUNDED);
+        vm.prank(arbiter);
         escrow.release(jobId, SLIP, releaseSig);
         assertEq(_status(jobId), DELIVERED);
     }
@@ -333,7 +343,7 @@ contract W1V21Test is Test {
         bytes32 jobId = _fundBonded(7, WINDOW);
         bytes memory signedFunded = _disputeSig(jobId, FUNDED);
         bytes memory releaseSig = _releaseSig(jobId);
-        vm.prank(relayer);
+        vm.prank(arbiter); // 52b7c7c: only the arbiter submits a release
         escrow.release(jobId, SLIP, releaseSig);
 
         vm.prank(relayer);
