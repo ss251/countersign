@@ -15,11 +15,11 @@ import type { Address, Hex } from "viem";
 export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" | "mpp:stripe" | "mpp:tempo";
 
 /**
- * A settlement path. Shipped ids (escrow, gateway, whitechain, hedera) match a directory in packages/rail/src; eip3009 and mpp are in progress (#19, #84) and erc8183 is not built (#24).
+ * A settlement path. Shipped ids (escrow, gateway, whitechain, hedera) match a directory in packages/rail/src; eip3009 and mpp are in progress (#19, #84). erc8183 is implemented and not deployed (#24).
  * - escrow:     CountersignedEscrow on Arc, USDC, the buyer's EIP-3009 authorisation names the escrow
  * - eip3009:    direct USDC transfer on Arc, no escrow (in progress, #19)
  * - gateway:    Circle Gateway nanopayment on Arc, credited to the seller in a batch
- * - erc8183:    reserved: ERC-8183 job escrow with a JobHook committing the slip (not built, #24)
+ * - erc8183:    ERC-8183 job escrow on Arc testnet. settle funds the job; SlipHook commits the slip hash when it completes (not deployed, the hub does not load it, #24)
  * - whitechain: CountersignedEscrow on Whitechain Sepolia, USDT, gas paid by our relayer
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
  * - mpp:        Machine Payments Protocol: Tempo testnet first, Stripe's card method behind a flag; the slip carries the MPP receipt id (in progress, #84)

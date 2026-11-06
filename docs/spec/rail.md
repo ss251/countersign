@@ -19,12 +19,25 @@ The three methods are the x402 v2 facilitator trio: `challenge` builds one entry
 | Rail | Network | Scheme | Kind | Gas paid by |
 |---|---|---|---|---|
 | `escrow` | `eip155:5042002` (Arc testnet) | `countersign` | escrow | hub |
+| `erc8183` | `eip155:5042002` (Arc testnet) | `countersign` | escrow | hub |
 | `whitechain` | `eip155:1874` (Whitechain Sepolia) | `countersign` | escrow | relayer |
 | `eip3009` | `eip155:5042002` (Arc testnet) | `exact` | direct | hub |
 | `hedera` | `hedera:testnet` | `exact` | direct | facilitator |
 | `gateway` | `eip155:5042002` | `exact` (GatewayWalletBatched) | batched | Circle Gateway |
 
 Headers follow x402 v2: `PAYMENT-REQUIRED` on the 402, `PAYMENT-SIGNATURE` on the paid retry and `PAYMENT-RESPONSE` on the answer, each holding base64 JSON.
+
+## erc8183
+
+An ERC-8183 job escrow on Arc testnet, declared beside the `escrow` rail. Same interface. Code: `packages/rail/src/erc8183/`, contract: `contracts/src/erc8183/ERC8183Escrow.sol`. The constants for Arc testnet (chain 5042002, USDC `0x3600000000000000000000000000000000000000`, explorer `https://explorer.testnet.arc.io/tx/{tx}`) live on `ARC_ERC8183`. The escrow address and its hook are arguments, because neither contract is deployed. The hub does not load this rail.
+
+`challenge` offers scheme `countersign`. The 402's `extra` names the rail, the escrow, the hook, the chain and the offer hash. `verify` checks the countersignature the way the escrow rail does, and refuses a bond, escrow v2 terms, or a hook other than this rail's. `settle` calls `fund`, which opens one job and pulls the budget with the buyer's EIP-3009 authorisation. That one transaction is this contract's form of `createJob`, `setBudget` and `fund`: the buyer pays no gas. The client is the buyer, the provider is the payee, the budget is the amount, and the expiry is the deadline. The evaluator is fixed when the contract is deployed, and it is the address that must submit settlement.
+
+`escrow.release` calls `complete`. The provider's EIP-712 `Release(jobId, slipHash)` is required, and only the evaluator may submit it. `complete` moves the job from Funded through Submitted to Completed, pays the provider less the toll, and calls the job hook around both steps. The hook is `SlipHook`, deployed by the escrow's constructor. Its `afterAction` on `complete` emits `SlipCommitted(acpJobId, jobId, slipHash)`. That event is the slip commitment. A zero slip hash is refused before a transaction is sent.
+
+`escrow.refund` is `claimRefund` after the deadline. It is not hooked, so a hook cannot block the expiry refund. `escrow.cancel` is `reject` with the provider's `Cancel(jobId)` signature, and it returns the budget to the buyer.
+
+The hook interface is `IJobHook`: `beforeAction` and `afterAction`. This is a minimal ERC-8183, not the upgradeable reference contract. Every job uses the escrow's own `SlipHook`. There is no bond and no separate `submit` transaction.
 
 ## eip3009
 
