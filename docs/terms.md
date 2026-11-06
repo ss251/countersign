@@ -57,7 +57,7 @@ As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md
 
 ## 6. Testnet only, no warranty
 
-- Every rail in this repository is configured for a testnet: Arc testnet (chain 5042002) for the escrow and Gateway rails, Whitechain Sepolia (chain 1874) and Hedera testnet. There is no mainnet configuration.
+- Every rail in this repository is configured for a testnet: Arc testnet (chain 5042002) for the escrow and Gateway rails, Whitechain Sepolia (chain 1874) and Hedera testnet. The mainnet profile is pending, and a hub refuses to boot on mainnet until it is complete ([mainnet.md](mainnet.md)).
 - The software is provided under the MIT licence, as is, without warranty of any kind ([LICENSE](../LICENSE)).
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against.** Release needs only the payee's signature, so the escrow pays a funded job whenever the payee signs a release before the deadline. It cannot judge the output. The hub's output check is the delivery gate, and it runs off chain.

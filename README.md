@@ -11,9 +11,9 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 | Rail | Network | Token | Kind | Status |
 |---|---|---|---|---|
 | Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
-| Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The hub loads it with `WC_RELAY_URL`, and the relay submits and pays the gas ([docs/whitechain.md](docs/whitechain.md)). |
-| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078), see [Hedera payment flow](#hedera-payment-flow). |
-| MPP | Tempo testnet (Moderato), chain `42431`, `mpp:tempo` | pathUSD `0x20c0000000000000000000000000000000000000` | direct, MPP's Tempo charge (402 with `WWW-Authenticate: Payment`, `Payment-Receipt` on success) | Live on Tempo testnet through the rail's demo endpoint: [0.01 pathUSD settled](https://explore.testnet.tempo.xyz/tx/0x4866e130e21972d08eb7c52eab353bb6259b0f9866621979682cef2179e3a89f) after the review fix. Not wired into the hub yet. Stripe's card method sits behind `MPP_STRIPE=1`. See [docs/mpp.md](docs/mpp.md). |
+| Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on the production hub: a paid call's [fund](https://explorer.testnet.whitechain.io/tx/0x1d45e70ff0ac33d9fee2b503f7acb22370a107232a98eb3d7afa7b7d4d321e73) and [release](https://explorer.testnet.whitechain.io/tx/0xd60dd634a1b326947ef855eee129cf7f994f0c6fdd5b58843f3d5310fdcc5971), the buyer holding no WBT; a [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The hub loads it with `WC_RELAY_URL`, and the relay submits and pays the gas ([docs/whitechain.md](docs/whitechain.md)). |
+| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call through the hub](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078). Held by default on the production hub (`hedera-scheduled`): a held purchase ran only after the seller signed, schedule [`0.0.11341327`](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.11341327). See [Hedera payment flow](#hedera-payment-flow). |
+| MPP | Tempo testnet (Moderato), chain `42431`, `mpp:tempo` | pathUSD `0x20c0000000000000000000000000000000000000` | direct, MPP's Tempo charge (402 with `WWW-Authenticate: Payment`, `Payment-Receipt` on success) | `IN PROGRESS`: not on the hub yet. A real payment through the rail on Tempo testnet, from its own demo endpoint: [0.01 pathUSD settled](https://explore.testnet.tempo.xyz/tx/0x4866e130e21972d08eb7c52eab353bb6259b0f9866621979682cef2179e3a89f). Stripe's card method sits behind `MPP_STRIPE=1`. See [docs/mpp.md](docs/mpp.md). |
 
 A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
@@ -51,6 +51,24 @@ A verified slip proves:
 - **on chain:** with an RPC URL, the escrow's `Released(jobId, slipHash)` event carries this slip's hash. The committed hash covers the body without the settlement receipt, because the release transaction cannot exist before the hash it commits ([decisions.md](docs/decisions.md), D9). A tampered body with a recomputed hash still fails, because the chain holds the original.
 
 The verifier imports nothing from the hub. Without `--rpc` it proves who signed what and says the chain was not read.
+
+## Who pays, and from which wallet
+
+Where this is going: the person's wallet on EVM, the agent's account on Hedera, one envelope over both. Only the third class below is live today.
+
+| Class of user | Wallet | Rails | Status |
+|---|---|---|---|
+| Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
+| Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
+| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held by default |
+
+Privy has no Hedera, and none of these is one wallet for every rail.
+
+Two things are true today and differ from the table's end state:
+- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
+
+Each status, with its evidence: [docs/status.md](docs/status.md).
 
 ## Hedera payment flow
 
@@ -137,7 +155,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`, `CS_NETWORK` (`testnet` by default; `mainnet` refuses to boot while its profile is pending). The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
@@ -170,7 +188,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 
 ## Safety limits
 
-- **Testnet only.** Every deployment and payment above is on a testnet. There is no mainnet configuration.
+- **Testnet only.** Every deployment and payment above is on a testnet. The mainnet profile is pending, and a hub started with `CS_NETWORK=mainnet` refuses to boot ([docs/mainnet.md](docs/mainnet.md)).
 - **Keys stay on the device.** The buyer and seller read their keys from the environment, and the hub holds no buyer key. On escrow rails the hub can submit the buyer's countersignature, but the signature fixes the escrow, payee and amount.
 - **What the escrow protects against:** a moved price, a swapped payee or offer, an extended deadline, replay of one countersignature, and a seller who never delivers, which the buyer recovers by refund after the deadline.
 - **What it does not protect against:** release needs only the seller's signature, so the escrow pays a funded job whenever the seller signs a release before the deadline. It cannot judge the output. The hub's output-schema check is the delivery gate, and it sits off chain.
