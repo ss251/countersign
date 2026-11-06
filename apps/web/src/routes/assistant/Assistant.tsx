@@ -186,7 +186,8 @@ export function Assistant({ envelope, layout }: { envelope: Resource<EnvelopeVie
             picked={picked === m.listing.hash}
             onPick={() => setPicked(m.listing.hash)}
             onAllow={
-              view
+              // The agent's signed mirror is read-only here: its allowlist changes on the agent's machine.
+              view && !view.mirror
                 ? () => {
                     const seller = m.listing.offer.seller.toLowerCase();
                     envelope.set({
@@ -241,7 +242,7 @@ function verdictFor(listing: Listing, view: EnvelopeView | undefined) {
   if (!view) return null;
   const amount = listing.offer.price;
   const decision = checkEnvelope(view.envelope, view.spent, { seller: listing.offer.seller, offerHash: listing.hash, amount }, nowUnix());
-  return { decision, asks: BigInt(amount) > BigInt(view.askAbove) };
+  return { decision, asks: view.askAbove !== null && BigInt(amount) > BigInt(view.askAbove) };
 }
 
 function MatchCard({
@@ -292,6 +293,8 @@ function MatchCard({
           </Button>
           <p className="match__hint">Adds the seller to your envelope’s allowlist and checks again. Nothing is bought.</p>
         </>
+      ) : verdict && !verdict.decision.ok && verdict.decision.reason === "not-allowlisted" ? (
+        <p className="match__hint">Your allowlist lives on your agent’s machine. Add this seller there, and its next signed copy shows here.</p>
       ) : null}
     </li>
   );

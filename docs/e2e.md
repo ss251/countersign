@@ -25,6 +25,9 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 6 | `hedera` | an agent pays a hub offer over x402 with no human step; the payment is on the mirror node and in the HCS spend log | Hedera testnet | cs-hd |
 | 7 | `merchant` | totals, a partial refund and the accountant export agree with the chain | Whitechain Sepolia | cs-wc |
 | 8 | `discovery` | the A2A card, skills index, OpenAPI document and offer list resolve from a clean client, locally and on the public hub | none | orch-cs |
+| 10 | `arc-gateway` | the buyer pays from its Circle Gateway balance: debited at once, slip names the gateway rail | Arc testnet | orch-cs |
+| 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
+| 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
@@ -115,6 +118,29 @@ Runs against the suite's own hub and, when set, the public hub. A clean client i
 5. `/discovery/resources` lists the offers in x402 v2 form.
 6. `/offers`: every listed offer hashes to its own `offerHash`, recomputed here.
 7. An unpaid call answers 402 with the bazaar extension.
+
+### 10 · arc-gateway
+
+1. **hub up** with the escrow and Gateway rails; the seller lists one offer on both.
+2. **402 offers Gateway**: an `exact` entry for `GatewayWalletBatched` at the price, paid to the seller, beside the escrow entry.
+3. **buyer pays through Gateway** (`buy --rail gateway`); the journal records `settled` on rail `gateway`.
+4. **debited at once**: the buyer's Gateway balance drops by exactly the price. The seller is credited in Gateway's next batch, so there is no per-call chain transaction to check.
+5. **slip** names rail `gateway`, no escrow, carries the Gateway transfer id, equals the hub's copy and verifies.
+
+### 11 · refusals
+
+Each case uses a fresh buyer state and must end with a refusal in the journal and no `signed` entry.
+
+1. The hub's input gate answers 422 `Refused. The input does not match the offer's schema.`, and the buyer CLI refuses the same input before signing.
+2. Over the budget, over the per-seller limit, a seller not on the allowlist, a revoked envelope, and a call above `ask-above` held for the human, each with its own message and reason.
+3. With the runner stopped, the hub answers 503 `The seller is offline. Nothing was charged.` and the buyer refuses.
+
+### 12 · public-spine
+
+1. **a live offer**: the public hub lists an online Arc offer at or under 0.05 USDC; the suite recomputes its hash.
+2. **envelope approves** and the buyer CLI buys it through the public hub; the hosted relayer pays the gas and the hosted seller's runner delivers.
+3. **chain agrees**: `Funded` names this buyer and that seller at the listed price; `Released` carries the slip's hash.
+4. **slip verifies with no hub**, and its explorer link opens.
 
 ## Results
 

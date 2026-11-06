@@ -355,8 +355,9 @@
   gap: 2px;
 }
 
+/* Listed is not settled, so it stays ink: green is for money that moved. */
 .listed__title {
-  color: var(--settle);
+  color: var(--ink);
   font-size: var(--t-20);
   font-weight: 600;
 }

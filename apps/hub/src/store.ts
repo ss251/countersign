@@ -4,6 +4,13 @@ import type { Hex } from "viem";
 
 export type JobStatus = "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
 
+/**
+ * Who a failed delivery is on. `seller`: the runner took the job and refused it, answered
+ * badly, or ran past the offer's own deadline. `hub`: the runner was gone, the connection
+ * dropped, or the hub cut the job short. A job closed without one is nobody's fault on record.
+ */
+export type Fault = "seller" | "hub";
+
 export interface StoredOffer {
   offerHash: Hex;
   seller: string;
@@ -34,6 +41,7 @@ export interface JobPatch {
   closeTx?: string | null;
   slipHash?: Hex | null;
   closedAt?: number | null;
+  fault?: Fault | null;
 }
 
 /** A buyer agent's signed statement of its limits and spend, as the hub received it. */
@@ -72,6 +80,7 @@ export interface RatingJob {
   status: JobStatus;
   slipHash: Hex | null;
   slip: Slip | null;
+  fault: Fault | null;
   createdAt: number;
 }
 
@@ -99,7 +108,16 @@ interface JobRow {
   closed_at: number | null;
 }
 
-interface RatingJobRow extends JobRow {
+interface RatingJobRow {
+  job_id: string;
+  offer_hash: string;
+  rail: string;
+  buyer: string;
+  amount: string;
+  status: string;
+  slip_hash: string | null;
+  fault: string | null;
+  created_at: number;
   seller: string;
   slip_json: string | null;
 }
@@ -167,6 +185,9 @@ export class Store {
     const jobColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
     if (!jobColumns.some((column) => column.name === "closed_at")) {
       this.db.run("ALTER TABLE jobs ADD COLUMN closed_at INTEGER NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "fault")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN fault TEXT NULL");
     }
     this.db.run(`
       CREATE TABLE IF NOT EXISTS slips (
@@ -341,6 +362,10 @@ export class Store {
       sets.push("slip_hash = ?");
       values.push(patch.slipHash);
     }
+    if (patch.fault !== undefined) {
+      sets.push("fault = ?");
+      values.push(patch.fault);
+    }
     if (sets.length === 0) return;
     this.db.query(`UPDATE jobs SET ${sets.join(", ")} WHERE job_id = ?`).run(...values, jobId);
   }
@@ -363,7 +388,9 @@ export class Store {
   ratingJobs(): RatingJob[] {
     return this.db
       .query<RatingJobRow, []>(
-        `SELECT jobs.*, offers.seller AS seller, slips.slip_json AS slip_json
+        `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.status,
+                jobs.slip_hash, jobs.fault, jobs.created_at,
+                offers.seller AS seller, slips.slip_json AS slip_json
            FROM jobs
            JOIN offers ON offers.offer_hash = jobs.offer_hash
            LEFT JOIN slips ON slips.slip_hash = jobs.slip_hash
@@ -380,6 +407,7 @@ export class Store {
         status: row.status as JobStatus,
         slipHash: row.slip_hash as Hex | null,
         slip: row.slip_json === null ? null : (JSON.parse(row.slip_json) as Slip),
+        fault: row.fault === "seller" || row.fault === "hub" ? row.fault : null,
         createdAt: row.created_at,
       }));
   }
