@@ -35,7 +35,8 @@ const opBalance = await hbarBalance(opId);
 const seed = {
   AGENT: Hbar.fromTinybars(((opBalance * 30n) / 100n).toString()),
   SELLER: Hbar.fromTinybars(((opBalance * 10n) / 100n).toString()),
-  // Enough for ScheduleSign fees and its USDC association, not a spending balance.
+  // Enough for ScheduleSign fees only, not a spending balance. The operator pays every USDC
+  // association below, so this seed is not needed for the association's ~0.72 HBAR fee.
   SELLER_SIGN: Hbar.fromTinybars("30000000"),
 };
 
@@ -62,18 +63,16 @@ for (const role of ["AGENT", "SELLER", "SELLER_SIGN"] as const) {
   const id = ids[role];
   if ((await tokenBalance(id, USDC_TESTNET)) !== null) continue;
   const k = key(env, `HD_${role}_KEY`);
-  // The account pays for its own association; for a faucet-made hollow account this also completes it.
-  const self = testnetClient(id, k);
+  // The operator pays for the association, so an account needs no HBAR of its own. The account
+  // still signs: for a faucet-made hollow account this also completes it.
   try {
-    const tx = await new TokenAssociateTransaction().setAccountId(id).setTokenIds([USDC_TESTNET]).freezeWith(self).sign(k);
-    const receipt = await (await tx.execute(self)).getReceipt(self);
+    const tx = await new TokenAssociateTransaction().setAccountId(id).setTokenIds([USDC_TESTNET]).freezeWith(op).sign(k);
+    const receipt = await (await tx.execute(op)).getReceipt(op);
     console.log(`associated USDC ${USDC_TESTNET} with ${role.toLowerCase()} ${id}: ${receipt.status.toString()}`);
   } catch (e) {
     // The mirror node lags consensus, so a fresh association can look missing; that one is fine.
     const status = e instanceof ReceiptStatusError || e instanceof StatusError ? e.status : undefined;
     if (status !== Status.TokenAlreadyAssociatedToAccount) throw e;
-  } finally {
-    self.close();
   }
 }
 
