@@ -156,7 +156,7 @@ export default function RegistryPage(_props: PageProps) {
         </Empty>
       ) : listings.loading && !listings.data ? (
         <div className="sellers" aria-busy="true">
-          <div className="seller seller--skeleton" />
+          <div className="scard scard--skeleton" />
         </div>
       ) : all.length === 0 ? (
         <Empty title="No offers on this hub yet.">
@@ -239,24 +239,24 @@ function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: n
   const calls = g.released + g.refunded + g.failed;
   const titleId = `seller-${g.address}`;
   return (
-    <article className="seller" aria-labelledby={titleId}>
-      <header className="seller__head">
+    <article className="scard" aria-labelledby={titleId}>
+      <header className="scard__head">
         <AddressGlyph address={g.address} />
-        <div className="seller__who">
-          <h2 id={titleId} className={cx("seller__name", !g.named && "is-unnamed")}>
+        <div className="scard__who">
+          <h2 id={titleId} className={cx("scard__name", !g.named && "is-unnamed")}>
             {g.named ? g.name : "Unnamed seller"}
             {g.agentId ? (
-              <svg className="seller__tick" viewBox="0 0 16 16" width="15" height="15" role="img" aria-label="Identity proven by ERC-8004">
+              <svg className="scard__tick" viewBox="0 0 16 16" width="15" height="15" role="img" aria-label="Identity proven by ERC-8004">
                 <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             ) : null}
           </h2>
           <Hash value={g.address} head={8} tail={6} label={`${g.named ? g.name : "seller"} address`} />
-          <p className="seller__id">{g.agentId ? <>ERC-8004 agent <span className="num">#{g.agentId}</span></> : "Not registered with ERC-8004"}</p>
+          <p className="scard__id">{g.agentId ? <>ERC-8004 agent <span className="num">#{g.agentId}</span></> : "Not registered with ERC-8004"}</p>
         </div>
       </header>
 
-      <dl className="seller__strip">
+      <dl className="scard__strip">
         <div>
           <dt className="label">Record</dt>
           <dd className="num">{!g.counted ? "Not counted yet" : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
@@ -275,7 +275,7 @@ function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: n
         </div>
       </dl>
 
-      <ul className="seller__offers">
+      <ul className="scard__offers">
         {g.offers.map((l) => {
           const c = ledger.byOffer.get(l.hash.toLowerCase()) ?? (l.stats ? { paid: l.stats.released, refunded: l.stats.refunded } : undefined);
           return (
