@@ -16,6 +16,7 @@ export type PaymentRecord = {
   blockNumber: bigint;
   settledAt: number;
   resource: string | null;
+  description: string | null;
   status: PaymentStatus;
   refunded: bigint;
 };
@@ -59,6 +60,7 @@ export type NewPayment = {
   blockNumber: bigint;
   settledAt: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type JobStatus = "pending" | "funded" | "released" | "cancelled" | "refunded";
@@ -78,6 +80,7 @@ export type JobRecord = {
   createdAt: number;
   closedAt: number | null;
   resource: string | null;
+  description: string | null;
 };
 
 export type NewJob = {
@@ -92,6 +95,7 @@ export type NewJob = {
   status?: "pending" | "funded";
   createdAt: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type JobFilter = {
@@ -100,6 +104,7 @@ export type JobFilter = {
 };
 
 export type OrderKind = "exact" | "escrow";
+export type CloseKind = "release" | "cancel" | "deadline_refund";
 export type OrderStatus =
   | "paid"
   | "partially_refunded"
@@ -119,6 +124,7 @@ export type Order = {
   refunded: bigint;
   refundable: bigint;
   status: OrderStatus;
+  closeKind: CloseKind | null;
   createdAt: number;
   settleTx: string;
   closeTx: string | null;
@@ -126,6 +132,7 @@ export type Order = {
   offerHash?: string;
   deadline?: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type OrderFilter = {
@@ -148,6 +155,7 @@ type JobRow = {
   created_at: number;
   closed_at: number | null;
   resource: string | null;
+  description: string | null;
 };
 
 export type PaymentFilter = {
@@ -166,6 +174,7 @@ type PaymentRow = {
   block_number: string;
   settled_at: number;
   resource: string | null;
+  description: string | null;
   status: string;
 };
 
@@ -198,6 +207,7 @@ const SCHEMA = `
     block_number TEXT NOT NULL,
     settled_at INTEGER NOT NULL,
     resource TEXT,
+    description TEXT,
     status TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS payments_authorization
@@ -227,7 +237,8 @@ const SCHEMA = `
     slip_hash TEXT,
     created_at INTEGER NOT NULL,
     closed_at INTEGER,
-    resource TEXT
+    resource TEXT,
+    description TEXT
   );
   CREATE INDEX IF NOT EXISTS jobs_payee ON jobs (payee);
   CREATE INDEX IF NOT EXISTS jobs_buyer ON jobs (buyer);
@@ -421,8 +432,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO jobs
-          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.jobId,
@@ -436,6 +447,7 @@ export class Ledger {
         job.status ?? "funded",
         job.createdAt,
         job.resource ?? null,
+        job.description ?? null,
       );
   }
 
@@ -556,11 +568,13 @@ export class Ledger {
           : hasPending
             ? "refund_pending"
             : transferStatus(payment.amount, payment.refunded),
+      closeKind: null,
       createdAt: payment.settledAt,
       settleTx: payment.txHash,
       closeTx: null,
       refundTxs: refunds.map((refund) => refund.txHash),
       resource: payment.resource,
+      description: payment.description,
     };
   }
 
@@ -596,6 +610,7 @@ export class Ledger {
       refunded,
       refundable: this.refundable(job.jobId),
       status,
+      closeKind: closeKindOf(job.status),
       createdAt: job.createdAt,
       settleTx: job.fundTx,
       closeTx: job.closeTx,
@@ -603,6 +618,7 @@ export class Ledger {
       offerHash: job.offerHash,
       deadline: job.deadline,
       resource: job.resource,
+      description: job.description,
     };
   }
 
@@ -668,8 +684,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO payments
-          (id, network, payer, pay_to, amount, nonce, tx_hash, block_number, settled_at, resource, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, network, payer, pay_to, amount, nonce, tx_hash, block_number, settled_at, resource, description, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         payment.id,
@@ -682,6 +698,7 @@ export class Ledger {
         payment.blockNumber.toString(),
         payment.settledAt,
         payment.resource ?? null,
+        payment.description ?? null,
         status,
       );
   }
@@ -698,6 +715,7 @@ export class Ledger {
       blockNumber: BigInt(row.block_number),
       settledAt: row.settled_at,
       resource: row.resource,
+      description: row.description,
       status: row.status === "pending" ? "pending" : "settled",
       refunded: this.refundedFor(row.id),
     };
@@ -728,6 +746,28 @@ export class Ledger {
     if (!names.has("valid_before")) {
       this.db.exec("ALTER TABLE refunds ADD COLUMN valid_before INTEGER NOT NULL DEFAULT 0");
     }
+    for (const table of ["payments", "jobs"] as const) {
+      const existing = this.db
+        .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+        .all();
+      if (!existing.some((column) => column.name === "description")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN description TEXT`);
+      }
+    }
+  }
+}
+
+function closeKindOf(status: JobStatus): CloseKind | null {
+  switch (status) {
+    case "released":
+      return "release";
+    case "cancelled":
+      return "cancel";
+    case "refunded":
+      return "deadline_refund";
+    case "pending":
+    case "funded":
+      return null;
   }
 }
 
@@ -755,6 +795,7 @@ function toJob(row: JobRow): JobRecord {
     createdAt: row.created_at,
     closedAt: row.closed_at,
     resource: row.resource,
+    description: row.description,
   };
 }
 

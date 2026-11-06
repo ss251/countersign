@@ -125,6 +125,19 @@ describe("orders", () => {
     expect(s.ledger.listOrders({ customer: OTHER })).toHaveLength(0);
   });
 
+  test("closeKind names how an escrow order finished and is null for exact payments", () => {
+    const s = seeded();
+    const by = Object.fromEntries(
+      s.ledger.listOrders({ merchant: MERCHANT }).map((order) => [order.id, order]),
+    );
+    expect(by[s.released]!.closeKind).toBe("release");
+    expect(by[s.cancelled]!.closeKind).toBe("cancel");
+    expect(by[s.refunded]!.closeKind).toBe("deadline_refund");
+    expect(by[s.held]!.closeKind).toBeNull();
+    expect(by[s.pending]!.closeKind).toBeNull();
+    expect(by[s.paid]!.closeKind).toBeNull();
+  });
+
   test("a transfer refund against a released job reuses the refunds table", () => {
     const s = seeded();
     const tx = fakeHash();
@@ -168,8 +181,7 @@ describe("orders", () => {
     expect(held.split(",")[11]).toBe("");
   });
 
-  test("a released order shows the escrow toll as its fee", () => {
-    const ledger = new Ledger(":memory:", { tollBps: 100 });
+  test("a released order shows the escrow toll as its fee", () => {    const ledger = new Ledger(":memory:", { tollBps: 100 });
     const id = jobId();
     ledger.recordJob(newJob(id, 1000));
     ledger.closeJob(id, "released", fakeHash(), "0xslip");

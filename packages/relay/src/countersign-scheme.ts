@@ -4,7 +4,7 @@ import { escrowRail } from "@countersign/rail";
 import { parseAtomic } from "@countersign/core";
 import type { CountersignExtra, CountersignPayload, SettleResult, VerifyResult } from "@countersign/core";
 import { NETWORK } from "./chain.ts";
-import { readNow } from "./exact.ts";
+import { readNow, resourceDescription } from "./exact.ts";
 import type { ExactClock } from "./exact.ts";
 import type { Ledger } from "./ledger.ts";
 import type { ChainReader } from "./ports.ts";
@@ -180,6 +180,7 @@ export async function settleCountersign(
   const outcome = await ctx.relayer.submit(fundCall(extra, payload), payer);
   const terms = payload.terms;
   const resource = resourceUrl(checked.body.paymentPayload.resource);
+  const description = resourceDescription(checked.body.paymentPayload.resource);
   const record = (status: "funded" | "pending", txHash: string, block: bigint) =>
     ctx.ledger.recordJob({
       jobId,
@@ -193,6 +194,7 @@ export async function settleCountersign(
       status,
       createdAt: readNow(ctx.now) * 1000,
       resource,
+      description,
     });
 
   switch (outcome.status) {
