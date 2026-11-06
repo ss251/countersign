@@ -18,7 +18,11 @@ export default function SlipPage({ params }: PageProps) {
   const hash = params[0] ?? "";
   const view = useResource(() => api.slip(hash), [hash]);
   const children = view.data?.slip.body.children.length ?? 0;
-  const tree = useResource(() => api.tree(hash), [hash, children > 0]);
+  // Only a slip with children has a tree; asking for one otherwise refetches the same slip.
+  const tree = useResource(
+    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
+    [hash, children > 0],
+  );
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [reading, setReading] = useState(false);
 

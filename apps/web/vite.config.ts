@@ -26,5 +26,6 @@ export default defineConfig({
   },
   // The built app gets the same proxies.
   preview: { host: "127.0.0.1", port: 4173, proxy },
-  build: { target: "es2022", sourcemap: true },
+  // One bundle on purpose (see app/routes.ts), so its size is expected.
+  build: { target: "es2022", sourcemap: true, chunkSizeWarningLimit: 900 },
 });
