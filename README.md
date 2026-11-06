@@ -8,22 +8,23 @@ One interface, one slip shape. Nothing above a rail knows which chain it is on (
 
 | Rail | Network | Token | Kind | Status |
 |---|---|---|---|---|
-| Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://testnet.arcscan.app/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
+| Arc | Arc testnet, chain `5042002` | USDC `0x3600000000000000000000000000000000000000` | escrow | Live. [Paid release](https://explorer.testnet.arc.io/tx/0x02b65aabec26062e828e1b91203a9d8de5cdab0a6717bbf087054c76b3702809), more in [docs/proof.md](docs/proof.md). |
 | Whitechain | Whitechain Sepolia, chain `1874` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` | escrow, relayer pays gas | Live on testnet. [Fund](https://explorer.testnet.whitechain.io/tx/0x415bddc897b459a2d2342809e1a2621ac3999ca1d5812b3670b563fce504b08c), [release](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812), [merchant refund](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5). The rail and relay code are in review in [#17](https://github.com/ss251/countersign/pull/17). |
-| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call](https://hashscan.io/testnet/transaction/0.0.9185802@1793958945.424133897), see [Hedera payment flow](#hedera-payment-flow). |
+| Hedera | Hedera testnet, `hedera:testnet` | HTS USDC `0.0.429274` | direct, x402 v2 `exact` through a hosted facilitator | Live. [Agent-paid call](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631), see [Hedera payment flow](#hedera-payment-flow). |
 | Stripe MPP | `mpp:stripe` | | | In progress, built against a mock until test keys arrive ([#5](https://github.com/ss251/countersign/issues/5)). Not live. |
 
-A Circle Gateway rail (batched nanopayments on Arc testnet) is wired into the hub behind `GATEWAY_RAIL=1`. Its live proof is in progress ([#3](https://github.com/ss251/countersign/issues/3)).
+A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behind `GATEWAY_RAIL=1`. Gateway debits the buyer at once and credits the seller in a later batch, so a nanopayment has a Gateway transfer id, not a per-call chain transaction. The first one, 0.01 USDC, is transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, after a [1 USDC deposit](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) ([docs/proof.md](docs/proof.md)).
 
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
-- Console and hub on Railway: not yet published ([#7](https://github.com/ss251/countersign/issues/7)).
-- Arc Studio project: `https://studio.arc.io/app/16e0b317-ec5f-406a-8d7d-24bf6d96533b`. It opens only when signed in to Studio ([docs/decisions.md](docs/decisions.md), D6). The Railway console is the logged-out view once it is published.
-- Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://testnet.arcscan.app/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
+- Console: [web-production-a58de.up.railway.app](https://web-production-a58de.up.railway.app)
+- Hub: [hub-production-e85e.up.railway.app](https://hub-production-e85e.up.railway.app/healthz). A purchase through it [released on Arc](https://explorer.testnet.arc.io/tx/0x0a0118e9e81c21517eaf0f387e7801e1fafef947cfccd1c05ff989201433ed69), slip `0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85`.
+- Arc Studio project: `https://studio.arc.io/app/16e0b317-ec5f-406a-8d7d-24bf6d96533b`. It opens only when signed in to Studio ([docs/decisions.md](docs/decisions.md), D6). The Railway console above is the logged-out view.
+- Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
 - Whitechain escrow: [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4)
 - Hedera spend log: HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070)
-- Every transaction this README cites, with its explorer link: [docs/proof.md](docs/proof.md) and [docs/hedera.md](docs/hedera.md).
+- More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/hedera.md](docs/hedera.md) for Hedera.
 
 ## How it works
 
@@ -32,7 +33,7 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) is wired into the hu
 3. **The countersignature.** The buyer signs one message. On escrow rails it is the token's EIP-3009 `ReceiveWithAuthorization`, whose nonce is the `jobId` derived from the offer hash, buyer, payee, amount, deadline and salt under the escrow's EIP-712 domain. Change any of them and the signature no longer matches ([countersignature.md](docs/spec/countersignature.md)).
 4. **The escrow.** `CountersignedEscrow` pulls the amount on `fund`, pays the seller on `release` with the seller's signature over the slip hash, and returns the full amount to the buyer on `refund` after the deadline or on the seller's `cancel`. It has no owner, no pause and no proxy ([escrow.md](docs/spec/escrow.md)).
 
-A moved price reverts on chain: [Arc, price moved](https://testnet.arcscan.app/tx/0xca61627848d1ea952c5953ac58df7b8bd780777563e24ebccf5bb90315d20e76). A missed deadline refunds the buyer in full: [fund](https://testnet.arcscan.app/tx/0x6a103973020747af341e008ec5b317cc97ac0ffef059c381fb19d9cdf9ca2eb7), [refund](https://testnet.arcscan.app/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35).
+A moved price reverts on chain: [Arc, price moved](https://explorer.testnet.arc.io/tx/0xca61627848d1ea952c5953ac58df7b8bd780777563e24ebccf5bb90315d20e76). A missed deadline refunds the buyer in full: [fund](https://explorer.testnet.arc.io/tx/0x6a103973020747af341e008ec5b317cc97ac0ffef059c381fb19d9cdf9ca2eb7), [refund](https://explorer.testnet.arc.io/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35).
 
 ## The receipt
 
@@ -49,23 +50,33 @@ The verifier imports nothing from the hub. Without `--rpc` it proves who signed 
 
 ## Hedera payment flow
 
-An agent pays for a call on Hedera testnet with no human in the loop. The facts below come from [docs/hedera.md](docs/hedera.md).
+An agent pays on Hedera testnet over x402 v2, through a hosted facilitator, with no human in the loop. Traced through one real payment, from [docs/hedera.md](docs/hedera.md):
 
-1. The hub answers `402` with x402 v2 `PaymentRequirements`: scheme `exact`, network `hedera:testnet`, asset USDC `0.0.429274`, the seller's account as `payTo`, and the facilitator's fee-payer account in `extra.feePayer`.
-2. The agent checks the price against its envelope. Nothing above the cap is signed.
-3. The agent signs a USDC `TransferTransaction` from itself to the seller, with the fee payer as transaction payer and memo `cs1:<offer hash>`.
-4. The hub checks memo, amount, token and payee against the offer, then the hosted facilitator verifies, adds its fee-payer signature and submits. We neither wrote nor run the facilitator.
-5. The agent appends the spend to an HCS topic with no admin key, where only the agent can write. `bun scripts/hedera/audit.ts` replays the topic from the mirror node and matches every entry to its transfer.
+The agent `0.0.11337064` bought one call for 0.01 USDC from a seller paid at `0.0.11337065`, with no human approving. Every value below was read back from Hedera testnet.
 
-Recorded run, 2026-11-06, agent `0.0.11337064`, seller `0.0.11337065`, envelope cap 0.015 USDC, offer price 0.01 USDC:
+1. **Discover.** The agent lists offers with `GET /offers` and picks one that settles on the `hedera` rail: offer `0x3be64f4c…8d3b`.
+2. **Challenge.** The hub answers `402` with x402 v2 payment requirements:
+   - `scheme: exact` and `network: hedera:testnet`;
+   - `asset: 0.0.429274` (USDC) and `amount: 10000` (0.01 USDC);
+   - `payTo: 0.0.11337065`;
+   - `extra.feePayer: 0.0.9185802`, the x402.org facilitator's account, read live from its `GET /supported`.
+3. **Envelope.** Before signing, the agent checks its envelope. The cap was 0.025 USDC and 0.01 USDC was already spent, a total the agent rebuilds from its own HCS log. The call fits, so it is approved.
+4. **Countersign.** The agent signs one Hedera `TransferTransaction`: `-10000` from itself and `+10000` to the seller on token `0.0.429274`, with memo `cs1:3be64f4c…8d3b`. One signature binds all three:
+   - the memo binds the offer;
+   - the transfer list binds the amount and the payee;
+   - the transaction id names the facilitator as fee payer, so the agent never pays gas.
+5. **Verify.** The hub's hedera rail decodes the transfer and checks it before any facilitator sees it: exactly one debit and one credit, the exact amount and payee, the offer memo, the payer's signature against its on-chain key, and a validity window no longer than the offer allows. Then it asks the facilitator's `POST /verify`.
+6. **Settle.** The facilitator adds its fee-payer signature and submits. Transaction [`0.0.9185802@1793959685.864333631`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631) reached consensus at `1793959695.377881104` with result `SUCCESS`. The agent was debited 0.01 USDC and the seller credited 0.01 USDC, and the facilitator paid the 0.0162 HBAR network fee.
+7. **Log.** The agent appended the spend to its HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070) as [message #3](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/3), at consensus `1793959697.058168104`. The entry names the offer, the payee, the amount and the transaction.
+8. **Refuse.** A second call would have spent 0.03 of the 0.025 cap. The agent refused before signing anything: "Refused. This would spend 0.03 of a 0.025 budget." The refusal is logged too, as [message #4](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages/4).
+9. **Audit.** Anyone can replay the topic from the mirror node and match each spend to its transfer: `bun scripts/hedera/audit.ts`.
 
-| | |
-|---|---|
-| Paid call | [`0.0.9185802@1793958945.424133897`](https://hashscan.io/testnet/transaction/0.0.9185802@1793958945.424133897): 0.01 USDC agent to seller, fee paid by the x402.org facilitator ([mirror node record](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9185802-1793958945-424133897)) |
-| Second call | refused before signing: "Refused. This would spend 0.02 of a 0.015 budget." |
-| Spend log | topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070), message 1 the spend, message 2 the refusal ([mirror node](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.11337070/messages)) |
+Two refusals protect the money.
 
-This run used `scripts/hedera/hub-standin.ts`, a one-offer hub behind the same `createHederaRail()` the hub uses. The hub loads that rail with `HEDERA_RAIL=1`. A purchase through the full hub is [#6](https://github.com/ss251/countersign/issues/6).
+- **A price that moves after signing cannot settle.** The signed amount no longer equals the requirement, so the rail refuses before settlement, and the facilitator's exact-amount rule would refuse it again.
+- **A replayed payment is refused.** The rail claims each transaction id once before any facilitator call. When a facilitator does not answer, only a consensus that happened after the attempt counts as settled.
+
+This run used `scripts/hedera/hub-standin.ts`, a one-offer stand-in hub that runs the same `createHederaRail()` the hub runs with `HEDERA_RAIL=1`. The same transaction on the mirror node: [`0.0.9185802-1793959685-864333631`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9185802-1793959685-864333631).
 
 ## Run it from a clean clone
 
@@ -108,10 +119,10 @@ bun packages/buyer/src/cli.ts buy <offerHash> --input '{}' --hub http://127.0.0.
 
 With an unfunded key the buy stops before payment: "Refused. The buyer cannot cover this amount." A paid run needs Arc testnet USDC on the buyer key and a `CS_RELAYER_KEY` on the hub, which submits the escrow transactions and pays their gas in USDC.
 
-Verify any slip, from the hub or from `~/.countersign/slips/`:
+Verify any slip, from a hub or from `~/.countersign/slips/`. This one is the hosted purchase above:
 
 ```sh
-curl -s http://127.0.0.1:8787/slips/<slipHash> > slip.json
+curl -s https://hub-production-e85e.up.railway.app/slips/0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85 > slip.json
 bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 ```
 
