@@ -11,6 +11,7 @@ import {
   tokenAbi,
 } from "./eip3009.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
+import { reconcilePendingPayment } from "./reconcile.ts";
 
 export type PaymentExtra = {
   assetTransferMethod?: string;
@@ -115,6 +116,12 @@ export async function verifyExact(
   } catch {
     return invalid("invalid_payload");
   }
+  if (!ctx.relayer.isAllowedPayee(auth.to)) {
+    return invalid("payee_not_registered");
+  }
+  if (amount < ctx.relayer.minAmount) {
+    return invalid("amount_below_minimum");
+  }
   if (auth.value !== amount) {
     return invalid("invalid_exact_evm_payload_authorization_value_mismatch");
   }
@@ -192,6 +199,16 @@ export async function settleExact(
   if (existingAuth) {
     const existing = ctx.ledger.findByAuthorization(existingAuth.from, existingAuth.nonce);
     if (existing) {
+      if (existing.status === "pending" && (await reconcilePendingPayment(existing.id, ctx))) {
+        const promoted = ctx.ledger.getPayment(existing.id) ?? existing;
+        return {
+          success: true,
+          payer: promoted.payer,
+          transaction: promoted.txHash,
+          network: NETWORK,
+          amount: atomicToWire(promoted.amount),
+        };
+      }
       if (existing.status === "settled") {
         return {
           success: true,

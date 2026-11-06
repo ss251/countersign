@@ -9,6 +9,7 @@ import {
   tokenAbi,
 } from "./eip3009.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
+import { reconcilePendingRefunds } from "./reconcile.ts";
 import type { RelayCall } from "./relayer.ts";
 
 export type RefundInput = {
@@ -42,7 +43,7 @@ export async function refundPayment(
   if (!sameAddress(auth.to, payment.payer)) {
     return { ok: false, reason: "refund_to_not_payer" };
   }
-  if (auth.value <= 0n || auth.value > ctx.ledger.refundable(payment.id)) {
+  if (auth.value <= 0n) {
     return { ok: false, reason: "refund_amount" };
   }
 
@@ -77,6 +78,21 @@ export async function refundPayment(
   }
   if (used !== false) return { ok: false, reason: "refund_nonce_used" };
 
+  let merchantBalance: bigint;
+  try {
+    merchantBalance = (await ctx.reader.readContract({
+      address: USDT.address,
+      abi: tokenAbi,
+      functionName: "balanceOf",
+      args: [auth.from],
+    })) as bigint;
+  } catch {
+    return { ok: false, reason: "merchant_balance_low" };
+  }
+  if (typeof merchantBalance !== "bigint" || merchantBalance < auth.value) {
+    return { ok: false, reason: "merchant_balance_low" };
+  }
+
   const call: RelayCall = {
     kind: "transferWithAuthorization",
     token: USDT.address,
@@ -89,6 +105,7 @@ export async function refundPayment(
   }
 
   return ctx.relayer.exclusive(async () => {
+    await reconcilePendingRefunds(payment.id, ctx);
     const remaining = ctx.ledger.refundable(payment.id);
     if (auth.value <= 0n || auth.value > remaining) {
       return { ok: false, reason: "refund_amount" };
@@ -110,7 +127,18 @@ export async function refundPayment(
         remaining: remaining - auth.value,
       };
     }
-    if (outcome.status === "pending") return { ok: false, reason: "settlement_pending" };
+    if (outcome.status === "pending") {
+      ctx.ledger.recordPendingRefund(
+        {
+          paymentId: payment.id,
+          amount: auth.value,
+          txHash: outcome.txHash,
+          nonce: auth.nonce,
+        },
+        Number(auth.validBefore),
+      );
+      return { ok: false, reason: "settlement_pending" };
+    }
     if (outcome.status === "reverted") return { ok: false, reason: "transaction_reverted" };
     return { ok: false, reason: outcome.reason };
   });

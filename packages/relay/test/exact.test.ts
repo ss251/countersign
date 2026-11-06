@@ -206,6 +206,24 @@ describe("verifyExact", () => {
     });
   });
 
+  test("refuses an unregistered payee before the signature check", async () => {
+    const relay = createTestRelay();
+    const body = await bodyFor(relay, { payTo: stranger.address });
+    expect(await verifyExact(body, relay.ctx)).toEqual({
+      isValid: false,
+      invalidReason: "payee_not_registered",
+    });
+  });
+
+  test("refuses an amount below the minimum", async () => {
+    const relay = createTestRelay();
+    const body = await bodyFor(relay, { amount: 9_999n });
+    expect(await verifyExact(body, relay.ctx)).toEqual({
+      isValid: false,
+      invalidReason: "amount_below_minimum",
+    });
+  });
+
   test("simulation failure", async () => {
     const relay = createTestRelay();
     relay.chain.failSimulation = true;
@@ -240,6 +258,29 @@ describe("settleExact", () => {
     const second = await settleExact(cloneBody(body), relay.ctx);
     expect(second.success).toBe(true);
     expect(second.transaction).toBe(first.transaction);
+    expect(relay.chain.writes).toHaveLength(1);
+  });
+
+  test("a settle retry promotes a pending payment whose receipt landed", async () => {
+    const relay = createTestRelay();
+    const body = await bodyFor(relay);
+    relay.chain.timeoutReceipt = true;
+    const first = await settleExact(body, relay.ctx);
+    expect(first.errorReason).toBe("settlement_pending");
+    expect(relay.ledger.getPayment(first.transaction)?.status).toBe("pending");
+    relay.chain.timeoutReceipt = false;
+    relay.chain.receipts.set(first.transaction, {
+      status: "success",
+      blockNumber: 55n,
+      gasUsed: 90_000n,
+      effectiveGasPrice: 1n,
+    });
+    const second = await settleExact(cloneBody(body), relay.ctx);
+    expect(second.success).toBe(true);
+    expect(second.transaction).toBe(first.transaction);
+    const payment = relay.ledger.getPayment(first.transaction);
+    expect(payment?.status).toBe("settled");
+    expect(payment?.blockNumber).toBe(55n);
     expect(relay.chain.writes).toHaveLength(1);
   });
 
