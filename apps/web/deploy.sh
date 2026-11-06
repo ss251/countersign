@@ -9,7 +9,8 @@
 #   RELAY_URL     the Whitechain relayer (optional)
 #   MERCHANT_URL  the merchant service (optional)
 # The page always calls /hub, /relay and /merchant-api on its own origin; server.ts forwards them.
-# Environment for this script: RAILWAY_SERVICE (default "web"), DRY_RUN=1 to stage without uploading.
+# Environment for this script: RAILWAY_SERVICE (default "web"), DRY_RUN=1 to stage without uploading,
+# VITE_HUB_URL= (set but empty) to build a console that shows labelled fixtures while no hub is deployed.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -19,9 +20,9 @@ trap 'rm -rf "$stage"' EXIT
 echo "building apps/web"
 (
   cd "$here"
-  VITE_HUB_URL="${VITE_HUB_URL:-/hub}" \
-  VITE_RELAY_URL="${VITE_RELAY_URL:-/relay}" \
-  VITE_MERCHANT_URL="${VITE_MERCHANT_URL:-/merchant-api}" \
+  VITE_HUB_URL="${VITE_HUB_URL-/hub}" \
+  VITE_RELAY_URL="${VITE_RELAY_URL-/relay}" \
+  VITE_MERCHANT_URL="${VITE_MERCHANT_URL-/merchant-api}" \
     bunx --bun vite build --logLevel warn
 )
 

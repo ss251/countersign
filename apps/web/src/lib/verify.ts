@@ -1,5 +1,5 @@
 import { slipHash, type Slip } from "@countersign/core";
-import { verifySlip as runVerifier, type Finding } from "@countersign/verify";
+import type { Finding } from "@countersign/verify";
 import { networkName, shortHex } from "./format.ts";
 
 /**
@@ -67,6 +67,8 @@ export async function verifySlip(slip: Slip, options: { readChain?: boolean } = 
   const rpcUrl = options.readChain && canReadChain(slip) ? PUBLIC_RPC[slip.body.network] : undefined;
   let findings: Finding[];
   try {
+    // Loaded on first use: the verifier brings viem's RPC client, which only these checks need.
+    const { verifySlip: runVerifier } = await import("@countersign/verify");
     findings = (await runVerifier(slip, rpcUrl ? { rpcUrl } : {})).findings;
   } catch (e) {
     findings = [{ check: "hash", ok: false, detail: `the slip cannot be checked: ${(e as Error).message.split("\n")[0]}` }];

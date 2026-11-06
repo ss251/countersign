@@ -120,7 +120,9 @@ All four must pass. `apps/web/test/registry.test.ts` must test pure functions ex
 - the example-input builder for a schema with two required string fields and one optional field;
 - the buy command string.
 
-Commit on your branch with small present-tense messages and no emoji. Do not commit `bun.lock`. Write a report to `/Users/thescoho/Developer/countersign-mumbai/reports/ui-02-registry-offer.md` covering what you built, the acceptance output, and anything left undone.
+Commit on your branch with small present-tense messages and no emoji. Do not commit `bun.lock`. Write a report to `$M/reports/ui-02-registry-offer.md` covering what you built, the acceptance output, and anything left undone.
+
+`$M` is the fleet directory named in your brief.
 
 ## Stop conditions
 

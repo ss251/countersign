@@ -27,6 +27,10 @@ const upstreams: Array<[prefix: string, name: string, target: string | undefined
 const DROP_REQUEST = ["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "accept-encoding", "content-length"];
 const DROP_RESPONSE = ["connection", "keep-alive", "transfer-encoding", "content-encoding", "content-length"];
 
+// Text compresses well and the page is one ~470 kB bundle; gzip it once, keep it in memory.
+const COMPRESSIBLE = /\.(js|css|html|svg|json|txt)$/;
+const gzipped = new Map<string, Uint8Array>();
+
 const SECURITY_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
@@ -63,7 +67,7 @@ async function proxy(req: Request, url: URL, prefix: string, name: string, targe
   }
 }
 
-async function serveStatic(url: URL, head: boolean): Promise<Response> {
+async function serveStatic(req: Request, url: URL, head: boolean): Promise<Response> {
   let path: string;
   try {
     path = decodeURIComponent(url.pathname);
@@ -85,6 +89,19 @@ async function serveStatic(url: URL, head: boolean): Promise<Response> {
   const headers = new Headers(SECURITY_HEADERS);
   headers.set("content-type", file.type);
   headers.set("cache-control", name.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
+  if (COMPRESSIBLE.test(name)) {
+    headers.set("vary", "accept-encoding");
+    if (/\bgzip\b/.test(req.headers.get("accept-encoding") ?? "")) {
+      const key = file.name ?? name;
+      let body = gzipped.get(key);
+      if (!body) {
+        body = Bun.gzipSync(new Uint8Array(await file.arrayBuffer()));
+        gzipped.set(key, body);
+      }
+      headers.set("content-encoding", "gzip");
+      return new Response(head ? null : (body as unknown as BodyInit), { headers });
+    }
+  }
   return new Response(head ? null : file, { headers });
 }
 
@@ -98,7 +115,7 @@ const server = Bun.serve({
       if (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)) return proxy(req, url, prefix, name, target);
     }
     if (req.method !== "GET" && req.method !== "HEAD") return sentence(405, "method", "Only GET and HEAD are served here.");
-    return serveStatic(url, req.method === "HEAD");
+    return serveStatic(req, url, req.method === "HEAD");
   },
 });
 
