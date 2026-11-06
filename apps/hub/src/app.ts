@@ -21,6 +21,7 @@ import type { IdentityLookup } from "./identity.ts";
 import { openapiDocument } from "./openapi.ts";
 import { registerOrders } from "./orders.ts";
 import { Ratings } from "./ratings.ts";
+import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
@@ -63,6 +64,7 @@ export function createHub(deps: HubDeps) {
 
   registerBuyerPlumbing(app, deps);
   registerOrders(app, deps);
+  registerReview(app, deps);
 
   app.get("/healthz", (c) =>
     json({
