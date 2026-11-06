@@ -56,7 +56,7 @@ This exact sequence ran from a fresh clone of `main` at `25e8104` on 07 Nov, wit
 ## List your tool
 
 <!-- get-started:list -->
-Status: selling a skill works today from a clone. Selling an OpenAPI operation is on main and tested, but no production offer runs on it yet. Selling your own MCP server takes a script today; the one command for it is not built yet. Buyers pay you in test USDC on Arc testnet.
+Status: selling a skill works today from a clone. Selling an OpenAPI operation is on main, and one OpenAPI offer has sold on production. Selling your own MCP server takes a script today; the one command for it is not built yet. Buyers pay you in test USDC on Arc testnet.
 
 Make a seller key and serve a skill: a Markdown file whose front matter has a `name` and a `description`.
 

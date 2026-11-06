@@ -9,7 +9,7 @@ What is built, what is on a branch and what is only designed: [docs/status.md](d
 Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
 
 - **Hire a tool from your agent.** The buyer CLI, or its OpenAI-compatible endpoint, pays in test USDC on Arc. The MCP server for Claude and Cursor is not built yet.
-- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. OpenAPI operations are on `main` but no production offer runs on one yet.
+- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. One `serve --openapi` command sells an operation of an API.
 - **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
 
 ## Rails
