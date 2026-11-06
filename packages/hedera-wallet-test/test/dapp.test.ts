@@ -1,5 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { accountFromSession, HEDERA_NAMESPACE } from "../src/dapp.ts";
+import { Core } from "@walletconnect/core";
+import { accountFromSession, DAPP_CORE_PREFIX, HEDERA_NAMESPACE } from "../src/dapp.ts";
+import { WALLET_CORE_PREFIX } from "../src/wallet.ts";
+
+describe("the two WalletConnect cores", () => {
+  test("use different storage prefixes", () => {
+    expect(WALLET_CORE_PREFIX).not.toBe(DAPP_CORE_PREFIX);
+  });
+
+  test("are different objects, so the dApp cannot inherit the wallet's core", () => {
+    const wallet = new Core({ projectId: "test", customStoragePrefix: WALLET_CORE_PREFIX });
+    const dapp = new Core({ projectId: "test", customStoragePrefix: DAPP_CORE_PREFIX });
+
+    expect(wallet).not.toBe(dapp);
+    expect(wallet.customStoragePrefix).not.toBe(dapp.customStoragePrefix);
+  });
+});
 
 describe("the dApp's session", () => {
   test("asks for hedera:testnet and only the sign-and-execute method", () => {

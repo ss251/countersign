@@ -12,6 +12,9 @@ import { mkdirSync } from "node:fs";
 const CHAIN = HederaChainId.Testnet;
 const SESSION_EVENTS = ["chainChanged", "accountsChanged"];
 
+/** WalletConnect keeps one global core per storage prefix, so the wallet needs its own. */
+export const WALLET_CORE_PREFIX = "countersign-wallet";
+
 export interface SignAndExecuteParams {
   signerAccountId: string;
   transactionList: string;
@@ -134,6 +137,7 @@ export async function startTestWallet(options: TestWalletOptions): Promise<TestW
   const core = new Core({
     projectId: options.projectId,
     storageOptions: { database: `${options.storageDir}/wallet.db` },
+    customStoragePrefix: WALLET_CORE_PREFIX,
   });
   const kit = await WalletKit.init({
     core,

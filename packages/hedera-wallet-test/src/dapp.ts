@@ -10,6 +10,9 @@ import type { ExecuteResult, SignAndExecuteParams } from "./wallet.ts";
 
 const CHAIN = HederaChainId.Testnet;
 
+/** WalletConnect keeps one global core per storage prefix, so the dApp needs its own. */
+export const DAPP_CORE_PREFIX = "countersign-dapp";
+
 /** The exact hedera namespace the dApp asks for. Exported so the test can hold it still. */
 export const HEDERA_NAMESPACE: { chains: string[]; methods: string[]; events: string[] } = {
   chains: [CHAIN],
@@ -54,6 +57,7 @@ export async function startDapp(options: DappOptions): Promise<Dapp> {
       icons: [],
     },
     storageOptions: { database: `${options.storageDir}/dapp.db` },
+    customStoragePrefix: DAPP_CORE_PREFIX,
   });
 
   return {
