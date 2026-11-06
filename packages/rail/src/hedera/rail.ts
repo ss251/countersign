@@ -16,6 +16,7 @@ import { httpFacilitator, type Facilitator, type X402Payload, type X402Requireme
 import { checkTransfer, decodeTransfer, InspectError, type TransferRefusal } from "./inspect.ts";
 import { getTransaction, netFor, type MirrorOptions, type MirrorTransaction } from "./mirror.ts";
 import { offerMemo } from "./memo.ts";
+import { toSdkTxId } from "./txid.ts";
 import {
   ACCOUNT,
   checkWalletPayment,
@@ -164,6 +165,8 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     | { ok: true; payer: string; transaction: string; transactionId: string; facilitator: Facilitator }
     | { ok: false; reason: HederaRefusal; payer?: string };
 
+  type WalletChecked = { ok: true; payer: string; id: string } | { ok: false; result: VerifyResult };
+
   function check(payment: PaymentPayload, requirements: PaymentRequirements): Checked {
     if (requirements.network !== HEDERA_TESTNET || requirements.scheme !== "exact") return { ok: false, reason: "not_hedera" };
     if (payment?.x402Version !== 2 || !payment.accepted) return { ok: false, reason: "malformed" };
@@ -223,9 +226,11 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
   }
 
   /** A wallet has already moved the money: shape, replay, the mirror record, then the offer's terms. */
-  async function verifyWallet(w: WalletPayload, requirements: PaymentRequirements): Promise<VerifyResult> {
-    if (!walletShape(w)) return { isValid: false, invalidReason: "malformed", payer: w.payer };
-    if (await seen.has(w.walletTransactionId)) return { isValid: false, invalidReason: "replay", payer: w.payer };
+  async function verifyWallet(w: WalletPayload, requirements: PaymentRequirements): Promise<WalletChecked> {
+    if (!walletShape(w)) return { ok: false, result: { isValid: false, invalidReason: "malformed", payer: w.payer } };
+    if (await seen.has(toSdkTxId(w.walletTransactionId))) {
+      return { ok: false, result: { isValid: false, invalidReason: "replay", payer: w.payer } };
+    }
     const deadline = Date.now() + walletWaitMs;
     let record: MirrorTransaction | null = null;
     for (;;) {
@@ -234,10 +239,16 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
       if (Date.now() >= deadline) break;
       await new Promise((r) => setTimeout(r, walletPollMs));
     }
-    if (!record) return { isValid: false, invalidReason: "payment_not_found", payer: w.payer };
+    if (!record) return { ok: false, result: { isValid: false, invalidReason: "payment_not_found", payer: w.payer } };
+    // One mirror record has one id, however the claim spelled it: key on the record's own id.
+    const id = toSdkTxId(record.id);
+    if (id.split("@")[0] !== w.payer) {
+      return { ok: false, result: { isValid: false, invalidReason: "claim_unproven", payer: w.payer } };
+    }
+    if (await seen.has(id)) return { ok: false, result: { isValid: false, invalidReason: "replay", payer: w.payer } };
     const checked = checkWalletPayment(record, requirements, w.payer, w.secret, now());
-    if (!checked.ok) return { isValid: false, invalidReason: checked.reason, payer: w.payer };
-    return { isValid: true, payer: w.payer };
+    if (!checked.ok) return { ok: false, result: { isValid: false, invalidReason: checked.reason, payer: w.payer } };
+    return { ok: true, payer: w.payer, id };
   }
 
   /** After a facilitator failed to answer, the chain decides whether this attempt landed the payment. */
@@ -294,7 +305,10 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
 
     async verify(payment, requirements): Promise<VerifyResult> {
       const w = walletPayloadOf(payment.payload);
-      if (w) return verifyWallet(w, requirements);
+      if (w) {
+        const v = await verifyWallet(w, requirements);
+        return v.ok ? { isValid: true, payer: v.payer } : v.result;
+      }
       const c = check(payment, requirements);
       if (!c.ok) return { isValid: false, invalidReason: c.reason, payer: c.payer };
       if (await seen.has(c.transactionId)) return { isValid: false, invalidReason: "replay", payer: c.payer };
@@ -319,19 +333,19 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
       const w = walletPayloadOf(payment.payload);
       if (w) {
         const v = await verifyWallet(w, requirements);
-        if (!v.isValid) {
+        if (!v.ok) {
           return {
             success: false,
-            errorReason: v.invalidReason ?? "claim_unproven",
+            errorReason: v.result.invalidReason ?? "claim_unproven",
             payer: w.payer,
             transaction: "",
             network: HEDERA_TESTNET,
           };
         }
-        if (!(await seen.claim(w.walletTransactionId))) {
+        if (!(await seen.claim(v.id))) {
           return { success: false, errorReason: "replay", payer: w.payer, transaction: "", network: HEDERA_TESTNET };
         }
-        return { success: true, payer: w.payer, transaction: w.walletTransactionId, network: HEDERA_TESTNET };
+        return { success: true, payer: w.payer, transaction: v.id, network: HEDERA_TESTNET };
       }
       const c = check(payment, requirements);
       if (!c.ok) return { success: false, errorReason: c.reason, payer: c.payer, transaction: "", network: HEDERA_TESTNET };
