@@ -255,7 +255,7 @@ Stop, commit what works, and write the report if any of these happen:
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-01-relay.md`. If that path is not writable, put the report in your final message instead. It covers:
+Write `$M/reports/wc-01-relay.md`. If that path is not writable, put the report in your final message instead. It covers:
 
 - what was built;
 - the test count;
