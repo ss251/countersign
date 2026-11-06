@@ -3,7 +3,7 @@ import type { AdapterKind, RailId } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { ANONYMOUS, formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
 import { settlementIndex, type Ledger } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
 import type { Listing, SellerRecord, Settlement } from "../../lib/types.ts";
@@ -248,7 +248,7 @@ export default function RegistryPage(_props: PageProps) {
   );
 }
 
-function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
+export function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
   const last = ledger.lastBySeller.get(g.address);
   const calls = g.released + g.refunded + g.failed;
   const titleId = `seller-${g.address}`;
@@ -258,7 +258,7 @@ function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: n
         <AddressGlyph address={g.address} />
         <div className="scard__who">
           <h2 id={titleId} className={cx("scard__name", !g.named && "is-unnamed")}>
-            {g.named ? g.name : "Unnamed seller"}
+            {g.named ? g.name : ANONYMOUS}
             {g.agentId ? (
               <svg className="scard__tick" viewBox="0 0 16 16" width="15" height="15" role="img" aria-label="Identity proven by ERC-8004">
                 <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
