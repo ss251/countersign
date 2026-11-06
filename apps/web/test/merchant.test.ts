@@ -19,8 +19,36 @@ import {
   txUrl,
   type Order,
 } from "../src/routes/merchant/model.ts";
-import { fixtureCsv, fixtureOrders, fixtureRefundTx } from "../src/routes/merchant/fixtures.ts";
-import { filterCounts, matchesFilter, receivedAt } from "../src/routes/merchant/model.ts";
+import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder, isStandIn } from "../src/routes/merchant/fixtures.ts";
+import { reviewSamples } from "../src/routes/merchant/review-samples.ts";
+import { offersRefund } from "../src/routes/merchant/Panel.tsx";
+import { NOT_SERVED, fetchOrder, fetchOrders, refundOrder, unlockRefunds } from "../src/routes/merchant/api.ts";
+import {
+  countdown,
+  isPending,
+  windowWords,
+  ORDERS_CSV_HEADER,
+  assetOf,
+  explorerOf,
+  fromHubOrder,
+  fromHubRecord,
+  networkNameOf,
+  ordersCsv,
+} from "../src/routes/merchant/model.ts";
+import {
+  adjustments,
+  checkRefundAmount,
+  contribution,
+  decimalsFor,
+  equation,
+  filterCounts,
+  formatFixed,
+  ledger,
+  matchesFilter,
+  reasonLabel,
+  receivedAt,
+  timeline,
+} from "../src/routes/merchant/model.ts";
 
 describe("formatUsdt", () => {
   test("formats atomic amounts without floats", () => {
@@ -60,15 +88,16 @@ describe("status vocabulary", () => {
     for (const status of statuses) expect(statusLabel(status).length).toBeGreaterThan(0);
   });
 
-  test("only Paid is green; every other badge is neutral", () => {
+  test("green is paid, blue is money in flight, returned money is ink", () => {
     expect(statuses.map((status) => [status, statusTone(status)])).toEqual([
-      ["pending", "neutral"],
-      ["held", "neutral"],
+      ["pending", "money"],
+      ["held", "money"],
       ["paid", "settled"],
       ["partially_refunded", "neutral"],
       ["refunded", "neutral"],
       ["cancelled", "neutral"],
     ]);
+    expect(statusTone("refund_pending")).toBe("money");
   });
 });
 
@@ -151,8 +180,25 @@ describe("itemLabel", () => {
       "Mumbai weather forecast",
     );
     expect(itemLabel({ id, description: null, resource: "https://x" }, "whitechain-dev")).toBe("whitechain-dev");
-    expect(itemLabel({ id, description: " ", resource: "https://x/y" }, null)).toBe("https://x/y");
+    expect(itemLabel({ id, description: " ", resource: "https://x/y" }, null)).toBe("Y");
     expect(itemLabel({ id }, null)).toBe("Order 0x4dc4…42bc");
+  });
+
+  test("never shows a raw URL: the last path segment becomes the label", () => {
+    expect(itemLabel({ id, resource: "http://127.0.0.1:8404/forecast" }, null)).toBe("Forecast");
+    expect(itemLabel({ id, resource: "https://countersign.local/whitechain/checkout" }, null)).toBe("Checkout");
+    expect(itemLabel({ id, resource: "https://shop.example/reports/weekly-report.json?x=1" }, null)).toBe("Weekly report");
+    expect(itemLabel({ id, resource: "http://127.0.0.1:8402/" }, null)).toBe("Order 0x4dc4…42bc");
+    expect(itemLabel({ id, resource: "https://x/orders/0x4dc4" }, null)).toBe("Order 0x4dc4…42bc");
+  });
+});
+
+describe("timestamps from the relay", () => {
+  test("an escrow deadline in seconds is read as seconds", () => {
+    const order = fromHubOrder({ ...fixtureOrders[2]!, createdAt: 1_793_958_584_000, deadline: 1_793_962_184 })!;
+    expect(order.deadline).toBe(1_793_962_184_000);
+    expect(order.createdAt).toBe(1_793_958_584_000);
+    expect(new Date(order.deadline!).getUTCFullYear()).toBe(2026);
   });
 });
 
@@ -269,5 +315,453 @@ describe("receivedAt", () => {
   test("a direct payment is received when it settles; a cancel never is", () => {
     expect(receivedAt({ ...base, kind: "exact", status: "paid", closeKind: null, createdAt: 5_000 })).toBe(5_000);
     expect(receivedAt({ ...base, kind: "escrow", status: "cancelled", closeKind: "cancel" })).toBeNull();
+  });
+});
+
+describe("the clearing desk's arithmetic", () => {
+  const base = fixtureOrders[0]!;
+  const order = (patch: Partial<Order>): Order => ({ ...base, ...patch });
+
+  test("released − refunded − toll = net; held stands beside it, never in it", () => {
+    const sums = equation(fixtureOrders);
+    expect(sums).toEqual({
+      released: 1_350_000n,
+      refunded: 500_000n,
+      toll: 500n,
+      bondLost: 0n,
+      net: 849_500n,
+      held: 400_000n,
+    });
+    expect(sums.released - sums.refunded - sums.toll).toBe(sums.net);
+  });
+
+  test("the running balance ends at the header's net, newest first", () => {
+    const rows = ledger(fixtureOrders);
+    const counted = rows.filter((row) => !row.pending);
+    expect(counted[0]!.balance).toBe(equation(fixtureOrders).net);
+    const times = rows.map((row) => row.order.createdAt);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    // Each step moves by exactly what the row's amount and its adjustments say.
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      expect(rows[index]!.balance - rows[index + 1]!.balance).toBe(contribution(rows[index]!.order));
+    }
+  });
+
+  test("the held row is pending and does not move the balance", () => {
+    const rows = ledger(fixtureOrders);
+    const index = rows.findIndex((row) => row.order.status === "held");
+    expect(rows[index]!.pending).toBe(true);
+    expect(rows[index]!.balance).toBe(rows[index + 1]!.balance);
+    expect(rows.filter((row) => row.pending)).toHaveLength(1);
+  });
+
+  test("each row explains why the balance moved by less than its amount", () => {
+    expect(adjustments(order({ kind: "escrow", status: "held", closeKind: null }))).toEqual([{ kind: "held" }]);
+    expect(adjustments(order({ status: "pending" }))).toEqual([{ kind: "settling" }]);
+    expect(
+      adjustments(order({ kind: "escrow", status: "cancelled", closeKind: "cancel", amount: "300000" })),
+    ).toEqual([{ kind: "returned", amount: 300_000n, close: "cancel" }]);
+    expect(
+      adjustments(order({ kind: "escrow", status: "partially_refunded", closeKind: "release", fee: "500", refunded: "10000" })),
+    ).toEqual([
+      { kind: "toll", amount: 500n },
+      { kind: "refunded", amount: 10_000n },
+    ]);
+    expect(adjustments(order({}))).toEqual([]);
+  });
+
+  test("cancelled and held orders add nothing; a released one adds its amount less toll and refunds", () => {
+    expect(contribution(order({ kind: "escrow", status: "cancelled", closeKind: "cancel", amount: "300000" }))).toBe(0n);
+    expect(contribution(order({ kind: "escrow", status: "held", closeKind: null, amount: "400000" }))).toBe(0n);
+    expect(
+      contribution(order({ kind: "escrow", status: "paid", closeKind: "release", amount: "50000", fee: "500", refunded: "0" })),
+    ).toBe(49_500n);
+  });
+});
+
+describe("fixed decimals", () => {
+  test("a column gets the fewest places that show every value exactly", () => {
+    expect(decimalsFor([50_000n, 1_000_000n])).toBe(2);
+    expect(decimalsFor([1_249_500n, 500n])).toBe(4);
+    expect(decimalsFor([1n])).toBe(6);
+  });
+
+  test("pads to the column and never hides a digit of money", () => {
+    expect(formatFixed(1_350_000n, 4)).toBe("1.3500");
+    expect(formatFixed(500n, 2)).toBe("0.0005");
+    expect(formatFixed(-500_000n, 2)).toBe("−0.50");
+    expect(formatFixed(0n, 2)).toBe("0.00");
+  });
+});
+
+describe("checkRefundAmount", () => {
+  const left = 750_000n;
+  test("accepts a plain decimal up to what is left", () => {
+    expect(checkRefundAmount("0.25", left)).toEqual({ ok: true, atomic: 250_000n });
+    expect(checkRefundAmount(" .5 ", left)).toEqual({ ok: true, atomic: 500_000n });
+    expect(checkRefundAmount("0.75", left)).toEqual({ ok: true, atomic: 750_000n });
+  });
+
+  test("refuses empty, malformed, zero, too precise and too much, in words", () => {
+    expect(checkRefundAmount("", left)).toEqual({ ok: false, message: "Enter an amount." });
+    expect(checkRefundAmount("1,5", left)).toEqual({ ok: false, message: "Enter an amount like 0.25." });
+    expect(checkRefundAmount(".", left)).toEqual({ ok: false, message: "Enter an amount like 0.25." });
+    expect(checkRefundAmount("0", left)).toEqual({ ok: false, message: "Enter more than 0." });
+    expect(checkRefundAmount("0.0000001", left)).toEqual({ ok: false, message: "USDT has six decimals at most." });
+    expect(checkRefundAmount("0.76", left)).toEqual({ ok: false, message: "Only 0.75 USDT is left to refund." });
+  });
+});
+
+describe("timeline", () => {
+  test("a released escrow order: funded, then released with its slip, newest first", () => {
+    const record = findFixtureOrder("0x01a66ebcdaa75420b747496de7e523ed0293ecf27d6733c56aead58719dcb231")!;
+    const events = timeline(record, "merchant");
+    expect(events.map((event) => event.key)).toEqual(["release", "fund"]);
+    expect(events[0]).toMatchObject({
+      tone: "settled",
+      title: "Released to you",
+      detail: "Toll 0.0005 USDT.",
+      slipHash: "0x7f69ea83dd410372d0ec8eb178f7a45affd16f11f5865655381495afff5edf6c",
+    });
+    expect(timeline(record, "customer")[0]!.title).toBe("Released to the merchant");
+  });
+
+  test("a refund the relay did not time keeps its place and shows its block", () => {
+    const record = findFixtureOrder("0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc")!;
+    const events = timeline(record, "customer");
+    expect(events.map((event) => event.title)).toEqual(["Refunded 0.25 USDT", "Paid 0.25 USDT"]);
+    expect(events[0]).toMatchObject({ at: null, block: "12361744", tone: "neutral" });
+  });
+
+  test("a refund the relay reports with a reason shows it; a refusal this visit is red and newest", () => {
+    const sample = findFixtureOrder("0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b")!;
+    // The relay stores no reasons yet (wc-08), so the sample carries none either.
+    expect(sample.refunds![0]!.reason).toBeUndefined();
+    const record = { ...sample, refunds: sample.refunds!.map((refund) => ({ ...refund, reason: "requested_by_customer" })) };
+    const events = timeline(record, "merchant", [{ at: Date.now(), reason: "merchant_balance_low" }]);
+    expect(events[0]).toMatchObject({ tone: "refused", title: "Refund refused. Merchant balance low" });
+    expect(events[1]).toMatchObject({ title: "Refunded 0.25 USDT", detail: "Requested by customer" });
+    expect(events[2]).toMatchObject({ title: "Received 1.00 USDT", tone: "settled" });
+  });
+
+  test("a cancel speaks to each reader", () => {
+    const record = findFixtureOrder("0xd3247aa41d6a23adfe6ae673d6ad2c676da8fdfb188a4c4c5dd8b06ca7bb8e7e")!;
+    expect(timeline(record, "merchant")[0]!.title).toBe("Cancelled. 0.30 USDT returned to the customer");
+    expect(timeline(record, "customer")[0]!.title).toBe("Cancelled by the merchant. 0.30 USDT returned to you");
+  });
+});
+
+describe("refund reasons", () => {
+  test("names the four reasons and nothing else", () => {
+    expect(reasonLabel("not_delivered")).toBe("Not delivered");
+    expect(reasonLabel("chargeback")).toBeNull();
+    expect(reasonLabel(null)).toBeNull();
+  });
+});
+
+describe("fixture refunds", () => {
+  test("every simulated attempt gets a hash of its own", () => {
+    const id = fixtureOrders[3]!.id;
+    const hashes = [0, 1, 2, 3, 4].map((attempt) => fixtureRefundTx(id, attempt));
+    expect(new Set(hashes).size).toBe(hashes.length);
+    for (const hash of hashes) expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+});
+
+describe("offersRefund", () => {
+  const partly = fixtureOrders[3]!; // 1.00 paid, 0.25 back, 0.75 left
+  const done = (before: string) => ({ kind: "done" as const, txHash: "0x01", amount: "250000", cancelled: false, before });
+
+  test("never during the undo window or while sending", () => {
+    expect(offersRefund(partly, { kind: "undo" })).toBe(false);
+    expect(offersRefund(partly, { kind: "sending" })).toBe(false);
+  });
+
+  test("not on a stale list: the remainder that was just refunded is never offered twice", () => {
+    expect(offersRefund(partly, done(partly.refundable))).toBe(false);
+  });
+
+  test("again once the list shows what is left after a partial refund", () => {
+    expect(offersRefund(partly, done("1000000"))).toBe(true);
+    expect(offersRefund({ ...partly, refundable: "0", status: "refunded" }, done("750000"))).toBe(false);
+  });
+});
+
+describe("hub records (wc/orders-contract.md)", () => {
+  const record = {
+    id: "0x" + "ab".repeat(32),
+    kind: "escrow",
+    rail: "escrow",
+    network: "eip155:5042002",
+    networkName: "Arc testnet",
+    asset: { symbol: "USDC", decimals: 6 },
+    explorer: "https://testnet.arcscan.app/",
+    customer: "0x" + "11".repeat(20),
+    merchant: "0x" + "22".repeat(20),
+    amount: "10000",
+    fee: "100",
+    refunded: "0",
+    refundable: "10000",
+    status: "released",
+    closeKind: "release",
+    createdAt: 1_793_960_010_000,
+    receivedAt: 1_793_960_014_000,
+    closedAt: 1_793_960_014_000,
+    settleTx: "0x" + "33".repeat(32),
+    closeTx: "0x" + "44".repeat(32),
+    refundTxs: [],
+    slipHash: "0x" + "55".repeat(32),
+    offerHash: "0x" + "66".repeat(32),
+    deadline: 1_793_963_610_000,
+    description: "use-usdc",
+  };
+
+  test("maps the contract shape, reading released as paid", () => {
+    const order = fromHubOrder(record)!;
+    expect(order).toMatchObject({ status: "paid", closeKind: "release", amount: "10000", fee: "100", description: "use-usdc" });
+    expect(assetOf(order)).toBe("USDC");
+    expect(networkNameOf(order)).toBe("Arc testnet");
+    expect(explorerOf(order)).toBe("https://testnet.arcscan.app");
+    expect(txUrl(order.settleTx, explorerOf(order))).toBe(`https://testnet.arcscan.app/tx/${record.settleTx}`);
+  });
+
+  test("a relay record without rail fields means Whitechain USDT", () => {
+    const order = fromHubOrder({ ...fixtureOrders[0]! })!;
+    expect(assetOf(order)).toBe("USDT");
+    expect(networkNameOf(order)).toBe("Whitechain Sepolia");
+    expect(explorerOf(order)).toBe("https://explorer.testnet.whitechain.io");
+  });
+
+  test("drops what cannot be an order instead of guessing", () => {
+    expect(fromHubOrder(null)).toBeNull();
+    expect(fromHubOrder({ ...record, status: "mystery" })).toBeNull();
+    expect(fromHubOrder({ ...record, amount: "1.5" })).toBeNull();
+    expect(fromHubOrder({ ...record, id: "" })).toBeNull();
+  });
+
+  test("a single record keeps its refunds with their reasons and times", () => {
+    const full = fromHubRecord({
+      ...record,
+      status: "partially_refunded",
+      refunds: [{ amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 1_793_960_500_000 }, { bad: true }],
+    })!;
+    expect(full.refunds).toEqual([
+      { amount: "2500", txHash: "0x" + "77".repeat(32), blockNumber: "12", status: "confirmed", reason: "duplicate", at: 1_793_960_500_000 },
+    ]);
+  });
+
+  test("the export has the relay's columns and per-order explorer links", () => {
+    const csv = ordersCsv([fromHubOrder(record)!]).split("\n");
+    expect(csv[0]).toBe(ORDERS_CSV_HEADER);
+    expect(csv[1]).toContain("https://testnet.arcscan.app/tx/0x3333");
+    expect(csv[1]).toContain(",0.0099,");
+  });
+});
+
+describe("where the desk reads (STEER-1730)", () => {
+  const realFetch = globalThis.fetch;
+  const merchant = "0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c";
+  const answer = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const serve = (routes: Record<string, () => Response>) => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      const hit = Object.entries(routes).find(([prefix]) => url.startsWith(prefix));
+      if (!hit) throw new TypeError("network down");
+      return hit[1]();
+    }) as typeof fetch;
+    return seen;
+  };
+
+  test("the hub's /orders first, and the page is told it is the hub", async () => {
+    const seen = serve({ "/hub/orders?seller=": () => answer(200, { orders: [fixtureOrders[0]] }) });
+    const result = await fetchOrders(merchant);
+    expect(result.source).toEqual({ kind: "hub", base: "/hub" });
+    expect(result.orders).toHaveLength(1);
+    expect(seen[0]).toBe(`/hub/orders?seller=${merchant}&limit=200`);
+    globalThis.fetch = realFetch;
+  });
+
+  test("a hub without /orders falls back to the relay's live records, and says so", async () => {
+    serve({
+      "/hub/orders": () => new Response("404 Not Found", { status: 404 }),
+      "/relay/orders?merchant=": () => answer(200, { orders: fixtureOrders }),
+    });
+    const result = await fetchOrders(merchant);
+    expect(result.source.kind).toBe("relay");
+    expect(result.orders).toHaveLength(fixtureOrders.length);
+    globalThis.fetch = realFetch;
+  });
+
+  test("a hub that is away also falls back, and the page says the hub did not answer", async () => {
+    serve({
+      "/hub/orders": () => new Response("Bad Gateway", { status: 502 }),
+      "/relay/orders?merchant=": () => answer(200, { orders: fixtureOrders }),
+    });
+    expect((await fetchOrders(merchant)).source).toEqual({ kind: "relay", base: "/relay", why: "down" });
+    globalThis.fetch = realFetch;
+  });
+
+  test("with neither, an honest error: never fixtures, never zeros", async () => {
+    serve({ "/hub/orders": () => new Response("404 Not Found", { status: 404 }) });
+    await expect(fetchOrders(merchant)).rejects.toThrow(NOT_SERVED);
+    serve({});
+    await expect(fetchOrders(merchant)).rejects.toThrow("The hub did not answer.");
+    globalThis.fetch = realFetch;
+  });
+
+  test("an unknown order is missing; a hub without the route is not", async () => {
+    serve({ "/hub/orders/": () => answer(404, { code: "not_found" }) });
+    expect(await fetchOrder("0x01")).toBeNull();
+    serve({ "/hub/orders/": () => new Response("404 Not Found", { status: 404 }) });
+    await expect(fetchOrder("0x01")).rejects.toThrow(NOT_SERVED);
+    globalThis.fetch = realFetch;
+  });
+});
+
+describe("refunds sign only what the merchant confirmed (cs-w1 B15 and should-fixes)", () => {
+  const realFetch = globalThis.fetch;
+  const merchant = "0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c";
+  type Hit = { url: string; body: string };
+  const serve = (refund: () => Response | Promise<Response>) => {
+    const hits: Hit[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      hits.push({ url, body: String(init?.body ?? "") });
+      if (url.endsWith("/orders")) return Response.json({ orders: [] }); // the token check
+      if (url.includes("/refund")) return refund();
+      throw new TypeError("network down");
+    }) as typeof fetch;
+    return hits;
+  };
+
+  test("the amount is required, and nothing leaves the console without it", async () => {
+    const hits = serve(() => Response.json({ ok: true, txHash: "0x11" }));
+    await unlockRefunds("t");
+    // @ts-expect-error: the confirmed amount is required
+    await expect(refundOrder("0x01")).rejects.toThrow("A refund needs the amount the merchant confirmed.");
+    expect(hits.filter((hit) => hit.url.includes("/refund"))).toHaveLength(0);
+    const reply = await refundOrder("0x01", { amount: 10_000n });
+    expect(reply).toEqual({ ok: true, txHash: "0x11" });
+    expect(JSON.parse(hits.find((hit) => hit.url.includes("/refund"))!.body)).toEqual({ amount: "10000" });
+    globalThis.fetch = realFetch;
+  });
+
+  test("a 5xx, a dropped connection or a pending settlement may have gone through: never refused", async () => {
+    await unlockRefunds("t").catch(() => undefined);
+    serve(() => new Response("Bad Gateway", { status: 502 }));
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => {
+      throw new TypeError("reset");
+    });
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => Response.json({ ok: false, reason: "settlement_pending" }));
+    expect((await refundOrder("0x01", { amount: 1n })).ok).toBe("unknown");
+    serve(() => Response.json({ ok: false, reason: "refund_not_possible" }, { status: 400 }));
+    expect(await refundOrder("0x01", { amount: 1n })).toEqual({ ok: false, reason: "refund_not_possible" });
+    serve(() => new Response("", { status: 401 }));
+    await expect(refundOrder("0x01", { amount: 1n })).rejects.toThrow("The merchant service refused the token.");
+    globalThis.fetch = realFetch;
+  });
+
+  test("an unconfirmed refund is not offered again while the list is stale", () => {
+    const partly = fixtureOrders[3]!;
+    expect(offersRefund(partly, { kind: "unknown", message: "m", before: partly.refundable })).toBe(false);
+    expect(offersRefund(partly, { kind: "unknown", message: "m", before: "1000000" })).toBe(true);
+  });
+
+  test("only this ledger's own orders are read; a body without a list is an error", async () => {
+    const other = { ...fixtureOrders[0]!, id: "0x" + "99".repeat(32), merchant: "0x" + "12".repeat(20) };
+    globalThis.fetch = (async () => Response.json({ orders: [fixtureOrders[0], other] })) as unknown as typeof fetch;
+    const result = await fetchOrders(merchant);
+    expect(result.orders.map((order) => order.id)).toEqual([fixtureOrders[0]!.id]);
+    globalThis.fetch = (async () => Response.json({ items: [] })) as unknown as typeof fetch;
+    await expect(fetchOrders(merchant)).rejects.toThrow("The answer carried no list of orders.");
+    globalThis.fetch = realFetch;
+  });
+});
+
+describe("stand-in hashes (STEER-1730: never rendered as links)", () => {
+  test("the sample's made-up hashes are stand-ins; its real ones are not", () => {
+    expect(isStandIn("0x3b8f2a9c4d7e1f0a6b5c8d9e2f3a4b7c0d1e6f5a8b9c2d3e4f7a0b1c6d5e8f9a")).toBe(true);
+    expect(isStandIn("0x2C4E6A8B0D2F4A6C8E0B2D4F6A8C0E2B4D6F8A0C2E4B6D8F0A2C4E6B8D0F2A4C")).toBe(true);
+    expect(isStandIn("0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5")).toBe(false);
+    expect(isStandIn("0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812")).toBe(false);
+  });
+
+  test("every simulated refund hash is a stand-in", () => {
+    const hash = fixtureRefundTx(fixtureOrders[0]!.id, 3);
+    expect(isStandIn(hash)).toBe(true);
+  });
+});
+
+describe("escrow v2 review states (built against the hub's served fields; nothing shows until #98 is live)", () => {
+  const samples = reviewSamples();
+  const [inReview, accepted, afterWindow, disputed, failed] = samples as [Order, Order, Order, Order, Order];
+
+  test("only the dev server carries the review samples; tests and production builds do not", () => {
+    expect(fixtureOrders.some((order) => order.status === "in_review")).toBe(false);
+    for (const order of samples) expect(isStandIn(order.settleTx)).toBe(true);
+  });
+
+  test("in review is held, pending and never in Net; the payee may still cancel it whole", () => {
+    expect(statusLabel("in_review")).toBe("In review");
+    expect(statusTone("in_review")).toBe("money");
+    expect(isPending(inReview)).toBe(true);
+    expect(contribution(inReview)).toBe(0n);
+    expect(equation([inReview]).held).toBe(200_000n);
+    expect(equation([inReview]).net).toBe(0n);
+    expect(canRefund(inReview)).toBe(true);
+    expect(refundLabel(inReview)).toBe("Cancel and refund 0.20");
+    expect(matchesFilter(inReview, "held")).toBe(true);
+    expect(adjustments(inReview)).toEqual([{ kind: "review", endsAt: inReview.reviewEndsAt ?? null }]);
+  });
+
+  test("a lost bond is its own term in Net and in the running balance", () => {
+    const sums = equation([failed]);
+    expect(sums.bondLost).toBe(100_000n);
+    expect(sums.net).toBe(-100_000n);
+    expect(contribution(failed)).toBe(-100_000n);
+    expect(adjustments(failed)).toEqual([
+      { kind: "returned", amount: 100_000n, close: "delivery_failed" },
+      { kind: "bond", amount: 100_000n },
+    ]);
+  });
+
+  test("the timeline tells each ending in the reader's voice", () => {
+    expect(timeline({ ...inReview }, "merchant").map((event) => event.key)).toEqual(["delivered", "fund"]);
+    const acceptedSteps = timeline({ ...accepted }, "merchant");
+    expect(acceptedSteps.map((event) => event.key)).toEqual(["release", "accepted", "delivered", "fund"]);
+    // Accepting releases in the same transaction: linked once, on the acceptance.
+    expect(acceptedSteps[0]!.txHash).toBeNull();
+    expect(timeline({ ...afterWindow }, "customer")[0]!.title).toBe("Released to the merchant after the review window");
+    expect(timeline({ ...disputed }, "merchant")[0]).toMatchObject({ tone: "refused", title: "Disputed by the customer. 0.30 USDT returned to them" });
+    expect(timeline({ ...failed }, "customer")[0]).toMatchObject({
+      tone: "refused",
+      detail: "The seller's bond of 0.10 USDT was paid to you.",
+    });
+  });
+
+  test("hub records carry the review fields, in ms, and 'delivered' reads as in review", () => {
+    const order = fromHubOrder({
+      ...inReview,
+      status: "delivered",
+      deliveredAt: 1_793_960_000,
+      reviewEndsAt: 1_793_960_300_000,
+      releasedAfterWindow: false,
+      bondSlashed: "0",
+    })!;
+    expect(order.status).toBe("in_review");
+    expect(order.deliveredAt).toBe(1_793_960_000_000);
+    expect(order.reviewEndsAt).toBe(1_793_960_300_000);
+  });
+
+  test("the review clock reads as people count", () => {
+    expect(countdown(272_000)).toBe("4:32");
+    expect(countdown(3_725_000)).toBe("1:02:05");
+    expect(countdown(-1)).toBe("0:00");
+    expect(windowWords(300)).toBe("5-minute");
   });
 });

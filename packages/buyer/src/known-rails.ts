@@ -47,6 +47,26 @@ export const KNOWN_RAILS: KnownRail[] = [
   },
 ];
 
+/** A direct EIP-3009 token this buyer is willing to sign for: the token and its domain are pinned. */
+export interface KnownDirect {
+  network: Network;
+  chainId: number;
+  asset: Address;
+  name: string;
+  version: string;
+}
+
+export const KNOWN_DIRECTS: KnownDirect[] = [
+  {
+    // Arc testnet USDC, read live on 2026-11-06: EIP-712 domain {name "USDC", version "2"}.
+    network: "eip155:5042002",
+    chainId: 5042002,
+    asset: "0x3600000000000000000000000000000000000000",
+    name: "USDC",
+    version: "2",
+  },
+];
+
 /** A Circle Gateway this buyer is willing to sign for: the wallet domain and token are pinned. */
 export interface KnownGateway {
   network: "eip155:5042002";
@@ -99,6 +119,33 @@ export function knownRailFor(req: PaymentRequirements, known: KnownRail[]): Know
       rail.tokenName === extra.tokenName &&
       rail.tokenVersion === extra.tokenVersion,
   );
+}
+
+/** The pinned direct token whose network, asset and signing domain all match the requirement. */
+export function knownDirectFor(
+  req: PaymentRequirements,
+  known: KnownDirect[] = KNOWN_DIRECTS,
+): KnownDirect | undefined {
+  if (req.scheme !== "exact" || !req.extra) return undefined;
+  const name = req.extra.name;
+  const version = req.extra.version;
+  if (typeof name !== "string" || typeof version !== "string") return undefined;
+  return known.find(
+    (direct) =>
+      direct.network === req.network &&
+      sameAddress(direct.asset, req.asset) &&
+      sameText(direct.name, name) &&
+      sameText(direct.version, version),
+  );
+}
+
+/** The pinned token for this network and asset, ignoring the entry's claimed domain. */
+export function pinnedDirectFor(
+  req: PaymentRequirements,
+  known: KnownDirect[] = KNOWN_DIRECTS,
+): KnownDirect | undefined {
+  if (req.scheme !== "exact") return undefined;
+  return known.find((direct) => direct.network === req.network && sameAddress(direct.asset, req.asset));
 }
 
 /** The pinned Gateway whose network, token, wallet domain and version all match the requirement. */

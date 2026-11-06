@@ -17,7 +17,7 @@ export type EscrowOpResult =
 
 export type JobView = {
   jobId: string;
-  chain: "none" | "funded" | "released" | "refunded";
+  chain: "none" | "funded" | "released" | "refunded" | "failed";
   job: JobRecord | null;
 };
 
