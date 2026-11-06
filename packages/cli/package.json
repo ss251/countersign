@@ -1,0 +1,10 @@
+{
+  "name": "countersign",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "bun build ./src/bin.ts --target node --outfile dist/cli.js && bun build ../runner/src/child-entry.ts --target node --outfile dist/child-entry.js"
+  }
+}
