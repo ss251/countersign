@@ -14,6 +14,7 @@ import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
 import { startOpenAIServer } from "./openai/server.ts";
 import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
+import { priceLabel } from "./price-label.ts";
 import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv } from "./remote-signer.ts";
 import { resume } from "./resume.ts";
 import { acceptJob, disputeJob } from "./review.ts";
@@ -99,7 +100,7 @@ async function main(): Promise<void> {
   } else if (cmd === "discover") {
     for (const l of await hub.listOffers()) {
       console.log(
-        [l.offerHash.slice(0, 10), l.offer.title, `${formatUnits(BigInt(l.offer.price), 6)} USDC`, l.offer.rails.join(","), l.online ? "online" : "offline"].join("  "),
+        [l.offerHash.slice(0, 10), l.offer.title, priceLabel(l.offer.price, l.offer.rails), l.offer.rails.join(","), l.online ? "online" : "offline"].join("  "),
       );
     }
   } else if (cmd === "buy") {
