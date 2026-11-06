@@ -6,6 +6,7 @@ import {
   recordPrivyRequestFailure,
   recordPrivyResponse,
   signIn,
+  waitForModalClosed,
 } from "../lib/privy.ts";
 
 describe("the Privy outage filter", () => {
@@ -97,6 +98,39 @@ describe("the Privy sign-in click", () => {
     expect(menuChecked).toBe(true);
     expect(calls).toEqual(["sign-in"]);
     expect(notes).toEqual([]);
+  });
+});
+
+describe("the Privy modal close", () => {
+  test("resolves once #privy-modal-content turns hidden", async () => {
+    let checks = 0;
+    const content = fakeLocator({
+      count: async () => 1,
+      isVisible: async () => {
+        checks += 1;
+        return checks < 2;
+      },
+    });
+    const page = fakeLocator({
+      locator: (selector: string) => (selector === "#privy-modal-content" ? content : emptyLocator()),
+      getByText: () => emptyLocator(),
+    });
+
+    await waitForModalClosed(page as unknown as Page, 2_000);
+
+    expect(checks).toBe(2);
+  });
+
+  test("throws when the content stays visible past the timeout", async () => {
+    const content = fakeLocator({ count: async () => 1, isVisible: async () => true });
+    const page = fakeLocator({
+      locator: (selector: string) => (selector === "#privy-modal-content" ? content : emptyLocator()),
+      getByText: () => emptyLocator(),
+    });
+
+    await expect(waitForModalClosed(page as unknown as Page, 300)).rejects.toThrow(
+      "Privy's modal did not close within 0.3 s",
+    );
   });
 });
 

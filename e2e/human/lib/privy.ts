@@ -47,6 +47,22 @@ export async function dialogVisible(page: Page, timeoutMs: number): Promise<bool
     .catch(() => false);
 }
 
+/**
+ * Wait until Privy's content is gone. Its dialog wrapper can be zero-size, so a hidden role is
+ * not proof that the content left the screen.
+ */
+export async function waitForModalClosed(page: Page, timeoutMs: number): Promise<void> {
+  const content = page.locator("#privy-modal-content");
+  const prompt = page.getByText(/enter confirmation code|log in or sign up/i);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!(await anyVisible(content)) && !(await anyVisible(prompt))) return;
+    if (Date.now() >= deadline) break;
+    await pageWait(250);
+  }
+  throw new Error(`Privy's modal did not close within ${timeoutMs / 1000} s`);
+}
+
 export const PRIVY_SECOND_CLICK_NOTE =
   "Privy needed a second click: the first came before it was ready (UX gap, cs-ui)";
 
