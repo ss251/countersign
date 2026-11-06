@@ -44,6 +44,14 @@ describe("networkFromEnv", () => {
   });
 });
 
+describe("the guard knows every rail switch railsFromEnv reads (cs-w1 should-fix on #97)", () => {
+  test("EIP3009_RAIL on mainnet is a refusal, not a rail the guard never heard of", () => {
+    const problems = mainnetProblems({ EIP3009_RAIL: "1", ARC_RPC_URL: "https://rpc", CS_RELAYER_KEY: "0x01" });
+    expect(problems).not.toEqual(["No rail is configured for mainnet."]);
+    expect(problems.some((p) => p.startsWith("Rail eip3009 "))).toBe(true);
+  });
+});
+
 describe("assertBootable", () => {
   test("a testnet hub boots whatever its rails", () => {
     expect(assertBootable({ ARC_ESCROW: ESCROW, ARC_RPC_URL: "https://rpc", HEDERA_RAIL: "1" })).toBe("testnet");
