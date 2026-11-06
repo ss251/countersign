@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import type { ReceiptOrder } from "./model.ts";
 import {
   addressUrl,
+  formatDateTime,
   formatUsdt,
-  localIso,
+  settlementOutcome,
   shortAddress,
   shortHash,
   statusLabel,
@@ -83,6 +84,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
 
   const order = state.order;
   const tone = statusTone(order.status);
+  const outcome = settlementOutcome(order);
   const refundRecords = order.refunds ?? [];
   const refundTxs = order.refundTxs ?? [];
   const refunds =
@@ -125,7 +127,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
             <dt>Date</dt>
             <dd className="num">
               <time dateTime={new Date(order.createdAt).toISOString()}>
-                {localIso(order.createdAt)}
+                {formatDateTime(order.createdAt)}
               </time>
             </dd>
           </div>
@@ -146,12 +148,28 @@ export function Receipt({ id, fixture }: ReceiptProps) {
               </a>
             </dd>
           </div>
+          {outcome ? (
+            <div className="mx-receipt__fact">
+              <dt>Outcome</dt>
+              <dd>
+                {outcome.label}{" "}
+                <a
+                  className="mono"
+                  href={txUrl(outcome.txHash)}
+                  title={outcome.txHash}
+                  aria-label={`Close transaction ${outcome.txHash}`}
+                >
+                  {shortHash(outcome.txHash)}
+                </a>
+              </dd>
+            </div>
+          ) : null}
           {refunds.map((refund, index) => (
             <div className="mx-receipt__fact" key={`${refund.txHash}-${index}`}>
               <dt>Refund</dt>
               <dd>
                 {refund.amount ? (
-                  <span className="num">{formatUsdt(refund.amount)} USDT </span>
+                  <span className="num mx-amount--money">{formatUsdt(refund.amount)} USDT </span>
                 ) : null}
                 <a
                   className="mono"

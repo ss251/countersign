@@ -1,5 +1,7 @@
 export type OrderKind = "exact" | "escrow";
 
+export type CloseKind = "release" | "cancel" | "deadline_refund";
+
 export type OrderStatus =
   | "pending"
   | "held"
@@ -14,9 +16,11 @@ export interface Order {
   customer: string;
   merchant: string;
   amount: string;
+  fee?: string;
   refunded: string;
   refundable: string;
   status: OrderStatus;
+  closeKind?: CloseKind | null;
   createdAt: number;
   settleTx: string;
   closeTx?: string | null;
@@ -24,6 +28,7 @@ export interface Order {
   offerHash?: string;
   deadline?: number;
   resource?: string | null;
+  description?: string | null;
 }
 
 export interface RefundRecord {
@@ -62,9 +67,47 @@ export type StatusTone = "money" | "settled" | "neutral";
 
 export interface Totals {
   received: string;
+  held: string;
   refunded: string;
   net: string;
   count: number;
+}
+
+export type RefundReply =
+  | { ok: true; txHash: string; refunded?: string }
+  | { ok: false; reason: string };
+
+export const TOKEN_MISSING_MESSAGE =
+  "The merchant console needs its token. Set VITE_MERCHANT_TOKEN.";
+export const TOKEN_REFUSED_MESSAGE = "The merchant service refused the token.";
+
+/** Why a merchant-server call cannot run, or null when it may. */
+export function tokenProblem(token: string | undefined, status?: number): string | null {
+  if (!token || token.trim() === "") return TOKEN_MISSING_MESSAGE;
+  if (status === 401) return TOKEN_REFUSED_MESSAGE;
+  return null;
+}
+
+/** The two refund replies: a cancel carries `transaction`, a transfer refund `txHash`. */
+export function normaliseRefundReply(body: unknown, status: number): RefundReply | null {
+  if (!body || typeof body !== "object" || !("ok" in body)) return null;
+  const value = body as Record<string, unknown>;
+  if (value.ok === false) {
+    return {
+      ok: false,
+      reason: typeof value.reason === "string" ? value.reason : `http_${status}`,
+    };
+  }
+  if (value.ok !== true) return null;
+  if (typeof value.txHash === "string") {
+    return typeof value.refunded === "string"
+      ? { ok: true, txHash: value.txHash, refunded: value.refunded }
+      : { ok: true, txHash: value.txHash };
+  }
+  if (typeof value.transaction === "string") {
+    return { ok: true, txHash: value.transaction };
+  }
+  return null;
 }
 
 const USDT_DECIMALS = 6;
@@ -102,6 +145,11 @@ export function formatUsdt(atomic: string): string {
   const fraction = (value % USDT_SCALE).toString().padStart(USDT_DECIMALS, "0");
   const trimmed = fraction.replace(/0+$/, "");
   return `${whole}.${trimmed.length < 2 ? trimmed.padEnd(2, "0") : trimmed}`;
+}
+
+/** The same, with a leading minus for a negative atomic amount. */
+export function formatSignedUsdt(atomic: string): string {
+  return atomic.startsWith("-") ? `-${formatUsdt(atomic.slice(1))}` : formatUsdt(atomic);
 }
 
 function shorten(value: string): string {
@@ -163,16 +211,26 @@ export function refundLabel(order: Pick<Order, "status" | "refundable">): string
 
 export function totals(orders: readonly Order[]): Totals {
   let received = 0n;
+  let held = 0n;
   let refunded = 0n;
+  let fees = 0n;
   for (const order of orders) {
-    if (order.status === "pending" || order.status === "cancelled") continue;
-    received += parseAtomic(order.amount, "USDT");
+    const amount = parseAtomic(order.amount, "USDT");
+    if (order.kind === "exact") {
+      if (order.status !== "pending") received += amount;
+    } else if (order.closeKind === "release") {
+      received += amount;
+    } else if (order.status === "held") {
+      held += amount;
+    }
     refunded += parseAtomic(order.refunded, "USDT");
+    fees += parseAtomic(order.fee ?? "0", "USDT");
   }
   return {
     received: received.toString(),
+    held: held.toString(),
     refunded: refunded.toString(),
-    net: (received > refunded ? received - refunded : 0n).toString(),
+    net: (received - fees - refunded).toString(),
     count: orders.length,
   };
 }
@@ -208,6 +266,41 @@ export function localIso(ms: number): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(
     date.getHours(),
   )}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+/** A date people read: 6 Nov 2026, 14:32 IST. The short zone name comes from Intl. */
+export function formatDateTime(ms: number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  }).formatToParts(new Date(ms));
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part(
+    "minute",
+  )} ${part("timeZoneName")}`;
+}
+
+/** How the money finished, for an escrow order's receipt row. */
+export function settlementOutcome(
+  order: Pick<Order, "status" | "closeTx">,
+): { label: string; txHash: string } | null {
+  if (!order.closeTx) return null;
+  switch (order.status) {
+    case "paid":
+      return { label: "Released", txHash: order.closeTx };
+    case "cancelled":
+      return { label: "Cancelled by the merchant. Full amount returned.", txHash: order.closeTx };
+    case "refunded":
+      return { label: "Refunded after the deadline", txHash: order.closeTx };
+    default:
+      return null;
+  }
 }
 
 /** yyyy-mm-dd in local time, for file names. */

@@ -2,15 +2,22 @@ import { describe, expect, test } from "bun:test";
 import {
   addressUrl,
   canRefund,
+  formatDateTime,
+  formatSignedUsdt,
   formatUsdt,
   formatWbt,
   formatWeiWbt,
+  normaliseRefundReply,
   refundLabel,
   relativeTime,
+  settlementOutcome,
   shortAddress,
   shortHash,
   statusLabel,
   statusTone,
+  TOKEN_MISSING_MESSAGE,
+  TOKEN_REFUSED_MESSAGE,
+  tokenProblem,
   totals,
   txUrl,
   type Order,
@@ -67,6 +74,53 @@ describe("status vocabulary", () => {
   });
 });
 
+describe("refund replies", () => {
+  test("normalises a cancel reply", () => {
+    expect(
+      normaliseRefundReply(
+        { ok: true, transaction: "0xabc", url: "https://example/tx/0xabc", status: "cancelled" },
+        200,
+      ),
+    ).toEqual({ ok: true, txHash: "0xabc" });
+  });
+
+  test("normalises a transfer refund reply", () => {
+    expect(
+      normaliseRefundReply(
+        { ok: true, txHash: "0xdef", txUrl: "https://example/tx/0xdef", refunded: "300000", remaining: "0" },
+        200,
+      ),
+    ).toEqual({ ok: true, txHash: "0xdef", refunded: "300000" });
+  });
+
+  test("keeps a refusal reason and rejects unknown bodies", () => {
+    expect(normaliseRefundReply({ ok: false, reason: "refund_not_possible" }, 400)).toEqual({
+      ok: false,
+      reason: "refund_not_possible",
+    });
+    expect(normaliseRefundReply({ ok: false }, 409)).toEqual({ ok: false, reason: "http_409" });
+    expect(normaliseRefundReply({ nope: true }, 200)).toBeNull();
+    expect(normaliseRefundReply(null, 200)).toBeNull();
+  });
+});
+
+describe("merchant token", () => {
+  test("names a missing token", () => {
+    expect(tokenProblem(undefined)).toBe(TOKEN_MISSING_MESSAGE);
+    expect(tokenProblem("")).toBe(TOKEN_MISSING_MESSAGE);
+    expect(tokenProblem("   ")).toBe(TOKEN_MISSING_MESSAGE);
+    expect(TOKEN_MISSING_MESSAGE).toBe(
+      "The merchant console needs its token. Set VITE_MERCHANT_TOKEN.",
+    );
+  });
+
+  test("names a refused token", () => {
+    expect(tokenProblem("secret", 401)).toBe(TOKEN_REFUSED_MESSAGE);
+    expect(TOKEN_REFUSED_MESSAGE).toBe("The merchant service refused the token.");
+    expect(tokenProblem("secret", 200)).toBeNull();
+  });
+});
+
 describe("refunds", () => {
   test("allows every state with money left", () => {
     expect(canRefund({ status: "paid", refundable: "250000" })).toBe(true);
@@ -88,25 +142,151 @@ describe("refunds", () => {
 });
 
 describe("totals", () => {
-  test("sums the fixtures", () => {
+  const base = fixtureOrders[0]!;
+  const order = (overrides: Partial<Order>): Order => ({ ...base, ...overrides });
+
+  test("sums the fixtures without counting held money as received", () => {
     expect(totals(fixtureOrders)).toEqual({
-      received: "3400000",
+      received: "3000000",
+      held: "400000",
       refunded: "500000",
-      net: "2900000",
+      net: "2500000",
       count: 5,
     });
   });
 
-  test("leaves pending and cancelled out of received", () => {
-    const sample = fixtureOrders[0]!;
-    const pending: Order = { ...sample, status: "pending", amount: "990000" };
-    const cancelled: Order = { ...sample, status: "cancelled", amount: "880000" };
-    expect(totals([pending, cancelled])).toEqual({
+  test("counts exact payments in every state except pending", () => {
+    const pending = order({ id: "0x01", status: "pending", amount: "900000" });
+    const paid = order({ id: "0x02", status: "paid", amount: "100000" });
+    const partial = order({
+      id: "0x03",
+      status: "partially_refunded",
+      amount: "200000",
+      refunded: "50000",
+    });
+    const refunded = order({
+      id: "0x04",
+      status: "refunded",
+      amount: "300000",
+      refunded: "300000",
+    });
+    expect(totals([pending, paid, partial, refunded])).toEqual({
+      received: "600000",
+      held: "0",
+      refunded: "350000",
+      net: "250000",
+      count: 4,
+    });
+  });
+
+  test("holds escrow money until it is released", () => {
+    const held = order({ id: "0x11", kind: "escrow", status: "held", amount: "400000" });
+    const released = order({
+      id: "0x12",
+      kind: "escrow",
+      status: "paid",
+      closeKind: "release",
+      amount: "600000",
+      fee: "6000",
+    });
+    expect(totals([held, released])).toEqual({
+      received: "600000",
+      held: "400000",
+      refunded: "0",
+      net: "594000",
+      count: 2,
+    });
+  });
+
+  test("leaves cancels and deadline refunds out of both columns", () => {
+    const cancelled = order({
+      id: "0x21",
+      kind: "escrow",
+      status: "cancelled",
+      closeKind: "cancel",
+      amount: "400000",
+      refunded: "0",
+    });
+    const expired = order({
+      id: "0x22",
+      kind: "escrow",
+      status: "refunded",
+      closeKind: "deadline_refund",
+      amount: "500000",
+      refunded: "0",
+    });
+    expect(totals([cancelled, expired])).toEqual({
       received: "0",
+      held: "0",
       refunded: "0",
       net: "0",
       count: 2,
     });
+  });
+
+  test("a fee lowers net and a missing fee counts as zero", () => {
+    const withFee = order({
+      id: "0x31",
+      kind: "escrow",
+      status: "paid",
+      closeKind: "release",
+      amount: "1000000",
+      fee: "15000",
+    });
+    const withoutFee = order({ id: "0x32", status: "paid", amount: "500000", fee: undefined });
+    expect(totals([withFee, withoutFee])).toEqual({
+      received: "1500000",
+      held: "0",
+      refunded: "0",
+      net: "1485000",
+      count: 2,
+    });
+  });
+
+  test("net may be negative", () => {
+    const refunded = order({
+      id: "0x41",
+      status: "refunded",
+      amount: "100000",
+      refunded: "250000",
+    });
+    const sums = totals([refunded]);
+    expect(sums.net).toBe("-150000");
+    expect(formatSignedUsdt(sums.net)).toBe("-0.15");
+  });
+});
+
+describe("dates and outcomes", () => {
+  test("writes a date people read", () => {
+    const text = formatDateTime(new Date(2026, 10, 6, 14, 32).getTime());
+    expect(text).toMatch(/^6 Nov 2026, \d{2}:\d{2} \S+/);
+  });
+
+  test("names how the money finished", () => {
+    expect(settlementOutcome({ status: "paid", closeTx: "0xclose" })).toEqual({
+      label: "Released",
+      txHash: "0xclose",
+    });
+    expect(settlementOutcome({ status: "cancelled", closeTx: "0xclose" })).toEqual({
+      label: "Cancelled by the merchant. Full amount returned.",
+      txHash: "0xclose",
+    });
+    expect(settlementOutcome({ status: "refunded", closeTx: "0xclose" })).toEqual({
+      label: "Refunded after the deadline",
+      txHash: "0xclose",
+    });
+    expect(settlementOutcome({ status: "paid", closeTx: null })).toBeNull();
+    expect(settlementOutcome({ status: "refunded", closeTx: null })).toBeNull();
+  });
+
+  test("the fixture never repeats a hash", () => {
+    const hashes: string[] = [];
+    for (const order of fixtureOrders) {
+      hashes.push(order.id, order.settleTx);
+      if (order.offerHash) hashes.push(order.offerHash);
+      hashes.push(...order.refundTxs);
+    }
+    expect(new Set(hashes).size).toBe(hashes.length);
   });
 });
 

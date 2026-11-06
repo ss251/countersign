@@ -4,6 +4,8 @@ import {
   addressUrl,
   canRefund,
   dateStamp,
+  formatDateTime,
+  formatSignedUsdt,
   formatUsdt,
   formatWbt,
   formatWeiWbt,
@@ -13,23 +15,28 @@ import {
   shortHash,
   statusLabel,
   statusTone,
+  TOKEN_MISSING_MESSAGE,
+  TOKEN_REFUSED_MESSAGE,
   totals,
   txUrl,
 } from "./model.ts";
 import {
   fetchMerchant,
+  fetchMerchantStatus,
+  fetchOfferTitle,
   fetchOrders,
   fetchOrdersCsv,
-  fetchRelayStatus,
+  merchantTokenMissing,
   refundOrder,
 } from "./api.ts";
 import { fixtureCsv, fixtureMerchant, fixtureOrders, fixtureStatus } from "./fixtures.ts";
 
 const POLL_MS = 2500;
+const STATUS_POLL_MS = 5000;
 const HIGHLIGHT_MS = 1200;
 
 type RefundRow =
-  | { kind: "ok"; txHash: string; amount: string }
+  | { kind: "ok"; txHash: string; amount: string; cancelled: boolean }
   | { kind: "error"; message: string };
 
 interface DeskProps {
@@ -72,6 +79,11 @@ export function Desk({ fixture }: DeskProps) {
   );
   const timersRef = useRef<number[]>([]);
   const pollBusyRef = useRef(false);
+  const statusBusyRef = useRef(false);
+  const titlesRef = useRef<Map<string, string | null>>(new Map());
+  const pendingTitlesRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  const [, setTitlesVersion] = useState(0);
 
   const applyOrders = useCallback((next: Order[]) => {
     const seen = seenRef.current;
@@ -112,6 +124,10 @@ export function Desk({ fixture }: DeskProps) {
 
   useEffect(() => {
     if (fixture) return;
+    if (merchantTokenMissing()) {
+      setServiceError(TOKEN_MISSING_MESSAGE);
+      return;
+    }
     let cancelled = false;
 
     const refresh = async () => {
@@ -155,21 +171,68 @@ export function Desk({ fixture }: DeskProps) {
 
   useEffect(() => {
     if (fixture) return;
+    if (merchantTokenMissing()) return;
     let cancelled = false;
-    fetchRelayStatus()
-      .then((next) => {
-        if (!cancelled) setRelayStatus(next);
-      })
-      .catch(() => {
-        if (!cancelled) setRelayFailed(true);
-      });
+    const refresh = async () => {
+      if (statusBusyRef.current) return;
+      statusBusyRef.current = true;
+      try {
+        const next = await fetchMerchantStatus();
+        if (!cancelled) {
+          setRelayStatus(next);
+          setRelayFailed(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          if (messageOf(error) === TOKEN_REFUSED_MESSAGE) {
+            setServiceError(TOKEN_REFUSED_MESSAGE);
+          } else {
+            setRelayFailed(true);
+          }
+        }
+      } finally {
+        statusBusyRef.current = false;
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, STATUS_POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [fixture]);
 
   useEffect(() => {
+    if (fixture) return;
+    const wanted: string[] = [];
+    for (const order of orders) {
+      const hash = order.offerHash;
+      if (!hash || order.description?.trim()) continue;
+      if (titlesRef.current.has(hash) || pendingTitlesRef.current.has(hash)) continue;
+      if (!wanted.includes(hash)) wanted.push(hash);
+    }
+    for (const hash of wanted) {
+      pendingTitlesRef.current.add(hash);
+      void fetchOfferTitle(hash).then((title) => {
+        titlesRef.current.set(hash, title);
+        pendingTitlesRef.current.delete(hash);
+        if (mountedRef.current) setTitlesVersion((version) => version + 1);
+      });
+    }
+  }, [fixture, orders]);
+
+  useEffect(() => {
     return () => {
+      mountedRef.current = false;
       for (const timer of timersRef.current) window.clearTimeout(timer);
       timersRef.current = [];
     };
@@ -210,22 +273,35 @@ export function Desk({ fixture }: DeskProps) {
 
     if (fixture) {
       const amount = order.refundable;
-      const txHash = "0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5";
+      const cancelled = order.kind === "escrow" && order.status === "held";
+      const txHash = cancelled
+        ? "0x9d2c7a1f5e8b4a6c3d0f2e9b7a5c1d8e4f6a3b2c9d7e5f1a8b6c4d2e0f9a7b5c"
+        : "0xa3e5c7d9f1b3a5c7e9d1f3b5a7c9e1d3f5b7a9c1e3d5f7b9a1c3e5d7f9b1a3c5";
       await new Promise((resolve) => window.setTimeout(resolve, 700));
       setOrders((current) =>
         current.map((candidate) =>
           candidate.id === order.id
-            ? {
-                ...candidate,
-                refunded: amount,
-                refundable: "0",
-                status: "refunded",
-                refundTxs: [...candidate.refundTxs, txHash],
-              }
+            ? cancelled
+              ? {
+                  ...candidate,
+                  refundable: "0",
+                  status: "cancelled",
+                  closeTx: txHash,
+                }
+              : {
+                  ...candidate,
+                  refunded: amount,
+                  refundable: "0",
+                  status: "refunded",
+                  refundTxs: [...candidate.refundTxs, txHash],
+                }
             : candidate,
         ),
       );
-      setResults((current) => ({ ...current, [order.id]: { kind: "ok", txHash, amount } }));
+      setResults((current) => ({
+        ...current,
+        [order.id]: { kind: "ok", txHash, amount, cancelled },
+      }));
       setRefunding((current) => {
         const copy = { ...current };
         delete copy[order.id];
@@ -237,9 +313,15 @@ export function Desk({ fixture }: DeskProps) {
     try {
       const result = await refundOrder(order.id);
       if (result.ok) {
+        const cancelled = order.kind === "escrow" && order.status === "held";
         setResults((current) => ({
           ...current,
-          [order.id]: { kind: "ok", txHash: result.txHash, amount: result.refunded },
+          [order.id]: {
+            kind: "ok",
+            txHash: result.txHash,
+            amount: result.refunded ?? order.refundable,
+            cancelled,
+          },
         }));
       } else {
         setResults((current) => ({
@@ -269,11 +351,21 @@ export function Desk({ fixture }: DeskProps) {
 
   const sums = totals(orders);
   const figures = [
-    { label: "Received", value: formatUsdt(sums.received), suffix: "USDT", money: true },
-    { label: "Refunded", value: formatUsdt(sums.refunded), suffix: "USDT", money: false },
-    { label: "Net", value: formatUsdt(sums.net), suffix: "USDT", money: true },
-    { label: "Orders", value: String(sums.count), suffix: null, money: false },
+    { label: "Received", value: formatSignedUsdt(sums.received) },
+    { label: "Held in escrow", value: formatSignedUsdt(sums.held) },
+    { label: "Refunded", value: formatSignedUsdt(sums.refunded) },
+    { label: "Net", value: formatSignedUsdt(sums.net) },
   ] as const;
+
+  const itemFor = (order: Order) => {
+    const description = order.description?.trim();
+    if (description) return description;
+    const title = order.offerHash ? titlesRef.current.get(order.offerHash) : null;
+    if (title) return title;
+    const resource = order.resource?.trim();
+    if (resource) return resource;
+    return `Order ${shortHash(order.id)}`;
+  };
 
   const now = Date.now();
 
@@ -310,9 +402,9 @@ export function Desk({ fixture }: DeskProps) {
         {figures.map((figure) => (
           <div className="mx-figure" key={figure.label}>
             <span className="mx-figure__label">{figure.label}</span>
-            <span className={`mx-figure__value num${figure.money ? " mx-figure__value--money" : ""}`}>
+            <span className="mx-figure__value mx-figure__value--money num">
               {figure.value}
-              {figure.suffix ? <span className="mx-figure__suffix">{figure.suffix}</span> : null}
+              <span className="mx-figure__suffix">USDT</span>
             </span>
           </div>
         ))}
@@ -352,6 +444,7 @@ export function Desk({ fixture }: DeskProps) {
 
       {serviceError && orders.length === 0 ? null : (
         <section className="mx-orders" aria-label="Orders">
+          <p className="mx-orders__heading">Orders · {sums.count}</p>
           <div className="mx-table-wrap">
             <table className="mx-table">
               <caption className="sr-only">Orders received through countersign.</caption>
@@ -377,14 +470,14 @@ export function Desk({ fixture }: DeskProps) {
                   const lastRefund =
                     order.refundTxs.length > 0 ? order.refundTxs[order.refundTxs.length - 1] : null;
                   const secondary = order.closeTx ?? lastRefund ?? null;
-                  const item = order.resource?.trim() || `Order ${shortHash(order.id)}`;
+                  const item = itemFor(order);
                   return (
                     <Fragment key={order.id}>
                       <tr className={`mx-row${newIds.has(order.id) ? " mx-row--new" : ""}`}>
                         <td>
                           <time
                             dateTime={new Date(order.createdAt).toISOString()}
-                            title={new Date(order.createdAt).toISOString()}
+                            title={formatDateTime(order.createdAt)}
                           >
                             {relativeTime(order.createdAt, now)}
                           </time>
@@ -399,11 +492,7 @@ export function Desk({ fixture }: DeskProps) {
                             {item}
                           </span>
                         </td>
-                        <td
-                          className={`mx-align-right num${
-                            tone === "money" ? " mx-amount--money" : ""
-                          }`}
-                        >
+                        <td className="mx-align-right num mx-amount--money">
                           {formatUsdt(order.amount)} USDT
                         </td>
                         <td>
@@ -464,7 +553,8 @@ export function Desk({ fixture }: DeskProps) {
                           <td colSpan={7}>
                             {result.kind === "ok" ? (
                               <p className="mx-result mx-result--ok" role="status">
-                                Refunded. {formatUsdt(result.amount)} USDT returned to{" "}
+                                {result.cancelled ? "Cancelled." : "Refunded."}{" "}
+                                {formatUsdt(result.amount)} USDT returned to{" "}
                                 {shortAddress(order.customer)}.{" "}
                                 <a
                                   href={txUrl(result.txHash)}
