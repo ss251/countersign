@@ -58,3 +58,64 @@ Rule:
 - The hub also checks the signature against the approver in the agent's mirrored envelope, which keeps junk out of its table. The agent's check is the one that counts.
 - The bearer token stays as the hub's way to accept a decision from the phone and to guard the envelope and approval reads, but it proves nothing to the agent.
 - Cap, per-merchant limits and the allowlist are still checked locally before any request is made, so an approval can only lift the ask-above hold.
+
+## D11 — the declared bond is collected, and only the hub's gate can take it (06 Nov; refs #93)
+
+The offer always declared a bond, and nothing collected it.
+
+- **The mechanism.** v2 keeps a free bond balance per payee in the escrow. `fundBonded` locks `offer.bond` for the job.
+- **When the bond moves.**
+  - **The delivery fails the hub's gate:** the arbiter (the hub's relayer) calls `failDelivery`. The buyer gets the payment and the bond back at once.
+  - **Every other close returns the bond to the seller:** release, the deadline refund of a silent seller, the payee's cancel, and a buyer's dispute.
+- **The property the tests prove.** A failing seller ends exactly one bond worse off than a silent one. Delivering junk costs more than delivering nothing, so a seller who cannot do the work should stay silent rather than ship garbage.
+- **Why disputes do not slash.** A dispute is the buyer's own judgement, and there is no arbitration. If disputes slashed, any buyer could take bonds. The gate's checks (output schema, slip signature, committed hash) are mechanical, so only they slash.
+- **The trust this leaves.** The arbiter decides gate failure, so a dishonest hub could slash. The bond is exactly as strong as the hub's gate, and `docs/spec/escrow.md` says so.
+
+## D12 — delivery opens an optimistic review window; the buyer accepts, or disputes for a refund (06 Nov; refs #93)
+
+**The gap.** Until v1, `release` needed only the seller's signature over `jobId` and `slipHash`. The gate checked shape, integrity, seller identity and price, but a seller who delivered junk that passed the schema, signed and took the money was not stopped.
+
+**The fix.** Each offer may set `reviewWindow` (seconds; 0 keeps v1's behaviour).
+
+- With a window, `release` records the delivery: status Delivered, with the `slipHash` on chain.
+- Payment waits for one of two things:
+  - the buyer's `accept`, which pays at once; or
+  - the window to end, after which anyone may call `releaseAfterWindow`.
+- The buyer may `dispute`:
+  - before delivery, up to the deadline;
+  - after delivery, for the whole window.
+
+  A dispute refunds the payment at once, and the bond goes back to the seller (D11). It does not wait for the deadline, because release is already blocked and there is no arbitration to wait for.
+- The deadline refund is unchanged for jobs that were never delivered. A delivered job is never refunded by the deadline: the seller met it.
+
+**The hash.** The review outcome happens after the slip hash is committed, so it cannot be in the committed body. It goes on the settlement side as `slip.settlement.review = {window, deliveredAt, endsAt, outcome?, tx?}`, next to `settlement.receipt`.
+
+- The `Delivered`, `Accepted`, `WindowElapsed`, `Disputed` and `Released` events are the on-chain proof of what happened.
+- `Released` keeps its v1 signature, so the verifier's proof holds on both versions.
+
+**Terms.** Bond and window are set at funding by the arbiter (`fundBonded` is arbiter-only), from the offer. The buyer checks both in the 402 before countersigning, and anyone can read them on chain. Binding them into the `Countersign` struct changes `jobId`, so it is left for a later deployment.
+
+The state machine, with who calls what and when, is in `docs/spec/escrow.md`, under "Escrow v2".
+
+## D13 — the router's trace is the hub's record, outside the committed slip hash (06 Nov; refs #94)
+
+The rail router (`chooseRail`) picks the cheapest eligible rail, healthy first, and falls back when a challenge or a settle fails.
+
+- **Where the trace goes.** Its record of the chosen rail, the reason and each attempt sits in `slip.settlement.route`, outside the committed body, like `settlement.receipt`.
+- **Why.** The seller does not attest the route: the hub chooses it and records it. Putting it inside the body would have the seller sign a claim about the hub's choice.
+- **What it does not change.** `slipCommitHash` is the same, and so is the slip hash on chain.
+- **Where to read it.** `/healthz` shows the policy and the recent decisions.
+
+## D10, amended — one human decision clears exactly one held call (06 Nov; refs #21)
+
+cs-w1 found that D10's signed decision bound only values a second call to the same offer repeats (B14). The decision covered agent, offer, amount, rail and terms hash, plus an approval id. The hub chooses that id, so it could answer a new request with an old id and serve the stored decision again: one human yes, two payments above ask-above.
+
+Rule:
+
+- **The request.** The agent's signed approval request carries a fresh random `nonce` (32 bytes, hex). It also carries `title`, `amount`, `terms` and `requestedAt`.
+- **The decision.** The decision body is version 2: `{kind, v: 2, approvalId, agent, offerHash, amount, rail, termsHash, requestHash, decision, decidedAt}`.
+  - `requestHash` is `keccak256(canonicalJson(request))`, where the request is the agent's signed request without `sig`.
+  - The agent rebuilds `requestHash` from its own request, never from the hub's copy. A decision made for any other request, even for the same offer and amount, fails.
+- **Consumed ids.** The agent records every approval id it consumes and refuses an id it has seen before.
+- **What the phone checks.** The hub stores the whole signed request. The approval view returns it with `requestSig`, so the phone checks that the agent signed exactly what it displays, title included, before it signs. A hub can no longer show the human a different title for the same offer and amount.
+- **Body caps.** Every write route caps its body at 16 KiB, including the decision route.
