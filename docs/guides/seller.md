@@ -33,6 +33,9 @@ bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railwa
 | `--rails <a,b>` | Rails you accept, most preferred first: `escrow`, `whitechain`, `gateway`, `hedera` | `escrow` |
 | `--pay-to <rail>=<id>` | Where a rail pays, when it is not your seller address. Required for `hedera`, which pays an account id such as `0.0.1234`. | your address |
 | `--upstream-url`, `--licence` | For a skill you did not write: where it comes from and its licence. They go together. | none |
+| `--ens <name>` | Your ENS name on Sepolia, in normal form. It must resolve to your seller address, and every EVM payee must be that address, or the hub will not list the offer. A Hedera payee is outside the name. | none |
+| `--known-escrow <chainId>=<address>` | An extra escrow the runner trusts when it checks a job on chain before working on it | the built-in list |
+| `--rpc <chainId>=<url>` | The RPC the runner uses for those checks on a chain | Arc's default, `ARC_RPC_URL`, `WC_RPC_URL` |
 | `--state <dir>` | Where the runner remembers each offer's `issuedAt` | `~/.countersign/runner` |
 
 The runner prints each offer hash it published, then `runner ready`, then one line per job: `<jobId> <title> ok`, or the reason it refused.
@@ -46,9 +49,10 @@ There is no delist route. To stop selling, stop the runner. Your listings then s
 ## What a buyer's call does on your machine
 
 1. The runner dials out to the hub over a WebSocket and opens no port. It proves it holds your key by signing the hub's fresh nonce.
-2. For each paid job, it runs the skill in a child process. The child gets only `PATH` and a fresh, empty `HOME`, so your other environment variables, your key included, never reach it. A job has 30 seconds and 1 MB of output.
-3. The skill's input is `{question?, section?}`. With `section`, the runner returns that section of the skill. Without it, the runner returns the whole body.
-4. The runner checks the output against the offer's output schema and signs a slip over the job, the hashes of the input and the output, and the delivery time.
+2. Before it works on an escrow job, it reads the job on chain and refuses one it cannot confirm. The escrow must be pinned, and the job must be Funded, pay you, cover at least the price, name this offer, and have a live deadline. So a hub cannot get free work out of you with a job that was never paid.
+3. For each paid job, it runs the skill in a child process. The child gets only `PATH` and a fresh, empty `HOME`, so your other environment variables, your key included, never reach it. A job has 30 seconds and 1 MB of output.
+4. The skill's input is `{question?, section?}`. With `section`, the runner returns that section of the skill. Without it, the runner returns the whole body.
+5. The runner checks the output against the offer's output schema and signs a slip over the job, the hashes of the input and the output, and the delivery time.
 
 If the connection drops, the runner reconnects on its own.
 
@@ -70,7 +74,9 @@ The full terms are in [terms.md](../terms.md). In short:
 - **Escrow rails.** If you do not deliver before the deadline, or your output fails the schema, the buyer gets the full amount back by refund after the deadline. The escrow also lets you, as payee, `cancel` a funded job and return the full amount to the buyer at once. The runner has no command for this yet: it is a direct contract call.
 - **Direct rails** (Hedera, Gateway). You are paid before you deliver. A failed delivery still counts against your rating.
 - **Your rating** is derived from slips that check out, not reported by anyone ([ratings.md](../ratings.md)). A failure your runner reports counts against you. A failure that was not yours, such as the hub cutting a job short, is `excused`.
-- **The bond** in your offer is declared, not collected. No deployed contract takes it.
+- **The bond** in your offer is declared, and no deployed escrow collects it yet.
+  - The code is on `cs/int`: `runner bond deposit|withdraw|show <atomic> --escrow <address>` manages your free bond in an escrow, and the hub's delivery gate pays a locked bond to the buyer when your output fails it.
+  - Every deployed escrow is v1. Bonds start to matter once the v2 escrow is deployed (#98).
 
 ## Your key
 

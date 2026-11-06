@@ -117,10 +117,12 @@ Canonical JSON here is a strict subset of RFC 8785. It sorts keys by UTF-16 code
 
 ## Identity
 
-The hub can show a seller's ERC-8004 registration on `GET /sellers` (`apps/hub/src/identity.ts`). The lookup is not wired into `apps/hub/src/index.ts`, so the public hub reports `erc8004: null` for every seller. A registration proves the seller registered a key, not that it is honest.
+- **ERC-8004.** The hub shows a seller's registration on `GET /sellers` (`apps/hub/src/identity.ts`). It reads the Arc testnet IdentityRegistry only when `ERC8004_FROM_BLOCK` and `ARC_RPC_URL` are set; otherwise `erc8004` is `null`. A registration proves the seller registered a key, not that it is honest.
+- **ENS.** An offer may name the seller's ENS name on Sepolia. A client that pays a named seller should resolve the name itself, with CCIP-Read off, and refuse unless the name resolves to `seller` and every EVM payee is that address. `checkEnsLock` in `packages/core/src/ens.ts` does exactly this ([spec/offer.md](spec/offer.md)).
 
 ## Not interoperable yet
 
 - **Circle's public catalogue.** Every item in it is on a mainnet. A testnet hub is readable by the same code, but it is not listed there.
 - **The `countersign` scheme in third-party clients.** No client outside this repository implements it. A generic x402 client sees the option and skips it.
-- **Stripe MPP.** The rail is built against a mock until test keys arrive (#5).
+- **MPP.** The MPP rail settles live on Tempo testnet through its demo endpoint, but it is not wired into the hub yet ([mpp.md](mpp.md)).
+- **Escrow v2 terms.** The v2 design countersigns the offer's `bond` and `reviewWindow` inside `jobId` (D16; `COUNTERSIGN_V2_TYPES` in `packages/core/src/countersign.ts`). No v2 escrow is deployed yet (#98), so a client signs v1 terms today.

@@ -58,4 +58,9 @@ As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md
 
 ## 7. Seller names
 
-Offers name the seller by its address.
+- **By default, an offer names the seller only by its address.**
+- **An offer may also carry the seller's ENS name on Sepolia** (`runner --ens`). The hub lists it, and the buyer pays it, only while two things hold:
+  - the name resolves to the seller;
+  - every EVM payee in the offer is that same address.
+- **A Hedera payee is outside the name.**
+- **Lookups never follow CCIP-Read,** and any failure is a refusal ([spec/offer.md](spec/offer.md)).
