@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CUSTOMER_SNIPPET, MERCHANT_SNIPPET, SNIPPET_PATHS } from "./snippet.generated.ts";
 
 /**
- * The one install line for the published package: the v0.1.0 release URL, never an npm name, because
- * on npm the @countersign scope is another project's. Null until the release exists (STEER-2210).
+ * The one install line for the published package, @countersign-hub/relay: the captain chose npm, and
+ * that scope is the project's own (created 06 Nov 19:17Z). Never an @countersign/* name, which on npm
+ * is another project's. Null until the package is actually published (STEER-2210, reality rule).
  */
 export const INSTALL_LINE: string | null = null;
 
@@ -66,7 +67,7 @@ export function Integrate(): ReactNode {
       <p className="mx-quiet mx-integrate__note">
         {INSTALL_LINE
           ? `Install with ${INSTALL_LINE}`
-          : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package. When it is, install it from the release's own URL, never from npm: @countersign/* on npm is another project's, and @countersign-hub on npm is not ours."}
+          : "The imports are shown under the name the v0.1.0 release publishes, @countersign-hub/relay. It is not published yet, and here the console imports the workspace package, so install nothing under that name until the release is out. On npm, @countersign/* belongs to another project: never install it."}
       </p>
     </section>
   );
