@@ -8,7 +8,7 @@ import type {
   RailId,
   Slip,
 } from "./deps.ts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export type JobStatus =
   | "funded"
@@ -122,6 +122,13 @@ export interface ApprovalRecord {
   decisionSig: string | null;
 }
 
+/** The last ERC-8004 registration the hub saw for a seller. `block` is the log's block. */
+export interface StoredErc8004Identity {
+  registry: Address;
+  agentId: string;
+  block: bigint;
+}
+
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
 export interface RatingJob {
   jobId: Hex;
@@ -217,6 +224,14 @@ interface ApprovalRow {
   request_json: string | null;
   request_sig: string | null;
   decision_sig: string | null;
+}
+
+interface Erc8004IdentityRow {
+  seller: string;
+  registry: string;
+  agent_id: string;
+  block: number | bigint;
+  updated_at: number;
 }
 
 export class Store {
@@ -329,6 +344,15 @@ export class Store {
     this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
     this.db.run(`
       CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
+    `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS erc8004_identities (
+        seller TEXT PRIMARY KEY,
+        registry TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        block INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
     `);
   }
 
@@ -733,6 +757,34 @@ export class Store {
       .query("UPDATE approvals SET status = ?, decided_at = ?, decision_sig = ? WHERE id = ? AND status = 'pending'")
       .run(status, decidedAt, decisionSig, id);
     return result.changes > 0;
+  }
+
+  getIdentity(seller: string): StoredErc8004Identity | null {
+    const row = this.db
+      .query<Erc8004IdentityRow, [string]>(
+        "SELECT seller, registry, agent_id, block, updated_at FROM erc8004_identities WHERE seller = ?",
+      )
+      .get(seller.toLowerCase());
+    if (!row) return null;
+    return {
+      registry: row.registry as Address,
+      agentId: row.agent_id,
+      block: BigInt(row.block),
+    };
+  }
+
+  putIdentity(seller: string, identity: StoredErc8004Identity, now: number): void {
+    this.db
+      .query(
+        `INSERT INTO erc8004_identities (seller, registry, agent_id, block, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(seller) DO UPDATE SET
+           registry = excluded.registry,
+           agent_id = excluded.agent_id,
+           block = excluded.block,
+           updated_at = excluded.updated_at`,
+      )
+      .run(seller.toLowerCase(), identity.registry, identity.agentId, identity.block, now);
   }
 }
 
