@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { recordSpend } from "@countersign/core";
+import { WalletModeContext } from "../../app/Providers.tsx";
 import type { PageProps } from "../../app/routes.ts";
 import { Link, navigate } from "../../app/router.tsx";
 import { api, useResource, type JobView } from "../../lib/api.ts";
@@ -12,6 +13,7 @@ import { AskTab } from "./AskTab.tsx";
 import { EnvelopeTab } from "./EnvelopeTab.tsx";
 import { HistoryTab } from "./HistoryTab.tsx";
 import { mergeApprovals } from "./queue.ts";
+import { SignedInAgent } from "./SignedInAgent.tsx";
 import "./buyer.css";
 
 /** The phone sits inside the console's shell: the top bar is the way to every other view. */
@@ -54,6 +56,7 @@ function Phone({ query }: PageProps) {
   }, [reloadEnvelope, reloadApprovals, reloadPurchases]);
   /** Approvals the human has countersigned: no longer waiting, even while they settle. */
   const [signed, setSigned] = useState<string[]>([]);
+  const privy = useContext(WalletModeContext).privy;
   const agent = chosenAgent();
   const hub = chosenHub();
 
@@ -136,6 +139,7 @@ function Phone({ query }: PageProps) {
 
   return (
     <div className="phone-stage">
+    {privy ? <SignedInAgent onChange={openAll} /> : null}
     <aside className="phone-note" aria-label="About this view">
       <p className="phone-note__eyebrow">The buyer's phone</p>
       <p className="phone-note__title">The human behind an agent.</p>

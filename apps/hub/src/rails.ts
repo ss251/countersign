@@ -64,6 +64,7 @@ export const RAIL_CONFIG_VARS = [
   "ARC_RPC_URL",
   "ARC_USDC",
   "ARC_ESCROW_VERSION",
+  "ARC_BONDED",
   "CS_RELAYER_KEY",
   "WC_ESCROW_VERSION",
   "WC_ESCROW_V2",
@@ -85,24 +86,25 @@ export async function railsFromEnv(
 ): Promise<Rail[]> {
   const rails: Rail[] = [];
   if (railRequested("escrow", env) && env.ARC_RPC_URL) {
-    rails.push(
-      escrowRail({
-        id: "escrow",
-        chainId: 5042002,
-        rpcUrl: env.ARC_RPC_URL,
-        escrow: env.ARC_ESCROW as Address,
-        version: env.ARC_ESCROW_VERSION === "2" ? 2 : 1,
-        token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
-        tokenName: "USDC",
-        tokenVersion: "2",
-        symbol: "USDC",
-        decimals: 6,
-        explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
-        finality: "Final in the Arc block that includes the release.",
-        gasPaidBy: "hub",
-        ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
-      }),
-    );
+    const arc = escrowRail({
+      id: "escrow",
+      chainId: 5042002,
+      rpcUrl: env.ARC_RPC_URL,
+      escrow: env.ARC_ESCROW as Address,
+      version: env.ARC_ESCROW_VERSION === "2" ? 2 : 1,
+      token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
+      tokenName: "USDC",
+      tokenVersion: "2",
+      symbol: "USDC",
+      decimals: 6,
+      explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
+      finality: "Final in the Arc block that includes the release.",
+      gasPaidBy: "hub",
+      ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
+    });
+    // cs-audit (STEER-0300 C2, #164 M1): a bonded Arc job makes the hub's release path guard the seller's bond.
+    // Until ARC_BONDED=1 the Arc rail names no funder, so call.ts answers 503 to a bonded offer instead of funding it.
+    rails.push(env.ARC_BONDED === "1" ? arc : { ...arc, funder: undefined });
   }
   if (railRequested("eip3009", env)) {
     if (!env.ARC_RPC_URL || !env.CS_RELAYER_KEY) {

@@ -50,6 +50,33 @@ export const KNOWN_RAILS: KnownRail[] = [
     tokenVersion: "1",
     rpcUrl: "https://rpc.testnet.whitechain.io",
   },
+  {
+    // Escrow v2 on Arc, pinned AS v2 so this agent derives v2 job ids and signs v2 terms for it.
+    // Deploy tx 0x650b6fd9…1207 (status 1, block 71082978), explorer-verified CountersignedEscrow,
+    // token USDC; the same address KNOWN_ESCROWS pins in packages/verify.
+    network: "eip155:5042002",
+    scheme: "countersign",
+    chainId: 5042002,
+    escrow: "0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE",
+    token: "0x3600000000000000000000000000000000000000",
+    tokenName: "USDC",
+    tokenVersion: "2",
+    rpcUrl: "https://rpc.testnet.arc.network",
+    version: 2,
+  },
+  {
+    // Escrow v2 on Whitechain Sepolia, pinned AS v2. Deploy tx 0xf15e1c98…49ae1 (status 1),
+    // Blockscout-verified CountersignedEscrow, token USDT; KNOWN_ESCROWS pins it too.
+    network: "eip155:1874",
+    scheme: "countersign",
+    chainId: 1874,
+    escrow: "0x55b3d98C17Ba0878DC93fB1521c76c9a10778391",
+    token: "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
+    tokenName: "Tether USD",
+    tokenVersion: "1",
+    rpcUrl: "https://rpc.testnet.whitechain.io",
+    version: 2,
+  },
 ];
 
 /** A direct EIP-3009 token this buyer is willing to sign for: the token and its domain are pinned. */

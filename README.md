@@ -6,10 +6,10 @@ What is built, what is on a branch and what is only designed: [docs/status.md](d
 
 ## Get started
 
-Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
+Testnet only. Install from npm: `npx -y @countersign-hub/cli --help` and `npm i @countersign-hub/relay`, on Node 20 or later. Only the `@countersign-hub` scope is this project's: `countersign`, `countersign-mcp` and `@countersign` on npm belong to other projects. The commands are in [docs/onboarding.md](docs/onboarding.md).
 
-- **Hire a tool from your agent.** The MCP server for Claude and Cursor, the buyer CLI, or its OpenAI-compatible endpoint pays in test USDC on Arc.
-- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. One `serve --openapi` command sells an operation of an API.
+- **Hire a tool from your agent.** The MCP server for Claude and Cursor (`npx -y @countersign-hub/cli mcp`), or `countersign buy`, pays in test USDC on Arc.
+- **List your tool.** `countersign sell skill` or `countersign sell openapi` sells a skill or an operation of an API. The runner dials out, so you open no port.
 - **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
 
 ## Rails
@@ -39,7 +39,7 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
   - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
   - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
 
-  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Never install that name from npm: the `@countersign` scope there belongs to another project.
+  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Outside it, install `@countersign-hub/relay` from npm and import from `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
   Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
@@ -113,7 +113,7 @@ Where this is going: the person's wallet on EVM, the agent's account on Hedera, 
 Privy has no Hedera, and none of these is one wallet for every rail.
 
 Two things are true today and differ from the table's end state:
-- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM rails are paid by the buyer agent's own wallet.
 - The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
 
 Each status, with its evidence: [docs/status.md](docs/status.md).
@@ -175,24 +175,7 @@ bun run hub
 curl -s http://127.0.0.1:8787/rails
 ```
 
-A seller serving a catalogue skill, in a second terminal. The runner reads its key from `CS_SELLER_KEY`; this makes a throwaway one:
-
-```sh
-export CS_SELLER_KEY=$(cast wallet new --json | jq -r '.[0].private_key')
-bun packages/runner/src/cli.ts serve --hub http://127.0.0.1:8787 \
-  --skill examples/catalogue/circle/use-arc/SKILL.md --price 10000
-```
-
-A buyer agent, in a third terminal. Its key comes from `CS_BUYER_KEY`, and its envelope and journal live in `~/.countersign`:
-
-```sh
-export CS_BUYER_KEY=<a testnet key>
-bun packages/buyer/src/cli.ts discover --hub http://127.0.0.1:8787
-bun packages/buyer/src/cli.ts envelope set --cap 1 --per-merchant 0.5
-bun packages/buyer/src/cli.ts buy <offerHash> --input '{}' --hub http://127.0.0.1:8787
-```
-
-With an unfunded key the buy stops before payment: "Refused. The buyer cannot cover this amount." A paid run needs Arc testnet USDC on the buyer key and a `CS_RELAYER_KEY` on the hub, which submits the escrow transactions and pays their gas in USDC.
+To buy and sell, sign in with `countersign login` against the production hub, as [docs/onboarding.md](docs/onboarding.md) shows. The end-to-end suite below runs sellers and buyers against a local hub with its own test wallets.
 
 Verify any slip, from a hub or from `~/.countersign/slips/`. This one is the hosted purchase above:
 
