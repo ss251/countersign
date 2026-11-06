@@ -122,7 +122,7 @@ The same hub code as `apps/hub`, run with the `whitechain` rail (`packages/relay
 | 2026-11-06 10:13 | Runner delivers and the hub checks the output against the offer's schema. The relay then releases: 0.0495 USDT to the merchant, 0.0005 to `FeeSplit`. `Released` carries the slip hash `0x7f69ea83…df6c` | [`0x90ed826a…c812`](https://explorer.testnet.whitechain.io/tx/0x90ed826a41f21290db924e4afc1e06bffe806e2966d8582618a074efa0c3c812) |
 | 2026-11-06 10:18 | An earlier call asked for a section the skill does not have. The runner refused, the hub refused the delivery, and once the deadline passed the hub's janitor refunded the full 0.05 USDT through the relay. No one decided anything | [`0xebf26b54…a7a2`](https://explorer.testnet.whitechain.io/tx/0xebf26b543f81853ef12824ada9fb1096dac25d03a39986a4d5e2abe44228a7a2) |
 
-The same purchase also runs through the **main hub**, once that hub has `WC_RELAY_URL` set. Its four rails are escrow on Arc, whitechain, gateway and hedera:
+The same purchase also runs through the **main hub**, once that hub has `WC_RELAY_URL` set. On the day below it declared four rails: escrow on Arc, whitechain, gateway and hedera. Since main 7565080 it declares escrow, whitechain and hedera-scheduled:
 
 | When (UTC) | What | Tx |
 |---|---|---|
