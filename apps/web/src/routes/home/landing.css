@@ -96,13 +96,18 @@
   overflow: hidden;
 }
 
-/* The frame's content box, under the bar and inside the content edge. */
+/*
+ * The frame's content box, under the bar and inside the content edge. It lies over the claim, so
+ * it and its quiet layers let the pointer through; only a layer on screen with something to press
+ * (the receipt, the ask box, the try-out, the release) takes it back.
+ */
 .story__box {
   position: absolute;
   top: 112px;
   right: var(--side);
   bottom: 40px;
   left: var(--side);
+  pointer-events: none;
 }
 
 /* One statement at a time: the beat's line crossfades in place over 240 ms, rising 8 px. */
