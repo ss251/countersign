@@ -2,7 +2,7 @@ import { useId, useMemo, useState, type FormEvent } from "react";
 import { checkEnvelope } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
 import { api, useResource, type Resource } from "../../lib/api.ts";
-import { formatDuration, formatMoney, nowUnix, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { formatDuration, formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
 import type { EnvelopeView, Listing } from "../../lib/types.ts";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
@@ -21,9 +21,18 @@ export function AskTab({ envelope }: { envelope: Resource<EnvelopeView> }) {
   const [asked, setAsked] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const inputId = useId();
+  // The hub's own search when it serves one; otherwise the same ranking, run here over its live offers.
+  const hubSearch = useResource(() => (asked ? api.search(asked) : Promise.resolve({ data: null, source: "hub" as const })), [asked]);
 
   const all = listings.data ?? [];
-  const matches = useMemo(() => (asked ? rank(all, asked) : []), [all, asked]);
+  const local = useMemo(() => (asked ? rank(all, asked) : []), [all, asked]);
+  const matches: Match[] = hubSearch.data
+    ? hubSearch.data.map((r) => ({
+        listing: { hash: r.offerHash as Match["listing"]["hash"], offer: r.offer, seller: { name: shortHex(r.offer.seller) }, status: "listed", online: r.online },
+        score: r.score,
+        why: r.why.map((w) => `${w.charAt(0).toUpperCase()}${w.slice(1)}${/[.!?]$/.test(w) ? "" : "."}`),
+      }))
+    : local;
   const suggestions = all.filter((l) => l.status === "listed").slice(0, 3);
   const chosen = matches.find((m) => m.listing.hash === picked);
 
