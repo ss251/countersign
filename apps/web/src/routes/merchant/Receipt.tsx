@@ -109,7 +109,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
   return (
     <div className="mx-receipt-page">
       <article className="mx-receipt" aria-labelledby={statusId}>
-        <p className="mx-receipt__brand">countersign · receipt</p>
+        <p className="mx-receipt__brand">countersign · receipt{fixture ? " · sample" : ""}</p>
         <h1 className="mx-receipt__status" id={statusId}>
           <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
           {statusLabel(order.status)}

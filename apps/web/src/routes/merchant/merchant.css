@@ -550,6 +550,7 @@
   background: var(--usdc);
   border-radius: 1px;
   transform-origin: left center;
+  pointer-events: none;
   animation: mx-drain 4000ms linear forwards;
 }
 
@@ -978,8 +979,8 @@
   color: var(--ink);
   background: var(--paper);
   border: 0;
-  border-top: var(--hair) solid var(--line);
   border-radius: var(--r-3) var(--r-3) 0 0;
+  /* Its edge is the elevation's own ring: one depth cue, not a border as well. */
   box-shadow: var(--elev-2);
   animation: mx-sheet-up var(--d-3) var(--ease-drawer);
 }
@@ -1011,8 +1012,6 @@
     width: min(420px, 100%);
     height: 100dvh;
     max-height: 100dvh;
-    border-top: 0;
-    border-inline-start: var(--hair) solid var(--line);
     border-radius: 0;
     animation-name: mx-drawer-in;
   }
@@ -1146,6 +1145,14 @@
   color: var(--slate);
   font-size: var(--t-12);
   text-wrap: pretty;
+}
+
+/* Fingers get 44 px, whatever the desk density. */
+@media (pointer: coarse) {
+  .mx-button,
+  .mx-filter {
+    min-height: 44px;
+  }
 }
 
 /* --------------------------------------------------------------- motion */

@@ -501,11 +501,17 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
               </>
             ) : null}
           </p>
+          {fixture ? (
+            <p className="mx-note">
+              Sample ledger: four rows link to real Whitechain Sepolia transactions, two are made up, and the times are
+              illustrative.
+            </p>
+          ) : null}
         </div>
         <GasLine status={relayStatus} failed={relayFailed} />
       </header>
 
-      <EquationBand sums={sums} />
+      <EquationBand sums={sums} ready={loaded} />
 
       <div className={`mx-desk${panelOpen && split ? " mx-desk--split" : ""}`}>
         <section className="mx-orders" aria-labelledby="mx-orders-heading">
@@ -722,8 +728,11 @@ export function Desk({ fixture, merchantQuery }: DeskProps) {
   );
 }
 
-/** Released + held = total, then − refunded − toll = net, ruled like the top of a statement. */
-function EquationBand({ sums }: { sums: Equation }) {
+/**
+ * Released + held = total, then − refunded − toll = net, ruled like the top of a statement. Until the
+ * ledger loads, the figures hold their place with dashes rather than flash a row of zeros.
+ */
+function EquationBand({ sums, ready }: { sums: Equation; ready: boolean }) {
   const places = decimalsFor([sums.released, sums.held, sums.total, sums.refunded, sums.toll, sums.net]);
   const terms = [
     { label: "Released", value: sums.released, op: null, tone: "" },
@@ -744,7 +753,7 @@ function EquationBand({ sums }: { sums: Equation }) {
           >
             <dt className="mx-label">{term.label}</dt>
             <dd className={`mx-eq__value mono${term.tone}`}>
-              {formatFixed(term.value, places)}
+              {ready ? formatFixed(term.value, places) : "—"}
               <Unit />
             </dd>
           </div>
