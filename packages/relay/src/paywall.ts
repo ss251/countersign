@@ -159,12 +159,29 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       );
     }
 
+    const send = options.fetch ?? globalThis.fetch;
     const claim = claimOf(payment);
     if (claim) {
       prune(now());
       const existing = claims.get(claim.key);
       if (existing) {
-        return existing.state === "pending" ? stillSettling(c) : alreadyUsed(c);
+        if (existing.state !== "pending") return alreadyUsed(c);
+        const txHash = existing.txHash;
+        if (txHash) {
+          const status = await orderStatus(
+            send,
+            `${facilitator}/orders/${encodeURIComponent(txHash)}`,
+          );
+          if (status === "paid" || status === "partially_refunded") {
+            // The payment landed. Re-read the claim so a concurrent retry cannot serve twice.
+            const landed = claims.get(claim.key);
+            if (!landed || landed.state !== "pending") return alreadyUsed(c);
+            settleClaim(claim.key, landed.validBefore);
+            await next();
+            return withLanded(c, txHash, requirements, payment);
+          }
+        }
+        return stillSettling(c);
       }
       claims.set(claim.key, {
         state: "in_flight",
@@ -178,7 +195,6 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       paymentPayload: payment,
       paymentRequirements: requirements,
     };
-    const send = options.fetch ?? globalThis.fetch;
 
     const verify = (await post(send, `${facilitator}/verify`, request)) as VerifyResponse | null;
     if (!verify) {
@@ -283,6 +299,31 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   }
 }
 
+function withLanded(
+  c: Context,
+  txHash: string,
+  requirements: PaymentRequirements,
+  payment: PaymentPayload,
+): Response {
+  const response = c.res;
+  const headers = new Headers(response.headers);
+  headers.set(
+    PAYMENT_RESPONSE_HEADER,
+    toBase64Json({
+      success: true,
+      transaction: txHash,
+      network: requirements.network,
+      payer: payment.payload.authorization.from,
+    }),
+  );
+  c.res = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  return c.res;
+}
+
 function withSettle(c: Context, settle: SettleResponse): Response {
   const response = c.res;
   const headers = new Headers(response.headers);
@@ -321,6 +362,22 @@ function requirementsFor(
       version: USDT.version,
     },
   };
+}
+
+async function orderStatus(send: PaywallFetch, url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await send(url, { method: "GET", signal: controller.signal });
+    if (!response.ok) return null;
+    const body = (await response.json()) as unknown;
+    if (!isRecord(body) || typeof body.status !== "string") return null;
+    return body.status;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function post(
