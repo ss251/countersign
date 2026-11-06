@@ -114,4 +114,4 @@ All green from the worktree root.
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-06-merchant-wiring.md`. Cover what changed, the test counts and any deviations.
+Write `$M/reports/wc-06-merchant-wiring.md`. Cover what changed, the test counts and any deviations.
