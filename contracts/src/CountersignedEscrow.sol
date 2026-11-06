@@ -82,6 +82,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     function fund(bytes32 offerHash, Countersignature calldata cs) external nonReentrant returns (bytes32 jobId) {
         if (cs.amount == 0) revert ZeroAmount();
         if (cs.buyer == address(0) || cs.payee == address(0)) revert ZeroAddress();
+        if (cs.payee == address(this)) revert BadPayee(cs.payee);
         if (cs.deadline <= block.timestamp) revert DeadlineInPast(cs.deadline);
 
         jobId = jobIdFor(
@@ -90,7 +91,15 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (_jobs[jobId].status != Status.None) revert JobExists(jobId);
         _checkCountersignature(cs, jobId);
 
-        if (cs.reviewWindow != 0) _reviews[jobId].window = cs.reviewWindow;
+        if (cs.bond != 0 || cs.reviewWindow != 0) {
+            // C1: a bond or window moves only on a job matching, field for field, the payee's own terms.
+            BondTerms storage t = termsOf[cs.payee][offerHash];
+            if (
+                cs.bond != t.bond || cs.reviewWindow != t.reviewWindow || cs.amount != t.price
+                    || uint256(cs.deadline) < block.timestamp + t.minDuration
+            ) revert TermsMismatch(jobId);
+            if (cs.reviewWindow != 0) _reviews[jobId].window = cs.reviewWindow;
+        }
         if (cs.bond != 0) {
             uint256 available = bondOf[cs.payee];
             if (available < cs.bond) revert BondMissing(cs.payee, cs.bond, available);
@@ -117,6 +126,9 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     function setTerms(bytes32 offerHash, uint256 price, uint256 bond, uint64 reviewWindow, uint64 minDuration)
         external
     {
+        if (msg.sender == address(this)) revert BadPayee(msg.sender);
+        if (bond > price) revert BondTooHigh(bond, price);
+        if (reviewWindow > MAX_REVIEW_WINDOW) revert ReviewTooLong(reviewWindow);
         termsOf[msg.sender][offerHash] =
             BondTerms({price: price, bond: bond, reviewWindow: reviewWindow, minDuration: minDuration});
         emit TermsSet(msg.sender, offerHash, price, bond, reviewWindow, minDuration);
@@ -135,6 +147,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     ) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (payee == address(0)) revert ZeroAddress();
+        if (payee == address(this)) revert BadPayee(payee);
 
         bytes32 nonce = keccak256(abi.encode(BOND_DEPOSIT_TYPEHASH, payee, amount, salt));
         uint256 before = token.balanceOf(address(this));
@@ -164,7 +177,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     function release(bytes32 jobId, bytes32 slipHash, bytes calldata sellerSig) external nonReentrant {
         Job storage job = _jobs[jobId];
         if (job.status != Status.Funded) revert NotFunded(jobId);
-        if (block.timestamp > job.deadline) revert DeadlinePassed(jobId, job.deadline);
+        uint256 settleBy = _settleBy(job);
+        if (block.timestamp > settleBy) revert SettleWindowClosed(jobId, settleBy);
         bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(RELEASE_TYPEHASH, jobId, slipHash)));
         if (!SignatureChecker.isValidSignatureNow(job.payee, digest, sellerSig)) revert NotPayee(jobId);
 
@@ -195,7 +209,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         Job storage job = _jobs[jobId];
         if (job.status != Status.Delivered) revert NotDelivered(jobId);
         uint64 endsAt = _endsAt(jobId);
-        if (block.timestamp < endsAt) revert ReviewOpen(jobId, endsAt);
+        if (block.timestamp <= endsAt) revert ReviewOpen(jobId, endsAt);
 
         emit WindowElapsed(jobId);
         _pay(jobId, job);
@@ -215,7 +229,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
             if (block.timestamp > job.deadline) revert DeadlinePassed(jobId, job.deadline);
         } else {
             uint64 endsAt = _endsAt(jobId);
-            if (block.timestamp >= endsAt) revert ReviewClosed(jobId, endsAt);
+            if (block.timestamp > endsAt) revert ReviewClosed(jobId, endsAt);
+            forfeit = true;
         }
 
         job.status = Status.Disputed;
@@ -229,10 +244,12 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     function refund(bytes32 jobId) external nonReentrant {
         Job storage job = _jobs[jobId];
         if (job.status != Status.Funded) revert NotFunded(jobId);
-        if (block.timestamp <= job.deadline) revert DeadlineNotReached(jobId, job.deadline);
+        uint256 settleBy = _settleBy(job);
+        if (block.timestamp <= settleBy) revert SettleWindowOpen(jobId, settleBy);
 
+        // C2: a seller that neither delivered nor cancelled by the deadline loses the bond to the buyer.
         job.status = Status.Refunded;
-        _refund(jobId, job, false, false);
+        _refund(jobId, job, false, true);
     }
 
     /// @inheritdoc ICountersignedEscrow
@@ -245,6 +262,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
             bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(CANCEL_TYPEHASH, jobId)));
             if (!SignatureChecker.isValidSignatureNow(job.payee, digest, sellerSig)) revert NotPayee(jobId);
         }
+        // C2: after the deadline an undelivered job is in default, and a late cancel would save the bond.
+        if (status == Status.Funded && block.timestamp > job.deadline) revert DeadlinePassed(jobId, job.deadline);
 
         job.status = Status.Refunded;
         _refund(jobId, job, true, false);
@@ -255,7 +274,8 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (msg.sender != arbiter) revert NotArbiter();
         Job storage job = _jobs[jobId];
         if (job.status != Status.Funded) revert NotFunded(jobId);
-        if (block.timestamp > job.deadline) revert DeadlinePassed(jobId, job.deadline);
+        uint256 settleBy = _settleBy(job);
+        if (block.timestamp > settleBy) revert SettleWindowClosed(jobId, settleBy);
 
         job.status = Status.Failed;
         address buyer = job.buyer;
@@ -370,6 +390,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         uint256 toll = tollOf(job.amount);
         uint256 paid = job.amount - toll;
         address payee = job.payee;
+        if (toll != 0) tollAccrued += toll;
         uint256 bond = _jobBond[jobId];
         if (bond != 0) {
             _jobBond[jobId] = 0;
@@ -377,7 +398,6 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         }
 
         token.safeTransfer(payee, paid);
-        if (toll != 0) token.safeTransfer(treasury, toll);
         emit Released(jobId, job.slipHash, payee, paid, toll);
         if (bond != 0) emit BondReturned(jobId, payee, bond);
     }

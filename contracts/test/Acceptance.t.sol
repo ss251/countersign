@@ -175,7 +175,7 @@ contract AcceptanceTest is Test {
         escrow.accept(jobId, _acceptSig(buyerKey, jobId));
 
         assertEq(token.balanceOf(seller) - sellerBefore, PRICE - _toll(), "seller paid");
-        assertEq(token.balanceOf(treasury), _toll(), "toll to the treasury");
+        assertEq(escrow.tollAccrued(), _toll(), "the toll accrues for the treasury");
         assertEq(escrow.bondOf(seller), BOND, "bond back in the free balance");
         assertEq(escrow.bondOfJob(jobId), 0);
         _assertStatus(jobId, ICountersignedEscrow.Status.Released);
@@ -190,7 +190,7 @@ contract AcceptanceTest is Test {
 
     // ------------------------------------------------------------------ 2. the buyer disputes inside the window
 
-    function test_2_buyer_disputes_inside_the_window_and_is_refunded() public {
+    function test_2_buyer_disputes_inside_the_window_is_refunded_and_takes_the_bond() public {
         (bytes32 jobId, uint64 endsAt) = _deliver();
         uint256 buyerBefore = token.balanceOf(buyer);
         uint256 sellerBefore = token.balanceOf(seller);
@@ -198,13 +198,17 @@ contract AcceptanceTest is Test {
 
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Disputed(jobId, buyer);
+        vm.expectEmit(address(escrow));
+        emit ICountersignedEscrow.Refunded(jobId, buyer, PRICE, false);
+        vm.expectEmit(address(escrow));
+        emit ICountersignedEscrow.BondForfeited(jobId, buyer, BOND);
         vm.prank(stranger);
         escrow.dispute(jobId, _disputeSig(buyerKey, jobId));
 
-        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE, "buyer refunded in full, at once");
+        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND, "buyer refunded at once, plus the bond (D16)");
         assertEq(token.balanceOf(seller), sellerBefore, "seller not paid");
-        assertEq(token.balanceOf(treasury), 0, "no toll on a dispute");
-        assertEq(escrow.bondOf(seller), BOND, "a dispute never slashes: the bond returns");
+        assertEq(escrow.tollAccrued(), 0, "no toll on a dispute");
+        assertEq(escrow.bondOf(seller), 0, "junk costs the seller the bond");
         _assertStatus(jobId, ICountersignedEscrow.Status.Disputed);
     }
 
@@ -215,7 +219,7 @@ contract AcceptanceTest is Test {
         vm.prank(buyer);
         escrow.dispute(jobId, "");
         assertEq(token.balanceOf(buyer) - buyerBefore, PRICE);
-        assertEq(escrow.bondOf(seller), BOND);
+        assertEq(escrow.bondOf(seller), BOND, "before delivery the bond goes back to the seller");
         _assertStatus(jobId, ICountersignedEscrow.Status.Disputed);
     }
 
@@ -225,12 +229,13 @@ contract AcceptanceTest is Test {
         (bytes32 jobId, uint64 endsAt) = _deliver();
         uint256 sellerBefore = token.balanceOf(seller);
 
-        vm.warp(endsAt - 1);
+        // endsAt is the window's last second (L3: until T is now <= T), so the release opens after it.
+        vm.warp(endsAt);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.ReviewOpen.selector, jobId, endsAt));
         vm.prank(stranger);
         escrow.releaseAfterWindow(jobId);
 
-        vm.warp(endsAt);
+        vm.warp(uint256(endsAt) + 1);
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.WindowElapsed(jobId);
         vm.prank(stranger);
@@ -243,23 +248,28 @@ contract AcceptanceTest is Test {
 
     function test_3b_a_delivered_job_is_never_refunded_by_the_deadline() public {
         (bytes32 jobId,) = _deliver();
-        vm.warp(escrow.jobOf(jobId).deadline + 1);
+        vm.warp(uint256(escrow.jobOf(jobId).deadline) + escrow.DISPUTE_WINDOW() + 1);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
         escrow.refund(jobId);
     }
 
     // ------------------------------------------------------------------ 4. the seller never delivers
 
-    function test_4_seller_never_delivers_the_deadline_refund_works_and_the_bond_returns() public {
+    function test_4_seller_never_delivers_the_refund_after_settleBy_pays_amount_plus_bond() public {
         bytes32 jobId = _fund();
         uint256 buyerBefore = token.balanceOf(buyer);
-        vm.warp(escrow.jobOf(jobId).deadline + 1);
+        uint256 settleBy = uint256(escrow.jobOf(jobId).deadline) + escrow.DISPUTE_WINDOW();
 
+        vm.warp(uint256(escrow.jobOf(jobId).deadline) + 1);
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowOpen.selector, jobId, settleBy));
+        escrow.refund(jobId);
+
+        vm.warp(settleBy + 1);
         vm.prank(stranger);
         escrow.refund(jobId);
 
-        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE);
-        assertEq(escrow.bondOf(seller), BOND, "a silent seller keeps the bond");
+        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND);
+        assertEq(escrow.bondOf(seller), 0, "a silent seller forfeits the bond (C2)");
         _assertStatus(jobId, ICountersignedEscrow.Status.Refunded);
     }
 
@@ -267,7 +277,7 @@ contract AcceptanceTest is Test {
 
     function test_5_a_dispute_after_the_window_has_closed_reverts() public {
         (bytes32 jobId, uint64 endsAt) = _deliver();
-        vm.warp(endsAt);
+        vm.warp(uint256(endsAt) + 1);
         bytes memory sig = _disputeSig(buyerKey, jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.ReviewClosed.selector, jobId, endsAt));
         escrow.dispute(jobId, sig);

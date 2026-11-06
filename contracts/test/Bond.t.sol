@@ -7,7 +7,7 @@ import {ICountersignedEscrow} from "../src/ICountersignedEscrow.sol";
 import {MockEIP3009} from "./mocks/MockEIP3009.sol";
 
 /// @dev The seller bond: deposited free, locked at funding against the payee's registered terms,
-///      returned on release and cancel, and paid to the buyer when the arbiter calls failDelivery.
+///      returned on release and cancel, and paid to the buyer on failDelivery and on a default (C2).
 contract BondTest is Test {
     MockEIP3009 internal token;
     CountersignedEscrow internal escrow;
@@ -106,6 +106,11 @@ contract BondTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, slipHash)));
     }
 
+    /// The first second after settleBy = deadline + DISPUTE_WINDOW (H1).
+    function _afterSettle(ICountersignedEscrow.Countersignature memory cs) internal view returns (uint256) {
+        return uint256(cs.deadline) + escrow.DISPUTE_WINDOW() + 1;
+    }
+
     function _depositNonce(uint256 amount, bytes32 salt) internal view returns (bytes32) {
         return keccak256(abi.encode(escrow.BOND_DEPOSIT_TYPEHASH(), seller, amount, salt));
     }
@@ -169,21 +174,24 @@ contract BondTest is Test {
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Failed));
     }
 
-    function test_silent_seller_refunds_the_buyer_and_returns_the_bond() public {
+    function test_silent_seller_refunds_the_buyer_and_forfeits_the_bond() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _fundBonded(BOND);
-        vm.warp(uint256(cs.deadline) + 1);
+        vm.warp(_afterSettle(cs));
         uint256 buyerWallet = token.balanceOf(buyer);
 
+        vm.expectEmit(address(escrow));
+        emit ICountersignedEscrow.BondForfeited(jobId, buyer, BOND);
         vm.prank(stranger);
         escrow.refund(jobId);
 
-        assertEq(token.balanceOf(buyer) - buyerWallet, PRICE);
-        assertEq(escrow.bondOf(seller), BOND);
+        assertEq(token.balanceOf(buyer) - buyerWallet, PRICE + BOND);
+        assertEq(escrow.bondOf(seller), 0);
         assertEq(escrow.bondOfJob(jobId), 0);
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Refunded));
     }
 
-    function test_a_failing_seller_ends_bond_worse_off_than_a_silent_one() public {
+    /// C2: silence is no cheaper than a failed delivery. Both cost the seller exactly the bond.
+    function test_a_failing_seller_and_a_silent_one_both_lose_the_bond() public {
         uint256 snapshot = vm.snapshotState();
 
         (bytes32 failedJob,) = _fundBonded(BOND);
@@ -195,14 +203,15 @@ contract BondTest is Test {
         vm.revertToState(snapshot);
 
         (bytes32 silentJob, ICountersignedEscrow.Countersignature memory cs) = _fundBonded(BOND);
-        vm.warp(uint256(cs.deadline) + 1);
+        vm.warp(_afterSettle(cs));
         vm.prank(stranger);
         escrow.refund(silentJob);
         uint256 silentSeller = token.balanceOf(seller) + escrow.bondOf(seller);
         uint256 silentBuyer = token.balanceOf(buyer);
 
-        assertEq(silentSeller - failingSeller, BOND, "the failing seller loses exactly the bond");
-        assertEq(failingBuyer - silentBuyer, BOND, "the buyer gains exactly the bond");
+        assertEq(silentSeller, failingSeller, "silence saves the seller nothing");
+        assertEq(silentBuyer, failingBuyer, "the buyer ends the same either way");
+        assertEq(silentBuyer, 100_000_000 + BOND, "and gains exactly the bond");
     }
 
     function test_payee_cancel_returns_the_bond() public {
@@ -242,11 +251,12 @@ contract BondTest is Test {
         escrow.failDelivery(jobId);
     }
 
-    function test_fail_delivery_refuses_after_the_deadline() public {
+    function test_fail_delivery_refuses_after_settle_by() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _fundBonded(BOND);
-        vm.warp(uint256(cs.deadline) + 1);
+        uint256 settleBy = _afterSettle(cs) - 1;
+        vm.warp(settleBy + 1);
         vm.prank(arbiter);
-        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.DeadlinePassed.selector, jobId, cs.deadline));
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowClosed.selector, jobId, settleBy));
         escrow.failDelivery(jobId);
     }
 
@@ -260,7 +270,7 @@ contract BondTest is Test {
 
     function test_fail_delivery_refuses_a_refunded_job() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _fundBonded(BOND);
-        vm.warp(uint256(cs.deadline) + 1);
+        vm.warp(_afterSettle(cs));
         escrow.refund(jobId);
         vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));

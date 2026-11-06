@@ -69,7 +69,8 @@ beforeAll(async () => {
     }
   }
   token = await deploy(artifact("MockEIP3009.sol", "MockEIP3009"), [{ type: "constructor", inputs: [] }], []);
-  escrowAddr = await deploy(artifact("CountersignedEscrow.sol", "CountersignedEscrow"), escrowAbi, [
+  // The v1 ABI this package speaks, frozen as a fixture until it is ported to escrow v2 (#98).
+  escrowAddr = await deploy(artifact("CountersignedEscrowV1.sol", "CountersignedEscrowV1"), escrowAbi, [
     token,
     "0x000000000000000000000000000000000000dEaD",
     100,

@@ -85,6 +85,10 @@ contract CountersignedEscrowTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.CANCEL_TYPEHASH(), jobId)));
     }
 
+    function _settleBy(ICountersignedEscrow.Countersignature memory cs) internal view returns (uint256) {
+        return uint256(cs.deadline) + escrow.DISPUTE_WINDOW();
+    }
+
     function _funded() internal returns (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) {
         cs = _cs();
         vm.prank(stranger); // the hub or a relayer submits; the buyer pays no gas
@@ -118,6 +122,9 @@ contract CountersignedEscrowTest is Test {
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
 
         assertEq(token.balanceOf(seller), PRICE - toll);
+        assertEq(escrow.tollAccrued(), toll, "the toll accrues (L1)");
+        assertEq(token.balanceOf(address(escrow)), toll);
+        escrow.sweepToll();
         assertEq(token.balanceOf(treasury), toll);
         assertEq(token.balanceOf(address(escrow)), 0);
         ICountersignedEscrow.Job memory job = escrow.jobOf(jobId);
@@ -148,24 +155,26 @@ contract CountersignedEscrowTest is Test {
         assertEq(token.balanceOf(buyer), 100_000_000);
     }
 
-    function test_release_after_deadline_fails() public {
+    function test_release_after_settle_by_fails() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _funded();
-        vm.warp(uint256(cs.deadline) + 1);
+        uint256 settleBy = _settleBy(cs);
+        vm.warp(settleBy + 1);
         bytes memory sig = _releaseSig(sellerKey, jobId, SLIP);
-        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.DeadlinePassed.selector, jobId, cs.deadline));
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowClosed.selector, jobId, settleBy));
         escrow.release(jobId, SLIP, sig);
     }
 
-    function test_refund_before_deadline_fails() public {
+    function test_refund_before_settle_by_fails() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _funded();
-        vm.warp(cs.deadline); // the deadline itself still belongs to the seller
-        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.DeadlineNotReached.selector, jobId, cs.deadline));
+        uint256 settleBy = _settleBy(cs);
+        vm.warp(settleBy); // settleBy itself still belongs to the seller's release (H1)
+        vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.SettleWindowOpen.selector, jobId, settleBy));
         escrow.refund(jobId);
     }
 
     function test_refund_by_a_stranger_succeeds() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _funded();
-        vm.warp(uint256(cs.deadline) + 1);
+        vm.warp(_settleBy(cs) + 1);
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Refunded(jobId, buyer, PRICE, false);
         vm.prank(stranger);
@@ -185,7 +194,7 @@ contract CountersignedEscrowTest is Test {
 
     function test_double_refund_fails() public {
         (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs) = _funded();
-        vm.warp(uint256(cs.deadline) + 1);
+        vm.warp(_settleBy(cs) + 1);
         escrow.refund(jobId);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotFunded.selector, jobId));
         escrow.refund(jobId);
@@ -206,7 +215,7 @@ contract CountersignedEscrowTest is Test {
         assertEq(attacker.successes(), 0, "every re-entry was refused");
         uint256 toll = PRICE * TOLL_BPS / 10_000;
         assertEq(token.balanceOf(address(attacker)), PRICE - toll);
-        assertEq(token.balanceOf(address(escrow)), 0);
+        assertEq(token.balanceOf(address(escrow)), toll, "only the accrued toll is left");
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Released));
     }
 
@@ -327,8 +336,8 @@ contract CountersignedEscrowTest is Test {
             _countersign(OFFER, seller, amount, uint64(block.timestamp + 300), amount);
         bytes32 jobId = escrow.fund(OFFER, cs);
         escrow.release(jobId, SLIP, _releaseSig(sellerKey, jobId, SLIP));
-        assertEq(token.balanceOf(seller) + token.balanceOf(treasury), amount);
-        assertEq(token.balanceOf(treasury), amount * TOLL_BPS / 10_000);
+        assertEq(token.balanceOf(seller) + escrow.tollAccrued(), amount);
+        assertEq(escrow.tollAccrued(), amount * TOLL_BPS / 10_000);
     }
 }
 
