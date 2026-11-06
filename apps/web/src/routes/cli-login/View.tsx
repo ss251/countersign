@@ -7,8 +7,26 @@ import { approveCliLogin, type ApproveOutcome } from "./approve.ts";
 export interface CliSignIn {
   ready: boolean;
   authenticated: boolean;
-  login: () => void;
+  /** Opens Privy sign-in; resolves true only when that sign-in authenticated. */
+  login: () => Promise<boolean> | undefined;
   getAccessToken: () => Promise<string | null>;
+}
+
+/** Where the sign-in this page opened stands. */
+export type LoginPhase = "idle" | "pending" | "completed";
+
+/** The sign-in settled: a dismissal clears the wait, and only a completion may approve. */
+export function loginSettled(completed: boolean | undefined): LoginPhase {
+  return completed === true ? "completed" : "idle";
+}
+
+/** Claim this page's own completed sign-in once; a later sign-in from elsewhere gets nothing. */
+export function claimApproval(
+  phase: LoginPhase,
+  authenticated: boolean,
+): { phase: LoginPhase; approve: boolean } {
+  if (phase !== "completed" || !authenticated) return { phase, approve: false };
+  return { phase: "idle", approve: true };
 }
 
 const EMAIL_OFF = "Email sign-in is off on this console, so it cannot connect a CLI.";
@@ -37,7 +55,7 @@ export function CliLoginView({
   /** Why sign-in is unavailable, when it is. */
   reason?: string;
 }) {
-  const [pending, setPending] = useState(false);
+  const [phase, setPhase] = useState<LoginPhase>("idle");
   const [connecting, setConnecting] = useState(false);
   const [outcome, setOutcome] = useState<ApproveOutcome | null>(null);
 
@@ -58,11 +76,18 @@ export function CliLoginView({
     }
   }, [code, signIn]);
 
+  const startLogin = useCallback(async () => {
+    if (!signIn) return;
+    setPhase("pending");
+    setPhase(loginSettled(await signIn.login()));
+  }, [signIn]);
+
   useEffect(() => {
-    if (!pending || !signIn?.authenticated) return;
-    setPending(false);
+    const step = claimApproval(phase, signIn?.authenticated ?? false);
+    if (!step.approve) return;
+    setPhase(step.phase);
     void send();
-  }, [pending, signIn, send]);
+  }, [phase, signIn, send]);
 
   const approved = outcome?.kind === "approved" ? outcome : null;
 
@@ -85,6 +110,7 @@ export function CliLoginView({
           <p className="field__hint">
             Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
           </p>
+          <p className="field__hint">If you did not just run countersign login yourself, close this page.</p>
 
           {signIn === null ? (
             <p className="locked__alt">{reason}</p>
@@ -111,8 +137,7 @@ export function CliLoginView({
                 onClick={() => {
                   if (!signIn.ready) return;
                   if (!signIn.authenticated) {
-                    setPending(true);
-                    signIn.login();
+                    void startLogin();
                     return;
                   }
                   void send();
