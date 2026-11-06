@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * countersign verify <slip.json> [--rpc <url>]
+ * countersign verify <slip.json> [--rpc <url>] [--mirror <url>]
  * Prints one line per check, then VALID or INVALID. Exit code 0 when valid, 1 otherwise.
  */
 
@@ -12,9 +12,11 @@ const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
 const rpcAt = args.indexOf("--rpc");
 const rpcUrl = rpcAt >= 0 ? args[rpcAt + 1] : undefined;
+const mirrorAt = args.indexOf("--mirror");
+const mirrorUrl = mirrorAt >= 0 ? args[mirrorAt + 1] : undefined;
 
 if (!file) {
-  console.error("usage: verify <slip.json> [--rpc <url>]");
+  console.error("usage: verify <slip.json> [--rpc <url>] [--mirror <url>]");
   process.exit(2);
 }
 
@@ -26,7 +28,10 @@ try {
   process.exit(2);
 }
 
-const verdict = await verifySlip(slip, rpcUrl ? { rpcUrl } : {});
+const verdict = await verifySlip(slip, {
+  ...(rpcUrl ? { rpcUrl } : {}),
+  ...(mirrorUrl ? { mirrorUrl } : {}),
+});
 for (const f of verdict.findings) console.log(`${f.ok ? "ok  " : "FAIL"} ${f.check.padEnd(17)} ${f.detail}`);
 for (const s of verdict.skipped) console.log(`skip ${s}`);
 const verdictLine = verdict.valid
