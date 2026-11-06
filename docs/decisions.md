@@ -45,3 +45,16 @@ The captain approved using the existing on-chain commitment: `release(jobId, sli
 Rule: the committed hash is `keccak256(canonicalJson(slip.body))`. `SlipBody` holds everything known at delivery: the offer, job, parties, amount, input and output hashes, delivery time, children, and the escrow domain. It does not hold the settlement tx, the payment payload, the seller signature or any receipt. A hash over the settlement tx could not exist until the release that commits it was mined, so including it would deadlock release.
 
 The release path never sends `bytes32(0)`. The hash released is exactly `slip.hash`, the hash of the slip the buyer is handed, so the seller signs the very receipt the buyer keeps. With an RPC, the verifier fetches the job's `Released` event and requires `event.slipHash` to equal the hash it recomputes from the body. A tampered body that carries a recomputed `hash` of its own still fails, because the chain holds the original.
+
+## D10 — a held call clears only with the approver's signature, never the hub's word (06 Nov; refs #21)
+
+The envelope's `askAbove` is the one control that stops an agent spending without a person. cs-w1 found (B12) that the first version of remote approvals let the hub's answer clear it: `GET /approvals/:id` said `countersign`, and the agent signed. The hub is the party every earlier fix treats as hostile, so its word cannot stand in for the human.
+
+Rule:
+
+- The envelope names an `approver` key, set by the human when the envelope is written. Without one, a held call can be approved only on the agent's machine.
+- The phone signs the decision with that key over `{approvalId, agent, offerHash, amount, rail, termsHash, decision, decidedAt}`.
+- The agent rebuilds that body from its own request values, never from the hub's copy, and checks both the signer and the time window before it signs a payment.
+- The hub also checks the signature against the approver in the agent's mirrored envelope, which keeps junk out of its table. The agent's check is the one that counts.
+- The bearer token stays as the hub's way to accept a decision from the phone and to guard the envelope and approval reads, but it proves nothing to the agent.
+- Cap, per-merchant limits and the allowlist are still checked locally before any request is made, so an approval can only lift the ask-above hold.

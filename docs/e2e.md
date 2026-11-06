@@ -28,6 +28,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 10 | `arc-gateway` | the buyer pays from its Circle Gateway balance: debited at once, slip names the gateway rail | Arc testnet | orch-cs |
 | 11 | `refusals` | the input gate, every envelope limit and an offline seller stop a call before anything is signed | none | orch-cs |
 | 12 | `public-spine` | a buyer on this machine pays a live offer on the public hub; the slip verifies with no hub | Arc testnet | orch-cs |
+| 13 | `ratings` | a seller's rating and the hub's stats count only what slips prove; the hub's janitor refunds a failed call after its deadline | Arc testnet | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser. Browsers are not run on the build machine, so it reports `NOT RUN (browser rule)` until a driver is approved. Its cases are listed by `--list`.
@@ -97,6 +98,7 @@ Uses the released slip from flow 1 (Arc) or flow 5 (Whitechain).
 4. **mirror confirms.** Read by the suite's own mirror client: the transaction is `SUCCESS`, the agent is debited and the seller credited exactly the price in USDC, and the memo names the offer hash.
 5. **spend log entry.** The HCS message at the reported sequence decodes to a `spend` entry for this offer, this amount and this transaction id, submitted by the agent.
 6. **envelope refuses past its cap.** The same agent with a cap below what it has spent refuses the call, pays nothing and logs a `refused` entry with reason `over-cap`.
+7. **the log is complete for the run.** Every USDC payment the agent made since the flow began has a spend entry naming its transaction and amount, and every spend entry in that window is backed by a payment.
 
 ### 7 · merchant
 
@@ -141,6 +143,14 @@ Each case uses a fresh buyer state and must end with a refusal in the journal an
 2. **envelope approves** and the buyer CLI buys it through the public hub; the hosted relayer pays the gas and the hosted seller's runner delivers.
 3. **chain agrees**: `Funded` names this buyer and that seller at the listed price; `Released` carries the slip's hash.
 4. **slip verifies with no hub**, and its explorer link opens.
+
+### 13 · ratings
+
+1. **three calls on one offer**: one delivered, one the seller makes to itself, one whose delivery fails.
+2. **rating**: `/ratings/<seller>` counts one delivered, one failed and one self-dealt, scores 0.5 over two closed calls, and names one buyer and the delivered volume; `/ratings` agrees.
+3. **stats**: `/stats` agrees, with three calls on the escrow rail.
+4. **janitor**: after the deadline the hub refunds the failed call itself; the `Refunded` event returns the full price.
+5. **rating follows**: the failed call now counts as refunded.
 
 ## Results
 
