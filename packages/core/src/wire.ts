@@ -20,12 +20,18 @@ export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 export const PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
 export const RUNNER_PATH = "/runner/connect";
 
+/** base64 of the UTF-8 JSON. Uses btoa/atob so it runs in Bun and in browsers alike. */
 export function toBase64Json(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
 }
 
 export function fromBase64Json<T = unknown>(header: string): T {
-  return JSON.parse(Buffer.from(header, "base64").toString("utf8")) as T;
+  const bin = atob(header);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
 /** The text a runner signs with EIP-191 personal_sign to prove it holds the seller key. */
