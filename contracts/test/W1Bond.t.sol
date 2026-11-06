@@ -55,7 +55,7 @@ contract W1BondTest is Test {
         return vm.sign(key, digest);
     }
 
-    function _countersign(uint256 key, address from, uint256 amount, uint64 deadline, uint256 salt)
+    function _countersign(uint256 key, address from, uint256 amount, uint64 deadline, uint256 salt, uint256 bond)
         internal
         view
         returns (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId)
@@ -65,9 +65,10 @@ contract W1BondTest is Test {
         cs.amount = amount;
         cs.deadline = deadline;
         cs.salt = salt;
+        cs.bond = bond;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        jobId = escrow.jobIdFor(OFFER, from, seller, amount, deadline, salt);
+        jobId = escrow.jobIdFor(OFFER, from, seller, amount, deadline, salt, bond, 0);
         (cs.v, cs.r, cs.s) = _authorization(key, from, amount, cs.validBefore, jobId);
     }
 
@@ -86,7 +87,7 @@ contract W1BondTest is Test {
     /// the buyer's money leaves its wallet, the nonce is burned, and the job can never be funded.
     function test_W1_B16_a_countersignature_cannot_be_spent_as_a_bond_deposit() public {
         (ICountersignedEscrow.Countersignature memory cs, bytes32 jobId) =
-            _countersign(buyerKey, buyer, PRICE, uint64(block.timestamp + 300), 1);
+            _countersign(buyerKey, buyer, PRICE, uint64(block.timestamp + 300), 1, 0);
 
         vm.prank(stranger);
         try escrow.depositBond(buyer, cs.amount, cs.validAfter, cs.validBefore, jobId, cs.v, cs.r, cs.s) {} catch {}
@@ -98,17 +99,19 @@ contract W1BondTest is Test {
         assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.Funded));
     }
 
-    /// Deploy gate (D11 makes fundBonded arbiter-only in #98). Today anyone can fund a job of their
-    /// own at the smallest amount, with a far deadline, and lock every unit of a seller's free bond in
-    /// it: each real bonded purchase then reverts with BondMissing until the seller notices and cancels.
+    /// Deploy gate (#98, D16: the bond binds to the payee's registered terms). Without that binding,
+    /// anyone could fund a job of their own at the smallest amount, with a far deadline, and lock every
+    /// unit of a seller's free bond in it: each real bonded purchase would then revert with BondMissing.
     function test_W1_deploy_gate_a_stranger_cannot_lock_a_sellers_free_bond() public {
         _sellerDeposits(BOND);
+        vm.prank(seller);
+        escrow.setTerms(OFFER, PRICE, BOND, 0, 0);
         (ICountersignedEscrow.Countersignature memory junk,) =
-            _countersign(strangerKey, stranger, 1, uint64(block.timestamp + 3650 days), 7);
+            _countersign(strangerKey, stranger, 1, uint64(block.timestamp + 3650 days), 7, BOND);
 
-        // The contract never sees the offer, only its hash, so any hash the stranger signs will do.
+        // The contract never sees the offer, only its hash, so the stranger names the seller's own.
         vm.prank(stranger);
-        try escrow.fundBonded(OFFER, junk, BOND) {} catch {}
+        try escrow.fund(OFFER, junk) {} catch {}
 
         assertEq(escrow.bondOf(seller), BOND, "a stranger locked the seller's bond");
     }

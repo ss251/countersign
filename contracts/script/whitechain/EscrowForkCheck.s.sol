@@ -155,7 +155,7 @@ contract EscrowForkCheck is Script {
         cs.salt = salt;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, seller, amount, deadline, salt);
+        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, seller, amount, deadline, salt, 0, 0);
         bytes32 digest = keccak256(
             abi.encodePacked(
                 "\x19\x01",

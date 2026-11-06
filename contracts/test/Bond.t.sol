@@ -6,8 +6,8 @@ import {CountersignedEscrow} from "../src/CountersignedEscrow.sol";
 import {ICountersignedEscrow} from "../src/ICountersignedEscrow.sol";
 import {MockEIP3009} from "./mocks/MockEIP3009.sol";
 
-/// @dev The seller bond: deposited free, locked at funding, returned on release/refund/cancel,
-///      and paid to the buyer when the arbiter calls failDelivery.
+/// @dev The seller bond: deposited free, locked at funding against the payee's registered terms,
+///      returned on release and cancel, and paid to the buyer when the arbiter calls failDelivery.
 contract BondTest is Test {
     MockEIP3009 internal token;
     CountersignedEscrow internal escrow;
@@ -38,7 +38,7 @@ contract BondTest is Test {
 
     // ------------------------------------------------------------------ helpers
 
-    function _countersign(bytes32 offerHash, address payee, uint256 amount, uint64 deadline, uint256 salt)
+    function _countersign(bytes32 offerHash, address payee, uint256 amount, uint64 deadline, uint256 salt, uint256 bond)
         internal
         view
         returns (ICountersignedEscrow.Countersignature memory cs)
@@ -48,9 +48,10 @@ contract BondTest is Test {
         cs.amount = amount;
         cs.deadline = deadline;
         cs.salt = salt;
+        cs.bond = bond;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt);
+        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt, bond, 0);
         (cs.v, cs.r, cs.s) = _authorizationSig(
             buyerKey, buyer, address(escrow), amount, cs.validAfter, cs.validBefore, jobId
         );
@@ -85,8 +86,14 @@ contract BondTest is Test {
         return vm.sign(key, digest);
     }
 
-    function _cs() internal view returns (ICountersignedEscrow.Countersignature memory) {
-        return _countersign(OFFER, seller, PRICE, uint64(block.timestamp + 300), 1);
+    function _cs(uint256 bond) internal view returns (ICountersignedEscrow.Countersignature memory) {
+        return _countersign(OFFER, seller, PRICE, uint64(block.timestamp + 300), 1, bond);
+    }
+
+    /// The seller registers the offer's bond, as it does once at publish.
+    function _terms(uint256 bond) internal {
+        vm.prank(seller);
+        escrow.setTerms(OFFER, PRICE, bond, 0, 0);
     }
 
     function _sign712(uint256 key, bytes32 structHash) internal view returns (bytes memory) {
@@ -121,9 +128,10 @@ contract BondTest is Test {
         returns (bytes32 jobId, ICountersignedEscrow.Countersignature memory cs)
     {
         _deposit(bond);
-        cs = _cs();
-        vm.prank(arbiter);
-        jobId = escrow.fundBonded(OFFER, cs, bond);
+        _terms(bond);
+        cs = _cs(bond);
+        vm.prank(stranger); // anyone holding the countersignature may fund
+        jobId = escrow.fund(OFFER, cs);
     }
 
     // ------------------------------------------------------------------ the four paths
@@ -212,14 +220,14 @@ contract BondTest is Test {
 
     function test_fund_bonded_refuses_more_than_the_free_bond() public {
         _deposit(BOND);
-        ICountersignedEscrow.Countersignature memory cs = _cs();
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt);
+        _terms(BOND + 1);
+        ICountersignedEscrow.Countersignature memory cs = _cs(BOND + 1);
+        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, BOND + 1, 0);
         uint256 buyerWallet = token.balanceOf(buyer);
         uint256 escrowWallet = token.balanceOf(address(escrow));
 
-        vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.BondMissing.selector, seller, BOND + 1, BOND));
-        escrow.fundBonded(OFFER, cs, BOND + 1);
+        escrow.fund(OFFER, cs);
 
         assertEq(token.balanceOf(buyer), buyerWallet);
         assertEq(token.balanceOf(address(escrow)), escrowWallet);
@@ -262,9 +270,8 @@ contract BondTest is Test {
     function test_a_locked_bond_cannot_be_withdrawn_but_the_free_bond_can() public {
         uint256 free = 300_000;
         _deposit(BOND + free);
-        ICountersignedEscrow.Countersignature memory cs = _cs();
-        vm.prank(arbiter);
-        bytes32 jobId = escrow.fundBonded(OFFER, cs, BOND);
+        _terms(BOND);
+        bytes32 jobId = escrow.fund(OFFER, _cs(BOND));
         assertEq(escrow.bondOf(seller), free);
         assertEq(escrow.bondOfJob(jobId), BOND);
 
@@ -299,19 +306,6 @@ contract BondTest is Test {
         escrow.depositBond(seller, BOND, validAfter, validBefore, salt, v, r, s);
 
         assertEq(escrow.bondOf(seller), credited);
-    }
-
-    function test_fund_bonded_is_arbiter_only() public {
-        _deposit(BOND);
-        ICountersignedEscrow.Countersignature memory cs = _cs();
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt);
-
-        vm.prank(stranger);
-        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
-        escrow.fundBonded(OFFER, cs, BOND);
-
-        assertEq(escrow.bondOf(seller), BOND);
-        assertEq(uint8(escrow.jobOf(jobId).status), uint8(ICountersignedEscrow.Status.None));
     }
 
     function test_deposit_bond_refuses_zero_and_the_zero_payee() public {

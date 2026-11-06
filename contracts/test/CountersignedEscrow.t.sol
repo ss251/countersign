@@ -46,7 +46,7 @@ contract CountersignedEscrowTest is Test {
         cs.salt = salt;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt);
+        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, payee, amount, deadline, salt, 0, 0);
         bytes32 digest = keccak256(
             abi.encodePacked(
                 "\x19\x01",
@@ -95,7 +95,7 @@ contract CountersignedEscrowTest is Test {
 
     function test_fund_locks_the_amount_under_the_countersigned_terms() public {
         ICountersignedEscrow.Countersignature memory cs = _cs();
-        bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt);
+        bytes32 expected = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, 0, 0);
         vm.expectEmit(address(escrow));
         emit ICountersignedEscrow.Funded(expected, OFFER, buyer, seller, PRICE, cs.deadline);
         bytes32 jobId = escrow.fund(OFFER, cs);
@@ -142,7 +142,7 @@ contract CountersignedEscrowTest is Test {
     function test_wrong_amount_fails() public {
         ICountersignedEscrow.Countersignature memory cs = _cs();
         cs.amount = PRICE + 1; // the price moved after the buyer signed
-        bytes32 moved = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt);
+        bytes32 moved = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, moved));
         escrow.fund(OFFER, cs);
         assertEq(token.balanceOf(buyer), 100_000_000);
@@ -230,7 +230,7 @@ contract CountersignedEscrowTest is Test {
     function test_swapping_the_payee_fails() public {
         ICountersignedEscrow.Countersignature memory cs = _cs();
         cs.payee = stranger;
-        bytes32 swapped = escrow.jobIdFor(OFFER, buyer, stranger, cs.amount, cs.deadline, cs.salt);
+        bytes32 swapped = escrow.jobIdFor(OFFER, buyer, stranger, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, swapped));
         escrow.fund(OFFER, cs);
     }
@@ -238,7 +238,7 @@ contract CountersignedEscrowTest is Test {
     function test_another_offer_hash_fails() public {
         ICountersignedEscrow.Countersignature memory cs = _cs();
         bytes32 other = keccak256("offer: the same thing at a new price");
-        bytes32 jobId = escrow.jobIdFor(other, buyer, seller, cs.amount, cs.deadline, cs.salt);
+        bytes32 jobId = escrow.jobIdFor(other, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, jobId));
         escrow.fund(other, cs);
     }
@@ -246,7 +246,7 @@ contract CountersignedEscrowTest is Test {
     function test_extending_the_deadline_fails() public {
         ICountersignedEscrow.Countersignature memory cs = _cs();
         cs.deadline += 1 days;
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt);
+        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, cs.amount, cs.deadline, cs.salt, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.CountersignatureMismatch.selector, jobId));
         escrow.fund(OFFER, cs);
     }

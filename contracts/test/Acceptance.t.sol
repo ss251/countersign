@@ -43,15 +43,21 @@ contract AcceptanceTest is Test {
 
     // ------------------------------------------------------------------ helpers
 
-    function _countersign() internal view returns (ICountersignedEscrow.Countersignature memory cs) {
+    function _countersign(uint256 bond, uint64 window)
+        internal
+        view
+        returns (ICountersignedEscrow.Countersignature memory cs)
+    {
         cs.buyer = buyer;
         cs.payee = seller;
         cs.amount = PRICE;
         cs.deadline = uint64(block.timestamp + DEADLINE_IN);
         cs.salt = 1;
+        cs.bond = bond;
+        cs.reviewWindow = window;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt);
+        bytes32 jobId = escrow.jobIdFor(OFFER, buyer, seller, PRICE, cs.deadline, cs.salt, bond, window);
         (cs.v, cs.r, cs.s) = _authorizationSig(buyerKey, buyer, PRICE, cs.validAfter, cs.validBefore, jobId);
     }
 
@@ -101,16 +107,23 @@ contract AcceptanceTest is Test {
         return _sign712(key, keccak256(abi.encode(escrow.DISPUTE_TYPEHASH(), jobId)));
     }
 
-    /// The seller posts the bond, then the arbiter funds the job with the bond and the review window.
-    function _fund() internal returns (bytes32 jobId) {
+    /// The seller posts the bond and registers the offer's terms, as it does at publish.
+    function _sellerPublishes(uint64 window) internal {
+        bytes32 salt = keccak256("bond deposit");
         uint256 validBefore = block.timestamp + 600;
-        bytes32 nonce = keccak256("bond deposit");
+        bytes32 nonce = keccak256(abi.encode(escrow.BOND_DEPOSIT_TYPEHASH(), seller, BOND, salt));
         (uint8 v, bytes32 r, bytes32 s) = _authorizationSig(sellerKey, seller, BOND, 0, validBefore, nonce);
-        escrow.depositBond(seller, BOND, 0, validBefore, nonce, v, r, s);
+        escrow.depositBond(seller, BOND, 0, validBefore, salt, v, r, s);
+        vm.prank(seller);
+        escrow.setTerms(OFFER, PRICE, BOND, window, 0);
+    }
 
-        ICountersignedEscrow.Countersignature memory cs = _countersign();
-        vm.prank(arbiter);
-        jobId = escrow.fundBonded(OFFER, cs, BOND, WINDOW);
+    /// The buyer countersigns the offer's bond and window, and anyone holding that funds the job.
+    function _fund() internal returns (bytes32 jobId) {
+        _sellerPublishes(WINDOW);
+        ICountersignedEscrow.Countersignature memory cs = _countersign(BOND, WINDOW);
+        vm.prank(stranger);
+        jobId = escrow.fund(OFFER, cs);
     }
 
     /// Fund, then deliver: the job is Delivered and the review window starts now.
@@ -306,13 +319,8 @@ contract AcceptanceTest is Test {
     // ------------------------------------------------------------------ v1 behaviour is unchanged
 
     function test_a_window_of_zero_releases_at_once_as_in_v1() public {
-        uint256 validBefore = block.timestamp + 600;
-        bytes32 nonce = keccak256("bond deposit");
-        (uint8 v, bytes32 r, bytes32 s) = _authorizationSig(sellerKey, seller, BOND, 0, validBefore, nonce);
-        escrow.depositBond(seller, BOND, 0, validBefore, nonce, v, r, s);
-        ICountersignedEscrow.Countersignature memory cs = _countersign();
-        vm.prank(arbiter);
-        bytes32 jobId = escrow.fundBonded(OFFER, cs, BOND, 0);
+        _sellerPublishes(0);
+        bytes32 jobId = escrow.fund(OFFER, _countersign(BOND, 0));
 
         uint256 sellerBefore = token.balanceOf(seller);
         escrow.release(jobId, SLIP, _releaseSig(jobId));
@@ -327,12 +335,5 @@ contract AcceptanceTest is Test {
         escrow.accept(jobId, "");
         vm.expectRevert(abi.encodeWithSelector(ICountersignedEscrow.NotDelivered.selector, jobId));
         escrow.releaseAfterWindow(jobId);
-    }
-
-    function test_only_the_arbiter_sets_a_review_window() public {
-        ICountersignedEscrow.Countersignature memory cs = _countersign();
-        vm.prank(stranger);
-        vm.expectRevert(ICountersignedEscrow.NotArbiter.selector);
-        escrow.fundBonded(OFFER, cs, 0, WINDOW);
     }
 }
