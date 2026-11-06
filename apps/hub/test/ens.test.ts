@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Address } from "viem";
 import type { EnsResolve, ErrorBody } from "../src/deps.ts";
 import type { SellersResponse } from "../src/frontdoor.ts";
-import { makeOffer, other, publish, sellerAddress, startHub, type TestHub } from "./support.ts";
+import { call, makeOffer, other, publish, sellerAddress, startHub, type TestHub } from "./support.ts";
+import { offerHash } from "../src/deps.ts";
 
 const OTHER = other.address;
 let hub: TestHub | undefined;
@@ -84,5 +85,32 @@ describe("GET /sellers names a seller only while the lock holds", () => {
     names["alice.eth"] = OTHER;
     const moved = (await (await fetch(`${hub.url}/sellers`)).json()) as SellersResponse;
     expect(moved.sellers[0]?.name).toBeNull();
+  });
+});
+
+describe("POST /offers/:hash/call checks the name again", () => {
+  test("refuses a named offer, before any payment terms, once its name points elsewhere", async () => {
+    const names: Record<string, Address> = { "alice.eth": sellerAddress() };
+    const state = { down: false };
+    hub = startHub({ ens: registry(names, state) });
+    const offer = makeOffer({ ens: "alice.eth" });
+    expect((await publish(hub, offer)).status).toBe(201);
+    const hash = offerHash(offer);
+
+    // While the name holds, the call goes on to the usual checks (here: no runner, so offline).
+    const holding = await refusal(await call(hub, hash, {}));
+    expect(holding.body.code).not.toMatch(/^ens-/);
+
+    names["alice.eth"] = OTHER;
+    const moved = await refusal(await call(hub, hash, {}));
+    expect(moved.status).toBe(409);
+    expect(moved.body.code).toBe("ens-mismatch");
+    expect(moved.body.message).toContain("Nothing was charged.");
+
+    names["alice.eth"] = sellerAddress();
+    state.down = true;
+    const down = await refusal(await call(hub, hash, {}));
+    expect(down.status).toBe(503);
+    expect(down.body.code).toBe("ens-unavailable");
   });
 });
