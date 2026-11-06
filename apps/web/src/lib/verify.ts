@@ -73,9 +73,11 @@ export async function verifySlip(slip: Slip, options: { readChain?: boolean } = 
   }
 
   const exact = slip.payment?.accepted?.scheme !== "countersign";
+  // A release on chain is for the slip hash. It vouches for this body only if the body hashes to it.
+  const hashOk = findings.find((f) => f.check === "hash")?.ok === true;
   const checks: VerifyCheck[] = [];
   for (const f of findings) {
-    const c = present(f, slip, exact);
+    const c = present(f, slip, exact, hashOk);
     if (c) checks.push(c);
   }
 
@@ -99,7 +101,7 @@ export async function verifySlip(slip: Slip, options: { readChain?: boolean } = 
   };
 }
 
-function present(f: Finding, slip: Slip, exact: boolean): VerifyCheck | null {
+function present(f: Finding, slip: Slip, exact: boolean, hashOk: boolean): VerifyCheck | null {
   switch (f.check) {
     case "hash": {
       let computed: string | undefined;
@@ -152,6 +154,15 @@ function present(f: Finding, slip: Slip, exact: boolean): VerifyCheck | null {
       };
     case "onchain":
       if (!slip.body.escrow) return null;
+      if (f.ok && !hashOk) {
+        return {
+          id: "onchain",
+          title: "The release on chain is for another body",
+          state: "fail",
+          detail: `${networkName(slip.body.network)} released the slip hash this file claims, but its body no longer hashes to it, so that release does not cover what you are reading.`,
+          value: slip.settlement?.transaction,
+        };
+      }
       return {
         id: "onchain",
         title: f.ok ? `Released on ${networkName(slip.body.network)}` : "Not released on chain",
