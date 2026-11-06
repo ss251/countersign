@@ -19,6 +19,24 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behi
 
 **Why onchain, on Whitechain.** The buyer is software, so the payment has to enforce itself. A USDT payment on Whitechain refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, and goes back to the buyer when a deadline passes, through a refund anyone can call, with no dispute desk. It leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash or settle a five-cent call in a second. With the relayer paying gas, neither customer nor merchant ever holds WBT. Network facts, the gas relayer and verification: [docs/whitechain.md](docs/whitechain.md). Feedback for the Whitechain team: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
+## Who pays, and from which wallet
+
+The person's wallet on EVM, the agent's account on Hedera, one envelope over both.
+
+| Class of user | Wallet | Rails | Status |
+|---|---|---|---|
+| Wants an embedded wallet | Privy, signing in with email or a passkey | Arc; Whitechain | `IN PROGRESS`. Being built for Arc, with no production purchase yet. Whitechain is not configured yet |
+| Holds their own Hedera wallet | HashPack, Blade or Kabila through WalletConnect | Hedera | `IN PROGRESS` until its proof lands. It will be a direct payment, so a failed delivery is not returned |
+| Does not want a wallet | The agent's own Hedera account `0.0.11337064`, funded and bounded by the human's envelope; the human never holds a Hedera key | Hedera | Live on the production hub, held by default |
+
+Privy has no Hedera, and none of these is one wallet for every rail.
+
+Two things are true today and differ from the table's end state:
+- The EVM rails are paid by the buyer agent's own key (`CS_BUYER_KEY`).
+- The EVM buyer and the Hedera agent apply the same envelope rules but keep separate budgets. One shared budget is not built yet.
+
+Each status, with its evidence: [docs/status.md](docs/status.md).
+
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
