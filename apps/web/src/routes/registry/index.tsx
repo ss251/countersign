@@ -3,9 +3,11 @@ import type { AdapterKind, RailId } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { RAIL_LABEL, usd } from "../../lib/format.ts";
-import type { Listing, SellerRecord } from "../../lib/types.ts";
-import { Amount, Button, Empty, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
+import { formatAgo, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { useNow } from "../../lib/now.ts";
+import type { Listing, SellerRecord, Settlement } from "../../lib/types.ts";
+import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
+import { Amount, Button, Empty, FixtureNote, Hash, RailState, Tag, cx } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
 import "./registry.css";
 
@@ -108,6 +110,8 @@ export function deliveryRate(released: number, refunded: number): string {
 export default function RegistryPage(_props: PageProps) {
   const listings = useResource(() => api.listings(), []);
   const sellers = useResource(() => api.sellers(), []);
+  const settlements = useResource(() => api.settlements(100), []);
+  const now = useNow();
   const [text, setText] = useState("");
   const [adapter, setAdapter] = useState<AdapterFilter>("all");
   const [rail, setRail] = useState<RailId | "all">("all");
@@ -115,13 +119,14 @@ export default function RegistryPage(_props: PageProps) {
 
   const all = listings.data ?? [];
   const rails = useMemo(() => [...new Set(all.flatMap((l) => l.offer.rails))], [all]);
-  // Counts on every pill reflect the other filters, so a pill never promises rows it cannot show.
+  // Counts on every toggle reflect the other filters, so a toggle never promises rows it cannot show.
   const adapterCount = (a: AdapterFilter) => all.filter((l) => matches(l, text, a, rail)).length;
   const railCount = (r: RailId | "all") => all.filter((l) => matches(l, text, adapter, r)).length;
   const visible = all.filter((l) => matches(l, text, adapter, rail));
   const groups = withRecords(groupBySeller(visible), sellers.data);
   const filtered = Boolean(text.trim()) || adapter !== "all" || rail !== "all";
   const online = visible.filter((l) => l.online).length;
+  const ledger = settlementIndex(settlements.data);
   const clear = () => {
     setText("");
     setAdapter("all");
@@ -136,7 +141,7 @@ export default function RegistryPage(_props: PageProps) {
         </p>
         <h1 className="page__title">Every seller on this hub, and what they sell.</h1>
         <p className="page__lede">
-          An offer is a price and two schemas; the code behind it stays on the seller’s machine. Each record is counted
+          An offer is a price and two schemas; the code behind it stays on the seller’s machine. Every record below is counted
           from slips, never reported by the seller.
         </p>
       </header>
@@ -147,7 +152,9 @@ export default function RegistryPage(_props: PageProps) {
           <span className="mono">?hub=off</span> for fixture data.
         </Empty>
       ) : listings.loading && !listings.data ? (
-        <div aria-busy="true" />
+        <div className="sellers" aria-busy="true">
+          <div className="seller seller--skeleton" />
+        </div>
       ) : all.length === 0 ? (
         <Empty title="No offers on this hub yet.">
           Sellers appear here the moment a runner publishes an offer. <Link to="/seller/publish">Publish a skill</Link> to be
@@ -172,26 +179,26 @@ export default function RegistryPage(_props: PageProps) {
                 onChange={(e) => setText(e.target.value)}
               />
             </div>
-            <div className="pills" role="group" aria-label="Adapter">
+            <div className="toggles" role="group" aria-label="Adapter">
               {ADAPTERS.map((a) => (
                 <button
                   key={a.id}
                   type="button"
-                  className={cx("pill", adapter === a.id && "is-on")}
+                  className={cx("toggle", adapter === a.id && "is-on")}
                   aria-pressed={adapter === a.id}
                   onClick={() => setAdapter(a.id)}
                 >
-                  {a.label} <span className="pill__n num">{adapterCount(a.id)}</span>
+                  {a.label} <span className="toggle__n num">{adapterCount(a.id)}</span>
                 </button>
               ))}
             </div>
-            <div className="pills" role="group" aria-label="Rail">
-              <button type="button" className={cx("pill", rail === "all" && "is-on")} aria-pressed={rail === "all"} onClick={() => setRail("all")}>
-                Every rail <span className="pill__n num">{railCount("all")}</span>
+            <div className="toggles" role="group" aria-label="Rail">
+              <button type="button" className={cx("toggle", rail === "all" && "is-on")} aria-pressed={rail === "all"} onClick={() => setRail("all")}>
+                Every rail <span className="toggle__n num">{railCount("all")}</span>
               </button>
               {rails.map((r) => (
-                <button key={r} type="button" className={cx("pill", rail === r && "is-on")} aria-pressed={rail === r} onClick={() => setRail(r)}>
-                  {RAIL_LABEL[r]} <span className="pill__n num">{railCount(r)}</span>
+                <button key={r} type="button" className={cx("toggle", rail === r && "is-on")} aria-pressed={rail === r} onClick={() => setRail(r)}>
+                  {RAIL_LABEL[r]} <span className="toggle__n num">{railCount(r)}</span>
                 </button>
               ))}
             </div>
@@ -214,7 +221,7 @@ export default function RegistryPage(_props: PageProps) {
           ) : (
             <div className="sellers">
               {groups.map((g) => (
-                <SellerBlock key={g.address} g={g} />
+                <SellerCard key={g.address} g={g} ledger={ledger} now={now} />
               ))}
             </div>
           )}
@@ -224,60 +231,101 @@ export default function RegistryPage(_props: PageProps) {
   );
 }
 
-function SellerBlock({ g }: { g: SellerGroup }) {
+/* The settlements, indexed the two ways a seller card reads them. */
+
+interface Ledger {
+  /** null when the hub does not list settlements: say nothing rather than "none". */
+  known: boolean;
+  lastBySeller: Map<string, Settlement>;
+  byOffer: Map<string, { paid: number; refunded: number }>;
+}
+
+export function settlementIndex(rows: Settlement[] | null | undefined): Ledger {
+  const lastBySeller = new Map<string, Settlement>();
+  const byOffer = new Map<string, { paid: number; refunded: number }>();
+  for (const s of rows ?? []) {
+    const seller = s.seller.toLowerCase();
+    if (!lastBySeller.has(seller)) lastBySeller.set(seller, s);
+    const key = s.offerHash.toLowerCase();
+    const c = byOffer.get(key) ?? { paid: 0, refunded: 0 };
+    if (s.kind === "refunded") c.refunded += 1;
+    else c.paid += 1;
+    byOffer.set(key, c);
+  }
+  return { known: Array.isArray(rows), lastBySeller, byOffer };
+}
+
+function SellerCard({ g, ledger, now }: { g: SellerGroup; ledger: Ledger; now: number }) {
+  const last = ledger.lastBySeller.get(g.address);
+  const calls = g.released + g.refunded + g.failed;
+  const titleId = `seller-${g.address}`;
   return (
-    <section className="seller-block" aria-label={`Seller ${g.name}`}>
-      <header className="seller-block__head">
-        <div className="seller-block__who">
-          <p className={cx("seller-block__name", !g.named && "is-unnamed")}>{g.named ? g.name : "Unnamed seller"}</p>
-          <p className="seller-block__id">
+    <article className="seller" aria-labelledby={titleId}>
+      <header className="seller__head">
+        <AddressGlyph address={g.address} />
+        <div className="seller__who">
+          <h2 id={titleId} className={cx("seller__name", !g.named && "is-unnamed")}>
+            {g.named ? g.name : "Unnamed seller"}
             {g.agentId ? (
-              <span className="seller-block__verified">
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                ERC-8004 agent <span className="num">{g.agentId}</span>
-              </span>
-            ) : (
-              <span className="seller-block__unverified">Not registered with ERC-8004</span>
-            )}
-            <Hash value={g.address} label={`${g.name} address`} />
-          </p>
+              <svg className="seller__tick" viewBox="0 0 16 16" width="15" height="15" role="img" aria-label="Identity proven by ERC-8004">
+                <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : null}
+          </h2>
+          <Hash value={g.address} head={8} tail={6} label={`${g.named ? g.name : "seller"} address`} />
+          <p className="seller__id">{g.agentId ? <>ERC-8004 agent <span className="num">#{g.agentId}</span></> : "Not registered with ERC-8004"}</p>
         </div>
-        <p className="seller-block__record num">
-          {!g.counted
-            ? "Calls not counted yet"
-            : g.released + g.refunded + g.failed === 0
-              ? "No calls yet"
-            : `${g.released} paid · ${g.refunded} refunded${g.failed ? ` · ${g.failed} failed` : ""} · ${deliveryRate(g.released, g.refunded + g.failed)} delivered`}
-        </p>
       </header>
-      <ul className="offer-list">
-        {g.offers.map((l) => (
-          <li key={l.hash} className={cx("offer-line", l.status === "delisted" && "is-delisted")}>
-            <div className="offer-line__main">
-              <p className="offer-line__title">
-                <Link to={`/offer/${l.hash}`}>{l.offer.title}</Link>
-                <Tag>{l.offer.adapter}</Tag>
+
+      <dl className="seller__strip">
+        <div>
+          <dt className="label">Record</dt>
+          <dd className="num">{!g.counted ? "Not counted yet" : calls === 0 ? "No calls yet" : `${g.released} paid`}</dd>
+        </div>
+        <div>
+          <dt className="label">Delivered</dt>
+          <dd className="num">{g.counted ? deliveryRate(g.released, g.refunded + g.failed) : "—"}</dd>
+        </div>
+        <div>
+          <dt className="label">Refunded</dt>
+          <dd className="num">{g.counted ? g.refunded : "—"}</dd>
+        </div>
+        <div>
+          <dt className="label">Last settlement</dt>
+          <dd className="num">{last ? formatAgo(last.at, now) : ledger.known ? "None yet" : "—"}</dd>
+        </div>
+      </dl>
+
+      <ul className="seller__offers">
+        {g.offers.map((l) => {
+          const c = ledger.byOffer.get(l.hash.toLowerCase()) ?? (l.stats ? { paid: l.stats.released, refunded: l.stats.refunded } : undefined);
+          return (
+            <li key={l.hash} className={cx("orow", l.status === "delisted" && "is-delisted")}>
+              <div className="orow__main">
+                <p className="orow__title">
+                  <Link to={`/offer/${l.hash}`}>{l.offer.title}</Link>
+                  <Tag>{l.offer.adapter}</Tag>
+                </p>
+                <p className="orow__summary" title={l.offer.summary}>
+                  {l.offer.summary}
+                </p>
+              </div>
+              <p className="orow__rails">{l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+              <p className="orow__state num">
+                {l.status === "delisted" ? (
+                  <span className="orow__delisted">Delisted{l.reason ? `: ${l.reason}` : ""}</span>
+                ) : l.online === undefined ? null : (
+                  <RailState state={l.online ? "live" : "off"}>{l.online ? "Online" : "Offline"}</RailState>
+                )}
+                {c ? <span className="orow__calls">{c.paid} paid{c.refunded ? ` · ${c.refunded} refunded` : ""}</span> : null}
               </p>
-              <p className="offer-line__summary">{l.offer.summary}</p>
-              <p className="offer-line__meta num">
-                {l.status === "delisted"
-                  ? `Delisted${l.reason ? `: ${l.reason}` : ""}`
-                  : !l.stats
-                    ? "Calls not counted yet"
-                    : l.stats.released + l.stats.refunded > 0
-                      ? `${l.stats.released} paid · ${l.stats.refunded} refunded`
-                      : "No calls yet"}
-                {" · "}
-                {l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}
-                {l.online === undefined ? "" : l.online ? " · runner online" : " · runner offline"}
+              <p className="orow__price">
+                <Amount money={usd(l.offer.price, l.offer.rails[0])} size="sm" />
               </p>
-            </div>
-            <Amount money={usd(l.offer.price, l.offer.rails[0])} size="md" />
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
-    </section>
+    </article>
   );
 }

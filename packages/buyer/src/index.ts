@@ -1,5 +1,6 @@
 export * from "./approvals.ts";
 export * from "./buy.ts";
+export * from "./catalogue.ts";
 export * from "./hub-client.ts";
 export * from "./journal.ts";
 export * from "./known-rails.ts";
