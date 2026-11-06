@@ -192,6 +192,13 @@ function happyState(over: Partial<MirrorState> = {}): MirrorState {
   };
 }
 
+/** Like happyState, but the schedule itself shows the execution the record reports. */
+function executedState(over: Partial<MirrorState> = {}): MirrorState {
+  const state = happyState(over);
+  state.schedules[SCHEDULE_ID] = scheduleRecord({ executed_timestamp: `${NOW + 5}.000000000` });
+  return state;
+}
+
 async function railFor(
   state: MirrorState,
   over: Partial<HeldRailOptions> = {},
@@ -448,7 +455,7 @@ describe("settle", () => {
 describe("release", () => {
   test("submits the countersignature and waits for the exact execution", async () => {
     const submitted: ScheduleSignTransaction[] = [];
-    const { rail } = await railFor(happyState(), {
+    const { rail } = await railFor(executedState(), {
       submit: async (tx) => {
         submitted.push(tx);
         return { status: "SUCCESS" };
@@ -467,7 +474,7 @@ describe("release", () => {
   });
 
   test("SCHEDULE_ALREADY_EXECUTED counts as submitted", async () => {
-    const { rail } = await railFor(happyState(), {
+    const { rail } = await railFor(executedState(), {
       submit: async () => ({ status: "SCHEDULE_ALREADY_EXECUTED" }),
     });
     await held(rail);
@@ -482,7 +489,7 @@ describe("release", () => {
       (await transfer()).base64,
     ];
     for (const countersign of bad) {
-      const { rail } = await railFor(happyState());
+      const { rail } = await railFor(executedState());
       await held(rail);
       const jobId = heldJobId(CREATE_TX);
       const first = await rail.escrow.release(jobId, SLIP_HASH, SELLER_SIG, countersign);
@@ -494,7 +501,7 @@ describe("release", () => {
   });
 
   test("refuses no countersignature and keeps the hold", async () => {
-    const { rail } = await railFor(happyState());
+    const { rail } = await railFor(executedState());
     await held(rail);
     const jobId = heldJobId(CREATE_TX);
     expect(await rail.escrow.release(jobId, SLIP_HASH, SELLER_SIG)).toEqual({
@@ -519,7 +526,7 @@ describe("release", () => {
 
   test("reports a refused submit and keeps the hold", async () => {
     const statuses = ["INVALID_SIGNATURE", "SUCCESS"];
-    const { rail } = await railFor(happyState(), {
+    const { rail } = await railFor(executedState(), {
       submit: async () => ({ status: statuses.shift() ?? "SUCCESS" }),
     });
     await held(rail);
@@ -535,7 +542,7 @@ describe("release", () => {
   });
 
   test("reports a failed execution and keeps the hold", async () => {
-    const state = happyState({ transaction: executionRecord({ result: "INSUFFICIENT_TOKEN_BALANCE" }) });
+    const state = executedState({ transaction: executionRecord({ result: "INSUFFICIENT_TOKEN_BALANCE" }) });
     const { rail, mirror } = await railFor(state);
     await held(rail);
     const jobId = heldJobId(CREATE_TX);
@@ -552,26 +559,28 @@ describe("release", () => {
 });
 
 describe("refund and cancel", () => {
-  test("drop a schedule that has not executed, pending or expired", async () => {
-    for (const expiration of [`${NOW + 600}.000000000`, `${NOW - 1}.000000000`]) {
-      for (const mode of ["refund", "cancel"] as const) {
-        const { rail } = await railFor(
-          happyState({ schedules: { [SCHEDULE_ID]: scheduleRecord({ expiration_time: expiration }) } }),
-        );
-        await held(rail);
-        const jobId = heldJobId(CREATE_TX);
-        const result =
-          mode === "refund"
-            ? await rail.escrow.refund(jobId)
-            : await rail.escrow.cancel(jobId, SELLER_SIG);
-        expect(result).toEqual({
-          success: true,
-          payer: PAYER,
-          transaction: CREATE_TX,
-          network: HEDERA_TESTNET,
-        });
-        expect(await rail.escrow.status(jobId)).toBe("none");
-      }
+  test("refuse a pending schedule and drop it once expired", async () => {
+    for (const mode of ["refund", "cancel"] as const) {
+      const { rail, mirror } = await railFor(happyState());
+      await held(rail);
+      const jobId = heldJobId(CREATE_TX);
+      const drop = async () =>
+        mode === "refund" ? rail.escrow.refund(jobId) : rail.escrow.cancel(jobId, SELLER_SIG);
+      expect(await drop()).toEqual({
+        success: false,
+        errorReason: "still_signable",
+        transaction: "",
+        network: HEDERA_TESTNET,
+      });
+      expect(await rail.escrow.status(jobId)).toBe("funded");
+      mirror.state.schedules[SCHEDULE_ID] = scheduleRecord({ expiration_time: `${NOW - 1}.000000000` });
+      expect(await drop()).toEqual({
+        success: true,
+        payer: PAYER,
+        transaction: CREATE_TX,
+        network: HEDERA_TESTNET,
+      });
+      expect(await rail.escrow.status(jobId)).toBe("none");
     }
   });
 
