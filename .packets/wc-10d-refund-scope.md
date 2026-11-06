@@ -1,6 +1,8 @@
-# wc-10d: refunds are scoped to one payment, and nothing is signed that cannot settle
+# wc-10d: a refund signature names the payment it refunds
 
-Issue: #14. This implements STEER-2225 Fix 3, points 4 and 5, for the merchant's refunds. cs-phone found both gaps while building the merchant screen on `refundOrder`.
+Issue: #14. This implements STEER-2225 Fix 3, point 4, for the merchant's refunds. cs-phone found the gap while building the merchant screen on `refundOrder`.
+
+**Not in this packet:** what happens to `in_review` orders (point 5). It changes an existing test, so it waits for the captain's ruling on cs-phone's 17:43:20Z NEEDS-CAPTAIN and goes in its own packet. Leave the `in_review` branch exactly as it is.
 
 **Design: decided.** cs-wc wrote it on Opus. Implement it exactly as written. If something here cannot work, stop and report; do not choose another mechanism.
 
@@ -8,21 +10,10 @@ Issue: #14. This implements STEER-2225 Fix 3, points 4 and 5, for the merchant's
 
 ## What happens now
 
-1. **An `in_review` order is cancelled.**
-   - `refundOrder` (`packages/relay/src/refund-client.ts`) signs a Cancel for an escrow order that is `held` or `in_review`.
-   - `in_review` is the contract's Delivered state, and `CountersignedEscrow.cancel` reverts unless the job is Funded, on v1 and on v2.1 alike.
-   - So the merchant is asked for a signature that can never settle.
-2. **A direct refund names no payment.**
-   - `signRefund` (`packages/relay/src/merchant.ts`) signs an EIP-3009 authorization with a random nonce. The typed data names the merchant, the customer, the value and the validity, but not the payment it refunds.
-   - Two clicks also make two different signatures for the same refund.
+- `signRefund` (`packages/relay/src/merchant.ts`) signs an EIP-3009 authorization with a random nonce. The typed data names the merchant, the customer, the value and the validity, but not the payment it refunds.
+- Two clicks also make two different signatures for the same refund.
 
-## Decisions
-
-### 1. `in_review` signs nothing (`refund-client.ts`)
-- **An escrow order that is `held`:** unchanged; it is cancelled in full.
-- **An escrow order that is `in_review`:** answers `{ reply: { ok: false, reason: "not_refundable" }, status: 409 }` before anything is signed or sent.
-
-### 2. The refund nonce names its payment (`merchant.ts`)
+## Decision: the refund nonce names its payment (`merchant.ts`)
 - **Add and export:**
 
   ```ts
@@ -48,21 +39,17 @@ Issue: #14. This implements STEER-2225 Fix 3, points 4 and 5, for the merchant's
 2. **`signRefund`:**
    - with `payment.id`, `authorization.nonce` equals `refundNonce(id, refunded)`;
    - without it, two calls give different nonces.
-3. **`refundOrder` on an `in_review` order:** it returns 409 `not_refundable`. The merchant account's `signTypedData` is never called, and the fake fetch is never called.
-4. **The merchant service:**
+3. **The merchant service:**
    - `POST /orders/:id/refund` for a paid order posts an authorization whose nonce is `refundNonce(order.id, refunded)`;
    - `POST /refund/:paymentId` does the same with `paymentId`.
-5. **Existing tests:**
-   - **Change one, because the contract rule changed:** `merchant-server.test.ts`, "an in_review order cancels only when the whole amount is named". It becomes "an in_review order is not refundable and signs nothing": 409 `not_refundable`, with no `POST /escrow/cancel` among the recorded calls.
-   - **List that change, old to new, in your report.**
-   - **Every other existing test passes unedited.**
+4. **Existing tests:** every existing test passes **unedited**.
 
 ## Lease
 
 - `packages/relay/src/merchant.ts`
-- `packages/relay/src/refund-client.ts`
+- `packages/relay/src/refund-client.ts`: the `signRefund` call only.
 - `packages/relay/src/merchant-server.ts`: the `signRefund` call in `POST /refund/:paymentId` only.
-- `packages/relay/test/*`: new tests, plus the one listed change.
+- `packages/relay/test/*`: new tests only.
 
 Touch nothing else. Never commit `bun.lock`.
 
@@ -91,4 +78,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `.packets/reports/wc-10d-refund-scope.md` in your worktree and commit it, with the changed test listed old to new.
+Write `.packets/reports/wc-10d-refund-scope.md` in your worktree and commit it, saying what changed and what each new test proves.
