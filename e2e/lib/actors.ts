@@ -109,6 +109,8 @@ export interface SellerOptions {
   /** Env name of the seller key. */
   key: string;
   label?: string;
+  /** The runner's state directory. Each flow uses its own unless a flow passes one to share. */
+  state?: string;
 }
 
 export interface SellerHandle {
@@ -134,6 +136,8 @@ export async function startSkillSeller(ctx: FlowCtx, hub: HubHandle, o: SellerOp
       "--upstream-url", o.item.upstream.url,
       "--licence", o.item.upstream.licence,
       ...Object.entries(o.payTo ?? {}).flatMap(([rail, id]) => ["--pay-to", `${rail}=${id}`]),
+      // Never the shared default under $HOME: other runners on the machine write there too.
+      "--state", o.state ?? join(ctx.dir, `${label}-state`),
     ],
     env: { CS_SELLER_KEY: ctx.env.secrets.key(o.key) },
     log: join(ctx.dir, `${label}.log`),

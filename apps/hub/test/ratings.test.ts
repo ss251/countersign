@@ -13,11 +13,12 @@ import {
 } from "../src/deps.ts";
 import { runJanitor } from "../src/janitor.ts";
 import type { HubStats, SellerRating, SellerRatingDetail } from "../src/ratings.ts";
-import type { JobStatus } from "../src/store.ts";
+import type { Fault, JobStatus } from "../src/store.ts";
 import { ASSET, BUYER, NETWORK } from "./fake-rail.ts";
 import {
   call,
   makeOffer,
+  NONCE,
   NOW,
   other,
   paymentFor,
@@ -82,7 +83,15 @@ const REQUIREMENTS: PaymentRequirements = {
 /** Write a job straight into the ledger, with an optional stored slip. */
 function putJob(
   hub: TestHub,
-  fields: { offerHash: Hex; status: JobStatus; buyer?: string; amount?: string; slip?: Slip; id?: Hex },
+  fields: {
+    offerHash: Hex;
+    status: JobStatus;
+    buyer?: string;
+    amount?: string;
+    slip?: Slip;
+    id?: Hex;
+    fault?: Fault;
+  },
 ): Hex {
   const id = fields.id ?? fields.slip?.body.jobId ?? jobId();
   hub.store.putJob({
@@ -100,6 +109,7 @@ function putJob(
     createdAt: NOW,
   });
   if (fields.slip) hub.store.putSlip(fields.slip.hash, id, fields.slip, NOW);
+  if (fields.fault) hub.store.updateJob(id, { fault: fields.fault });
   return id;
 }
 
@@ -173,13 +183,13 @@ describe("ratings derived from slips", () => {
     expect(rating?.score).toBeNull();
   });
 
-  test("verified slips count as delivered, failures and refunds count against", async () => {
+  test("verified slips count as delivered, the seller's failures and refunds count against", async () => {
     const hash = await publishOk(hub, makeOffer());
     await delivered(hub, hash, BUYER, { amount: "1000", deliveredAt: NOW + 5 });
     await delivered(hub, hash, BUYER_B, { amount: "2500", deliveredAt: NOW + 9 });
     await delivered(hub, hash, BUYER, { amount: "500", deliveredAt: NOW + 7 });
-    putJob(hub, { offerHash: hash, status: "failed" });
-    putJob(hub, { offerHash: hash, status: "refunded" });
+    putJob(hub, { offerHash: hash, status: "failed", fault: "seller" });
+    putJob(hub, { offerHash: hash, status: "refunded", fault: "seller" });
     putJob(hub, { offerHash: hash, status: "funded" });
 
     const rating = await getSeller(hub, seller.address);
@@ -194,6 +204,8 @@ describe("ratings derived from slips", () => {
       closed: 5,
       score: 0.6,
       buyers: 2,
+      topBuyerShare: 0.6667,
+      excused: 0,
       volume: "4000",
       lastDeliveredAt: NOW + 9,
     });
@@ -263,7 +275,7 @@ describe("ratings derived from slips", () => {
     const theirsHash = ((await published.json()) as { offerHash: Hex }).offerHash;
 
     await delivered(hub, mine, BUYER);
-    putJob(hub, { offerHash: mine, status: "failed" });
+    putJob(hub, { offerHash: mine, status: "failed", fault: "seller" });
     const otherSlip = await signedSlip(other, {
       jobId: jobId(),
       offerHash: theirsHash,
@@ -297,7 +309,7 @@ describe("ratings derived from slips", () => {
     hub.store.delistOffer(old, NOW);
     await delivered(hub, hash, BUYER, { amount: "1000" });
     await delivered(hub, hash, BUYER_B, { amount: "3000" });
-    putJob(hub, { offerHash: hash, status: "failed" });
+    putJob(hub, { offerHash: hash, status: "failed", fault: "seller" });
     putJob(hub, { offerHash: hash, status: "released" });
 
     const stats = await getStats(hub);
@@ -339,6 +351,95 @@ describe("ratings derived from slips", () => {
     const stats = await getStats(hub);
     expect(stats.calls).toBe(2);
     expect(stats.runnersOnline).toBe(1);
+  });
+
+  test("failures that are not the seller's are excused and leave the score alone", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    await delivered(hub, hash, BUYER);
+    putJob(hub, { offerHash: hash, status: "failed", fault: "hub" });
+    putJob(hub, { offerHash: hash, status: "refunded", fault: "hub" });
+    putJob(hub, { offerHash: hash, status: "refunded" });
+
+    const rating = await getSeller(hub, seller.address);
+    expect(rating).toMatchObject({ delivered: 1, failed: 0, refunded: 0, excused: 3, closed: 1, score: 1 });
+  });
+
+  test("topBuyerShare shows how much of the record one buyer carries", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    await delivered(hub, hash, BUYER);
+    await delivered(hub, hash, BUYER);
+    await delivered(hub, hash, BUYER.toUpperCase().replace("0X", "0x"));
+    await delivered(hub, hash, BUYER_B);
+
+    const rating = await getSeller(hub, seller.address);
+    expect(rating.buyers).toBe(2);
+    expect(rating.topBuyerShare).toBe(0.75);
+    expect((await getRatings(hub))[0]?.topBuyerShare).toBe(0.75);
+  });
+
+  test("one snapshot serves requests for five seconds, then the ledger is read again", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    expect((await getStats(hub)).calls).toBe(0);
+
+    await delivered(hub, hash, BUYER);
+    hub.setNow(NOW + 4);
+    const cached = await getStats(hub);
+    expect(cached.calls).toBe(0);
+    expect(cached.asOf).toBe(NOW);
+    expect((await getSeller(hub, seller.address)).delivered).toBe(0);
+
+    hub.setNow(NOW + 5);
+    const fresh = await getStats(hub);
+    expect(fresh.calls).toBe(1);
+    expect(fresh.asOf).toBe(NOW + 5);
+    expect((await getSeller(hub, seller.address)).delivered).toBe(1);
+  });
+
+  test("a runner that refuses the job is on the seller, whatever reason it gives", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash, async () => ({ fail: "closed" })));
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+
+    expect((await call(hub, hash, { q: "hello" }, paymentFor(entry))).status).toBe(502);
+    expect(await getSeller(hub, seller.address)).toMatchObject({ failed: 1, excused: 0, score: 0 });
+  });
+
+  test("a runner that drops the connection mid-job is excused", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    let handle: RunnerHandle | null = null;
+    handle = await connect(hub, hash, () => {
+      handle?.close();
+      return new Promise(() => undefined);
+    });
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+
+    expect((await call(hub, hash, { q: "hello" }, paymentFor(entry))).status).toBe(502);
+    expect(await getSeller(hub, seller.address)).toMatchObject({ failed: 0, excused: 1, score: null });
+  });
+
+  test("running past the offer's own deadline is on the seller", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash, () => new Promise(() => undefined)));
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+
+    // The deadline leaves a 1 second window, shorter than the hub's 2 second limit.
+    expect((await call(hub, hash, { q: "hello" }, paymentFor(entry, NONCE, NOW + 6))).status).toBe(502);
+    expect(await getSeller(hub, seller.address)).toMatchObject({ failed: 1, excused: 0 });
+  });
+
+  test("a job the hub cut short before the offer's deadline is excused", async () => {
+    hub.close();
+    hub = startHub({ jobTimeoutMs: 200 });
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash, () => new Promise(() => undefined)));
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+
+    expect((await call(hub, hash, { q: "hello" }, paymentFor(entry))).status).toBe(502);
+    expect(await getSeller(hub, seller.address)).toMatchObject({ failed: 0, excused: 1 });
   });
 });
 

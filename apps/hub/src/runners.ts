@@ -16,7 +16,8 @@ import { isRecord, randomNonce, sameText } from "./util.ts";
 
 export type DeliveredSlip = Pick<Slip, "body" | "hash" | "sellerSig">;
 
-export type DispatchResult = { output: unknown; slip: DeliveredSlip } | { fail: string };
+/** `byRunner` marks a failure the runner itself reported; every other failure is the hub's own. */
+export type DispatchResult = { output: unknown; slip: DeliveredSlip } | { fail: string; byRunner?: true };
 
 interface Pending {
   finish(result: DispatchResult): void;
@@ -230,7 +231,7 @@ export class RunnerLink {
     const pending = conn.pending.get(frame.jobId);
     if (!pending) return;
     const reason = typeof frame.reason === "string" ? frame.reason : "fail";
-    pending.finish({ fail: reason });
+    pending.finish({ fail: reason, byRunner: true });
   }
 
   private reject(conn: Connection, message: string): void {

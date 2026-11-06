@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as fx from "../fixtures/index.ts";
-import { explorerTemplate, shortHex, symbolFor } from "./format.ts";
-import { HubError, hubBase, hubGet, hubOffer, hubOffers, hubRails, hubSlip, type HubListing } from "./hub.ts";
+import { ESCROW_RAILS, explorerTemplate, nowUnix, shortHex, symbolFor } from "./format.ts";
+import {
+  approvalToken,
+  chosenAgent,
+  HubError,
+  hubBase,
+  hubGet,
+  hubOffer,
+  hubOffers,
+  hubPost,
+  hubRails,
+  hubSlip,
+  type HubListing,
+} from "./hub.ts";
 import type {
   Approval,
   EnvelopeView,
@@ -149,15 +161,197 @@ export const api = {
     const r = await orMissing(hubGet<{ results: SearchResult[] }>(`/offers/search?q=${encodeURIComponent(q)}&limit=${limit}`));
     return live(r ? r.results : null);
   },
-  // The phone reads the buyer agent's own state, which no hub endpoint serves yet.
-  envelope: () => settle<EnvelopeView>(structuredClone(fx.envelope)),
-  approvals: () => settle<Approval[]>(fx.approvals),
-  purchases: () => settle<Purchase[]>(fx.purchases),
+  /*
+   * The phone: the agent's signed envelope mirror, its pending approvals and its jobs. Each falls
+   * back to labelled fixtures until the hub serves it, so the phone always says which it shows.
+   */
+  envelope: async (): Promise<Loaded<EnvelopeView>> => {
+    const agent = await resolveAgent();
+    const m = agent ? await orMissing(hubGet<EnvelopeMirror>(`/envelopes/${agent}`)).catch(() => undefined) : undefined;
+    if (!agent || !m) return settle(structuredClone(fx.envelope));
+    return live({
+      envelope: m.envelope,
+      spent: m.spent,
+      agentName: shortHex(agent),
+      // No askAbove in the agent's envelope means it never asks: every call inside the limits goes through.
+      askAbove: m.envelope.askAbove ?? null,
+      names: {},
+      mirror: { signedAt: toUnix(m.signedAt), agent },
+    });
+  },
+  approvals: async (): Promise<Loaded<Approval[]>> => {
+    const agent = await resolveAgent();
+    const r = agent
+      ? await orMissing(hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=pending`)).catch(() => undefined)
+      : undefined;
+    if (!r) return settle(fx.approvals);
+    const pending = r.approvals.filter((a) => a.status === "pending");
+    const found = await Promise.all(pending.map((a) => offerOnce(a.offerHash)));
+    return live(
+      pending.flatMap((a, i): Approval[] => {
+        const l = found[i];
+        // Without the offer the phone cannot show what would be signed, so it does not offer the hold.
+        if (!l) return [];
+        return [
+          {
+            id: a.id,
+            agent: a.agent,
+            agentName: shortHex(a.agent),
+            listing: toListing(l),
+            amount: a.amount,
+            rail: a.rail,
+            discoveredVia: "registry",
+            requestedAt: toUnix(a.requestedAt ?? a.createdAt ?? nowUnix()),
+          },
+        ];
+      }),
+    );
+  },
+  purchases: async (): Promise<Loaded<Purchase[]>> => {
+    const agent = await resolveAgent();
+    const r = agent ? await orMissing(hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${agent}&limit=50`)).catch(() => undefined) : undefined;
+    if (!agent || !r) return settle(fx.purchases);
+    const [listings, decided] = await Promise.all([
+      hubOffers().catch(() => [] as HubListing[]),
+      orMissing(hubGet<{ approvals: HubApproval[] }>(`/approvals?agent=${agent}&status=decided`)).then(
+        (d) => d?.approvals ?? [],
+        () => [] as HubApproval[],
+      ),
+    ]);
+    return live(r.jobs.map((j) => toPurchase(j, listings, decided)));
+  },
+  /** The human's decision on a held call. The token stays on this device and goes only to this hub. */
+  decide: async (id: string, decision: "countersign" | "decline"): Promise<void> => {
+    const token = approvalToken();
+    if (!token) throw new HubError(401, "This phone has no approval token yet.", "no-token");
+    await hubPost(`/approvals/${id}/decision`, { decision }, { authorization: `Bearer ${token}` });
+  },
+  /** The agent's jobs right now, so a countersigned call is matched to the job it starts and not an older one. */
+  jobIds: async (agent: string): Promise<Set<string>> => {
+    const r = await orMissing(hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${agent}&limit=20`)).catch(() => undefined);
+    return new Set((r?.jobs ?? []).map((j) => j.jobId));
+  },
 };
+
+/* Wire shapes of the buyer plumbing. */
+
+interface EnvelopeMirror {
+  envelope: EnvelopeView["envelope"];
+  spent: EnvelopeView["spent"];
+  signedAt: number;
+  sig: string;
+  verified: boolean;
+}
+
+interface HubApproval {
+  id: string;
+  agent: string;
+  offerHash: string;
+  title: string;
+  amount: string;
+  rail: Purchase["rail"];
+  status: "pending" | "countersign" | "decline" | "expired";
+  requestedAt?: number;
+  createdAt?: number;
+  decidedAt?: number | null;
+}
+
+interface HubBuyerJob {
+  jobId: string;
+  offerHash: string;
+  title: string;
+  amount: string;
+  rail: Purchase["rail"];
+  network: string;
+  status: "funded" | "paid" | "released" | "settled" | "failed" | "refunded";
+  at: number;
+  settleTx: string | null;
+  closeTx: string | null;
+  slipHash: string | null;
+  explorer: string | null;
+}
+
+/** The hub speaks unix seconds; milliseconds are tolerated so a unit slip never shows a date in the year 57000. */
+const toUnix = (t: number) => (t > 1e12 ? Math.floor(t / 1000) : t);
+
+let agentFound: string | null = null;
+
+/** The agent to follow: the one chosen with ?agent=, otherwise the hub's most recent buyer. */
+async function resolveAgent(): Promise<string | null> {
+  if (!hubBase()) return null;
+  const chosen = chosenAgent();
+  if (chosen) return chosen;
+  if (agentFound) return agentFound;
+  const s = await orMissing(hubGet<{ settlements: Array<{ buyer?: string }> }>("/settlements?limit=1")).catch(() => undefined);
+  agentFound = s?.settlements?.[0]?.buyer || null;
+  return agentFound;
+}
+
+/** Offers are fixed by their hash (any change makes a new hash), so one read per page load is exact. */
+const offerReads = new Map<string, Promise<HubListing | undefined>>();
+function offerOnce(hash: string): Promise<HubListing | undefined> {
+  const key = hash.toLowerCase();
+  let read = offerReads.get(key);
+  if (!read) {
+    read = orMissing(hubOffer(hash)).catch(() => {
+      offerReads.delete(key);
+      return undefined;
+    });
+    offerReads.set(key, read);
+  }
+  return read;
+}
+
+/** What a failed delivery means for the buyer's money depends on whether the rail holds it in escrow. */
+export function failedReason(rail: Purchase["rail"]): string {
+  return ESCROW_RAILS.has(rail)
+    ? "The output did not match the offer, so the money stays in escrow and returns to your agent at the deadline."
+    : "The output did not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.";
+}
+
+function toPurchase(j: HubBuyerJob, listings: HubListing[], decided: HubApproval[]): Purchase {
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const l = listings.find((x) => same(x.offerHash, j.offerHash));
+  const at = toUnix(j.at);
+  // A call the human countersigned follows a countersign decision on the same offer and amount.
+  const you = decided.some(
+    (a) =>
+      a.status === "countersign" &&
+      same(a.offerHash, j.offerHash) &&
+      a.amount === j.amount &&
+      Math.abs(at - toUnix(a.decidedAt ?? a.requestedAt ?? a.createdAt ?? 0)) < 900,
+  );
+  const status: Purchase["status"] =
+    j.status === "funded" || j.status === "paid"
+      ? "held"
+      : j.status === "released" || j.status === "settled"
+        ? "released"
+        : j.status === "refunded"
+          ? "refunded"
+          : "refused";
+  return {
+    jobId: j.jobId as Purchase["jobId"],
+    offerHash: j.offerHash as Purchase["offerHash"],
+    title: j.title || l?.offer.title || "Untitled offer",
+    adapter: l?.offer.adapter ?? "skill",
+    seller: {
+      name: l ? shortHex(l.offer.seller) : "Unlisted seller",
+      address: (l?.offer.seller ?? "0x0000000000000000000000000000000000000000") as Purchase["seller"]["address"],
+    },
+    amount: j.amount,
+    rail: j.rail,
+    status,
+    at,
+    slipHash: (j.slipHash ?? undefined) as Purchase["slipHash"],
+    approvedBy: you ? "you" : "envelope",
+    reason:
+      j.status === "failed" ? `Not released. ${failedReason(j.rail)}` : j.status === "refunded" ? "Refunded. The deadline passed." : undefined,
+  };
+}
 
 /* A job as the phone sees it after the hold. */
 
-export type JobStep = "countersigned" | "funding" | "held" | "delivered" | "released" | "refused" | "refunded";
+export type JobStep = "countersigned" | "funding" | "held" | "delivered" | "released" | "refused" | "refunded" | "failed";
 
 export interface JobView {
   step: JobStep;
@@ -169,6 +363,63 @@ export interface JobView {
   asked?: string;
   /** Unix seconds. */
   deadline?: number;
+  /** For a failed delivery: what happens to the money, in a sentence. */
+  reason?: string;
+  /** No payment long after the countersignature: the agent may have stopped waiting. */
+  slow?: boolean;
+}
+
+/** The steps a job passes in order; a poll that sees a later one fills in the times of those it skipped. */
+const LINE: JobStep[] = ["countersigned", "funding", "held", "delivered", "released"];
+
+/**
+ * Follows a countersigned approval to the job it starts. The agent pays once it reads the
+ * countersignature and the hub records the job under the agent's address, so this polls that list
+ * until the job is final. Jobs in `known` existed before the decision and are never this one.
+ */
+export function followJob(approval: Approval, known: Set<string>, onChange: (job: JobView) => void): () => void {
+  const started = Math.floor(Date.now() / 1000);
+  let job: JobView = { step: "countersigned", times: { countersigned: started } };
+  let timer = 0;
+  let stopped = false;
+  const now = () => Math.floor(Date.now() / 1000);
+  const push = (patch: Partial<JobView>, step: JobStep) => {
+    const times = { ...job.times };
+    const upto = LINE.indexOf(step);
+    for (const s of upto >= 0 ? LINE.slice(0, upto + 1) : [step]) times[s] ??= now();
+    job = { ...job, ...patch, step, times };
+    onChange(job);
+  };
+  const tick = async () => {
+    const r = await orMissing(hubGet<{ jobs: HubBuyerJob[] }>(`/jobs?buyer=${approval.agent}&limit=20`)).catch(() => undefined);
+    if (stopped) return;
+    const j = r?.jobs.find((x) => !known.has(x.jobId) && x.offerHash.toLowerCase() === approval.listing.hash.toLowerCase());
+    if (!j) {
+      if (job.step === "countersigned") push({}, "funding");
+      else if (!job.slow && now() - started > 90) {
+        job = { ...job, slow: true };
+        onChange(job);
+      }
+    } else if (j.status === "funded" || j.status === "paid") {
+      if (job.step !== "held") push({ fundTx: j.settleTx ?? undefined }, "held");
+    } else if (j.status === "released" || j.status === "settled") {
+      push({ fundTx: j.settleTx ?? job.fundTx, slipHash: j.slipHash ?? undefined }, "released");
+      return;
+    } else if (j.status === "refunded") {
+      push({}, "refunded");
+      return;
+    } else {
+      push({ reason: failedReason(j.rail) }, "failed");
+      return;
+    }
+    if (now() - started < 600) timer = window.setTimeout(tick, 2000);
+  };
+  onChange(job);
+  void tick();
+  return () => {
+    stopped = true;
+    window.clearTimeout(timer);
+  };
 }
 
 export type Scenario = "release" | "moved" | "deadline";
