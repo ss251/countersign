@@ -3,8 +3,7 @@ import type { Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api } from "../../lib/api.ts";
-import { explorerTemplate } from "../../lib/format.ts";
-import { canReadChain, parseSlip, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
+import { canReadChain, explorerFor, parseSlip, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
 import { Verdict } from "../../ui/Verdict.tsx";
 import { Button } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
@@ -20,17 +19,19 @@ export default function VerifyPage({ params }: PageProps) {
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [checking, setChecking] = useState(false);
   const [current, setCurrent] = useState<Slip | null>(null);
+  const [fromFixtures, setFromFixtures] = useState(false);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const fieldId = useId();
 
-  const run = async (slip: Slip) => {
+  const run = async (slip: Slip, fromFixtureData = false) => {
     setError(null);
     setChecking(true);
     setVerdict(null);
     setCurrent(slip);
+    setFromFixtures(fromFixtureData);
     const v = await verifySlip(slip);
     setVerdict(v);
     setChecking(false);
@@ -50,22 +51,26 @@ export default function VerifyPage({ params }: PageProps) {
       setError(parsed.error);
       return;
     }
-    void run(parsed.slip);
+    // Re-checking the slip already loaded keeps its provenance; anything else is pasted.
+    const fromFixtureData = fromFixtures && current?.hash === parsed.slip.hash;
+    void run(parsed.slip, fromFixtureData);
   };
 
-  const load = (slip: Slip, note: string | null) => {
+  const load = (slip: Slip, note: string | null, fromFixtureData = false) => {
     const raw = JSON.stringify(slip, null, 2);
     setText(raw);
     setNotice(note);
-    void run(slip);
+    void run(slip, fromFixtureData);
   };
 
   useEffect(() => {
     if (!hash) return;
     api.slip(hash).then(
       (r) => {
-        if (r.data) load(r.data.slip, r.source === "fixtures" ? "Loaded from fixture data." : "Loaded from the hub, then checked here.");
-        else setError("No slip with that hash. Paste the slip itself; checking it never needs the hub.");
+        const fromFixtureData = r.source === "fixtures";
+        if (r.data) {
+          load(r.data.slip, fromFixtureData ? "Loaded from fixture data." : "Loaded from the hub, then checked here.", fromFixtureData);
+        } else setError("No slip with that hash. Paste the slip itself; checking it never needs the hub.");
       },
       () => setError("The hub did not answer. Paste the slip itself; checking it never needs the hub."),
     );
@@ -76,7 +81,7 @@ export default function VerifyPage({ params }: PageProps) {
    * Something real to check when no slip is to hand: the newest slip this hub minted. Only under
    * ?hub=off does it come from the fixtures, which load on demand and never ship in the default bundle.
    */
-  const [example, setExample] = useState<{ slip: Slip; note: string } | null>(null);
+  const [example, setExample] = useState<{ slip: Slip; note: string; fromFixtures: boolean } | null>(null);
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -84,13 +89,15 @@ export default function VerifyPage({ params }: PageProps) {
       if (rows?.source === "fixtures") {
         const fx = await import("../../fixtures/index.ts");
         const slip = fx.slips.find((x) => x.slip.payment.accepted.scheme === "countersign")?.slip;
-        if (alive && slip) setExample({ slip, note: "A signed example from the fixtures." });
+        if (alive && slip) setExample({ slip, note: "A signed example from the fixtures.", fromFixtures: true });
         return;
       }
       const hash = rows?.data?.find((x) => x.slipHash)?.slipHash;
       if (!hash) return;
       const view = await api.slip(hash).catch(() => null);
-      if (alive && view?.data) setExample({ slip: view.data.slip, note: "The newest slip on this hub, checked here from its own bytes." });
+      if (alive && view?.data) {
+        setExample({ slip: view.data.slip, note: "The newest slip on this hub, checked here from its own bytes.", fromFixtures: false });
+      }
     })();
     return () => {
       alive = false;
@@ -183,7 +190,7 @@ export default function VerifyPage({ params }: PageProps) {
           {example ? (
             <p className="verify__examples">
               No slip to hand?{" "}
-              <button type="button" className="link-button" onClick={() => load(example.slip, example.note)}>
+              <button type="button" className="link-button" onClick={() => load(example.slip, example.note, example.fromFixtures)}>
                 Load the newest slip on this hub
               </button>{" "}
               or{" "}
@@ -193,7 +200,7 @@ export default function VerifyPage({ params }: PageProps) {
                 onClick={() => {
                   const tampered = structuredClone(example.slip);
                   tampered.body.amount = (BigInt(tampered.body.amount) * 2n).toString();
-                  load(tampered, "The same slip with its amount doubled after signing.");
+                  load(tampered, "The same slip with its amount doubled after signing.", example.fromFixtures);
                 }}
               >
                 one with a changed amount
@@ -213,9 +220,7 @@ export default function VerifyPage({ params }: PageProps) {
                       can: canReadChain(current),
                       busy: reading,
                       onRead: () => void readChain(),
-                      explorer: explorerTemplate(current.body.network)
-                        ? explorerTemplate(current.body.network).replace("{tx}", encodeURIComponent(current.settlement.transaction))
-                        : undefined,
+                      explorer: explorerFor(current, fromFixtures),
                     }
                   : undefined
               }
