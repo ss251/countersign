@@ -70,7 +70,7 @@ event Refunded(bytes32 indexed jobId, address indexed buyer, uint256 amount, boo
 
 ## Escrow v2: seller bond, delivery review and dispute (design, 06 Nov)
 
-This section is the design. cs-19 builds the bond, and cs-21 builds review and dispute on top of it. Both ship as one contract and one testnet deployment on Arc (through Studio) and Whitechain (forge). The v1 deployments in the table above stay listed, so slips minted on them still verify. v2 keeps the `Job` struct, `jobOf` and the `Released` event exactly as they are, so the verifier reads both versions the same way.
+This section is a design, not deployed code. The bond is built on a branch ([#93](https://github.com/ss251/countersign/issues/93)) and not merged. Review and dispute have no code yet ([#98](https://github.com/ss251/countersign/issues/98)). The plan is to ship both as one contract and one testnet deployment on Arc (through Studio) and Whitechain (forge). The v1 deployments in the table above stay listed, so slips minted on them still verify. v2 keeps the `Job` struct, `jobOf` and the `Released` event exactly as they are, so the verifier reads both versions the same way.
 
 ### Terms of a job
 
