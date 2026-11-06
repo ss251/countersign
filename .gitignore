@@ -17,6 +17,8 @@ contracts/cache/
 contracts/broadcast/
 subgraph/generated/
 subgraph/build/
+.release/
+.release-test/
 
 # local tooling
 .claude/
@@ -27,3 +29,9 @@ subgraph/build/
 data/
 *.sqlite
 *.sqlite-*
+!docs/build/
+
+# the human acceptance run: local artifacts, traces and reports
+e2e/human/artifacts/
+e2e/human/test-results/
+e2e/human/playwright-report/

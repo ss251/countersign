@@ -11,8 +11,13 @@
   "dependencies": {
     "@countersign/core": "workspace:*",
     "@countersign/rail": "workspace:*",
+    "@countersign/relay": "workspace:*",
     "@countersign/verify": "workspace:*",
+    "@privy-io/react-auth": "3.6.1",
+    "@privy-io/wagmi": "^4.0.20",
     "@tanstack/react-query": "^5",
+    "buffer": "6.0.3",
+    "hono": "^4.13.16",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "viem": "^2.57.16",

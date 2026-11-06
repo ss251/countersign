@@ -1,6 +1,6 @@
 /**
  * The countersign console in production: the static build of apps/web behind one
- * small Bun server, with no dependencies.
+ * small Bun server, bundled with its dependencies.
  *
  * - Serves ./dist. Hashed assets are cached for a year, index.html never.
  * - Proxies /hub, /relay and /merchant-api to HUB_URL, RELAY_URL and MERCHANT_URL, so the
@@ -8,11 +8,16 @@
  *   503 with a sentence; one that does not answer gives 502. The page shows both as
  *   "did not answer". It never falls back to fixtures.
  * - GET /healthz answers {ok: true} for the platform's health check.
+ * - GET /checkout/sticker-pack is the console's own Whitechain checkout.
  *
  *   PORT=8080 HUB_URL=http://127.0.0.1:8787 bun apps/web/server.ts
  */
 
 import { join, normalize, sep } from "node:path";
+import { Hono } from "hono";
+import { getAddress, isAddress } from "viem";
+import type { Address } from "viem";
+import { checkout } from "../../examples/whitechain/checkout-merchant.ts";
 
 const root = join(import.meta.dir, "dist");
 const port = Number(process.env.PORT ?? 8080);
@@ -22,6 +27,25 @@ const upstreams: Array<[prefix: string, name: string, target: string | undefined
   ["/relay", "relayer", process.env.RELAY_URL],
   ["/merchant-api", "merchant service", process.env.MERCHANT_URL],
 ];
+
+const checkoutPayTo = configuredAddress(process.env.WC_MERCHANT_ADDRESS);
+const checkoutRelay = process.env.RELAY_URL;
+const shop = new Hono();
+
+if (checkoutPayTo && checkoutRelay) {
+  shop.get("/checkout/sticker-pack", checkout(checkoutPayTo, checkoutRelay), (c) =>
+    c.json({
+      item: "countersign sticker pack",
+      code: checkoutCode(),
+      issuedAt: new Date().toISOString(),
+    }),
+  );
+} else {
+  const noCheckout = () =>
+    sentence(503, "no-checkout", "This console has no Whitechain checkout configured.");
+  shop.all("/checkout", noCheckout);
+  shop.all("/checkout/*", noCheckout);
+}
 
 // Hop-by-hop headers, and the ones fetch rewrites on its own, never cross the proxy.
 const DROP_REQUEST = ["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "accept-encoding", "content-length"];
@@ -39,6 +63,20 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 function sentence(status: number, code: string, message: string): Response {
   return Response.json({ code, message }, { status, headers: SECURITY_HEADERS });
+}
+
+function configuredAddress(value: string | undefined): Address | null {
+  if (!value || !isAddress(value)) return null;
+  return getAddress(value);
+}
+
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function checkoutCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  let code = "";
+  for (const byte of bytes) code += BASE32.charAt(byte % 32);
+  return code;
 }
 
 async function proxy(req: Request, url: URL, prefix: string, name: string, target: string | undefined): Promise<Response> {
@@ -120,6 +158,9 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/healthz") return Response.json({ ok: true });
+    if (url.pathname === "/checkout" || url.pathname.startsWith("/checkout/")) {
+      return shop.fetch(req);
+    }
     for (const [prefix, name, target] of upstreams) {
       if (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)) return proxy(req, url, prefix, name, target);
     }

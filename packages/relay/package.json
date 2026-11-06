@@ -1,9 +1,28 @@
 {
   "name": "@countersign/relay",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ss251/countersign.git",
+    "directory": "packages/relay"
+  },
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./paywall": "./src/paywall.ts",
+    "./pay-fetch": "./src/pay-fetch.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "files": [
+    "src/**",
+    "README.md",
+    "!src/**/test/**",
+    "!src/**/*.test.ts",
+    "!**/.env*",
+    "!**/fixtures/**",
+    "!**/fixtures.*"
+  ],
   "scripts": {
     "start": "bun run src/server.ts",
     "merchant": "bun run src/merchant-server.ts"

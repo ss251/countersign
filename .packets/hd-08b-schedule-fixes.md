@@ -18,7 +18,7 @@ You may create or change only these paths:
 - `packages/buyer/src/hedera/agent.ts`, `packages/buyer/src/hedera/schedule.ts`, `packages/buyer/src/hedera/spendlog.ts`
 - `packages/buyer/src/hedera/test/agent.test.ts`, `schedule.test.ts`, `spendlog.test.ts`: add tests; never change or delete an existing assertion
 - `scripts/hedera/schedule.ts`, `scripts/hedera/setup.ts`, `scripts/hedera/audit.ts`
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-08b-schedule-fixes.md`
+- Report: `$M/reports/hd-08b-schedule-fixes.md`
 
 Never edit `packages/rail/src/hedera/test/w1-schedule.test.ts`, `packages/rail/src/hedera/test/w1-attacks.test.ts` or any other `w1-*` test. Do not edit `docs/`; the lane updates the docs after review.
 
@@ -26,7 +26,7 @@ Never edit `packages/rail/src/hedera/test/w1-schedule.test.ts`, `packages/rail/s
 
 Read first:
 
-- the review: `/Users/thescoho/Developer/countersign-mumbai/reports/review-56e5283.md`;
+- the review: `$M/reports/review-56e5283.md`;
 - `packages/rail/src/hedera/schedule.ts`: `inspectScheduled`, `checkScheduledTransfer`, `countersignSchedule`, `scheduleStatus`;
 - `packages/buyer/src/hedera/agent.ts`: how `buy` checks the envelope, then calls `reserve` with no `await` in between, and how `log`, `release` and `settleReservation` work;
 - `packages/buyer/src/hedera/spendlog.ts`: `SpendEntry`, `parseEntry`, `reconcile`;

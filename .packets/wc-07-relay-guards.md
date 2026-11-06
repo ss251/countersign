@@ -48,7 +48,7 @@ Touch nothing else. View code is out of bounds: nothing under `apps/web`. Never 
 
 3. **Rail default.** In `packages/rail/src/whitechain/index.ts` the default `rpcUrl` becomes `https://rpc.ankr.com/whitechain_testnet`. Update its test.
 
-4. **cs-w1's review of the drop-in: blockers B9 and B10, plus two should-fix items.** The report is `/Users/thescoho/Developer/countersign-mumbai/reports/review-1f7615d.md`; read it. The issue is #14. Start by copying the reviewer's tests unchanged: `git show cs/w1:packages/relay/test/w1-attacks.test.ts > packages/relay/test/w1-attacks.test.ts`. B9 and B10 in that file must pass, and the earlier tests must keep passing. Add `packages/relay/src/paywall.ts`, `packages/relay/src/pay-fetch.ts` and `packages/relay/examples/**` to this packet's lease.
+4. **cs-w1's review of the drop-in: blockers B9 and B10, plus two should-fix items.** The report is `$M/reports/review-1f7615d.md`; read it. The issue is #14. Start by copying the reviewer's tests unchanged: `git show cs/w1:packages/relay/test/w1-attacks.test.ts > packages/relay/test/w1-attacks.test.ts`. B9 and B10 in that file must pass, and the earlier tests must keep passing. Add `packages/relay/src/paywall.ts`, `packages/relay/src/pay-fetch.ts` and `packages/relay/examples/**` to this packet's lease.
    - **B9 — one payment buys one response.**
      - Before `next()`, `whitechainPaywall` claims the authorisation, keyed on `from:nonce` (lower case).
      - Any second request presenting a claimed authorisation gets 409 `{ error: "Refused. This payment was already used." }`. That holds while the first is in flight and after it settled. The handler never runs for it.
@@ -78,7 +78,6 @@ Touch nothing else. View code is out of bounds: nothing under `apps/web`. Never 
 - No network in tests.
 - Never log keys or signatures.
 - Small present-tense commits, no emoji, no `Co-authored-by`. End each commit message with `refs #37` or `refs #10`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -96,4 +95,4 @@ All green from the worktree root.
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-07-relay-guards.md`: what changed, test counts and any deviations.
+Write `$M/reports/wc-07-relay-guards.md`: what changed, test counts and any deviations.

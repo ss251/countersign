@@ -99,7 +99,7 @@ Do not touch anything else. That includes `apps/web/src/ui`, `lib`, `app`, `styl
 - No gradients, glow, shadows or glassmorphism. Borders are `1px solid var(--line)`.
 - No new dependencies. React 19, TypeScript strict, no `any`.
 - Accessibility: labelled controls, `aria-pressed` on the adapter buttons, one link per registry row (not nested links), and focus styles from the base CSS.
-- **No browser of any kind on this machine**: no Chrome or Chromium (headless or not), no Playwright, no Puppeteer, no screenshot tools. This is the captain's standing rule. Check your work with typecheck, tests and the build. UI checks go back to the lane (cs-ui), which raises NEEDS-BROWSER.
+- **No browser of any kind on this machine**: no Chrome or Chromium (headless or not), no Playwright, no Puppeteer, no screenshot tools. This is the project lead's standing rule. Check your work with typecheck, tests and the build. UI checks go back to the lane (cs-ui), which raises NEEDS-BROWSER.
 - Do not start a dev server or any long-running process. Do not read any directory outside this repository.
 
 ## Acceptance

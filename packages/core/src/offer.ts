@@ -39,6 +39,11 @@ export function assertOffer(value: unknown): asserts value is Offer {
   ) {
     fail("offer.reviewWindow must be 0 to 86400 seconds");
   }
+  if (parseAtomic(o!.bond as string) > 0n && (o!.reviewWindow ?? 0) === 0) {
+    fail(
+      "offer.bond above zero needs offer.reviewWindow above zero: a bond protects a buyer who can refuse a delivery",
+    );
+  }
   if (!Number.isSafeInteger(o!.deadline) || o!.deadline! < 10 || o!.deadline! > 7 * 24 * 3600) {
     fail("offer.deadline must be 10 s to 7 days");
   }

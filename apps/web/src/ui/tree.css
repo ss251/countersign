@@ -80,3 +80,31 @@ a.tree__title {
     grid-column: 1 / -1;
   }
 }
+
+/* The hub's record: a dashed branch, so it never reads as a signed one (STEER-2235 item 5). */
+.tree__children > .tree__node--observed::before {
+  border-top-style: dashed;
+}
+
+.tree__row[data-kind="observed"] .tree__meta {
+  color: var(--slate);
+}
+
+.tree__legend {
+  margin-top: var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-12);
+  line-height: 1.7;
+}
+
+.tree__key {
+  display: inline-block;
+  width: 18px;
+  margin-right: var(--sp-2);
+  vertical-align: middle;
+  border-top: 1px solid var(--ink);
+}
+
+.tree__key--observed {
+  border-top-style: dashed;
+}

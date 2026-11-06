@@ -7,8 +7,10 @@ import { formatAgo, formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } 
 import { hubBase } from "../../lib/hub.ts";
 import { settlementIndex } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
+import { failedDeliveryNote, termsKind } from "../../lib/terms.ts";
 import { RailCard } from "../../ui/RailCard.tsx";
 import { Amount, CopyButton, Empty, FixtureNote, Hash, RailState, Tag, cx } from "../../ui/primitives.tsx";
+import { OfferTerms } from "./OfferTerms.tsx";
 import "../../ui/page.css";
 import "./offer.css";
 
@@ -63,6 +65,10 @@ export default function OfferPage({ params }: PageProps) {
         ? "No calls yet"
         : "Not counted yet";
   const curl = curlCommand(l.hash, offer.input, base);
+  const kinds = offer.rails.map((r) => {
+    const d = rails.data?.find((x) => x.id === r);
+    return d ? termsKind(d) : undefined;
+  });
 
   return (
     <div className="page offer">
@@ -179,7 +185,7 @@ export default function OfferPage({ params }: PageProps) {
           </details>
           <p className="field__label">Example response</p>
           <pre className="code mono">{`200 OK\n${JSON.stringify({ output: exampleInput(offer.output), slip: { hash: "0x…", body: { offerHash: shortHex(l.hash), amount: offer.price } } }, null, 2)}`}</pre>
-          <p className="section__note">An output that does not match is a failed delivery, and the money goes back.</p>
+          <p className="section__note">{failedDeliveryNote(kinds)}</p>
         </section>
       </div>
 
@@ -187,19 +193,8 @@ export default function OfferPage({ params }: PageProps) {
         <h2 id="terms-title" className="section__title">
           Terms
         </h2>
+        <OfferTerms rails={offer.rails} declarations={rails.data} deadline={offer.deadline} />
         <dl className="terms">
-          <div>
-            <dt>Escrow</dt>
-            <dd>The money waits on chain until the output checks out.</dd>
-          </div>
-          <div>
-            <dt>Refund window</dt>
-            <dd className="num">After {formatDuration(offer.deadline)} without delivery, anyone can refund the buyer.</dd>
-          </div>
-          <div>
-            <dt>Delivery</dt>
-            <dd>Released only when the output matches the schema above.</dd>
-          </div>
           <div>
             <dt>Bond</dt>
             <dd>
@@ -294,6 +289,6 @@ export function buyCommand(offerHash: string, input: JsonSchema, hub: string): s
 }
 
 export function curlCommand(offerHash: string, input: JsonSchema, hub: string): string {
-  const json = JSON.stringify(exampleInput(input)).replace(/'/g, "'\\''");
+  const json = JSON.stringify({ input: exampleInput(input) }).replace(/'/g, "'\\''");
   return `curl -i -X POST ${hub}/offers/${offerHash}/call -H 'content-type: application/json' -d '${json}'`;
 }

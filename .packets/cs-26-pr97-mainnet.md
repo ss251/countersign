@@ -6,7 +6,7 @@ Run `bun install` at the worktree root before anything else.
 
 You are on `cs/97-mainnet`. It is Rajdeep's `raj/29-mainnet-fails-closed` (aa8ef17, PR #97: a mainnet hub refuses to boot while anything it would use is pending) with `cs/int` merged in (6b196c2). cs-w1 cleared aa8ef17 with 0 blockers.
 
-## Hard rule from the captain (STEER-2050)
+## Hard rule from the project lead (STEER-2050)
 
 **Never rewrite, weaken, skip, or delete a test to make it pass.**
 

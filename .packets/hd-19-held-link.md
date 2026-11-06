@@ -2,7 +2,7 @@
 
 ## Goal
 
-STEER-2130 finding A5, the held half. Build H2 of `/Users/thescoho/Developer/countersign-mumbai/hd/DESIGN-held-hub-key.md` exactly.
+STEER-2130 finding A5, the held half. Build H2 of `$M/hd/DESIGN-held-hub-key.md` exactly.
 
 A held Hedera settlement's `transaction` is the schedule's create transaction id. That id binds the job (`jobId = keccak(createTxId)`), and the verifier and the agent check it. But the hub builds the settlement's explorer link from that same id, so the link opens a SCHEDULECREATE with no token movement.
 
@@ -17,7 +17,7 @@ After this change, the link opens the scheduled execution, the CRYPTOTRANSFER th
 - New tests:
   - `packages/rail/src/hedera/test/held-link.test.ts`
   - `apps/hub/test/held-link.test.ts`
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-19-held-link.md`
+- Report: `$M/reports/hd-19-held-link.md`
 
 ## The decided change
 

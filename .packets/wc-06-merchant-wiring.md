@@ -96,7 +96,6 @@ Do not edit anything else. Never commit `bun.lock`: run `git checkout -- bun.loc
 - **No browser of any kind on this machine.** That means no headless Chrome, Playwright, Puppeteer or screenshot tools. Verify with tests and `curl` only. UI checks go back to the lane, which raises NEEDS-BROWSER.
 - No floats for money, no new dependencies, no `localStorage`.
 - Brand: tokens only; the colour law (blue money, green settled, red refused, neutral refunded); lowercase countersign; declarative copy, no exclamation marks.
-- Small present-tense commits, no emoji, no `Co-authored-by`. Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -114,4 +113,4 @@ All green from the worktree root.
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-06-merchant-wiring.md`. Cover what changed, the test counts and any deviations.
+Write `$M/reports/wc-06-merchant-wiring.md`. Cover what changed, the test counts and any deviations.

@@ -159,10 +159,45 @@
 /* The wallet: connect, who and which chain. */
 
 .wallet {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--t-13);
+}
+
+.wallet__menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 30;
+  display: grid;
+  min-width: 16rem;
+  padding: var(--sp-2);
+  background: var(--paper);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
+}
+
+.wallet__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-1);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-13);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wallet__why {
+  color: var(--slate);
+  font-size: var(--t-12);
 }
 
 .wallet__go {
@@ -222,4 +257,10 @@
   background: none;
   box-shadow: var(--elev-1);
   font-weight: 600;
+}
+
+/* An option that waits for Privy to start: visibly not ready, and not pressable. */
+.wallet__item:disabled {
+  color: var(--slate);
+  cursor: progress;
 }

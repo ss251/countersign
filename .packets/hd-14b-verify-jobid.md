@@ -2,7 +2,7 @@
 
 ## Goal
 
-This is cs-w1's blocker B22 on 2321bd7 (`/Users/thescoho/Developer/countersign-mumbai/reports/review-2321bd7.md`).
+This is cs-w1's blocker B22 on 2321bd7 (`$M/reports/review-2321bd7.md`).
 
 `checkHeld` never ties the payment's `createTxId` to the seller-signed `body.jobId`. A slip for a job that never ran could therefore verify VALID by naming another executed schedule between the same parties.
 
@@ -15,7 +15,7 @@ cs-w1's failing test `packages/verify/test/w1-verify-held.test.ts` is on this br
 - `packages/verify/src/verify.ts`: `checkHeld` only.
 - `packages/verify/test/held.test.ts`: fixtures and one new test.
 - `packages/verify/test/e2e-163.test.ts`: the one jobId line below.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-14b-verify-jobid.md`
+- Report: `$M/reports/hd-14b-verify-jobid.md`
 
 Never edit `w1-verify-held.test.ts` or any other `w1-*` test.
 

@@ -15,7 +15,7 @@ Tracked by issue #41.
 - `packages/runner/src/daemon.ts`: that one condition only.
 - `packages/runner/test/countersign.test.ts`: the fixture offer in `beforeEach` only. Change no assertion.
 - `packages/runner/test/countersign-terms.test.ts`: one new test.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-13e-strict-terms.md`
+- Report: `$M/reports/hd-13e-strict-terms.md`
 
 ## The decided change
 

@@ -65,6 +65,8 @@ export interface JobRecord {
   reviewOutcome?: ReviewOutcome | null;
   /** Escrow v2: the accept, dispute or window release transaction. */
   reviewTx?: string | null;
+  /** The job this purchase was made inside, or null when the lineage named none this hub recorded. */
+  parentJobId?: Hex | null;
 }
 
 export interface JobPatch {
@@ -88,6 +90,14 @@ export interface EnvelopeMirrorRecord {
   spent: EnvelopeSpend;
   signedAt: number;
   sig: Hex;
+}
+
+/** A revoke the envelope's approver signed, kept forever: a later revoke does not replace it. */
+export interface RevocationRecord {
+  agent: string;
+  revokedAt: number;
+  sig: Hex;
+  recordedAt: number;
 }
 
 export type ApprovalStatus = "pending" | "countersign" | "decline";
@@ -154,6 +164,7 @@ interface JobRow {
   ends_at: number | null;
   review_outcome: string | null;
   review_tx: string | null;
+  parent_job_id: string | null;
 }
 
 interface RatingJobRow {
@@ -183,6 +194,13 @@ interface EnvelopeRow {
   spent_json: string;
   signed_at: number;
   sig: string;
+}
+
+interface RevocationRow {
+  agent: string;
+  revoked_at: number;
+  sig: string;
+  recorded_at: number;
 }
 
 interface ApprovalRow {
@@ -235,7 +253,8 @@ export class Store {
         delivered_at INTEGER NULL,
         ends_at INTEGER NULL,
         review_outcome TEXT NULL,
-        review_tx TEXT NULL
+        review_tx TEXT NULL,
+        parent_job_id TEXT NULL
       )
     `);
     const jobColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -259,6 +278,9 @@ export class Store {
     }
     if (!jobColumns.some((column) => column.name === "review_tx")) {
       this.db.run("ALTER TABLE jobs ADD COLUMN review_tx TEXT NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "parent_job_id")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN parent_job_id TEXT NULL");
     }
     this.db.run(`
       CREATE TABLE IF NOT EXISTS slips (
@@ -305,6 +327,9 @@ export class Store {
       this.db.run("ALTER TABLE approvals ADD COLUMN decision_sig TEXT NULL");
     }
     this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
+    `);
   }
 
   /** Insert a new offer. Returns false when the hash was already stored. */
@@ -351,7 +376,7 @@ export class Store {
   putJob(job: JobRecord): void {
     this.db
       .query(
-        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx, parent_job_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -372,6 +397,7 @@ export class Store {
         job.endsAt ?? null,
         job.reviewOutcome ?? null,
         job.reviewTx ?? null,
+        job.parentJobId ?? null,
       );
   }
 
@@ -382,7 +408,7 @@ export class Store {
   claimJob(job: JobRecord): boolean {
     const result = this.db
       .query(
-        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx, parent_job_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -403,6 +429,7 @@ export class Store {
         job.endsAt ?? null,
         job.reviewOutcome ?? null,
         job.reviewTx ?? null,
+        job.parentJobId ?? null,
       );
     return result.changes > 0;
   }
@@ -410,6 +437,16 @@ export class Store {
   getJob(jobId: string): JobRecord | null {
     const row = this.db.query<JobRow, [string]>("SELECT * FROM jobs WHERE job_id = ?").get(jobId);
     return row ? jobFromRow(row) : null;
+  }
+
+  /** Jobs claimed inside this one, oldest first. The id is compared case-insensitively. */
+  childJobs(parentJobId: string): JobRecord[] {
+    return this.db
+      .query<JobRow, [string]>(
+        "SELECT * FROM jobs WHERE lower(parent_job_id) = lower(?) ORDER BY created_at ASC, job_id ASC",
+      )
+      .all(parentJobId)
+      .map(jobFromRow);
   }
 
   /** Every job, newest first. */
@@ -565,7 +602,7 @@ export class Store {
         `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.deadline,
                 jobs.status, jobs.payment_json, jobs.settle_tx, jobs.close_tx, jobs.slip_hash,
                 jobs.created_at, jobs.closed_at, jobs.review_window, jobs.delivered_at, jobs.ends_at,
-                jobs.review_outcome, jobs.review_tx
+                jobs.review_outcome, jobs.review_tx, jobs.parent_job_id
            FROM jobs
            JOIN offers ON offers.offer_hash = jobs.offer_hash
           WHERE lower(offers.seller) = lower(?)
@@ -601,6 +638,26 @@ export class Store {
       spent: JSON.parse(row.spent_json) as EnvelopeSpend,
       signedAt: row.signed_at,
       sig: row.sig as Hex,
+    };
+  }
+
+  /** Record a revoke. The first revoke for an agent is kept. */
+  putRevocation(record: RevocationRecord): void {
+    this.db
+      .query("INSERT OR IGNORE INTO revocations (agent, revoked_at, sig, recorded_at) VALUES (?, ?, ?, ?)")
+      .run(record.agent.toLowerCase(), record.revokedAt, record.sig, record.recordedAt);
+  }
+
+  getRevocation(agent: string): RevocationRecord | null {
+    const row = this.db
+      .query<RevocationRow, [string]>("SELECT * FROM revocations WHERE agent = ?")
+      .get(agent.toLowerCase());
+    if (!row) return null;
+    return {
+      agent: row.agent,
+      revokedAt: row.revoked_at,
+      sig: row.sig as Hex,
+      recordedAt: row.recorded_at,
     };
   }
 
@@ -699,6 +756,7 @@ function jobFromRow(row: JobRow): JobRecord {
     endsAt: row.ends_at,
     reviewOutcome: row.review_outcome as ReviewOutcome | null,
     reviewTx: row.review_tx,
+    parentJobId: row.parent_job_id as Hex | null,
   };
 }
 

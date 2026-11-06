@@ -5,6 +5,7 @@
 
 import {
   canonicalHash,
+  canaryMessage,
   checkSchema,
   offerHash,
   RUNNER_PATH,
@@ -17,7 +18,7 @@ import {
   type Offer,
   type RunnerToHub,
 } from "@countersign/core";
-import type { RunnerAccount } from "./account.ts";
+import type { Hex, RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
 import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
 import { substituteBuyer } from "./mcp.ts";
@@ -53,6 +54,8 @@ export interface RunnerConfig {
   /** Signs, never submits, the seller's release of a held payment (rail "hedera-scheduled").
    *  Called only after the output passed the offer's schema and the slip is signed. */
   countersign?: (order: JobOrder) => Promise<string>;
+  /** Buyer addresses, besides this runner's account, whose purchases may be attested as children. */
+  buyerAddresses?: string[];
 }
 
 export interface RunnerHandle {
@@ -148,6 +151,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         substituteBuyer(entry.spec, order.buyer),
         order.input,
         { timeMs, maxOutputBytes },
+        [...order.lineage, order.jobId].join(","),
       );
     } catch (error) {
       const reason = messageOf(error);
@@ -162,6 +166,14 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       return fail(target, order, reason);
     }
 
+    // A children lookup that fails or times out leaves the list empty. Signing still happens.
+    let children: Hex[] = [];
+    try {
+      children = await childHashes(cfg, order.jobId);
+    } catch {
+      children = [];
+    }
+
     try {
       const body = slipBodyFor(
         order,
@@ -169,6 +181,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         canonicalHash(order.input),
         canonicalHash(output),
         clock(),
+        children,
       );
       const hash = slipHash(body);
       const sellerSig = await cfg.account.signTypedData(slipTypedData(body));
@@ -219,6 +232,25 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       case "job":
         await handleJob(target, message.order);
         return;
+      case "canary": {
+        const entry = served.find(
+          (item) => item.hash.toLowerCase() === message.offerHash.toLowerCase(),
+        );
+        if (!entry) {
+          send(target, {
+            t: "canary-fail",
+            offerHash: message.offerHash,
+            nonce: message.nonce,
+            reason: "not-served",
+          });
+          return;
+        }
+        const sig = await cfg.account.signMessage({
+          message: canaryMessage(entry.hash, message.nonce),
+        });
+        send(target, { t: "canary", offerHash: entry.hash, nonce: message.nonce, sig });
+        return;
+      }
       case "error":
         return;
     }
@@ -283,6 +315,71 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       socket = null;
     },
   };
+}
+
+const CHILD_TIMEOUT_MS = 2_000;
+const SLIP_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+/** Slip hashes of purchases this runner's own buyers made while serving `jobId`. */
+async function childHashes(cfg: RunnerConfig, jobId: string): Promise<Hex[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHILD_TIMEOUT_MS);
+  try {
+    const base = hubHttpBase(cfg.hubUrl);
+    const listed = await getJson(
+      `${base}/jobs/${encodeURIComponent(jobId)}/children`,
+      controller.signal,
+    );
+    if (!isRecord(listed) || !Array.isArray(listed.children)) {
+      throw new Error("The hub's children list is malformed.");
+    }
+    const buyers = new Set<string>([
+      cfg.account.address.toLowerCase(),
+      ...(cfg.buyerAddresses ?? []).map((address) => address.toLowerCase()),
+    ]);
+    const hashes: string[] = [];
+    for (const row of listed.children) {
+      if (!isRecord(row)) throw new Error("The hub's children list is malformed.");
+      const listedHash = row.slipHash;
+      if (listedHash === null || listedHash === undefined) continue;
+      if (typeof listedHash !== "string" || !SLIP_HASH.test(listedHash)) {
+        throw new Error("The hub's children list is malformed.");
+      }
+      const slip = await getJson(`${base}/slips/${encodeURIComponent(listedHash)}`, controller.signal);
+      const buyer = buyerOf(slip);
+      if (buyer !== null && buyers.has(buyer.toLowerCase())) hashes.push(listedHash.toLowerCase());
+    }
+    return [...new Set(hashes)].sort() as Hex[];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The hub's HTTP base. A websocket hub URL becomes the same host over HTTP. */
+function hubHttpBase(hubUrl: string): string {
+  const url = new URL(hubUrl);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  else if (url.protocol === "wss:") url.protocol = "https:";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
+}
+
+async function getJson(url: string, signal: AbortSignal): Promise<unknown> {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`The hub answered ${response.status}.`);
+  const body: unknown = await response.json();
+  return body;
+}
+
+function buyerOf(slip: unknown): string | null {
+  if (!isRecord(slip) || !isRecord(slip.body)) return null;
+  const buyer = slip.body.buyer;
+  return typeof buyer === "string" ? buyer : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function connectUrl(hubUrl: string): string {

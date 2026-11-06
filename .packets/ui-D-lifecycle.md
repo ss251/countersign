@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else. You are on `cs/ui-D`, cut from `origin/main`.
 
-## The captain's words
+## The project lead's words
 
 "A four-step animated sequence: offer published, buyer countersigns, funds held, seller signs and the slip verifies, driven by real hashes and names from the hub, not lorem ipsum." It honours reduced motion. When the hub is unreachable the beat says so, and it never falls back to fixtures.
 

@@ -165,7 +165,6 @@ Explorer links follow `https://explorer.testnet.whitechain.io/tx/<hash>` and `ht
   - links have discernible text;
   - the table has a `<caption class="sr-only">`.
 - No emoji. Small present-tense commits, no `Co-authored-by`. Never commit `bun.lock`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -185,7 +184,7 @@ All four green. Then start `bun run --cwd apps/web dev` in the background, `curl
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-03-merchant-view.md`. Cover:
+Write `$M/reports/wc-03-merchant-view.md`. Cover:
 
 - what was built;
 - the files;
