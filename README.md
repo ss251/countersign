@@ -191,6 +191,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 MIT, see [LICENSE](LICENSE). Catalogue items keep their upstream licences, listed in [NOTICE](NOTICE).
 
+The abstract paper-and-thread visuals on the landing page and the social card are AI-generated with Higgsfield (`apps/web/public/media/manifest.json` lists every prompt, model and licence); the demo narration and the screen recordings are real.
+
 ## Built during the event
 
 <!-- written by the captain -->
