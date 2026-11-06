@@ -20,7 +20,16 @@ import { parseAbiItem, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
 import { raiseIfFailed } from "../lib/failure.ts";
-import { approveIfPrompted, recordPrivyRequestFailure, recordPrivyResponse, signIn } from "../lib/privy.ts";
+import {
+  approveIfPrompted,
+  dialogVisible,
+  openPrivy,
+  privySignatureNote,
+  recordPrivyConsole,
+  recordPrivyRequestFailure,
+  recordPrivyResponse,
+  signIn,
+} from "../lib/privy.ts";
 import {
   afterFunding,
   arcClient,
@@ -174,6 +183,11 @@ function watchPrivy(page: Page, failures: string[]): void {
   });
 }
 
+async function approveAndNote(rec: Recorder, page: Page): Promise<void> {
+  const clicks = await approveIfPrompted(page);
+  if (clicks > 1) rec.note(privySignatureNote(clicks));
+}
+
 interface SlipFields {
   jobId: Hex;
   offerHash: Hex;
@@ -260,7 +274,12 @@ const runHuman = async (
   let failed = false;
   let failure: unknown;
 
-  if (project === "privy") watchPrivy(page, privyFailures);
+  if (project === "privy") {
+    const consoleFile = rec.file("console.log");
+    recordPrivyConsole(page, consoleFile);
+    rec.addArtifact(consoleFile);
+    watchPrivy(page, privyFailures);
+  }
 
   if (project === "privy" && (email === "" || otp === "")) {
     rec.record("00-open", "skip", 0, "no Privy test login");
@@ -281,6 +300,8 @@ const runHuman = async (
     });
 
     await step(rec, page, "01", "sign-in", "sign in", async () => {
+      // Privy's login() does nothing before the SDK is ready; give the page a person's pause.
+      await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined);
       await testId(page, "wallet-menu").click();
       if (injected) {
         await testId(page, "wallet-connect-injected").click();
@@ -301,10 +322,20 @@ const runHuman = async (
       }
 
       privyFailures.length = 0;
-      await option.click();
-      await rec.screenshot(page, "01", "privy-modal");
+      await openPrivy({
+        clickSignIn: () => option.click(),
+        clickMenu: () => testId(page, "wallet-menu").click(),
+        dialogVisible: () => dialogVisible(page, 10_000),
+        menuUsable: () =>
+          page
+            .locator("#privy-dialog-backdrop")
+            .waitFor({ state: "hidden", timeout: 2_000 })
+            .then(() => true)
+            .catch(() => false),
+        note: (text) => rec.note(text),
+      });
       try {
-        await signIn(page, email, otp);
+        await signIn(page, email, otp, () => rec.screenshot(page, "01", "privy-modal"));
       } catch (error) {
         if (privyFailures.length > 0) throw new SkipRun(`Privy unavailable: ${privyFailures[0]}`);
         throw error;
@@ -377,8 +408,8 @@ const runHuman = async (
       await rec.screenshot(page, "05", "review");
 
       await testId(page, "start-sign").click();
-      await approveIfPrompted(page);
-      await approveIfPrompted(page);
+      await approveAndNote(rec, page);
+      await approveAndNote(rec, page);
 
       const hash = await waitResult(page, 120_000);
       await assertNoRefusal(page);
