@@ -490,6 +490,27 @@ contract AuditFixesTest is EscrowSigning {
         escrow.failDelivery(jobs[3]);
     }
 
+    /// H1's bond property under "bond implies window" (cs-w1, review of bb29f4f): a bonded release that
+    /// lands after the deadline but by settleBy is Delivered, and once the window passes with no dispute
+    /// the seller is paid and gets its whole bond back.
+    function test_H1_an_honest_late_release_keeps_the_bond_once_the_window_passes() public {
+        bytes32 jobId = _fundJob(5, BOND, WINDOW);
+        uint256 settleBy = _settleBy(jobId);
+        bytes memory late = _releaseSig(jobId);
+
+        vm.warp(settleBy);
+        escrow.release(jobId, SLIP, late);
+        assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Delivered));
+        assertEq(escrow.bondOf(seller), 0, "the bond stays locked through the window");
+
+        uint256 sellerBefore = token.balanceOf(seller);
+        vm.warp(block.timestamp + WINDOW + 1);
+        escrow.releaseAfterWindow(jobId);
+        assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Released));
+        assertEq(escrow.bondOf(seller), BOND, "an honest late release keeps the bond");
+        assertEq(token.balanceOf(seller) - sellerBefore, PRICE - escrow.tollOf(PRICE), "the seller is paid");
+    }
+
     function test_H1_refund_waits_for_settleBy() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
