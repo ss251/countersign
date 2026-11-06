@@ -63,6 +63,8 @@ export interface HederaAgentOptions {
   sign?: SignOptions;
   mirror?: MirrorOptions;
   now?: () => number;
+  /** Prefer a held schedule when the hub offers one. Defaults to true. */
+  preferHeld?: boolean;
   /** Test seam: wait between charge polls. Defaults to a setTimeout promise. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -75,6 +77,8 @@ export interface ScheduleHold {
   payTo: string;
   asset: string;
   amount: string;
+  /** Unix seconds when the schedule stops being executable. Set on a buy's hold. */
+  expiresAt?: number;
 }
 
 export type ScheduleOutcome =
@@ -110,9 +114,18 @@ export type BuyOutcome =
       settlement: SettleResult;
       transactionId: string;
       logSequence: number;
+      hold?: ScheduleHold;
     }
   | { kind: "refused"; reason: string; message: string; logSequence?: number }
-  | { kind: "failed"; status: number; message: string; charged: boolean; transactionId?: string; logSequence?: number };
+  | {
+      kind: "failed";
+      status: number;
+      message: string;
+      charged: boolean;
+      transactionId?: string;
+      logSequence?: number;
+      hold?: ScheduleHold;
+    };
 
 /**
  * What the agent has spent, rebuilt from its own HCS log. A schedule counts from the moment it is
@@ -160,6 +173,10 @@ export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
     }
   }
   return spent;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function createHederaAgent(opts: HederaAgentOptions) {
@@ -267,6 +284,149 @@ export function createHederaAgent(opts: HederaAgentOptions) {
     throw new Error(`Unknown whether ${transactionId} was charged: the mirror did not answer after the transfer's valid window closed.`);
   }
 
+  /** Create the scheduled payment, settle its reservation, and write the schedule entry. */
+  async function createHold(input: {
+    client: Client;
+    seller: string;
+    offerHash: string;
+    payTo: string;
+    asset: string;
+    amount: string;
+    expiresInSeconds: number;
+  }): Promise<{ payment: ScheduledPayment; logSequence: number; expiresAt: number; hold: ScheduleHold }> {
+    const subject = { offerHash: input.offerHash, seller: input.seller };
+    const terms = { payTo: input.payTo, asset: input.asset, amount: input.amount };
+    const reservation = reserve({ seller: input.seller, offerHash: input.offerHash, amount: input.amount });
+    const expiresAt = now() + input.expiresInSeconds;
+
+    let payment: ScheduledPayment;
+    try {
+      payment = await createSchedule(input.client, opts.payer, {
+        payTo: input.payTo,
+        asset: input.asset,
+        amount: BigInt(input.amount),
+        offerHash: input.offerHash,
+        expiresInSeconds: input.expiresInSeconds,
+      });
+    } catch (error) {
+      // The create may have reached consensus, so the reservation stays held for the life of the
+      // agent: releasing it could let a second schedule pass a cap the first still occupies.
+      throw error;
+    }
+
+    settleReservation(reservation);
+    const logSequence = await log("schedule", subject, terms, {
+      tx: payment.createTxId,
+      schedule: payment.scheduleId,
+      expiresAt,
+    });
+    const hold: ScheduleHold = {
+      scheduleId: payment.scheduleId,
+      createTxId: payment.createTxId,
+      offerHash: input.offerHash,
+      seller: input.seller,
+      payTo: input.payTo,
+      asset: input.asset,
+      amount: input.amount,
+    };
+    return { payment, logSequence, expiresAt, hold };
+  }
+
+  /** Pay a held offer: create the schedule, then send its id. Nothing moves until the seller countersigns. */
+  async function buyHeld(
+    listing: Listing,
+    held: PaymentRequirements,
+    url: string,
+    body: string,
+  ): Promise<BuyOutcome> {
+    const holdSeconds = held.extra?.holdSeconds;
+    if (
+      held.extra?.offerHash !== listing.offerHash ||
+      held.amount !== listing.offer.price ||
+      held.payTo !== listing.offer.payTo?.["hedera-scheduled"] ||
+      typeof holdSeconds !== "number" ||
+      holdSeconds < 60 ||
+      holdSeconds > 3600
+    ) {
+      return {
+        kind: "refused",
+        reason: "challenge-mismatch",
+        message: "Refused. The hub asked for terms that differ from the offer.",
+      };
+    }
+
+    const client = opts.logClient;
+    if (!client) throw new Error("hedera agent needs logClient to pay a held offer");
+
+    const subject = { offerHash: listing.offerHash, seller: listing.offer.seller };
+    const terms = { payTo: held.payTo, asset: held.asset, amount: held.amount };
+    const request = { seller: listing.offer.seller, offerHash: listing.offerHash, amount: held.amount };
+    const decision = needsHuman(opts.envelope, held.amount)
+      ? { ok: false as const, reason: "needs-human", message: "Refused. This amount needs a human; the agent does not ask." }
+      : checkEnvelope(opts.envelope, spendIncludingPending(), request, now());
+    if (!decision.ok) {
+      const seq = await log("refused", subject, terms, { reason: decision.reason });
+      return { kind: "refused", reason: decision.reason, message: decision.message, logSequence: seq };
+    }
+
+    const { payment, logSequence, expiresAt, hold: created } = await createHold({
+      client,
+      seller: listing.offer.seller,
+      offerHash: listing.offerHash,
+      payTo: held.payTo,
+      asset: held.asset,
+      amount: held.amount,
+      expiresInSeconds: holdSeconds,
+    });
+    const hold: ScheduleHold = { ...created, expiresAt };
+
+    const sent: PaymentPayload = {
+      x402Version: 2,
+      accepted: held,
+      payload: { scheduleId: payment.scheduleId, createTxId: payment.createTxId },
+      resource: { url },
+    };
+    let paid: Response | null = null;
+    let fetchMessage = "";
+    try {
+      paid = await f(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", [PAYMENT_SIGNATURE_HEADER]: toBase64Json(sent) },
+        body,
+      });
+    } catch (error) {
+      fetchMessage = messageOf(error);
+    }
+
+    if (paid?.status === 200) {
+      const result = (await paid.json()) as CallResult;
+      const responseHeader = paid.headers.get(PAYMENT_RESPONSE_HEADER);
+      const settlement: SettleResult = responseHeader
+        ? fromBase64Json<SettleResult>(responseHeader)
+        : { success: true, transaction: result.slip.settlement.transaction, network: HEDERA_TESTNET };
+      if (toSdkTxId(settlement.transaction) !== toSdkTxId(hold.createTxId)) {
+        throw new Error(
+          `hub reported settlement ${settlement.transaction}, but this agent's schedule was created by ${hold.createTxId}`,
+        );
+      }
+      return {
+        kind: "paid",
+        output: result.output,
+        slip: result.slip,
+        settlement,
+        transactionId: hold.createTxId,
+        logSequence,
+        hold,
+      };
+    }
+
+    const status = paid?.status ?? 0;
+    const message = paid ? await paid.text() : fetchMessage;
+    const record = await getSchedule(hold.scheduleId, opts.mirror).catch(() => null);
+    const charged = record?.executedTimestamp != null;
+    return { kind: "failed", status, message, charged, transactionId: hold.createTxId, logSequence, hold };
+  }
+
   return {
     get spent() {
       return spent;
@@ -289,6 +449,10 @@ export function createHederaAgent(opts: HederaAgentOptions) {
       }
       const header = first.headers.get(PAYMENT_REQUIRED_HEADER);
       const required = header ? fromBase64Json<PaymentRequired>(header) : ((await first.json()) as PaymentRequired);
+      const held = required.accepts.find(
+        (a) => a.network === HEDERA_TESTNET && a.scheme === "countersign" && a.extra?.name === "hedera-scheduled",
+      );
+      if (held && opts.preferHeld !== false) return buyHeld(listing, held, url, body);
       const req = required.accepts.find((a) => a.network === HEDERA_TESTNET && a.scheme === "exact");
       if (!req) return { kind: "refused", reason: "no-hedera", message: "Refused. The hub offered no hedera payment for this offer." };
 
@@ -405,45 +569,21 @@ export function createHederaAgent(opts: HederaAgentOptions) {
         const seq = await log("refused", subject, terms, { reason: decision.reason });
         return { kind: "refused", reason: decision.reason, message: decision.message, logSequence: seq };
       }
-      const reservation = reserve(request);
-      const expiresAt = now() + scheduleOpts.expiresInSeconds;
-
-      let payment: ScheduledPayment;
-      try {
-        payment = await createSchedule(scheduleOpts.client, opts.payer, {
-          payTo,
-          asset: USDC_TESTNET,
-          amount: BigInt(target.offer.price),
-          offerHash: target.offerHash,
-          expiresInSeconds: scheduleOpts.expiresInSeconds,
-        });
-      } catch (error) {
-        // The create may have reached consensus, so the reservation stays held for the life of the
-        // agent: releasing it could let a second schedule pass a cap the first still occupies.
-        throw error;
-      }
-
-      settleReservation(reservation);
-      const hold: ScheduleHold = {
-        scheduleId: payment.scheduleId,
-        createTxId: payment.createTxId,
-        offerHash: target.offerHash,
+      const { logSequence, expiresAt, hold } = await createHold({
+        client: scheduleOpts.client,
         seller: target.offer.seller,
+        offerHash: target.offerHash,
         payTo,
         asset: USDC_TESTNET,
         amount: target.offer.price,
-      };
-      const seq = await log("schedule", subject, terms, {
-        tx: payment.createTxId,
-        schedule: payment.scheduleId,
-        expiresAt,
+        expiresInSeconds: scheduleOpts.expiresInSeconds,
       });
       return {
         kind: "scheduled",
-        scheduleId: payment.scheduleId,
-        createTxId: payment.createTxId,
+        scheduleId: hold.scheduleId,
+        createTxId: hold.createTxId,
         expiresAt,
-        logSequence: seq,
+        logSequence,
         hold,
       };
     },

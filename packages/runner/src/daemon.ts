@@ -45,6 +45,9 @@ export interface RunnerConfig {
   limits?: RunnerLimits;
   now?: () => number;
   onJob?: (event: RunnerJobEvent) => void;
+  /** Signs, never submits, the seller's release of a held payment (rail "hedera-scheduled").
+   *  Called only after the output passed the offer's schema and the slip is signed. */
+  countersign?: (order: JobOrder) => Promise<string>;
 }
 
 export interface RunnerHandle {
@@ -133,7 +136,20 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       );
       const hash = slipHash(body);
       const sellerSig = await cfg.account.signTypedData(slipTypedData(body));
-      send(target, { t: "result", jobId: order.jobId, output, slip: { body, hash, sellerSig } });
+      let countersign: string | undefined;
+      if (order.rail === "hedera-scheduled") {
+        if (!cfg.countersign || !order.schedule) {
+          throw new Error("Refused. This runner cannot countersign a held Hedera payment.");
+        }
+        countersign = await cfg.countersign(order);
+      }
+      send(target, {
+        t: "result",
+        jobId: order.jobId,
+        output,
+        slip: { body, hash, sellerSig },
+        ...(countersign === undefined ? {} : { countersign }),
+      });
       notify(order, entry.offer.title, true);
     } catch (error) {
       const reason = messageOf(error);

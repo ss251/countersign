@@ -3,7 +3,14 @@
 // moment both keys have signed, or expires without moving anything. This module holds the seller's
 // check-before-signing and the mirror reads that make the schedule's state honest.
 import { proto } from "@hiero-ledger/proto";
-import { type Client, ScheduleSignTransaction } from "@hiero-ledger/sdk";
+import {
+  AccountId,
+  Client,
+  PrivateKey,
+  ScheduleId,
+  ScheduleSignTransaction,
+  TransactionId,
+} from "@hiero-ledger/sdk";
 import { HBAR, MIRROR_TESTNET } from "./constants.ts";
 import { InspectError, type InspectedTransfer, type TransferRefusal } from "./inspect.ts";
 import { offerHashFromMemo } from "./memo.ts";
@@ -283,13 +290,12 @@ async function waitForMirrorSchedule(scheduleId: string, opts: CountersignOption
   }
 }
 
-/** A successful countersign is not payment: a seller delivers only after `waitForScheduledExecution` returns the executed transfer. */
-export async function countersignSchedule(
-  sellerClient: Client,
+/** Every check the seller runs before its key signs the schedule. Throws a ScheduleRefusedError. */
+async function checkBeforeCountersign(
   scheduleId: string,
   expected: ExpectedScheduledTransfer,
-  opts: CountersignOptions = {},
-): Promise<string> {
+  opts: CountersignOptions,
+): Promise<MirrorSchedule> {
   const now = (opts.now ?? (() => Math.floor(Date.now() / 1000)))();
   const record = await waitForMirrorSchedule(scheduleId, opts);
   const status = statusOf(record, now);
@@ -307,10 +313,56 @@ export async function countersignSchedule(
 
   const check = checkScheduledTransfer(inspected, expected);
   if (!check.ok) throw new ScheduleRefusedError("mismatch", check.message, check.reason);
+  return record;
+}
+
+/** A successful countersign is not payment: a seller delivers only after `waitForScheduledExecution` returns the executed transfer. */
+export async function countersignSchedule(
+  sellerClient: Client,
+  scheduleId: string,
+  expected: ExpectedScheduledTransfer,
+  opts: CountersignOptions = {},
+): Promise<string> {
+  await checkBeforeCountersign(scheduleId, expected, opts);
 
   const response = await new ScheduleSignTransaction().setScheduleId(scheduleId).execute(sellerClient);
   await response.getReceipt(sellerClient);
   return response.transactionId.toString();
+}
+
+/**
+ * Build and sign, without submitting, the seller's ScheduleSign for a held payment. The hub submits
+ * these bytes only after a checked delivery, so the transfer cannot run before the seller is paid.
+ */
+export async function prepareCountersign(
+  sellerAccountId: string,
+  sellerKey: PrivateKey,
+  scheduleId: string,
+  expected: ExpectedScheduledTransfer,
+  opts: CountersignOptions & { nodeAccountIds?: string[] } = {},
+): Promise<{ bytes: string; transactionId: string }> {
+  await checkBeforeCountersign(scheduleId, expected, opts);
+
+  const transaction = new ScheduleSignTransaction()
+    .setScheduleId(ScheduleId.fromString(scheduleId))
+    .setTransactionId(TransactionId.generate(AccountId.fromString(sellerAccountId)));
+  const nodeAccountIds = opts.nodeAccountIds;
+  if (nodeAccountIds?.length) {
+    transaction.setNodeAccountIds(nodeAccountIds.map((id) => AccountId.fromString(id)));
+    transaction.freeze();
+  } else {
+    const client = Client.forTestnet();
+    try {
+      transaction.freezeWith(client);
+    } finally {
+      client.close();
+    }
+  }
+  await transaction.sign(sellerKey);
+  return {
+    bytes: Buffer.from(transaction.toBytes()).toString("base64"),
+    transactionId: transaction.transactionId!.toString(),
+  };
 }
 
 /** The executed transfer record for a schedule create id, or a timeout. */
