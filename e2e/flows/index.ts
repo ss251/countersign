@@ -5,6 +5,7 @@ import { arcSpine } from "./arc-spine.flow.ts";
 import { arcWrongAmount } from "./arc-wrong-amount.flow.ts";
 import { discovery } from "./discovery.flow.ts";
 import { hedera } from "./hedera.flow.ts";
+import { hederaMcp } from "./hedera-mcp.flow.ts";
 import { productionConsole, productionHub } from "./production.flow.ts";
 import { publicGateway } from "./public-gateway.flow.ts";
 import { publicHedera } from "./public-hedera.flow.ts";
@@ -34,6 +35,7 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "12", flow: publicSpine },
   { n: "15", flow: publicHedera },
   { n: "16", flow: publicGateway },
+  { n: "17", flow: hederaMcp },
   { n: "14a", flow: productionConsole },
   { n: "14b", flow: productionHub },
   { n: "9", flow: web },
