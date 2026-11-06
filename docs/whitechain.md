@@ -226,3 +226,15 @@ Before deploying, `EscrowForkCheck.s.sol` ran the escrow against the real Tether
 ```
 forge script contracts/script/whitechain/EscrowForkCheck.s.sol --fork-url https://rpc.testnet.whitechain.io
 ```
+
+## Demo beat, 45 seconds: the refund and the gasless payer
+
+Show the artifact first. Every step below runs against live Whitechain Sepolia.
+
+1. **The payer.** The buyer agent buys `whitechain-dev` through the hub on rail `whitechain`. Its envelope approves the 0.05 USDT. There is no gas prompt, no seed phrase and no chain to pick. The terminal prints `Released. Slip minted.`
+2. **The merchant.** The order appears on `#/merchant` within 2.5 s and briefly highlights in blue. It shows as **Paid**, with its **Received** time, and the line above the table says the relayer paid the gas.
+3. **The refund.** Click **Refund** on that row. A four-second **Undo** window runs out, then the row reads `Refunded. 0.05 USDT returned to 0xcb39…4298.` Its explorer link opens a USDT transfer from the merchant back to the customer, with the gas paid by the relayer.
+4. **The customer's record.** Open **View receipt** on a phone. It shows the status, the amount, the returned line, and proof links that open on the explorer without countersign.
+5. **The accountant.** Click **Export for accountant**. The CSV opens with fees, refunds and net per order.
+
+Closing line: *"Every payment and every refund is USDT on Whitechain, and nobody but the relayer ever held WBT."*
