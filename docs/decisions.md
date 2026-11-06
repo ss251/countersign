@@ -254,6 +254,10 @@ A call's `lineage` lists the jobIds of the purchases it is nested inside, outerm
 - `PUT /envelopes/:agent`, `POST /approvals` and `POST /offers` are signed by an agent or a seller key, not by a person.
 - The merchant refund is not a hub route: it lives on the merchant's own service.
 
+## D17, amended — a lineage that names the offer or its seller directly is refused too (06 Nov; refs #27)
+
+D17 resolves each lineage jobId through the jobs this hub holds. A lineage entry that is not a jobId, such as the target offer's own hash or its seller's address, was skipped. Now an entry equal to the target's offer hash, or to its seller's address (compared without case), is refused with the same 409 `lineage-cycle`, before any 402. The jobId check is unchanged.
+
 ## D20 — the person revokes an agent from the phone, and the hub refuses that agent before any 402 (06 Nov; refs #21)
 
 The envelope lives on the agent's machine, and the agent signs its mirror, so the phone cannot rewrite it. What the person can do from the phone is revoke the agent on the hub, signed by the approver key the envelope names.

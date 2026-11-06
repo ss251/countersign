@@ -414,6 +414,7 @@ export async function paidCall(
 /** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
 export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
   for (const jobId of lineage) {
+    if (sameText(jobId, target.offerHash) || sameText(jobId, target.seller)) return true;
     const ancestor = store.getJob(jobId);
     if (ancestor === null) continue;
     if (ancestor.offerHash.toLowerCase() === target.offerHash.toLowerCase()) return true;
