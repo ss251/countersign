@@ -67,6 +67,11 @@ export interface Offer {
   deadline: number;
   /** Atomic amount the seller puts up as bond. A supporting escrow collects and locks it at funding. */
   bond: string;
+  /**
+   * Escrow v2 (D16): seconds the buyer has to review a delivery before payment releases, 0 to 86400.
+   * Absent means 0. Covered by offerHash; an offer without it hashes exactly as before.
+   */
+  reviewWindow?: number;
   /** Accepted rails, most preferred first. */
   rails: RailId[];
   /** Payee per rail where it is not `seller`, e.g. a Hedera account id "0.0.1234". */
