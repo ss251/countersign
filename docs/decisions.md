@@ -258,6 +258,8 @@ A call's `lineage` lists the jobIds of the purchases it is nested inside, outerm
 
 D17 resolves each lineage jobId through the jobs this hub holds. A lineage entry that is not a jobId, such as the target offer's own hash or its seller's address, was skipped. Now an entry equal to the target's offer hash, or to its seller's address (compared without case), is refused with the same 409 `lineage-cycle`, before any 402. The jobId check is unchanged.
 
+**Status (06 Nov, after #214 reached cs/int).** `purchaseCycle` (#214) now runs first, so an entry equal to the target's offer hash answers 422 `purchase-cycle`. An entry naming the seller, and an ancestor job of the same offer or seller, still answer 409 `lineage-cycle`. Both come before any 402 ([terms.md](terms.md) §2).
+
 ## D20 — the person revokes an agent from the phone, and the hub refuses that agent before any 402 (06 Nov; refs #21)
 
 The envelope lives on the agent's machine, and the agent signs its mirror, so the phone cannot rewrite it. What the person can do from the phone is revoke the agent on the hub, signed by the approver key the envelope names.

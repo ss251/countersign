@@ -443,8 +443,8 @@ interface ReviewRecord {
 
 /**
  * True when `lineage` plus this offer hash contains the same hash twice.
- * That is a direct cycle (the offer is already in the list) or a longer one
- * (appending it repeats any hash the list already holds).
+ * That is a direct cycle (the offer is already in the list) or an earlier one
+ * (the list already names one hash twice).
  */
 function purchaseCycle(lineage: readonly string[], offerHash: string): boolean {
   const seen = new Set<string>();
