@@ -13,7 +13,7 @@ import type { Hex } from "viem";
 import { USDC_TESTNET } from "../constants.ts";
 import { createHederaHeldRail, heldJobId } from "../held.ts";
 import { offerMemo } from "../memo.ts";
-import { NODE, PAYEE, PAYER, offer, payerKey } from "./fixtures.ts";
+import { NODE, PAYEE, PAYER, hubGatedPayeeKey, hubKey, offer, payerKey } from "./fixtures.ts";
 
 // cs-w1 adversarial test. A failing test here is a blocker.
 // The payment names a schedule and, separately, a create transaction. Verify checks the schedule;
@@ -105,7 +105,9 @@ describe("W1 B21: release confirms a create transaction the payment named, not t
       if (path === `/api/v1/accounts/${PAYER}`) {
         return Response.json({ account: PAYER, key: { _type: "ECDSA_SECP256K1", key: payerKey.publicKey.toStringRaw() } });
       }
-      if (path === `/api/v1/accounts/${PAYEE}`) return Response.json({ account: PAYEE, receiver_sig_required: true });
+      if (path === `/api/v1/accounts/${PAYEE}`) {
+        return Response.json({ account: PAYEE, receiver_sig_required: true, key: hubGatedPayeeKey() });
+      }
       if (path.startsWith("/api/v1/transactions/")) {
         return Response.json({
           transactions: [
@@ -126,6 +128,7 @@ describe("W1 B21: release confirms a create transaction the payment named, not t
     }) as unknown as typeof globalThis.fetch;
 
     const rail = await createHederaHeldRail({
+      hubKey,
       mirror: { base: "http://mirror.test", fetch },
       now: () => NOW,
       waitScheduleMs: 0,

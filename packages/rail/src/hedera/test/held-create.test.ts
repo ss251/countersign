@@ -11,7 +11,7 @@ import { offerHash, type PaymentPayload, type PaymentRequirements } from "@count
 import { USDC_TESTNET } from "../constants.ts";
 import { createHederaHeldRail, type HeldRail, type HeldRailOptions } from "../held.ts";
 import { offerMemo } from "../memo.ts";
-import { NODE, PAYEE, PAYER, offer, payerKey } from "./fixtures.ts";
+import { NODE, PAYEE, PAYER, hubGatedPayeeKey, hubKey, offer, payerKey } from "./fixtures.ts";
 
 const NOW = 1_000_000;
 const SCHEDULE_ID = "0.0.500";
@@ -129,7 +129,7 @@ function payerAccount(over: Record<string, unknown> = {}): Record<string, unknow
 }
 
 function payeeAccount(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return { account: PAYEE, receiver_sig_required: true, ...over };
+  return { account: PAYEE, receiver_sig_required: true, key: hubGatedPayeeKey(), ...over };
 }
 
 function scheduleRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -173,6 +173,7 @@ function happyState(over: Partial<MirrorState> = {}): MirrorState {
 async function railFor(state: MirrorState, over: Partial<HeldRailOptions> = {}): Promise<{ rail: HeldRail }> {
   const mirror = mirrorBox(state);
   const rail = await createHederaHeldRail({
+    hubKey,
     mirror,
     now: () => NOW,
     waitScheduleMs: 0,
