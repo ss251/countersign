@@ -17,6 +17,8 @@ export type RelayConfig = {
   relayUrl: string;
   ceiling: SpendCeilingConfig;
   policy: RelayerPolicy;
+  /** The bearer token the hub uses on /escrow/fail. Optional; absent means that route is off. */
+  hubToken?: string;
 };
 
 export type MerchantConfig = {
@@ -49,7 +51,19 @@ export function loadRelayConfig(env: Env): RelayConfig {
   const allowedTokens: Address[] = [USDT.address];
   const escrowRaw = env.RELAY_ESCROW?.trim();
   if (escrowRaw && !isAddress(escrowRaw)) throw new Error("RELAY_ESCROW must be an address");
-  const allowedEscrows: Address[] = [escrowRaw ? getAddress(escrowRaw) : WHITECHAIN_ESCROW];
+  const escrowV1 = escrowRaw ? getAddress(escrowRaw) : WHITECHAIN_ESCROW;
+  const allowedEscrows: Address[] = [escrowV1];
+  const escrowV2Raw = env.WC_ESCROW_V2?.trim();
+  let escrowV2: Address | undefined;
+  if (escrowV2Raw) {
+    if (!isAddress(escrowV2Raw)) throw new Error("WC_ESCROW_V2 must be an address");
+    escrowV2 = getAddress(escrowV2Raw);
+    allowedEscrows.push(escrowV2);
+  }
+  const hubToken = env.RELAY_HUB_TOKEN?.trim() || undefined;
+  if (hubToken !== undefined && hubToken.length < 24) {
+    throw new Error("RELAY_HUB_TOKEN must be at least 24 characters");
+  }
   const allowedPayees = addressListEnv(env, "RELAY_PAYEES", [DEFAULT_PAYEE]);
   return {
     relayerPrivateKey,
@@ -70,9 +84,11 @@ export function loadRelayConfig(env: Env): RelayConfig {
       receiptTimeoutMs: 60_000,
       allowedTokens,
       allowedEscrows,
+      ...(escrowV2 ? { escrowV2 } : {}),
       allowedPayees,
       minAmount: bigintEnv(env, "RELAY_MIN_AMOUNT", 10_000n),
     },
+    ...(hubToken ? { hubToken } : {}),
   };
 }
 

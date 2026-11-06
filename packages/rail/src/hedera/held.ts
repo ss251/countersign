@@ -288,9 +288,8 @@ export async function createHederaHeldRail(opts: HeldRailOptions): Promise<HeldR
         payer: hold.payer,
         transaction: hold.createTxId,
         network: HEDERA_TESTNET,
+        explorerRef: record.consensusTimestamp,
       };
-      // The link opens the execution, not the create; the enumeration stays as it was.
-      Object.defineProperty(settled, "explorerRef", { value: record.consensusTimestamp, enumerable: false });
       return settled;
     },
 

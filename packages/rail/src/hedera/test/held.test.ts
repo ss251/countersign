@@ -487,6 +487,7 @@ describe("release", () => {
       payer: PAYER,
       transaction: CREATE_TX,
       network: HEDERA_TESTNET,
+      explorerRef: `${NOW + 5}.000000000`,
     });
     expect(submitted).toHaveLength(1);
     expect(submitted[0]!.scheduleId?.toString()).toBe(SCHEDULE_ID);

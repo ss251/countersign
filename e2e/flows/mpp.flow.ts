@@ -20,7 +20,7 @@ import { units, type Wallet } from "../lib/budget.ts";
 import { TEMPO } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { freePort, sleep } from "../lib/http.ts";
-import { ROOT } from "../lib/paths.ts";
+import { mppxBin, ROOT } from "../lib/paths.ts";
 import { runCmd, spawnProc } from "../lib/procs.ts";
 
 const PAYER: Address = (process.env.E2E_MPP_PAYER ?? "0xEacEb7fD58157a39b6d4aF7A7Ca7A3AEba37486C") as Address;
@@ -28,7 +28,6 @@ const PAYER_NAME = "countersign-payer";
 /** The project's MPP recipient; public, also the MPP_RECIPIENT line of the MPP env file. */
 const RECIPIENT: Address = (process.env.E2E_MPP_RECIPIENT ?? "0xBfa03aCe72e48490C020Ab7CEe4beba2858f7231") as Address;
 const PRICE = 10_000n; // 0.01 pathUSD
-const MPPX = join(ROOT, "packages/rail/node_modules/.bin/mppx");
 
 const tempo = createPublicClient({
   chain: defineChain({ id: TEMPO.chainId, name: "Tempo Moderato", nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 }, rpcUrls: { default: { http: [TEMPO.rpc] } } }),
@@ -93,7 +92,7 @@ function mppx(ctx: FlowCtx, label: string, args: string[]) {
   return runCmd(
     {
       name: `mppx ${label}`,
-      cmd: [MPPX, ...args, "--account", PAYER_NAME, "--network", "testnet", "--rpc-url", TEMPO.rpc],
+      cmd: [mppxBin(), ...args, "--account", PAYER_NAME, "--network", "testnet", "--rpc-url", TEMPO.rpc],
       // Only PATH and HOME (mppx's account store) reach the child: no Stripe or mppx variables.
       env: { PATH: safePath(ctx) },
       log: join(ctx.dir, `mppx-${label}.log`),
@@ -109,7 +108,7 @@ function mppx(ctx: FlowCtx, label: string, args: string[]) {
  * log. Only its exit code and a masked line go to the flow's artifacts.
  */
 async function signCredential(ctx: FlowCtx, challenge: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn([MPPX, "sign", "--challenge", challenge, "--format", "json", "--account", PAYER_NAME, "--network", "testnet", "--rpc-url", TEMPO.rpc], {
+  const child = Bun.spawn([mppxBin(), "sign", "--challenge", challenge, "--format", "json", "--account", PAYER_NAME, "--network", "testnet", "--rpc-url", TEMPO.rpc], {
     cwd: ROOT,
     env: { PATH: safePath(ctx), HOME: process.env.HOME ?? "/tmp", NO_COLOR: "1" },
     stdin: "ignore",

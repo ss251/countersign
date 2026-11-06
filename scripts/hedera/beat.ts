@@ -1,7 +1,7 @@
 // The recorded Hedera beat, end to end: the agent finds the offer, the envelope approves, the
 // agent countersigns, the facilitator settles, the spend and the capped refusal land on HCS, and
 // the run reconciles against the chain. Every line is a fact read back from the network.
-//   bun scripts/hedera/beat.ts [--hub <url>] [--json]
+//   bun scripts/hedera/beat.ts [--hub <url>] [--input <json>] [--json]
 import {
   checkEnvelope,
   formatUnits,
@@ -54,10 +54,17 @@ function fail(message: string): never {
 const args = process.argv.slice(2);
 let hubFlag: string | null = null;
 let json = false;
+let input: unknown = {};
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
   if (arg === "--hub") hubFlag = args[++i] ?? fail("--hub needs a url");
-  else if (arg === "--json") json = true;
+  else if (arg === "--input") {
+    try {
+      input = JSON.parse(args[++i] ?? "");
+    } catch {
+      fail("--input must be JSON");
+    }
+  } else if (arg === "--json") json = true;
   else fail(`unknown argument ${arg}`);
 }
 
@@ -301,7 +308,7 @@ try {
     let facilitator: string | null = null;
 
     challengeFeePayer = null;
-    const first = await agent.buy(listing, {});
+    const first = await agent.buy(listing, input);
     if (first.kind === "paid") {
       spendSequence = first.logSequence;
       const feePayer =
@@ -347,7 +354,7 @@ try {
 
     // The second call is the point of the cap: it must be refused and logged, never signed.
     challengeFeePayer = null;
-    const second = await agent.buy(listing, {});
+    const second = await agent.buy(listing, input);
     let refusalSequence: number | undefined;
     if (second.kind === "refused") {
       refusalSequence = second.logSequence;

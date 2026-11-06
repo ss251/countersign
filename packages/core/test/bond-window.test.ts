@@ -3,7 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { assertOffer, OfferError } from "../src/index.ts";
 
 const MESSAGE =
-  "offer.bond above zero needs offer.reviewWindow above zero: a bond protects a buyer who can refuse a delivery";
+  "offer.bond above zero needs offer.reviewWindow of at least 60 seconds: a bond protects a buyer who can refuse a delivery";
 
 const seller = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 
@@ -32,6 +32,10 @@ describe("a bond implies a review window", () => {
 
   test("bond 1 with window 0 throws", () => {
     expect(() => assertOffer(offer({ reviewWindow: 0 }))).toThrow(new OfferError(MESSAGE));
+  });
+
+  test("bond 1 with window 59 throws", () => {
+    expect(() => assertOffer(offer({ reviewWindow: 59 }))).toThrow(new OfferError(MESSAGE));
   });
 
   test("bond 1 with window 60 passes", () => {
