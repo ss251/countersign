@@ -176,9 +176,14 @@ describe("STEER-2225 wallet hygiene", () => {
     expect(authorizationTypedData(other).message.nonce).not.toBe(typed.message.nonce);
   });
 
-  test("5. the wallet opens only where the hub settles: one typed-data signature, in the purchase hook's confirm()", () => {
+  // The only places a wallet may sign, each where its signature settles (STEER-2225 point 5): the buyer's
+  // purchase through the hub, and the merchant's refund through our relay (captain's ruling on cs-phone's W2).
+  const SIGNING_SITES = ["lib/purchase.ts", "routes/merchant/WalletRefund.tsx", "routes/merchant/wallet-refund.ts"];
+
+  test("5. the wallet opens only where its signature settles: the purchase's confirm() and the merchant's refund", () => {
     const signers = sources.filter((s) => /signTypedData/.test(s.text)).map((s) => s.file);
-    expect(signers).toEqual(["lib/purchase.ts"]);
+    for (const file of signers) expect({ file, allowed: SIGNING_SITES.includes(file) }).toEqual({ file, allowed: true });
+    expect(signers).toContain("lib/purchase.ts");
     const purchase = sources.find((s) => s.file === "lib/purchase.ts")!.text;
     expect(purchase.match(/signTypedDataAsync\(/g)).toHaveLength(1);
     const confirm = purchase.slice(purchase.indexOf("const confirm = async"), purchase.indexOf("const cancel = "));
@@ -186,5 +191,19 @@ describe("STEER-2225 wallet hygiene", () => {
     // buy() only asks the hub and checks its terms; it never opens the wallet.
     const buy = purchase.slice(purchase.indexOf("const buy = async"), purchase.indexOf("const confirm = async"));
     expect(buy).not.toMatch(/signTypedData/);
+  });
+
+  test("5. the merchant's refund signs once, inside sendWalletRefund, after the relay's refusals are checked", () => {
+    const logic = sources.find((s) => s.file === "routes/merchant/wallet-refund.ts");
+    const ui = sources.find((s) => s.file === "routes/merchant/WalletRefund.tsx");
+    // Before cs-phone's phone-06 lands neither file exists, and nothing else may sign (the test above).
+    if (!logic || !ui) return;
+    expect(logic.text.match(/\.signTypedData\(/g)).toHaveLength(1);
+    const send = logic.text.slice(logic.text.indexOf("export async function sendWalletRefund"));
+    expect(send).toContain("input.signTypedData(");
+    expect(logic.text).toContain("export function walletRefusal(");
+    // The hook's signer is handed only to sendWalletRefund; the component never signs on its own.
+    expect(ui.text.match(/signTypedDataAsync\(/g)).toHaveLength(1);
+    expect(ui.text).toContain("sendWalletRefund({");
   });
 });
