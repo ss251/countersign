@@ -319,3 +319,65 @@ describe("whitechainPaywall settle retry", () => {
     });
   });
 });
+
+describe("whitechainPaywall concurrent token retries", () => {
+  test("a late pending reply cannot re-open a claim that a concurrent retry already settled and served", async () => {
+    const relay = createTestRelay();
+    let releaseLate!: () => void;
+    const late = new Promise<void>((resolve) => {
+      releaseLate = resolve;
+    });
+    let settleCall = 0;
+    const lookups: string[] = [];
+    const fetch: PaywallFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.startsWith("/orders/")) {
+        lookups.push(url.pathname);
+        return json({ status: "paid" });
+      }
+      if (url.pathname === "/verify") {
+        return json({ isValid: true, payer: "0x0000000000000000000000000000000000000001" });
+      }
+      settleCall += 1;
+      // The first request loses both of its settle replies.
+      if (settleCall <= 2) throw new Error("connection refused");
+      // Retry B asks first; its reply arrives only after retry A has been served.
+      if (settleCall === 3) {
+        await late;
+        return json({ success: false, errorReason: "settlement_pending", transaction: "0xlate", network: NETWORK });
+      }
+      // Retry A settles at once.
+      return json(SUCCESS);
+    };
+    let served = 0;
+    const app = appFor(relay, { fetch, settleRetryDelayMs: 0, now: () => NOW }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
+
+    const first = await call();
+    expect(first.status).toBe(402);
+    const token = retryTokenOf(first);
+    const servedBefore = served;
+
+    const retryB = call(token);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const retryA = await call(token);
+    expect(retryA.status).toBe(200);
+    releaseLate();
+    expect((await retryB).status).toBe(409);
+
+    const third = await call(token);
+    expect(third.status).toBe(409);
+    expect(served - servedBefore).toBe(1);
+    expect(lookups).toEqual([]);
+  });
+});

@@ -218,7 +218,12 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
           return withSettle(c, settle);
         }
         if (settle && settle.errorReason === "settlement_pending" && settle.transaction) {
-          pendingClaim(claim.key, existing.validBefore, settle.transaction, retryToken);
+          // A concurrent retry may have settled and served this claim while our reply was in
+          // flight; re-pending it then would let a later retry be served a second time.
+          const current = claims.get(claim.key);
+          if (current && current.state === "pending") {
+            pendingClaim(claim.key, current.validBefore, settle.transaction, retryToken);
+          }
         }
         return stillSettling(c);
       }
