@@ -109,7 +109,7 @@ export default function StartPage(_props: PageProps) {
                   data-testid="start-countersign"
                   variant="primary"
                   disabled={!onArc || phase !== "idle"}
-                  onClick={() => void buy(listing.hash, { question: QUESTION })}
+                  onClick={() => void buy(listing, { question: QUESTION })}
                 >
                   {phase === "signing" ? "Signing" : phase === "sending" ? "Sending to the hub" : "Countersign and buy"}
                 </Button>

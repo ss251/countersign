@@ -26,9 +26,10 @@ import { keccak256, toBytes, type Hex } from "viem";
 import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, firstLine, resourceFor } from "./discovery.ts";
+import { owns, personFrom, type PrivyVerifier } from "./privy.ts";
 import type { HubRouter } from "./route.ts";
 import type { RunnerLink } from "./runners.ts";
-import type { Fault, Store } from "./store.ts";
+import type { Fault, StoredOffer, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
@@ -43,6 +44,8 @@ export interface CallDeps {
   jobTimeoutMs?: number;
   /** Sepolia ENS lookups. A named offer is served only while its name still locks its payees. */
   ens?: EnsResolve;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
 }
 
 export interface CallOutcome {
@@ -63,9 +66,19 @@ export async function paidCall(
   if (!stored || stored.delistedAt !== null) {
     return failure(404, "unknown-offer", "Refused. That offer is not listed.");
   }
+  const privyCheck = await personFrom(headers, deps.privy);
+  if (privyCheck.kind === "refused") return failure(privyCheck.status, privyCheck.code, privyCheck.message);
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
+
+  if (lineageCycle(deps.store, stored, hexList(call.lineage))) {
+    return failure(
+      409,
+      "lineage-cycle",
+      "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged.",
+    );
+  }
 
   // A name checked at listing can be re-pointed later. Check it again before any 402 or payment,
   // so the hub never takes money for a named offer whose name no longer locks its payees.
@@ -197,6 +210,18 @@ export async function paidCall(
   const nonce = authorizationNonce(payment.payload);
   if (nonce !== null && deps.store.getJob(nonce) !== null) {
     return duplicatePayment(railId);
+  }
+
+  if (
+    privyCheck.kind === "person" &&
+    !(/^0x[0-9a-fA-F]{40}$/.test(verify.payer ?? "") && owns(privyCheck.person, verify.payer))
+  ) {
+    return failure(
+      403,
+      "not-your-wallet",
+      "Refused. This payment is not from one of your wallets. Nothing was charged.",
+      railId,
+    );
   }
 
   const payer = verify.payer ?? "";
@@ -375,6 +400,18 @@ export async function paidCall(
     headers: { [PAYMENT_RESPONSE_HEADER]: toBase64Json(closing) },
     railId,
   };
+}
+
+/** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
+export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
+  for (const jobId of lineage) {
+    const ancestor = store.getJob(jobId);
+    if (ancestor === null) continue;
+    if (ancestor.offerHash.toLowerCase() === target.offerHash.toLowerCase()) return true;
+    const bought = store.getOffer(ancestor.offerHash);
+    if (bought !== null && sameText(bought.seller, target.seller)) return true;
+  }
+  return false;
 }
 
 /** The review a v2 escrow opens at delivery, stored on the slip outside the committed hash (D12). */

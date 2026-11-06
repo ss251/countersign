@@ -523,7 +523,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
             label="Hold to countersign with your wallet"
             holdingLabel="Keep holding"
             doneLabel="Your wallet takes it from here"
-            onSigned={() => void purchase.buy(listing.hash, exampleInput(offer.input))}
+            onSigned={() => void purchase.buy(listing, exampleInput(offer.input))}
           />
           <p className="pcard__input">
             Input <span className="mono">{JSON.stringify(input)}</span>

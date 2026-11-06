@@ -39,10 +39,11 @@ export function PurchaseResult({
 
       {outcome?.kind === "paid" ? (
         <div className="purchase__paid" role="status">
-          <p className="purchase__text">The escrow holds your payment until the output checks out.</p>
-          <div data-testid={`${testIdPrefix}-fund-result`}>
+          <p className="purchase__text">The output checked out, and the escrow released your payment to the seller.</p>
+          {/* On escrow rails the hub answers 200 only after the release, and PAYMENT-RESPONSE carries that release. */}
+          <div data-testid={`${testIdPrefix}-fund-result`} data-value={outcome.transaction ?? ""} data-kind="release">
             {outcome.transaction ? (
-              <Hash value={outcome.transaction} href={`${ARCSCAN_TX}${outcome.transaction}`} tx label="transaction" />
+              <Hash value={outcome.transaction} href={`${ARCSCAN_TX}${outcome.transaction}`} tx label="release transaction" />
             ) : (
               <span className="purchase__text">The hub did not name a transaction.</span>
             )}
@@ -58,7 +59,7 @@ export function PurchaseResult({
         </div>
       ) : outcome?.kind === "refused" ? (
         <div className="purchase__refused" role="alert">
-          <p className="purchase__text">The hub refused, and nothing moved:</p>
+          {outcome.nothingMoved ? <p className="purchase__text">The hub refused, and nothing moved:</p> : null}
           <p className="purchase__message" data-testid={`${testIdPrefix}-refusal`}>
             {outcome.message}
           </p>

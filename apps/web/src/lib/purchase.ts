@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   authorizationTypedData,
+  offerHash as hashOf,
   countersignPayload,
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -19,7 +20,7 @@ import { getAddress } from "viem";
 import { useAccount, useSignTypedData } from "wagmi";
 import { ARC_CHAIN_ID, ARC_PIN } from "./arc-pin.ts";
 import { hubBase } from "./hub.ts";
-import type { Address, Hex } from "./types.ts";
+import type { Address, Hex, Listing } from "./types.ts";
 
 /**
  * The real purchase path, shared by the start desk and the assistant's card: the hub's
@@ -31,7 +32,13 @@ export type TrustedRequirement =
   | { ok: false; message: string };
 
 /** The Arc countersign terms this page will sign, or the sentence saying why it will not. */
-export function trustedRequirement(accepts: PaymentRequirements[]): TrustedRequirement {
+/**
+ * The Arc countersign terms this page will sign, or the sentence saying why it will not. It signs only
+ * the offer it shows, as the buyer agent's checkTerms does (packages/buyer/src/terms.ts): the listing's
+ * own hash, its price, its deadline and its payee, on the pinned escrow. A hub chosen by a link can
+ * name any terms in its 402, so none of them is taken on trust (cs-w1's B24).
+ */
+export function trustedRequirement(accepts: PaymentRequirements[], listing: Listing): TrustedRequirement {
   const req = accepts.find((r) => r.scheme === "countersign" && r.network === "eip155:5042002");
   if (!req) return { ok: false, message: "This hub offered no Arc countersign terms for this offer." };
   const extra = req.extra;
@@ -42,7 +49,28 @@ export function trustedRequirement(accepts: PaymentRequirements[]): TrustedRequi
       message: "The hub's terms name an escrow this page does not trust, so nothing was signed.",
     };
   }
+  const offer = listing.offer;
+  const terms = isRecord(extra) ? extra : {};
+  if (!sameHex(listing.hash, hashOf(offer))) {
+    return { ok: false, message: "This listing's hash is not its offer's, so nothing was signed." };
+  }
+  if (typeof terms.offerHash !== "string" || !sameHex(terms.offerHash, listing.hash)) {
+    return { ok: false, message: "The hub's terms are for another offer than the one shown, so nothing was signed." };
+  }
+  if (typeof req.payTo !== "string" || !sameAddress(req.payTo, offer.payTo?.escrow ?? offer.seller)) {
+    return { ok: false, message: "The hub's terms pay someone other than this offer's seller, so nothing was signed." };
+  }
+  if (req.amount !== offer.price) {
+    return { ok: false, message: "The hub asked for another amount than this offer's price, so nothing was signed." };
+  }
+  if (terms.deadlineSeconds !== offer.deadline) {
+    return { ok: false, message: "The hub's deadline is not this offer's, so nothing was signed." };
+  }
   return { ok: true, req };
+}
+
+function sameHex(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 /** The authorization the wallet signs, built from the pin and the hub's own terms. */
@@ -80,7 +108,8 @@ export type PurchasePhase = "idle" | "signing" | "sending";
 
 export type PurchaseOutcome =
   | { kind: "paid"; transaction: string | null; slipHash: Hex | null }
-  | { kind: "refused"; message: string; faucet: boolean };
+  /** nothingMoved: the refusal came before any payment, or the hub says nothing was charged. */
+  | { kind: "refused"; message: string; faucet: boolean; nothingMoved: boolean };
 
 /** One purchase, from the first 402 to the hub's final answer. */
 export function usePurchase(): {
@@ -88,7 +117,7 @@ export function usePurchase(): {
   signature: Hex | null;
   outcome: PurchaseOutcome | null;
   note: string | null;
-  buy: (offerHash: string, input: unknown) => Promise<void>;
+  buy: (listing: Listing, input: unknown) => Promise<void>;
   reset: () => void;
 } {
   const account = useAccount();
@@ -98,7 +127,8 @@ export function usePurchase(): {
   const [outcome, setOutcome] = useState<PurchaseOutcome | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  const buy = async (offerHash: string, input: unknown) => {
+  const buy = async (listing: Listing, input: unknown) => {
+    const offerHash = listing.hash;
     if (!offerHash || !account.address || account.chainId !== ARC_CHAIN_ID || phase !== "idle") return;
     const base = hubBase();
     setPhase("signing");
@@ -120,16 +150,16 @@ export function usePurchase(): {
           return;
         }
         const message = refusalMessage(firstBody, `The hub answered ${first.status}.`);
-        setOutcome({ kind: "refused", message, faucet: needsFaucet(message, first.status) });
+        setOutcome({ kind: "refused", message, faucet: needsFaucet(message), nothingMoved: true });
         return;
       }
       const required = paymentRequiredOf(firstBody, first);
       if (!required) {
-        setOutcome({ kind: "refused", message: "The hub's 402 carried no payment terms.", faucet: false });
+        setOutcome({ kind: "refused", message: "The hub's 402 carried no payment terms.", faucet: false, nothingMoved: true });
         return;
       }
 
-      const choice = trustedRequirement(required.accepts);
+      const choice = trustedRequirement(required.accepts, listing);
       if (!choice.ok) {
         setNote(choice.message);
         return;
@@ -173,7 +203,7 @@ export function usePurchase(): {
         const settle = settleHeader ? settleOf(settleHeader) : null;
         if (settle && settle.success === false) {
           const message = settle.errorReason ?? "The hub's settle result did not say the payment succeeded.";
-          setOutcome({ kind: "refused", message, faucet: needsFaucet(message, second.status) });
+          setOutcome({ kind: "refused", message, faucet: needsFaucet(message), nothingMoved: chargedNothing(message) });
           return;
         }
         setOutcome({
@@ -184,8 +214,10 @@ export function usePurchase(): {
         return;
       }
 
+      // After the signed call the money may already be in escrow (a failed delivery, a release that did
+      // not land, a fund that lands after the hub stopped waiting), so "nothing moved" needs the hub's word.
       const message = refusalMessage(secondBody, `The hub answered ${second.status}.`);
-      setOutcome({ kind: "refused", message, faucet: needsFaucet(message, second.status) });
+      setOutcome({ kind: "refused", message, faucet: needsFaucet(message), nothingMoved: chargedNothing(message) });
     } catch {
       setNote("The hub did not answer, so nothing here can say what happened.");
     } finally {
@@ -284,9 +316,13 @@ function refusalMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function needsFaucet(message: string, status: number): boolean {
-  if (status === 402) return true;
+/** The faucet helps only when the wallet is short of test USDC, never on every 402. */
+function needsFaucet(message: string): boolean {
   return /balance|funds|allowance|insufficient/i.test(message);
+}
+
+function chargedNothing(message: string): boolean {
+  return /nothing was charged/i.test(message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
