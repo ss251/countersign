@@ -47,6 +47,22 @@ export async function dialogVisible(page: Page, timeoutMs: number): Promise<bool
     .catch(() => false);
 }
 
+/**
+ * Wait until Privy's content is gone. Its dialog wrapper can be zero-size, so a hidden role is
+ * not proof that the content left the screen.
+ */
+export async function waitForModalClosed(page: Page, timeoutMs: number): Promise<void> {
+  const content = page.locator("#privy-modal-content");
+  const prompt = page.getByText(/enter confirmation code|log in or sign up/i);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!(await anyVisible(content)) && !(await anyVisible(prompt))) return;
+    if (Date.now() >= deadline) break;
+    await pageWait(250);
+  }
+  throw new Error(`Privy's modal did not close within ${timeoutMs / 1000} s`);
+}
+
 export const PRIVY_SECOND_CLICK_NOTE =
   "Privy needed a second click: the first came before it was ready (UX gap, cs-ui)";
 
@@ -150,6 +166,7 @@ const SIGN_CLICK_LIMIT = 3;
 const PROMPT_POLL_MS = 250;
 const PROMPT_OUTCOME_MS = 15_000;
 const SIGN_RETRY_MS = 2_000;
+const SIGN_CLICK_MS = 5_000;
 
 export const PRIVY_SIGN_FAILURE =
   'Privy could not sign: "An error has occurred, please try again" after 3 tries';
@@ -162,6 +179,10 @@ async function visible(locator: Locator): Promise<boolean> {
   return locator.isVisible().catch(() => false);
 }
 
+async function enabled(locator: Locator): Promise<boolean> {
+  return locator.isEnabled().catch(() => false);
+}
+
 async function anyVisible(locator: Locator): Promise<boolean> {
   const count = await locator.count();
   for (let i = 0; i < count; i++) {
@@ -170,14 +191,27 @@ async function anyVisible(locator: Locator): Promise<boolean> {
   return false;
 }
 
-async function visibleSignButton(page: Page): Promise<Locator | undefined> {
+/** Run 20261106-191537-56ca: a disabled sign button is Privy at work, not a prompt waiting for a person. */
+async function readySignButton(page: Page): Promise<Locator | undefined> {
   const buttons = page.getByRole("dialog").getByRole("button", { name: SIGN_BUTTON });
   const count = await buttons.count();
   for (let i = 0; i < count; i++) {
     const button = buttons.nth(i);
-    if (await visible(button)) return button;
+    if ((await visible(button)) && (await enabled(button))) return button;
   }
   return undefined;
+}
+
+/** Click only a ready button; a click that loses its prompt is treated as no prompt. */
+async function clickIfReady(button: Locator): Promise<boolean> {
+  if (!(await visible(button)) || !(await enabled(button))) return false;
+  try {
+    await button.click({ timeout: SIGN_CLICK_MS });
+    return true;
+  } catch (error) {
+    if (!(await visible(button)) || !(await enabled(button))) return false;
+    throw error;
+  }
 }
 
 type PromptOutcome = "closed" | "error" | "open";
@@ -203,11 +237,14 @@ export async function approveIfPrompted(page: Page, timeoutMs = 10_000): Promise
   const deadline = Date.now() + timeoutMs;
   const box = page.getByRole("dialog");
   while (Date.now() < deadline) {
-    const button = await visibleSignButton(page);
+    const button = await readySignButton(page);
     if (button) {
       let clicks = 0;
       for (;;) {
-        await button.click();
+        if (!(await clickIfReady(button))) {
+          if (clicks > 0) return clicks;
+          break;
+        }
         clicks += 1;
         const outcome = await waitForPromptOutcome(page, box, button);
         if (outcome !== "error") return clicks;
