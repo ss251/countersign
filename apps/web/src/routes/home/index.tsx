@@ -8,6 +8,7 @@ import { Wordmark } from "../../ui/Mark.tsx";
 import { ClearsStage } from "./Clears.tsx";
 import { EvidenceStage } from "./Evidence.tsx";
 import { newestRelease } from "./field.ts";
+import { LifecycleStage } from "./Lifecycle.tsx";
 import { useNarrow, useReducedMotion } from "./stage.ts";
 import "./home.css";
 import "./landing.css";
@@ -84,6 +85,8 @@ export default function Landing(_props: PageProps) {
         pinned={pinned}
         narrow={narrow}
       />
+
+      <LifecycleStage release={newestRelease(rows)} rails={hubRails} hubDown={missing !== undefined} pinned={pinned} narrow={narrow} />
 
       <Proof rails={hubRails} />
     </div>
