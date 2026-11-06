@@ -79,6 +79,7 @@ export async function resume(args: {
       amount: open.amount,
       network: open.network,
       rail: open.rail,
+      reservationId: open.reservationId,
       jobId,
     };
     let job;
@@ -106,13 +107,26 @@ export async function resume(args: {
       } catch {
         status = 0;
       }
-      if (status !== 3) {
+      // Refunded (3) and Failed (4) both leave the payment with the buyer.
+      if (status !== 3 && status !== 4) {
         out.push({ jobId, status: "hub says refunded; chain does not" });
         continue;
       }
       journal.append({ ...base, kind: "refunded", closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: "refunded", appended: "refunded" });
     } else if (job.status === "failed") {
+      const rail = railFor(open, known);
+      let status = 0;
+      try {
+        if (rail) status = await read(rail, jobId as Hex);
+      } catch {
+        status = 0;
+      }
+      // A Failed job pays the buyer the amount and the bond, so its budget is back too.
+      if (status !== 4 && status !== 3) {
+        out.push({ jobId, status: "hub says failed; chain does not" });
+        continue;
+      }
       journal.append({ ...base, kind: "failed", closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: job.status, appended: "failed" });
     } else {

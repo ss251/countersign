@@ -257,6 +257,41 @@ describe("resume refunds", () => {
     expect(f.journal.entries().at(-1)?.kind).toBe("refunded");
     expect(f.journal.spend().total).toBe("0");
   });
+
+  test("an on-chain failed job returns the budget like a refund", async () => {
+    const f = signedJournal();
+    const failedHub = {
+      job: async () => ({ jobId, offerHash, rail: "escrow", status: "failed", deadline: 0, closeTx: "0xcc" }),
+    } as unknown as HubClient;
+    const out = await resume({
+      hub: failedHub,
+      journal: f.journal,
+      state: f.state,
+      now: 2,
+      known: [RAIL],
+      readJobStatus: async () => 4,
+    });
+    expect(out[0]?.appended).toBe("failed");
+    expect(f.journal.entries().at(-1)?.kind).toBe("failed");
+    expect(f.journal.spend().total).toBe("0");
+  });
+
+  test("a hub failure without a chain failure appends nothing", async () => {
+    const f = signedJournal();
+    const failedHub = {
+      job: async () => ({ jobId, offerHash, rail: "escrow", status: "failed", deadline: 0, closeTx: "0xcc" }),
+    } as unknown as HubClient;
+    const out = await resume({
+      hub: failedHub,
+      journal: f.journal,
+      state: f.state,
+      now: 2,
+      known: [RAIL],
+      readJobStatus: async () => 2,
+    });
+    expect(out[0]?.status).toBe("hub says failed; chain does not");
+    expect(f.journal.spend().total).toBe(PRICE);
+  });
 });
 
 describe("journal lock", () => {
