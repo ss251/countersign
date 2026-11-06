@@ -173,6 +173,7 @@ export function PublishWizard() {
               className="sr-only"
               type="file"
               accept=".md,text/markdown"
+              tabIndex={-1}
               onChange={openFile}
             />
           </div>
@@ -196,7 +197,7 @@ export function PublishWizard() {
           <div className="seller-fields">
             <div className="field">
               <label className="field__label" htmlFor="price">
-                Price
+                Price <span className="sr-only">in {symbolFor(rails[0])}</span>
               </label>
               <div className="seller-input-suffix">
                 <input
@@ -223,7 +224,7 @@ export function PublishWizard() {
 
             <div className="field">
               <label className="field__label" htmlFor="deadline">
-                Deadline
+                Deadline <span className="sr-only">in seconds</span>
               </label>
               <div className="seller-input-suffix">
                 <input
