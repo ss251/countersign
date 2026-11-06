@@ -64,10 +64,12 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
 
   The merchant refunds from the order's row. It reads the terms, then signs once in its own wallet, and the relayer pays the gas.
 
-  **Refunded from the public screen, on production.** An AI agent bought the `whitechain-dev` offer through the production hub, with the buyer CLI on the `whitechain` rail and escrow v2. The merchant then refunded it in full from the public screen with one wallet signature, and the relayer paid the gas:
-  - fund [`0x5f78…87e5`](https://explorer.testnet.whitechain.io/tx/0x5f78d37fe28f642aec1548745772e64522748a8308fa502c420b98ceb9f787e5);
-  - release [`0x55f5…6a31`](https://explorer.testnet.whitechain.io/tx/0x55f569d40f9be0d2cbcc4de50fbaeac74c54cb2bf6d8700ecfea723f40e06a31);
-  - refund [`0xe414…3b62`](https://explorer.testnet.whitechain.io/tx/0xe414f5314d2792b463e4fa4ab7feddb753b6a8bdecebf4abcc3406414ac13b62).
+  **Refunded from the public screen, on production.** An AI agent signed in with the published CLI (`npx -y @countersign-hub/cli@0.1.1 login`), holding USDT and no WBT. It bought the `whitechain-dev` offer through the production hub on the `whitechain` rail, into escrow v2, and the slip verifies `VALID` with `--rpc`. The merchant then refunded that order in full from the public screen with one wallet signature, and the relayer paid the gas:
+  - fund [`0xdc9e…e00b`](https://explorer.testnet.whitechain.io/tx/0xdc9e6c3be640b6cfbe9be23460dc18d81e8bd253c22798c34ac5e7c82f9fe00b);
+  - release [`0x8e49…c615`](https://explorer.testnet.whitechain.io/tx/0x8e497c737aedb2e15139b6ef4d0717226b06294914da34bd56b70368e1e4c615);
+  - refund [`0xe554…2956`](https://explorer.testnet.whitechain.io/tx/0xe55477a5615af49d5653a754062183439aaf7c405e1a8d3d17de3da6d3af2956).
+
+  The order's row in `orders.csv` reads refunded, with all three transactions.
 
   A purchase through the public checkout, paid from the npm package, also settled: [`0x112a…4e5b`](https://explorer.testnet.whitechain.io/tx/0x112a574797aa3df30969a8578e8e4c44fb0bae1226495a14ed795d356c874e5b). Checkout orders like it are in the relay's `orders.csv`, but they are not on the screen yet, so they have no one-click refund there.
 - **The accountant's export.** The production relay serves [`orders.csv`](https://whitechain-relay-production.up.railway.app/orders.csv?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c). It has one row per order, with the amount, fee, refunded and net amounts, and links to each transaction. The e2e `merchant` flow checks the totals, a partial refund and the export against the chain.
