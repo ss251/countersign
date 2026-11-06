@@ -1,3 +1,4 @@
+
 *,
 *::before,
 *::after {
@@ -50,9 +51,22 @@ ul {
 h1,
 h2,
 h3 {
+  font-family: var(--display);
   font-weight: 600;
   letter-spacing: -0.01em;
   text-wrap: balance;
+}
+
+/* The house face on everything you read at a glance: buttons, nav, labels and counters. */
+button,
+.btn,
+.display,
+.label,
+.status,
+.tag,
+.rail-tag,
+.amount {
+  font-family: var(--display);
 }
 
 p {
@@ -107,7 +121,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--usdc);
   outline-offset: 2px;
 }
 

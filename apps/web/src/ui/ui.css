@@ -286,8 +286,8 @@ a.hash__value.is-tx {
 }
 
 .btn--primary {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--usdc-fill);
+  color: var(--on-usdc);
 }
 
 .btn--secondary {
@@ -310,7 +310,7 @@ a.hash__value.is-tx {
 
 @media (hover: hover) and (pointer: fine) {
   .btn--primary:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--ink) 88%, var(--paper));
+    background: color-mix(in oklab, var(--usdc-fill) 86%, var(--ink));
   }
   .btn--secondary:hover:not(:disabled) {
     box-shadow: var(--elev-1-hover);
