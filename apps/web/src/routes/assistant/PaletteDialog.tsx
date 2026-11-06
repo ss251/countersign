@@ -12,19 +12,13 @@ import { Assistant } from "./Assistant.tsx";
 export function PaletteDialog({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const envelope = useResource(() => api.envelope(), []);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
 
+  // Open once; never close from a cleanup. React runs effects twice in development, and a close()
+  // there fired a late "close" event that unmounted the dialog the moment it appeared. Unmounting
+  // removes it from the top layer anyway.
   useEffect(() => {
     const d = ref.current;
-    if (!d) return;
-    if (!d.open) d.showModal();
-    const closed = () => closeRef.current();
-    d.addEventListener("close", closed);
-    return () => {
-      d.removeEventListener("close", closed);
-      if (d.open) d.close();
-    };
+    if (d && !d.open) d.showModal();
   }, []);
 
   return (
@@ -32,6 +26,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
       ref={ref}
       className="palette-dialog"
       aria-label="Find a paid tool"
+      onClose={onClose}
       onClick={(e) => {
         if (e.target === ref.current) ref.current?.close();
       }}
