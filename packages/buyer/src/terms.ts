@@ -38,6 +38,10 @@ export function checkTerms(offer: Offer, offerHash: Hex, entry: PaymentRequireme
   if (extra.offerHash.toLowerCase() !== offerHash.toLowerCase()) {
     return { ok: false, message: "Refused. The payment terms name a different offer." };
   }
+  const bond = entry.extra?.bond;
+  if (bond !== undefined && bond !== offer.bond) {
+    return { ok: false, message: "Refused. The hub's bond differs from the offer's." };
+  }
   const expectedPayTo = offer.payTo?.[extra.rail] ?? offer.seller;
   if (!sameAddress(entry.payTo, expectedPayTo)) {
     return { ok: false, message: WRONG_PAYEE };

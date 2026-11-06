@@ -78,10 +78,11 @@ interface Tamper {
   amount?: string;
   offerHash?: Hex;
   deadlineSeconds?: number;
+  bond?: string;
 }
 
 function accept(rail: KnownRail, tamper: Tamper = {}): PaymentRequirements {
-  const extra: CountersignExtra = {
+  const extra: CountersignExtra & { bond: string } = {
     rail: "escrow",
     escrow: tamper.escrow ?? rail.escrow,
     chainId: rail.chainId,
@@ -89,6 +90,7 @@ function accept(rail: KnownRail, tamper: Tamper = {}): PaymentRequirements {
     deadlineSeconds: tamper.deadlineSeconds ?? offer.deadline,
     tokenName: rail.tokenName,
     tokenVersion: rail.tokenVersion,
+    bond: tamper.bond ?? offer.bond,
   };
   return {
     scheme: "countersign",
@@ -177,6 +179,15 @@ describe("terms and pinned rails", () => {
     await expect(buyOnce(f, { hub })).rejects.toThrow("Refused. This rail is not one this agent knows.");
     expect(signed()).toBe(0);
     expect(f.journal.entries().map((e) => e.kind)).toEqual(["refused"]);
+  });
+
+  test("a hub bond that differs from the offer's is refused before signing", async () => {
+    const f = fresh();
+    const { hub, signed } = fakeHub(RAIL, [accept(RAIL, { bond: "1" })]);
+    await expect(buyOnce(f, { hub })).rejects.toThrow("Refused. The hub's bond differs from the offer's.");
+    expect(signed()).toBe(0);
+    expect(f.journal.entries().map((e) => e.kind)).toEqual(["refused"]);
+    expect(f.journal.entries()[0]?.reason).toBe("terms");
   });
 
   test("a known rail from rails.json is accepted", async () => {
