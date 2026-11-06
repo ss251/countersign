@@ -39,13 +39,18 @@ export function assertOffer(value: unknown): asserts value is Offer {
   ) {
     fail("offer.reviewWindow must be 0 to 86400 seconds");
   }
-  if (parseAtomic(o!.bond as string) > 0n && (o!.reviewWindow ?? 0) === 0) {
+  if (parseAtomic(o!.bond as string) > 0n && (o!.reviewWindow ?? 0) < 60) {
     fail(
-      "offer.bond above zero needs offer.reviewWindow above zero: a bond protects a buyer who can refuse a delivery",
+      "offer.bond above zero needs offer.reviewWindow of at least 60 seconds: a bond protects a buyer who can refuse a delivery",
     );
   }
   if (!Number.isSafeInteger(o!.deadline) || o!.deadline! < 10 || o!.deadline! > 7 * 24 * 3600) {
     fail("offer.deadline must be 10 s to 7 days");
+  }
+  if (parseAtomic(o!.bond as string) > 0n && o!.deadline! < 60) {
+    fail(
+      "offer.bond above zero needs offer.deadline of at least 60 seconds: setTerms refuses a bonded minDuration under 60",
+    );
   }
   if (!Array.isArray(o!.rails) || o!.rails.length === 0 || !o!.rails.every((r) => RAIL_IDS.includes(r))) {
     fail("offer.rails must list known rails");

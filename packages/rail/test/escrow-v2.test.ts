@@ -184,6 +184,7 @@ const referenceFundAbi = [
           { name: "s", type: "bytes32" },
         ],
       },
+      { name: "lockSig", type: "bytes" },
     ],
     outputs: [{ name: "jobId", type: "bytes32" }],
   },
@@ -222,7 +223,7 @@ describe("escrow v2 rail", () => {
     const call = writes[0]!;
     expect(call.functionName).toBe("fund");
     expect(call.abi).toBe(escrowV2Abi);
-    expect(call.args).toEqual(fundArgsV2(payload.terms.offerHash, payload));
+    expect(call.args).toEqual([...fundArgsV2(payload.terms.offerHash, payload), "0x"]);
 
     const reference = encodeFunctionData({
       abi: referenceFundAbi,
@@ -240,7 +241,7 @@ describe("escrow v2 rail", () => {
     const sig = `0x${"34".repeat(65)}` as Hex;
 
     expect((await rail.escrow!.accept!(jobId, sig)).success).toBe(true);
-    expect((await rail.escrow!.dispute!(jobId, sig)).success).toBe(true);
+    expect((await rail.escrow!.dispute!(jobId, 5, sig)).success).toBe(true);
     expect((await rail.escrow!.releaseAfterWindow!(jobId)).success).toBe(true);
     expect((await rail.escrow!.sweepToll!()).success).toBe(true);
     expect(await rail.escrow!.reviewOf!(jobId)).toEqual({ window: 300, deliveredAt: 1_000, endsAt: 1_300 });

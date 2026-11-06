@@ -47,7 +47,7 @@ const WINDOW_TX: Hex = `0x${"e3".repeat(32)}`;
 
 class V2Rail extends FakeRail {
   readonly acceptCalls: Array<{ jobId: Hex; buyerSig: Hex }> = [];
-  readonly disputeCalls: Array<{ jobId: Hex; buyerSig: Hex }> = [];
+  readonly disputeCalls: Array<{ jobId: Hex; status: number; buyerSig: Hex }> = [];
   readonly windowCalls: Hex[] = [];
   readonly reviewCalls: Hex[] = [];
   readonly failDeliveryCalls: Hex[] = [];
@@ -65,8 +65,8 @@ class V2Rail extends FakeRail {
       this.acceptCalls.push({ jobId, buyerSig });
       return this.outcome(this.failAccept, ACCEPT_TX);
     };
-    escrow.dispute = async (jobId, buyerSig) => {
-      this.disputeCalls.push({ jobId, buyerSig });
+    escrow.dispute = async (jobId, status, buyerSig) => {
+      this.disputeCalls.push({ jobId, status, buyerSig });
       return this.outcome(this.failDispute, DISPUTE_TX);
     };
     escrow.releaseAfterWindow = async (jobId) => {
@@ -167,8 +167,8 @@ async function acceptSig(jobId: Hex, slipHash: Hex = SLIP, signer = buyer): Prom
   return signer.signTypedData(acceptTypedData(CHAIN, ESCROW, jobId, slipHash));
 }
 
-async function disputeSig(jobId: Hex, signer = buyer): Promise<Hex> {
-  return signer.signTypedData(disputeTypedData(CHAIN, ESCROW, jobId));
+async function disputeSig(jobId: Hex, status: number, signer = buyer): Promise<Hex> {
+  return signer.signTypedData(disputeTypedData(CHAIN, ESCROW, jobId, status));
 }
 
 let hubs: TestHub[] = [];
@@ -212,7 +212,7 @@ describe("escrow v2 review routes", () => {
     const hash = seedOffer(hub);
     const jobId = seedJob(hub, hash, { status: "delivered", deliveredAt: NOW, endsAt: NOW + 300, reviewWindow: 300 });
 
-    const response = await post(hub, jobId, "dispute", await disputeSig(jobId));
+    const response = await post(hub, jobId, "dispute", await disputeSig(jobId, 5));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ jobId, status: "disputed", tx: DISPUTE_TX });
     expect(rail.disputeCalls).toHaveLength(1);
@@ -229,7 +229,7 @@ describe("escrow v2 review routes", () => {
     const hash = seedOffer(hub);
     const jobId = seedJob(hub, hash, { status: "funded", deadline: NOW });
 
-    expect((await post(hub, jobId, "dispute", await disputeSig(jobId))).status).toBe(200);
+    expect((await post(hub, jobId, "dispute", await disputeSig(jobId, 1))).status).toBe(200);
     expect(hub.store.getJob(jobId)?.status).toBe("disputed");
   });
 
@@ -239,7 +239,7 @@ describe("escrow v2 review routes", () => {
     const jobId = seedJob(hub, hash, { status: "delivered", deliveredAt: NOW, endsAt: NOW + 300, reviewWindow: 300 });
 
     hub.setNow(NOW + 301);
-    expect((await post(hub, jobId, "dispute", await disputeSig(jobId))).status).toBe(409);
+    expect((await post(hub, jobId, "dispute", await disputeSig(jobId, 5))).status).toBe(409);
     expect(rail.disputeCalls).toHaveLength(0);
   });
 
@@ -249,7 +249,7 @@ describe("escrow v2 review routes", () => {
     const jobId = seedJob(hub, hash, { status: "funded", deadline: NOW });
 
     hub.setNow(NOW + 1);
-    expect((await post(hub, jobId, "dispute", await disputeSig(jobId))).status).toBe(409);
+    expect((await post(hub, jobId, "dispute", await disputeSig(jobId, 1))).status).toBe(409);
     expect(rail.disputeCalls).toHaveLength(0);
   });
 

@@ -1,7 +1,7 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { eip3009Rail, escrowRail, gatewayRail, whitechainRail, type Rail } from "@countersign/rail";
 import { createHederaHeldRail, createHederaRail } from "@countersign/rail/hedera";
-import type { Address, Hex } from "viem";
+import { isAddress, type Address, type Hex } from "viem";
 
 const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
 
@@ -64,7 +64,12 @@ export const RAIL_CONFIG_VARS = [
   "ARC_RPC_URL",
   "ARC_USDC",
   "ARC_ESCROW_VERSION",
+  "ARC_BONDED",
   "CS_RELAYER_KEY",
+  "WC_ESCROW_VERSION",
+  "WC_ESCROW_V2",
+  "WC_RELAY_TOKEN",
+  "WC_RELAY_FUNDER",
   "HEDERA_HELD_HUB_KEY",
 ] as const;
 
@@ -81,24 +86,25 @@ export async function railsFromEnv(
 ): Promise<Rail[]> {
   const rails: Rail[] = [];
   if (railRequested("escrow", env) && env.ARC_RPC_URL) {
-    rails.push(
-      escrowRail({
-        id: "escrow",
-        chainId: 5042002,
-        rpcUrl: env.ARC_RPC_URL,
-        escrow: env.ARC_ESCROW as Address,
-        version: env.ARC_ESCROW_VERSION === "2" ? 2 : 1,
-        token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
-        tokenName: "USDC",
-        tokenVersion: "2",
-        symbol: "USDC",
-        decimals: 6,
-        explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
-        finality: "Final in the Arc block that includes the release.",
-        gasPaidBy: "hub",
-        ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
-      }),
-    );
+    const arc = escrowRail({
+      id: "escrow",
+      chainId: 5042002,
+      rpcUrl: env.ARC_RPC_URL,
+      escrow: env.ARC_ESCROW as Address,
+      version: env.ARC_ESCROW_VERSION === "2" ? 2 : 1,
+      token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
+      tokenName: "USDC",
+      tokenVersion: "2",
+      symbol: "USDC",
+      decimals: 6,
+      explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
+      finality: "Final in the Arc block that includes the release.",
+      gasPaidBy: "hub",
+      ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
+    });
+    // cs-audit (STEER-0300 C2, #164 M1): a bonded Arc job makes the hub's release path guard the seller's bond.
+    // Until ARC_BONDED=1 the Arc rail names no funder, so call.ts answers 503 to a bonded offer instead of funding it.
+    rails.push(env.ARC_BONDED === "1" ? arc : { ...arc, funder: undefined });
   }
   if (railRequested("eip3009", env)) {
     if (!env.ARC_RPC_URL || !env.CS_RELAYER_KEY) {
@@ -126,7 +132,31 @@ export async function railsFromEnv(
     }
   }
   if (railRequested("whitechain", env) && env.WC_RELAY_URL) {
-    rails.push(whitechainRail({ relayUrl: env.WC_RELAY_URL }));
+    const version = env.WC_ESCROW_VERSION === "2" ? 2 : 1;
+    const escrowV2 = env.WC_ESCROW_V2?.trim();
+    if (version === 2 && (!escrowV2 || !isAddress(escrowV2))) {
+      log("[hub] rail whitechain is off: WC_ESCROW_VERSION=2 needs WC_ESCROW_V2");
+    } else {
+      // A bonded v2 job needs the payee's Lock(jobId, funder) naming the relay's submitting address.
+      const funder = env.WC_RELAY_FUNDER?.trim();
+      if (version === 2 && funder && !isAddress(funder)) {
+        log("[hub] WC_RELAY_FUNDER is not an address, so whitechain refuses bonded jobs");
+      }
+      try {
+        rails.push(
+          whitechainRail({
+            relayUrl: env.WC_RELAY_URL,
+            version,
+            ...(version === 2 ? { escrow: escrowV2 as Address } : {}),
+            relayToken: env.WC_RELAY_TOKEN?.trim() || undefined,
+            ...(version === 2 && funder && isAddress(funder) ? { funder: funder as Address } : {}),
+          }),
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error);
+        log(`[hub] rail whitechain is off: ${reason}`);
+      }
+    }
   }
   if (railRequested("gateway", env)) {
     await startOptional(rails, "gateway", makers.gateway ?? (() => gatewayRail({})), log);

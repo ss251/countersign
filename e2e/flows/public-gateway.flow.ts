@@ -22,7 +22,7 @@ export const publicGateway: Flow = {
   title: "A Gateway nanopayment through the public hub",
   owner: "orch-cs",
   network: "arc",
-  notRun: () => "retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed",
+  notRun: () => "retired: the Gateway rail was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed",
   spends: (env) => [{ wallet: gatewayWallet(env), amount: MAX_PRICE, floor: units("0.10", 6) }],
   async run(ctx) {
     const s = ctx.env.secrets;

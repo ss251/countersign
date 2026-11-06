@@ -20,6 +20,8 @@ export class HubError extends Error {
   }
 }
 
+export const FOREIGN_HUB = "Sign-in works only with this console's own hub; paste a token for another hub.";
+
 export function hubBase(): string | null {
   try {
     const hash = window.location.hash;
@@ -36,7 +38,21 @@ export function hubBase(): string | null {
   }
 }
 
+/** True only when this page talks to the hub the console was built for, not one a link chose. */
+export function isOwnHub(): boolean {
+  const own = import.meta.env.VITE_HUB_URL;
+  if (typeof own !== "string" || own.length === 0) return false;
+  const base = hubBase();
+  return base !== null && base.replace(/\/+$/, "") === own.replace(/\/+$/, "");
+}
+
+/** The Privy access token may not leave for a hub this console was not built for. */
+function carriesPrivyToken(headers: Record<string, string>): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === "x-privy-token");
+}
+
 export async function hubGet<T>(path: string, timeoutMs = 5000, headers: Record<string, string> = {}): Promise<T> {
+  if (carriesPrivyToken(headers) && !isOwnHub()) throw new HubError(403, FOREIGN_HUB, "foreign-hub");
   const base = hubBase();
   if (!base) throw new HubError(0, "No hub is chosen.");
   const controller = new AbortController();
@@ -90,6 +106,30 @@ export function hubRails(): Promise<RailDeclaration[]> {
   return railsCache;
 }
 
+/** The wallet the person signed in with on this page, not one this device remembered. */
+let signedIn: string | null = null;
+
+/** Follow the wallet the person signed in with; anything that is not an address signs it out. */
+export function setSignedInAgent(address: string | null): void {
+  signedIn = address && /^0x[0-9a-fA-F]{40}$/.test(address) ? address : null;
+}
+
+export function signedInAgent(): string | null {
+  return signedIn;
+}
+
+/** The agent named in this page's own URL (?agent=), never the one this device remembered. */
+export function linkAgent(): string | null {
+  try {
+    const hash = window.location.hash;
+    const fromHash = new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "");
+    const asked = fromHash.get("agent") ?? new URLSearchParams(window.location.search).get("agent");
+    return asked && /^0x[0-9a-fA-F]{40}$/.test(asked) ? asked : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The buyer agent the phone follows: ?agent=0x… remembers one; otherwise the hub's latest buyer. */
 const AGENT_KEY = "countersign.agent";
 export function chosenAgent(): string | null {
@@ -101,6 +141,15 @@ export function chosenAgent(): string | null {
     return window.localStorage.getItem(AGENT_KEY);
   } catch {
     return null;
+  }
+}
+
+/** Follow this agent from now on, as ?agent= does: the envelope the person just created. */
+export function rememberAgent(agent: string): void {
+  try {
+    if (/^0x[0-9a-fA-F]{40}$/.test(agent)) window.localStorage.setItem(AGENT_KEY, agent);
+  } catch {
+    // Private mode: nothing was kept.
   }
 }
 
@@ -142,6 +191,7 @@ export function rememberApprovalToken(token: string | null): void {
 }
 
 export async function hubPost<T>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
+  if (carriesPrivyToken(headers) && !isOwnHub()) throw new HubError(403, FOREIGN_HUB, "foreign-hub");
   const base = hubBase();
   if (!base) throw new HubError(0, "No hub is chosen.");
   let res: Response;

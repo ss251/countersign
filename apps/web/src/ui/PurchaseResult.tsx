@@ -1,7 +1,7 @@
 import { Link } from "../app/router.tsx";
 import { shortHex } from "../lib/format.ts";
 import type { PurchaseOutcome } from "../lib/purchase.ts";
-import type { Hex } from "../lib/types.ts";
+import type { Address, Hex } from "../lib/types.ts";
 import { Hash } from "./primitives.tsx";
 import "./purchase.css";
 
@@ -11,22 +11,24 @@ const ARCSCAN_TX = "https://testnet.arcscan.app/tx/";
 /** The wallet's signature, the page's note, and the hub's paid or refused answer. */
 export function PurchaseResult({
   signature,
+  signer,
   note,
   outcome,
   testIdPrefix,
 }: {
   signature: Hex | null;
+  signer: Address | null;
   note: string | null;
   outcome: PurchaseOutcome | null;
   testIdPrefix: "start" | "pcard";
 }) {
   return (
     <>
-      {signature ? (
+      {signature && signer ? (
         <p className="purchase__signed" role="status">
           Signed by your wallet{" "}
-          <span className="mono purchase__signature" data-testid={`${testIdPrefix}-signature`} title={signature}>
-            {shortHex(signature)}
+          <span className="mono purchase__signature" data-testid={`${testIdPrefix}-signature`} title={signer}>
+            {shortHex(signer)}
           </span>
         </p>
       ) : null}

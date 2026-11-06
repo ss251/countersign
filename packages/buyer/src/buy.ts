@@ -101,7 +101,8 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       throw new BuyError("Refused. The input does not match the offer's schema.");
     }
 
-    const first = await hub.call(offerHash, input, undefined, a.lineage, agent?.address);
+    const lineage = lineageFromEnv(a.lineage);
+    const first = await hub.call(offerHash, input, undefined, lineage, agent?.address);
     if (first.kind === "error") throw new BuyError(first.message);
     if (first.kind === "paid") throw new BuyError("Refused. The hub served the call without payment terms.");
 
@@ -294,7 +295,7 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
       ...(signedTerms?.reviewWindow !== undefined ? { reviewWindow: signedTerms.reviewWindow } : {}),
     });
 
-    const paid = await hub.call(offerHash, input, payment, a.lineage, agent?.address);
+    const paid = await hub.call(offerHash, input, payment, lineage, agent?.address);
     if (paid.kind !== "paid") {
       const message = paid.kind === "error" ? paid.message : "Refused. The hub asked for payment again.";
       await record({ ...base, kind: "failed", jobId, reason: message });
@@ -337,6 +338,23 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
   } finally {
     await publishMirror();
   }
+}
+
+const LINEAGE_ENTRY = /^0x[0-9a-fA-F]{64}$/;
+const LINEAGE_LIMIT = 16;
+
+/** An explicit lineage wins. Otherwise keep up to 16 hash entries from COUNTERSIGN_LINEAGE. */
+function lineageFromEnv(given: Hex[] | undefined): Hex[] | undefined {
+  if (given !== undefined) return given;
+  const raw = process.env.COUNTERSIGN_LINEAGE;
+  if (raw === undefined) return undefined;
+  const kept: Hex[] = [];
+  for (const part of raw.split(",")) {
+    if (!LINEAGE_ENTRY.test(part)) continue;
+    kept.push(part as Hex);
+    if (kept.length === LINEAGE_LIMIT) break;
+  }
+  return kept;
 }
 
 /** The rail id a 402 entry names: extra.rail for countersign, "gateway" for exact batched. */

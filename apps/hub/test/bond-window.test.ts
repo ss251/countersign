@@ -28,4 +28,14 @@ describe("POST /offers refuses a bond without a review window", () => {
     expect(await response.json()).toEqual({ offerHash: offerHash(accepted) });
     expect(hub.store.listOffers()).toHaveLength(1);
   });
+
+  test("a signed offer with a bond and a 59 second window is 400 and is not stored", async () => {
+    const refused = makeOffer({ bond: "1", reviewWindow: 59 });
+    const rejected = await publish(hub, refused);
+    expect(rejected.status).toBe(400);
+    expect(hub.store.listOffers()).toHaveLength(0);
+
+    const listed = (await fetch(`${hub.url}/offers`).then((response) => response.json())) as { offers: unknown[] };
+    expect(listed.offers).toHaveLength(0);
+  });
 });

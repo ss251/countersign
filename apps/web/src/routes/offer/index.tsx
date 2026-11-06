@@ -3,7 +3,7 @@ import type { JsonSchema } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatAgo, formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
+import { ANONYMOUS, formatAgo, formatDateTime, formatDuration, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
 import { settlementIndex } from "../../lib/ledger.ts";
 import { useNow } from "../../lib/now.ts";
@@ -81,7 +81,7 @@ export default function OfferPage({ params }: PageProps) {
           <Tag>{offer.adapter}</Tag>
         </div>
         <p className="offer__by">
-          By <span className="offer__seller">{l.seller.named === false ? "an unnamed seller" : l.seller.name}</span>
+          <OfferBy seller={l.seller} />
           {agentId ? (
             <span className="offer__verified">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -247,6 +247,16 @@ export default function OfferPage({ params }: PageProps) {
         </p>
       </section>
     </div>
+  );
+}
+
+/** The seller's line: a name, or the address with the policy that keeps it nameless. */
+export function OfferBy({ seller }: { seller: { name: string; named?: boolean } }) {
+  return (
+    <>
+      By <span className="offer__seller">{seller.name}</span>
+      {seller.named === false ? `, ${ANONYMOUS}` : null}
+    </>
   );
 }
 

@@ -3,11 +3,14 @@ import { privateKeyToAccount } from "viem/accounts";
 import { assertOffer, OfferError } from "../src/index.ts";
 
 const MESSAGE =
-  "offer.bond above zero needs offer.reviewWindow above zero: a bond protects a buyer who can refuse a delivery";
+  "offer.bond above zero needs offer.reviewWindow of at least 60 seconds: a bond protects a buyer who can refuse a delivery";
+
+const DEADLINE_MESSAGE =
+  "offer.bond above zero needs offer.deadline of at least 60 seconds: setTerms refuses a bonded minDuration under 60";
 
 const seller = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 
-function offer(over: { bond?: string; reviewWindow?: number } = {}) {
+function offer(over: { bond?: string; reviewWindow?: number; deadline?: number } = {}) {
   return {
     v: 1,
     seller: seller.address,
@@ -17,7 +20,7 @@ function offer(over: { bond?: string; reviewWindow?: number } = {}) {
     input: { type: "object" },
     output: { type: "object" },
     price: "10000",
-    deadline: 60,
+    deadline: over.deadline ?? 60,
     bond: over.bond ?? "1",
     rails: ["escrow"],
     issuedAt: 1_800_000_000,
@@ -34,8 +37,22 @@ describe("a bond implies a review window", () => {
     expect(() => assertOffer(offer({ reviewWindow: 0 }))).toThrow(new OfferError(MESSAGE));
   });
 
+  test("bond 1 with window 59 throws", () => {
+    expect(() => assertOffer(offer({ reviewWindow: 59 }))).toThrow(new OfferError(MESSAGE));
+  });
+
   test("bond 1 with window 60 passes", () => {
     expect(() => assertOffer(offer({ reviewWindow: 60 }))).not.toThrow();
+  });
+
+  test("bond 1 with deadline 59 throws the duration floor", () => {
+    expect(() => assertOffer(offer({ reviewWindow: 60, deadline: 59 }))).toThrow(
+      new OfferError(DEADLINE_MESSAGE),
+    );
+  });
+
+  test("bond 1 with deadline 60 passes the duration floor", () => {
+    expect(() => assertOffer(offer({ reviewWindow: 60, deadline: 60 }))).not.toThrow();
   });
 
   test('bond "000" with no window is not a bond above zero', () => {

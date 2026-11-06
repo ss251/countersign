@@ -14,6 +14,8 @@ export default defineConfig({
   reporter: [["list"], ["./lib/report.ts"]],
   use: {
     baseURL: consoleUrl(),
+    actionTimeout: 30_000,
+    navigationTimeout: 60_000,
     trace: "off",
     screenshot: "off",
     video: "off",

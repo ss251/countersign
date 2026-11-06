@@ -38,9 +38,28 @@ First deployment, made with `forge script` and verified on the explorer. The sam
 | price moved, reverted | [`0x827ceca7…7b17`](https://explorer.testnet.arc.io/tx/0x827ceca74a4250afc742dac86439cdb84cc85fef6547d4b9a1147ad606c57b17) |
 | deadline refund | [`0xc96b85a8…f60a`](https://explorer.testnet.arc.io/tx/0xc96b85a87895a05063314e77115eb653e0d097069f30a0c6e8699b3da107f60a) |
 
+Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production does not use it yet: the `escrow` rail still settles through `0x19c2…1b76` above.
+
+| | |
+|---|---|
+| `CountersignedEscrow` v2 | [`0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE), deploy tx [`0x650b6fd9…1207`](https://explorer.testnet.arc.io/tx/0x650b6fd9eaab6c4c4988a773412e063cef230610104f975df7b433ff594c1207) |
+| Read on chain | `arbiter()` the hub relayer `0xE37F64A73225f5eA06BABcb1cc5440F01446C267`, `token()` USDC `0x3600…0000`, `treasury()` the FeeSplit above, `tollBps()` 100 |
+
+| Beat | Evidence |
+|---|---|
+| **A bonded seller fails to deliver, and the buyer gets the price plus the bond.** Run by `scripts/demo/prove-bonded-fail-delivery.ts`, not through the hub. The hub path, [#244](https://github.com/ss251/countersign/pull/244), is on `main` through promotion [#269](https://github.com/ss251/countersign/pull/269) (`cd3a005`) and deployed, but production's escrow is v1, so the path does not run yet. The payee sets a 0.01 USDC bond on a 0.01 USDC price and deposits it; the arbiter funds the job with the payee's `Lock`; the payee delivers nothing; the arbiter calls `failDelivery`. | terms [`0x61e17b6c…2b88`](https://explorer.testnet.arc.io/tx/0x61e17b6cac0ce44e722f94b6f86e6cdc2a247b293e3c8c902c71298ef7242b88), bond deposit [`0xdd6f0c52…93a6`](https://explorer.testnet.arc.io/tx/0xdd6f0c5245c89bee37ef1803e655feae9f7c130faee62b8fd5949d9f6b7393a6), fund [`0x55876211…4d68`](https://explorer.testnet.arc.io/tx/0x558762117125d76f2e35da7f3ef10e428c8397519cbbfe690eaaca87d9354d68), `failDelivery` [`0x973476ed…5e2d`](https://explorer.testnet.arc.io/tx/0x973476ed251384f84e33ddfc3deb97b10840da0e6410572a2a92c6edff8b5e2d): a transfer of 0.02 USDC from the escrow to the buyer, and the job reads `Failed` |
+
 ## Whitechain Sepolia (chain 1874)
 
 See [whitechain.md](whitechain.md) for the full list.
+
+Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production does not use it yet: the `whitechain` rail still settles through v1, `0x9279…7eb4`.
+
+| | |
+|---|---|
+| `CountersignedEscrow` v2 | [`0x55b3d98C17Ba0878DC93fB1521c76c9a10778391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), deploy tx [`0xf15e1c98…9ae1`](https://explorer.testnet.whitechain.io/tx/0xf15e1c98547b7b475feae83319b71e176518580c244dff39fe32d1408c249ae1) |
+| `FeeSplit` | [`0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c`](https://explorer.testnet.whitechain.io/address/0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c), deploy tx [`0x8612c6d7…9432`](https://explorer.testnet.whitechain.io/tx/0x8612c6d77bdfd1e316c99cbf10e77fa0872df2143a3e091e752c07c8ef639432) |
+| Read on chain | `arbiter()` the relay key `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006`, `token()` USDT `0xcedf…55a7`, `treasury()` the FeeSplit above, `tollBps()` 100 |
 
 ## Hedera testnet
 

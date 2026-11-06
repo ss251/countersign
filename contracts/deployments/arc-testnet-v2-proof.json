@@ -1,0 +1,47 @@
+{
+  "chainId": 5042002,
+  "escrow": "0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE",
+  "token": "0x3600000000000000000000000000000000000000",
+  "jobId": "0xd866a872d59de5f23d92d80dc38836a77cdd625149cb7435aaa475f63ab05d13",
+  "offerHash": "0xa791abfb02360059046119b98c18b6cc1d1436d111904956a203443e75deccdd",
+  "payee": "0xd51A7972F5B18a169d43705e4F01a9631bF5b473",
+  "buyer": "0xE0625e01b7c79d1E399B55F252e6Bdc820733f48",
+  "arbiter": "0xE37F64A73225f5eA06BABcb1cc5440F01446C267",
+  "price": "10000",
+  "bond": "10000",
+  "bondLocked": "10000",
+  "reviewWindow": "60",
+  "minDuration": "60",
+  "deadline": "1793997512",
+  "status": 4,
+  "deliveryFailed": {
+    "amount": "10000",
+    "bond": "10000"
+  },
+  "paidToBuyer": "20000",
+  "buyerBefore": "18082406",
+  "buyerAfter": "18092406",
+  "txs": {
+    "topup": {
+      "hash": "0x661d513661d87c7df5f7840aadd651ccc3c7cde260cbc1e965351654044e2d5b",
+      "block": "71083908"
+    },
+    "setTerms": {
+      "hash": "0x61e17b6cac0ce44e722f94b6f86e6cdc2a247b293e3c8c902c71298ef7242b88",
+      "block": "71083918"
+    },
+    "depositBond": {
+      "hash": "0xdd6f0c5245c89bee37ef1803e655feae9f7c130faee62b8fd5949d9f6b7393a6",
+      "block": "71083921"
+    },
+    "fund": {
+      "hash": "0x558762117125d76f2e35da7f3ef10e428c8397519cbbfe690eaaca87d9354d68",
+      "block": "71083924"
+    },
+    "failDelivery": {
+      "hash": "0x973476ed251384f84e33ddfc3deb97b10840da0e6410572a2a92c6edff8b5e2d",
+      "block": "71083927"
+    }
+  },
+  "ok": true
+}

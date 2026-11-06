@@ -106,7 +106,7 @@ async function heldListing(ctx: FlowCtx, base: string, input: unknown): Promise<
     equal(held.maxTimeoutSeconds, found.offer.deadline, "held timeout is the offer's deadline");
     sameHex(String(held.extra?.offerHash ?? ""), found.offerHash, "held offer hash");
     equal(held.extra?.holdSeconds, found.offer.deadline + 180, "hold length");
-    check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (captain, 23:40 IST)");
+    check(!hederaExact(required), "the 402 still offers plain x402 Hedera, which production removed by flag (project lead, 23:40 IST)");
     return held.extra?.holdSeconds as number;
   });
 

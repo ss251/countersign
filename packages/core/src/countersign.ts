@@ -65,6 +65,14 @@ export const CANCEL_TYPES = {
   Cancel: [{ name: "jobId", type: "bytes32" }],
 } as const;
 
+/** Escrow v2: the payee names the funder who may open a bonded job. */
+export const LOCK_TYPES = {
+  Lock: [
+    { name: "jobId", type: "bytes32" },
+    { name: "funder", type: "address" },
+  ],
+} as const;
+
 /** Escrow v2: the buyer accepts a delivered job, paying the seller before the review window ends. */
 export const ACCEPT_TYPES = {
   Accept: [
@@ -75,7 +83,10 @@ export const ACCEPT_TYPES = {
 
 /** Escrow v2: the buyer disputes a funded or delivered job, refunding itself at once. */
 export const DISPUTE_TYPES = {
-  Dispute: [{ name: "jobId", type: "bytes32" }],
+  Dispute: [
+    { name: "jobId", type: "bytes32" },
+    { name: "status", type: "uint8" },
+  ],
 } as const;
 
 export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
@@ -249,6 +260,19 @@ export function cancelTypedData(chainId: number, escrow: Address, jobId: Hex) {
 }
 
 /**
+ * Typed data the payee signs to accept a bonded job. The Lock names the funder who submits
+ * fund, so only that address can open the job. Sign it under the escrow of a pinned rail.
+ */
+export function lockTypedData(chainId: number, escrow: Address, jobId: Hex, funder: Address) {
+  return {
+    domain: escrowDomain(chainId, escrow),
+    types: LOCK_TYPES,
+    primaryType: "Lock" as const,
+    message: { jobId, funder: getAddress(funder) },
+  };
+}
+
+/**
  * Typed data the buyer signs to accept a delivered job against the slip it received.
  * Escrow v2. Sign it under the escrow of a pinned rail, never one a hub names.
  */
@@ -263,13 +287,14 @@ export function acceptTypedData(chainId: number, escrow: Address, jobId: Hex, sl
 
 /**
  * Typed data the buyer signs to dispute a job: before delivery up to the deadline, or
- * while its review window is open. Escrow v2. Sign it under the escrow of a pinned rail.
+ * while its review window is open. Escrow v2. `status` is the job's status when it is
+ * signed: Funded (1) or Delivered (5). Sign it under the escrow of a pinned rail.
  */
-export function disputeTypedData(chainId: number, escrow: Address, jobId: Hex) {
+export function disputeTypedData(chainId: number, escrow: Address, jobId: Hex, status: number) {
   return {
     domain: escrowDomain(chainId, escrow),
     types: DISPUTE_TYPES,
     primaryType: "Dispute" as const,
-    message: { jobId },
+    message: { jobId, status },
   };
 }

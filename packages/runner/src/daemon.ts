@@ -7,6 +7,8 @@ import {
   canonicalHash,
   canaryMessage,
   checkSchema,
+  jobIdOf,
+  lockTypedData,
   offerHash,
   RUNNER_PATH,
   runnerAuthMessage,
@@ -15,10 +17,11 @@ import {
   slipTypedData,
   type HubToRunner,
   type JobOrder,
+  type LockTerms,
   type Offer,
   type RunnerToHub,
 } from "@countersign/core";
-import type { RunnerAccount } from "./account.ts";
+import type { Hex, RunnerAccount } from "./account.ts";
 import { runInChild, type ChildSpec } from "./child.ts";
 import { fundingReader, fundingRefusal, type FundingConfig } from "./funding.ts";
 import { substituteBuyer } from "./mcp.ts";
@@ -54,6 +57,8 @@ export interface RunnerConfig {
   /** Signs, never submits, the seller's release of a held payment (rail "hedera-scheduled").
    *  Called only after the output passed the offer's schema and the slip is signed. */
   countersign?: (order: JobOrder) => Promise<string>;
+  /** Buyer addresses, besides this runner's account, whose purchases may be attested as children. */
+  buyerAddresses?: string[];
 }
 
 export interface RunnerHandle {
@@ -62,6 +67,37 @@ export interface RunnerHandle {
 }
 
 const RECONNECT_DELAYS = [1, 2, 4, 8, 16, 30] as const;
+const ATOMIC = /^(0|[1-9][0-9]*)$/;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** The lock frame's terms, or null when they are missing or not the countersign shape. */
+function readLockTerms(value: unknown): LockTerms | null {
+  if (value === null || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const buyer = raw.buyer;
+  const payee = raw.payee;
+  const amount = raw.amount;
+  const deadline = raw.deadline;
+  const salt = raw.salt;
+  const bond = raw.bond;
+  const reviewWindow = raw.reviewWindow;
+  if (typeof buyer !== "string" || !ADDRESS.test(buyer)) return null;
+  if (typeof payee !== "string" || !ADDRESS.test(payee)) return null;
+  if (typeof amount !== "string" || !ATOMIC.test(amount)) return null;
+  if (typeof deadline !== "number" || !Number.isSafeInteger(deadline)) return null;
+  if (typeof salt !== "string" || !ATOMIC.test(salt)) return null;
+  if (typeof bond !== "string" || !ATOMIC.test(bond)) return null;
+  if (typeof reviewWindow !== "number" || !Number.isSafeInteger(reviewWindow)) return null;
+  return {
+    buyer: buyer as LockTerms["buyer"],
+    payee: payee as LockTerms["payee"],
+    amount,
+    deadline,
+    salt,
+    bond,
+    reviewWindow,
+  };
+}
 
 export function startRunner(cfg: RunnerConfig): RunnerHandle {
   const clock = cfg.now ?? (() => Math.floor(Date.now() / 1000));
@@ -93,6 +129,119 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
 
   const fail = (target: WebSocket, order: JobOrder, reason: string): void => {
     send(target, { t: "fail", jobId: order.jobId, reason });
+  };
+
+  const handleLock = async (
+    target: WebSocket,
+    frame: Extract<HubToRunner, { t: "lock" }>,
+  ): Promise<void> => {
+    if (typeof frame.funder !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(frame.funder)) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "bad-funder",
+      });
+      return;
+    }
+
+    const entry = served.find(
+      (item) => item.hash.toLowerCase() === frame.offerHash.toLowerCase(),
+    );
+    if (!entry) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. This runner does not serve that offer.",
+      });
+      return;
+    }
+
+    let matches = false;
+    try {
+      const offered = BigInt(entry.offer.bond);
+      matches = offered !== 0n && offered === BigInt(frame.bond);
+    } catch {
+      matches = false;
+    }
+    if (!matches) {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. The bond does not match this offer.",
+      });
+      return;
+    }
+
+    const refuse = (reason: string): void => {
+      send(target, { t: "lock-refused", jobId: frame.jobId, reason });
+    };
+
+    const terms = readLockTerms(frame.terms);
+    if (terms === null) {
+      refuse("bad-terms");
+      return;
+    }
+    if (terms.payee.toLowerCase() !== cfg.account.address.toLowerCase()) {
+      refuse("not-payee");
+      return;
+    }
+    let bondAbove = false;
+    try {
+      bondAbove = BigInt(terms.bond) > 0n;
+    } catch {
+      bondAbove = false;
+    }
+    if (
+      terms.amount !== entry.offer.price ||
+      terms.bond !== entry.offer.bond ||
+      !bondAbove ||
+      terms.reviewWindow !== (entry.offer.reviewWindow ?? 0)
+    ) {
+      refuse("terms-mismatch");
+      return;
+    }
+    if (terms.deadline - clock() < 60) {
+      refuse("deadline-too-near");
+      return;
+    }
+    const escrow = frame.escrow;
+    const pinned =
+      funding !== null &&
+      typeof escrow === "string" &&
+      funding.known.some(
+        (pin) => pin.chainId === frame.chainId && pin.escrow.toLowerCase() === escrow.toLowerCase(),
+      );
+    if (!pinned) {
+      refuse("unknown-escrow");
+      return;
+    }
+
+    let rebuilt: string;
+    try {
+      rebuilt = jobIdOf({ offerHash: frame.offerHash, ...terms }, frame.chainId, frame.escrow);
+    } catch {
+      refuse("job-mismatch");
+      return;
+    }
+    if (typeof frame.jobId !== "string" || rebuilt.toLowerCase() !== frame.jobId.toLowerCase()) {
+      refuse("job-mismatch");
+      return;
+    }
+
+    try {
+      // The account signs any EIP-712 payload; its type names the slip because that was its only use.
+      const typed = lockTypedData(frame.chainId, frame.escrow, frame.jobId, frame.funder) as unknown as Parameters<
+        RunnerAccount["signTypedData"]
+      >[0];
+      const sig = await cfg.account.signTypedData(typed);
+      send(target, { t: "locked", jobId: frame.jobId, sig });
+    } catch {
+      send(target, {
+        t: "lock-refused",
+        jobId: frame.jobId,
+        reason: "Refused. The runner could not sign.",
+      });
+    }
   };
 
   const handleJob = async (target: WebSocket, order: JobOrder): Promise<void> => {
@@ -149,6 +298,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         substituteBuyer(entry.spec, order.buyer),
         order.input,
         { timeMs, maxOutputBytes },
+        [...order.lineage, order.jobId].join(","),
       );
     } catch (error) {
       const reason = messageOf(error);
@@ -163,6 +313,14 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       return fail(target, order, reason);
     }
 
+    // A children lookup that fails or times out leaves the list empty. Signing still happens.
+    let children: Hex[] = [];
+    try {
+      children = await childHashes(cfg, order.jobId);
+    } catch {
+      children = [];
+    }
+
     try {
       const body = slipBodyFor(
         order,
@@ -170,6 +328,7 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         canonicalHash(order.input),
         canonicalHash(output),
         clock(),
+        children,
       );
       const hash = slipHash(body);
       const sellerSig = await cfg.account.signTypedData(slipTypedData(body));
@@ -219,6 +378,9 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
         return;
       case "job":
         await handleJob(target, message.order);
+        return;
+      case "lock":
+        await handleLock(target, message);
         return;
       case "canary": {
         const entry = served.find(
@@ -303,6 +465,71 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       socket = null;
     },
   };
+}
+
+const CHILD_TIMEOUT_MS = 2_000;
+const SLIP_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+/** Slip hashes of purchases this runner's own buyers made while serving `jobId`. */
+async function childHashes(cfg: RunnerConfig, jobId: string): Promise<Hex[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHILD_TIMEOUT_MS);
+  try {
+    const base = hubHttpBase(cfg.hubUrl);
+    const listed = await getJson(
+      `${base}/jobs/${encodeURIComponent(jobId)}/children`,
+      controller.signal,
+    );
+    if (!isRecord(listed) || !Array.isArray(listed.children)) {
+      throw new Error("The hub's children list is malformed.");
+    }
+    const buyers = new Set<string>([
+      cfg.account.address.toLowerCase(),
+      ...(cfg.buyerAddresses ?? []).map((address) => address.toLowerCase()),
+    ]);
+    const hashes: string[] = [];
+    for (const row of listed.children) {
+      if (!isRecord(row)) throw new Error("The hub's children list is malformed.");
+      const listedHash = row.slipHash;
+      if (listedHash === null || listedHash === undefined) continue;
+      if (typeof listedHash !== "string" || !SLIP_HASH.test(listedHash)) {
+        throw new Error("The hub's children list is malformed.");
+      }
+      const slip = await getJson(`${base}/slips/${encodeURIComponent(listedHash)}`, controller.signal);
+      const buyer = buyerOf(slip);
+      if (buyer !== null && buyers.has(buyer.toLowerCase())) hashes.push(listedHash.toLowerCase());
+    }
+    return [...new Set(hashes)].sort() as Hex[];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The hub's HTTP base. A websocket hub URL becomes the same host over HTTP. */
+function hubHttpBase(hubUrl: string): string {
+  const url = new URL(hubUrl);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  else if (url.protocol === "wss:") url.protocol = "https:";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
+}
+
+async function getJson(url: string, signal: AbortSignal): Promise<unknown> {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`The hub answered ${response.status}.`);
+  const body: unknown = await response.json();
+  return body;
+}
+
+function buyerOf(slip: unknown): string | null {
+  if (!isRecord(slip) || !isRecord(slip.body)) return null;
+  const buyer = slip.body.buyer;
+  return typeof buyer === "string" ? buyer : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function connectUrl(hubUrl: string): string {

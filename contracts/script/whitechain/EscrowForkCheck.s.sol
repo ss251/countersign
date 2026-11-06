@@ -64,23 +64,25 @@ contract EscrowForkCheck is Script {
         require(start >= 4 * PRICE, "EscrowForkCheck: swap gave too little USDT");
         console2.log("buyer USDT after swap:", start);
 
-        // 1. fund then release: payee gets price less toll, treasury gets the toll.
+        // 1. fund then release: payee gets price less toll, the toll accrues and sweeps to the treasury.
         bytes32 offer1 = keccak256("offer-1");
         ICountersignedEscrow.Countersignature memory cs1 = _countersign(offer1, PRICE, uint64(block.timestamp + 600), 1);
         vm.prank(relayer);
-        bytes32 job1 = escrow.fund(offer1, cs1);
+        bytes32 job1 = escrow.fund(offer1, cs1, "");
         require(IUsdt(USDT).authorizationState(buyer, job1), "nonce not burned");
         bytes32 slip = keccak256("slip-1");
         vm.prank(relayer);
         escrow.release(job1, slip, _sign(sellerKey, _escrowDigest(keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), job1, slip)))));
         uint256 toll = PRICE * TOLL_BPS / 10_000;
         require(IUsdt(USDT).balanceOf(seller) == PRICE - toll, "payee amount");
-        require(IUsdt(USDT).balanceOf(treasury) == toll, "toll amount");
+        require(escrow.tollAccrued() == toll, "toll amount");
+        escrow.sweepToll();
+        require(IUsdt(USDT).balanceOf(treasury) == toll, "toll sweep");
         console2.log("1 release ok, payee got", PRICE - toll);
 
         // 2. a replayed countersignature is refused.
         vm.prank(relayer);
-        try escrow.fund(offer1, cs1) {
+        try escrow.fund(offer1, cs1, "") {
             revert("replay was accepted");
         } catch (bytes memory err) {
             require(bytes4(err) == ICountersignedEscrow.JobExists.selector, "replay: wrong error");
@@ -93,7 +95,7 @@ contract EscrowForkCheck is Script {
         cs2.amount = PRICE + 1;
         uint256 before2 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        try escrow.fund(offer2, cs2) {
+        try escrow.fund(offer2, cs2, "") {
             revert("moved price was accepted");
         } catch (bytes memory err) {
             require(bytes4(err) == ICountersignedEscrow.CountersignatureMismatch.selector, "moved price: wrong error");
@@ -106,19 +108,19 @@ contract EscrowForkCheck is Script {
         ICountersignedEscrow.Countersignature memory cs3 = _countersign(offer3, PRICE, uint64(block.timestamp + 600), 3);
         uint256 before3 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        bytes32 job3 = escrow.fund(offer3, cs3);
+        bytes32 job3 = escrow.fund(offer3, cs3, "");
         vm.prank(relayer);
         escrow.cancel(job3, _sign(sellerKey, _escrowDigest(keccak256(abi.encode(escrow.CANCEL_TYPEHASH(), job3)))));
         require(IUsdt(USDT).balanceOf(buyer) == before3, "cancel did not return the full amount");
         console2.log("4 cancel ok");
 
-        // 5. the deadline passes: anyone refunds, full amount back.
+        // 5. the deadline and the settle window pass: anyone refunds, full amount back.
         bytes32 offer4 = keccak256("offer-4");
         ICountersignedEscrow.Countersignature memory cs4 = _countersign(offer4, PRICE, uint64(block.timestamp + 60), 4);
         uint256 before4 = IUsdt(USDT).balanceOf(buyer);
         vm.prank(relayer);
-        bytes32 job4 = escrow.fund(offer4, cs4);
-        vm.warp(block.timestamp + 61);
+        bytes32 job4 = escrow.fund(offer4, cs4, "");
+        vm.warp(block.timestamp + 61 + escrow.DISPUTE_WINDOW());
         vm.prank(makeAddr("stranger"));
         escrow.refund(job4);
         require(IUsdt(USDT).balanceOf(buyer) == before4, "refund did not return the full amount");
@@ -155,7 +157,7 @@ contract EscrowForkCheck is Script {
         cs.salt = salt;
         cs.validAfter = 0;
         cs.validBefore = block.timestamp + 600;
-        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, seller, amount, deadline, salt);
+        bytes32 jobId = escrow.jobIdFor(offerHash, buyer, seller, amount, deadline, salt, 0, 0);
         bytes32 digest = keccak256(
             abi.encodePacked(
                 "\x19\x01",

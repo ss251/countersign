@@ -55,6 +55,7 @@
         "@privy-io/react-auth": "3.6.1",
         "@privy-io/wagmi": "^4.0.20",
         "@tanstack/react-query": "^5",
+        "buffer": "6.0.3",
         "hono": "^4.13.16",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
@@ -94,9 +95,16 @@
         "openai": "7.53.0",
       },
     },
+    "packages/cli": {
+      "name": "countersign",
+      "version": "0.1.0",
+      "bin": {
+        "countersign": "./src/bin.ts",
+      },
+    },
     "packages/core": {
       "name": "@countersign/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "ajv": "^8.20.0",
         "viem": "^2.57.16",
@@ -110,9 +118,21 @@
         "viem": "^2.57.16",
       },
     },
+    "packages/mcp": {
+      "name": "@countersign/mcp",
+      "version": "0.1.0",
+      "dependencies": {
+        "@countersign/buyer": "workspace:*",
+        "@countersign/core": "workspace:*",
+        "@countersign/verify": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.32.2",
+        "viem": "^2.57.16",
+        "zod": "4.6.7",
+      },
+    },
     "packages/rail": {
       "name": "@countersign/rail",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@circle-fin/x402-batching": "4.0.0",
         "@countersign/core": "workspace:*",
@@ -131,7 +151,7 @@
     },
     "packages/relay": {
       "name": "@countersign/relay",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@countersign/core": "workspace:*",
         "@countersign/rail": "workspace:*",
@@ -183,6 +203,8 @@
     "@countersign/identity": ["@countersign/identity@workspace:packages/identity"],
 
     "@countersign/phone": ["@countersign/phone@workspace:apps/phone"],
+
+    "@countersign/mcp": ["@countersign/mcp@workspace:packages/mcp"],
 
     "@countersign/rail": ["@countersign/rail@workspace:packages/rail"],
 
@@ -741,6 +763,8 @@
     "core-util-is": ["core-util-is@1.0.3", "", {}, "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ=="],
 
     "cors": ["cors@2.8.6", "", { "dependencies": { "object-assign": "^4", "vary": "^1" } }, "sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw=="],
+
+    "countersign": ["countersign@workspace:packages/cli"],
 
     "crc-32": ["crc-32@1.2.2", "", { "bin": { "crc32": "bin/crc32.njs" } }, "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ=="],
 

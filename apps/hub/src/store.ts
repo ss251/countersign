@@ -8,7 +8,7 @@ import type {
   RailId,
   Slip,
 } from "./deps.ts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export type JobStatus =
   | "funded"
@@ -65,6 +65,8 @@ export interface JobRecord {
   reviewOutcome?: ReviewOutcome | null;
   /** Escrow v2: the accept, dispute or window release transaction. */
   reviewTx?: string | null;
+  /** The job this purchase was made inside, or null when the lineage named none this hub recorded. */
+  parentJobId?: Hex | null;
 }
 
 export interface JobPatch {
@@ -98,6 +100,14 @@ export interface RevocationRecord {
   recordedAt: number;
 }
 
+/** A Buyer-page token, stored only as its SHA-256 (D23). */
+export interface EnvelopeTokenRecord {
+  tokenHash: string;
+  agent: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
 export type ApprovalStatus = "pending" | "countersign" | "decline";
 
 /** A call the buyer agent held for a human decision. */
@@ -118,6 +128,13 @@ export interface ApprovalRecord {
   requestSig: string | null;
   /** The approver's signature over the decision body. */
   decisionSig: string | null;
+}
+
+/** The last ERC-8004 registration the hub saw for a seller. `block` is the log's block. */
+export interface StoredErc8004Identity {
+  registry: Address;
+  agentId: string;
+  block: bigint;
 }
 
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
@@ -162,6 +179,7 @@ interface JobRow {
   ends_at: number | null;
   review_outcome: string | null;
   review_tx: string | null;
+  parent_job_id: string | null;
 }
 
 interface RatingJobRow {
@@ -216,6 +234,14 @@ interface ApprovalRow {
   decision_sig: string | null;
 }
 
+interface Erc8004IdentityRow {
+  seller: string;
+  registry: string;
+  agent_id: string;
+  block: number | bigint;
+  updated_at: number;
+}
+
 export class Store {
   private readonly db: Database;
 
@@ -250,7 +276,8 @@ export class Store {
         delivered_at INTEGER NULL,
         ends_at INTEGER NULL,
         review_outcome TEXT NULL,
-        review_tx TEXT NULL
+        review_tx TEXT NULL,
+        parent_job_id TEXT NULL
       )
     `);
     const jobColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -274,6 +301,9 @@ export class Store {
     }
     if (!jobColumns.some((column) => column.name === "review_tx")) {
       this.db.run("ALTER TABLE jobs ADD COLUMN review_tx TEXT NULL");
+    }
+    if (!jobColumns.some((column) => column.name === "parent_job_id")) {
+      this.db.run("ALTER TABLE jobs ADD COLUMN parent_job_id TEXT NULL");
     }
     this.db.run(`
       CREATE TABLE IF NOT EXISTS slips (
@@ -323,6 +353,16 @@ export class Store {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS revocations (agent TEXT PRIMARY KEY, revoked_at INTEGER NOT NULL, sig TEXT NOT NULL, recorded_at INTEGER NOT NULL)
     `);
+    this.db.run("CREATE TABLE IF NOT EXISTS envelope_tokens (token_hash TEXT PRIMARY KEY, agent TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS erc8004_identities (
+        seller TEXT PRIMARY KEY,
+        registry TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        block INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
   }
 
   /** Insert a new offer. Returns false when the hash was already stored. */
@@ -369,7 +409,7 @@ export class Store {
   putJob(job: JobRecord): void {
     this.db
       .query(
-        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx, parent_job_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -390,6 +430,7 @@ export class Store {
         job.endsAt ?? null,
         job.reviewOutcome ?? null,
         job.reviewTx ?? null,
+        job.parentJobId ?? null,
       );
   }
 
@@ -400,7 +441,7 @@ export class Store {
   claimJob(job: JobRecord): boolean {
     const result = this.db
       .query(
-        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO jobs (job_id, offer_hash, rail, buyer, amount, deadline, status, payment_json, settle_tx, close_tx, slip_hash, created_at, closed_at, review_window, delivered_at, ends_at, review_outcome, review_tx, parent_job_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         job.jobId,
@@ -421,6 +462,7 @@ export class Store {
         job.endsAt ?? null,
         job.reviewOutcome ?? null,
         job.reviewTx ?? null,
+        job.parentJobId ?? null,
       );
     return result.changes > 0;
   }
@@ -428,6 +470,16 @@ export class Store {
   getJob(jobId: string): JobRecord | null {
     const row = this.db.query<JobRow, [string]>("SELECT * FROM jobs WHERE job_id = ?").get(jobId);
     return row ? jobFromRow(row) : null;
+  }
+
+  /** Jobs claimed inside this one, oldest first. The id is compared case-insensitively. */
+  childJobs(parentJobId: string): JobRecord[] {
+    return this.db
+      .query<JobRow, [string]>(
+        "SELECT * FROM jobs WHERE lower(parent_job_id) = lower(?) ORDER BY created_at ASC, job_id ASC",
+      )
+      .all(parentJobId)
+      .map(jobFromRow);
   }
 
   /** Every job, newest first. */
@@ -583,7 +635,7 @@ export class Store {
         `SELECT jobs.job_id, jobs.offer_hash, jobs.rail, jobs.buyer, jobs.amount, jobs.deadline,
                 jobs.status, jobs.payment_json, jobs.settle_tx, jobs.close_tx, jobs.slip_hash,
                 jobs.created_at, jobs.closed_at, jobs.review_window, jobs.delivered_at, jobs.ends_at,
-                jobs.review_outcome, jobs.review_tx
+                jobs.review_outcome, jobs.review_tx, jobs.parent_job_id
            FROM jobs
            JOIN offers ON offers.offer_hash = jobs.offer_hash
           WHERE lower(offers.seller) = lower(?)
@@ -639,6 +691,33 @@ export class Store {
       revokedAt: row.revoked_at,
       sig: row.sig as Hex,
       recordedAt: row.recorded_at,
+    };
+  }
+
+  /** Replace an agent's Buyer-page token, keeping only its hash. */
+  replaceEnvelopeToken(record: EnvelopeTokenRecord): void {
+    const agent = record.agent.toLowerCase();
+    this.db.query("DELETE FROM envelope_tokens WHERE agent = ?").run(agent);
+    this.db
+      .query(
+        "INSERT INTO envelope_tokens (token_hash, agent, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(record.tokenHash, agent, record.issuedAt, record.expiresAt);
+  }
+
+  getEnvelopeToken(tokenHash: string): EnvelopeTokenRecord | null {
+    const row = this.db
+      .query<
+        { token_hash: string; agent: string; issued_at: number; expires_at: number },
+        [string]
+      >("SELECT * FROM envelope_tokens WHERE token_hash = ?")
+      .get(tokenHash);
+    if (!row) return null;
+    return {
+      tokenHash: row.token_hash,
+      agent: row.agent,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
     };
   }
 
@@ -715,6 +794,34 @@ export class Store {
       .run(status, decidedAt, decisionSig, id);
     return result.changes > 0;
   }
+
+  getIdentity(seller: string): StoredErc8004Identity | null {
+    const row = this.db
+      .query<Erc8004IdentityRow, [string]>(
+        "SELECT seller, registry, agent_id, block, updated_at FROM erc8004_identities WHERE seller = ?",
+      )
+      .get(seller.toLowerCase());
+    if (!row) return null;
+    return {
+      registry: row.registry as Address,
+      agentId: row.agent_id,
+      block: BigInt(row.block),
+    };
+  }
+
+  putIdentity(seller: string, identity: StoredErc8004Identity, now: number): void {
+    this.db
+      .query(
+        `INSERT INTO erc8004_identities (seller, registry, agent_id, block, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(seller) DO UPDATE SET
+           registry = excluded.registry,
+           agent_id = excluded.agent_id,
+           block = excluded.block,
+           updated_at = excluded.updated_at`,
+      )
+      .run(seller.toLowerCase(), identity.registry, identity.agentId, identity.block, now);
+  }
 }
 
 function jobFromRow(row: JobRow): JobRecord {
@@ -737,6 +844,7 @@ function jobFromRow(row: JobRow): JobRecord {
     endsAt: row.ends_at,
     reviewOutcome: row.review_outcome as ReviewOutcome | null,
     reviewTx: row.review_tx,
+    parentJobId: row.parent_job_id as Hex | null,
   };
 }
 

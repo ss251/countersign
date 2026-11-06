@@ -165,7 +165,7 @@ function Claim({
  * evidence. It holds its line before the first read, ticks once on change, and is left out when
  * the hub has never given totals.
  */
-function Figures({
+export function Figures({
   stats: s,
   rails,
   missing,

@@ -39,7 +39,7 @@ export const hederaMcp: Flow = {
   title: "Hedera Agent Kit MCP call paid through the public hub",
   owner: "cs-hd",
   network: "hedera",
-  notRun: () => "retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21",
+  notRun: () => "retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21",
   spends(env) {
     const w = wallets(env.secrets);
     return [
