@@ -430,11 +430,12 @@ a.hash__value.is-tx {
 
 /* Meter */
 
+/* Spent of the budget: a ruled bar. Spent money has moved, so it is ink; blue is for money in flight. */
 .meter {
   position: relative;
-  height: 6px;
+  height: 4px;
   overflow: hidden;
-  border-radius: var(--r-pill);
+  border-radius: 1px;
   background: var(--line);
 }
 
@@ -443,7 +444,7 @@ a.hash__value.is-tx {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--usdc);
+  background: var(--ink);
   transform-origin: left center;
   transition: transform var(--d-3) var(--ease-out);
 }
@@ -592,3 +593,48 @@ a.hash__value.is-tx {
   align-items: center;
   justify-content: space-between;
 }
+
+/* An envelope checklist: one ruled line per rule. Shared by the phone and the desk. */
+
+.checks {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.checks__list {
+  display: grid;
+  border-top: var(--hair) solid var(--line);
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-14);
+  line-height: 1.45;
+}
+
+.check__glyph {
+  margin-top: 2px;
+}
+
+.check--pass {
+  color: var(--ink);
+}
+
+.check--fail {
+  color: var(--seal);
+}
+
+.check--ask .check__glyph {
+  color: var(--ink);
+}
+
+.checks__refusal {
+  color: var(--seal);
+  font-size: var(--t-14);
+}
+

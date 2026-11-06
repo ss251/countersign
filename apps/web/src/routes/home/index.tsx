@@ -18,6 +18,8 @@ import {
 import { hubBase } from "../../lib/hub.ts";
 import { useNow } from "../../lib/now.ts";
 import type { EnvelopeView, Listing, Money, RailDeclaration, RailId, Settlement } from "../../lib/types.ts";
+import { envelopeChecklist } from "../../lib/checklist.ts";
+import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
 import { Amount, CopyButton, FixtureNote, Hash, RailState, cx } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
@@ -120,7 +122,7 @@ export default function HomePage(_props: PageProps) {
               The agent signs its limits once: a budget, a cap per seller, an allowlist, and the amount above which it asks you.
               Inside them it buys alone.
             </p>
-            <EnvelopeArtifact view={envelope.data} live={envelope.source === "hub"} />
+            <EnvelopeArtifact view={envelope.data} live={envelope.source === "hub"} listing={featured} />
           </li>
           <li className="clear__step">
             <p className="clear__n mono">02</p>
@@ -181,6 +183,17 @@ type RailRow = {
 const STATE_WORD = { live: "Live", degraded: "Degraded", off: "Off" } as const;
 const STATE_ORDER = { live: 0, degraded: 1, off: 2 } as const;
 
+/*
+ * Public proof for a rail this hub does not run: an explorer link or the doc that holds them.
+ * A rail with no entry has no public proof yet, and the desk says so instead of borrowing one.
+ */
+const PROOF: Partial<Record<RailId, { href: string; label: string }>> = {
+  escrow: { href: `${REPO}/blob/main/docs/proof.md#arc-testnet-chain-5042002`, label: "proof" },
+  gateway: { href: `${REPO}/blob/main/docs/proof.md#arc-testnet-chain-5042002`, label: "proof" },
+  whitechain: { href: `${REPO}/blob/main/docs/whitechain.md`, label: "proof" },
+  hedera: { href: "https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078", label: "HashScan" },
+};
+
 function RailStrip({
   declared,
   listed,
@@ -220,6 +233,10 @@ function RailStrip({
     const today = mine.filter((s) => s.kind !== "refunded" && s.at >= midnight).reduce((sum, s) => sum + BigInt(s.amount), 0n);
     return { id, decl, state, why, last: mine[0], today };
   }).sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  const shown = rows.filter((r) => r.state !== "off");
+  const off = rows.filter((r) => r.state === "off");
+  const proven = off.filter((r) => PROOF[r.id]);
+  const unproven = off.filter((r) => !PROOF[r.id]);
 
   return (
     <ol className="rails">
@@ -229,8 +246,8 @@ function RailStrip({
         <span>Last settlement</span>
         <span className="rail__today">Settled today</span>
       </li>
-      {rows.map((r) => (
-        <li key={r.id} className={cx("rail", r.state === "off" && "rail--off")}>
+      {shown.map((r) => (
+        <li key={r.id} className="rail">
           <span className="rail__name">
             {RAIL_LABEL[r.id]}
             <span className="rail__net">{r.decl ? networkName(r.decl.network) : r.id}</span>
@@ -254,6 +271,30 @@ function RailStrip({
           </span>
         </li>
       ))}
+      {off.length > 0 ? (
+        <li className="rail rail--rest">
+          <RailState state="off">
+            {off.length} more {off.length === 1 ? "rail" : "rails"}, not on this hub
+          </RailState>
+          <p className="rail__rest">
+            {proven.length > 0 ? (
+              <>
+                Proven on testnet:{" "}
+                {proven.map((r, i) => (
+                  <span key={r.id}>
+                    {RAIL_LABEL[r.id]} (
+                    <a href={PROOF[r.id]!.href} target="_blank" rel="noreferrer">
+                      {PROOF[r.id]!.label}
+                    </a>
+                    ){i < proven.length - 1 ? ", " : "."}
+                  </span>
+                ))}{" "}
+              </>
+            ) : null}
+            {unproven.length > 0 ? <>Specified, not yet live: {unproven.map((r) => RAIL_LABEL[r.id]).join(", ")}.</> : null}
+          </p>
+        </li>
+      ) : null}
     </ol>
   );
 }
@@ -317,10 +358,19 @@ function SettlementRow({ s, live, now }: { s: Settlement; live: boolean; now: nu
 
 /* The three artifacts the steps point at. Each is real data from this hub, or says it is an example. */
 
-function EnvelopeArtifact({ view, live }: { view: EnvelopeView | undefined; live: boolean }) {
+function EnvelopeArtifact({ view, live, listing }: { view: EnvelopeView | undefined; live: boolean; listing: Listing | undefined }) {
   if (!view) return <div className="artifact artifact--skeleton" aria-hidden="true" />;
   const env = view.envelope;
   const allow = env.allowlist.length;
+  // The same rules the phone shows, read against the offer in step 2: the envelope is what decides it.
+  const checks = listing
+    ? envelopeChecklist(view, {
+        seller: listing.offer.seller,
+        offerHash: listing.hash,
+        amount: listing.offer.price,
+        sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
+      })
+    : null;
   return (
     <figure className="artifact">
       <figcaption className="artifact__head">
@@ -361,6 +411,12 @@ function EnvelopeArtifact({ view, live }: { view: EnvelopeView | undefined; live
           <dd className="fields__word">{allow === 0 ? "Any seller" : `${allow} ${allow === 1 ? "seller" : "sellers"}`}</dd>
         </div>
       </dl>
+      {checks && listing ? (
+        <div className="artifact__checks">
+          <p className="label">Against {listing.offer.title}, in step 02</p>
+          <Checklist items={checks} />
+        </div>
+      ) : null}
     </figure>
   );
 }

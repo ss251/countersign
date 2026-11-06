@@ -139,12 +139,10 @@
 .phone__budget {
   position: relative;
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 4px;
   min-height: 32px;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  align-items: center;
   color: var(--slate);
   font-size: var(--t-13);
   text-decoration: none;
@@ -159,14 +157,13 @@
 }
 
 .phone__budget-amount {
-  color: var(--usdc);
-  font-weight: 600;
+  color: var(--ink);
+  font-family: var(--mono);
 }
 
 .phone__budget--revoked {
   color: var(--seal);
   font-weight: 600;
-  border-color: color-mix(in oklab, var(--seal) 40%, var(--line));
 }
 
 .phone__body {
@@ -235,259 +232,305 @@
   }
 }
 
-/* An approval: the offer, the envelope's verdict, the hold. */
+/* An approval: the purchase as a pass, your envelope's checklist, then the hold under the thumb. */
 
 .approval {
   display: grid;
   gap: var(--sp-5);
+  padding-bottom: var(--sp-4);
 }
 
-.approval__who {
+.approval__ask {
   color: var(--slate);
   font-size: var(--t-13);
 }
 
 .approval__agent {
   color: var(--ink);
-  font-weight: 600;
-}
-
-.approval__title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-top: 2px;
-}
-
-.approval__title {
-  font-size: var(--t-24);
-  line-height: 1.2;
-}
-
-.approval__summary {
-  margin-top: var(--sp-1);
-  color: var(--ink);
-}
-
-.approval__source {
-  margin-top: var(--sp-1);
-  color: var(--slate);
+  font-family: var(--mono);
   font-size: var(--t-13);
 }
 
-/* The amount, once, as a commitment; then where it goes. */
-.approval__amount {
+.approval :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/*
+ * The pass. A ruled ticket on the paper: endpoints, the offer, the one big figure, a field grid,
+ * and a stub below a perforation. The notches are cut in the paper colour so the edge reads torn.
+ */
+.pass {
+  --notch: 9px;
+  position: relative;
+  display: grid;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-2);
+}
+
+.pass > * {
+  min-width: 0;
+  padding: var(--sp-4);
+}
+
+.pass__ends {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+}
+
+.pass__end {
   display: grid;
   gap: 2px;
-  padding-top: var(--sp-2);
-}
-
-.approval__exact {
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.approval__split {
-  display: grid;
-  gap: 2px;
-  margin-top: var(--sp-2);
-}
-
-.approval__split div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  font-size: var(--t-14);
-}
-
-.approval__split dt {
-  color: var(--slate);
-}
-
-.fromto {
-  display: grid;
-  border-top: var(--hair) solid var(--line);
-  border-bottom: var(--hair) solid var(--line);
-}
-
-.fromto__row {
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-}
-
-.fromto__row + .fromto__row {
-  border-top: var(--hair) solid var(--line);
-}
-
-.fromto__row dt {
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.fromto__row dd {
-  display: grid;
-  gap: 1px;
   min-width: 0;
 }
 
-.fromto__name {
-  font-weight: 600;
+.pass__end--to {
+  justify-items: end;
+  text-align: right;
 }
 
-.fromto__sub {
+.pass__who {
+  overflow: hidden;
+  font-size: var(--t-20);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.pass__sub {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.pass__payee {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  color: var(--slate);
-  font-size: var(--t-13);
+  max-width: 100%;
 }
 
-.fromto__locked svg {
-  color: var(--ink);
-}
-
-/* Keyboard focus must never land under the dock. */
-.approval :focus-visible {
-  scroll-margin-bottom: 240px;
-}
-
-.approval__dock {
-  position: sticky;
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
-  z-index: 5;
-  display: grid;
-  gap: var(--sp-2);
-  margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-8));
-  padding: var(--sp-4) var(--sp-4) var(--sp-1);
-  border-radius: 16px 16px 0 0;
-  background: var(--raised);
-  box-shadow:
-    0 0 0 1px oklch(0.2 0.015 108 / 0.06),
-    0 -10px 24px -16px oklch(0.2 0.015 108 / 0.3);
-}
-
-:root[data-theme="dark"] .approval__dock {
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .approval__dock {
-    box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
-  }
-}
-
-.approval__dock-line {
-  color: var(--slate);
-  font-size: var(--t-14);
-}
-
-.approval__dock .hold {
-  background: var(--paper);
-}
-
-/* The seam is painted in the surface colour behind the strokes. */
-.approval__dock .hold__seam {
-  fill: var(--paper);
-}
-
-.approval__dock .hold {
-  padding: var(--sp-3) var(--sp-4);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.approval__decline {
-  min-height: 40px;
-}
-
-.checks__refusal {
-  color: var(--seal);
-  font-size: var(--t-14);
-  font-weight: 500;
-}
-
-.checks {
-  display: grid;
-  gap: var(--sp-2);
-}
-
-.checks__title {
-  color: var(--slate);
-  font-size: var(--t-13);
-  font-weight: 600;
-}
-
-.checks__list {
-  display: grid;
-  gap: 6px;
-}
-
-.check {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  font-size: var(--t-14);
-}
-
-.check__glyph {
+.pass__payee svg {
   flex: none;
-  margin-top: 2px;
-}
-
-.check--pass {
-  color: var(--ink);
-}
-
-.check--fail {
-  color: var(--seal);
-  font-weight: 500;
-}
-
-.check--ask {
-  color: var(--ink);
-}
-
-.check--ask .check__glyph {
   color: var(--slate);
 }
 
-/* After the hold */
+.pass__payee .hash__value {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
 
-.ledger {
+.pass__arrow {
+  color: var(--slate);
+  align-self: end;
+  margin-bottom: 1.35em;
+}
+
+.pass__what {
   display: grid;
+  gap: var(--sp-1);
+  padding-top: var(--sp-3);
   border-top: var(--hair) solid var(--line);
 }
 
-.ledger__step {
+.pass__title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.pass__title {
+  min-width: 0;
+  font-size: var(--t-17);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pass__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--slate);
+  font-size: var(--t-14);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.pass__source {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.pass__source a {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.pass__exact {
   display: grid;
-  grid-template-columns: 12px 1fr auto;
-  align-items: center;
+  gap: var(--sp-1);
+  padding-top: var(--sp-2);
+}
+
+.pass__fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+}
+
+.pass__fields > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pass__fields dd {
+  min-width: 0;
+  font-size: var(--t-14);
+}
+
+.pass__span2 {
+  grid-column: span 2;
+}
+
+.pass__span3 {
+  grid-column: 1 / -1;
+}
+
+/* The perforation: a dashed rule with a notch cut into each edge, then the stub. */
+.pass__stub {
+  position: relative;
+  display: grid;
+  gap: var(--sp-1);
+  min-height: 72px;
+  align-content: center;
+  border-top: 1.5px dashed var(--line);
+}
+
+.pass__stub::before,
+.pass__stub::after {
+  content: "";
+  position: absolute;
+  top: calc(var(--notch) * -1 - 1px);
+  width: calc(var(--notch) * 2);
+  height: calc(var(--notch) * 2);
+  border: var(--hair) solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  /* Show only the half that bites into the pass. */
+  clip-path: inset(0 0 0 50%);
+}
+
+.pass__stub::before {
+  left: calc(var(--notch) * -1 - 1px);
+}
+
+.pass__stub::after {
+  right: calc(var(--notch) * -1 - 1px);
+  clip-path: inset(0 50% 0 0);
+}
+
+.pass__stub-wait {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.pass__slip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+}
+
+.pass__slip-link {
+  color: var(--ink);
+  font-size: var(--t-14);
+  text-underline-offset: 0.2em;
+}
+
+.pass__slip-time {
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+/* The reveal: when the release lands, the stub's line is drawn across, once, left to right. */
+.pass--slipped .pass__slip {
+  animation: stub-reveal 360ms var(--ease-out) both;
+}
+
+@keyframes stub-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pass--slipped .pass__slip {
+    animation: stub-fade 200ms ease both;
+  }
+}
+
+@keyframes stub-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* After the hold: each step with its time, a rule running down the markers. */
+
+.ledger {
+  display: grid;
+  padding-left: var(--sp-1);
+}
+
+.ledger__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: baseline;
   column-gap: var(--sp-3);
   row-gap: 2px;
-  padding: var(--sp-3) 0;
-  border-bottom: var(--hair) solid var(--line);
+  padding: 0 0 var(--sp-4);
+}
+
+.ledger__step::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--line);
+}
+
+.ledger__step:last-child::before {
+  display: none;
 }
 
 .ledger__marker {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid var(--line);
+  position: relative;
+  top: 1px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  background: var(--paper);
 }
 
 .ledger__step.is-done .ledger__marker {
-  border-color: transparent;
   background: var(--ink);
-}
-
-.ledger__step--countersigned.is-done .ledger__marker {
-  background: var(--seal);
-}
-
-.ledger__step--held.is-done .ledger__marker {
-  background: var(--usdc);
+  box-shadow: none;
 }
 
 .ledger__step--released.is-done .ledger__marker {
@@ -495,40 +538,47 @@
 }
 
 .ledger__step.is-active .ledger__marker {
-  border-color: var(--ink);
-  animation: breathe 1.1s var(--ease-in-out) infinite;
+  box-shadow: inset 0 0 0 1.5px var(--usdc);
 }
 
 .ledger__label {
+  font-size: var(--t-14);
   font-weight: 500;
 }
 
 .ledger__step:not(.is-done):not(.is-active) .ledger__label {
   color: var(--slate);
+  font-weight: 400;
+}
+
+.ledger__step--released.is-done .ledger__label {
+  color: var(--settle);
 }
 
 .ledger__detail {
+  justify-self: end;
   color: var(--slate);
-  font-size: var(--t-13);
+  font-family: var(--mono);
+  font-size: var(--t-12);
   text-align: right;
 }
 
 .ledger__sub {
   grid-column: 2 / -1;
-  font-size: var(--t-13);
 }
+
+/* An outcome: only the word carries colour. */
 
 .outcome {
   display: grid;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: var(--hair) solid var(--line);
 }
 
 .outcome__title {
-  font-size: var(--t-20);
+  font-size: var(--t-17);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-  text-wrap: balance;
 }
 
 .outcome--settled .outcome__title {
@@ -539,12 +589,8 @@
   color: var(--seal);
 }
 
-.outcome--neutral .outcome__title {
-  color: var(--ink);
-}
-
 .outcome__body {
-  color: var(--slate);
+  color: var(--ink);
   font-size: var(--t-14);
 }
 
@@ -553,39 +599,70 @@
   gap: var(--sp-2);
 }
 
-/* Signed against asked, either side of the seam. */
 .seam {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 3px;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-1);
 }
 
 .seam__half {
   display: grid;
-  gap: 2px;
+  gap: var(--sp-1);
   min-width: 0;
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-2) 0 0 var(--r-2);
-  background: var(--raised);
+  padding: var(--sp-3);
 }
 
 .seam__half--seal {
-  border-color: color-mix(in oklab, var(--seal) 50%, var(--line));
-  border-radius: 0 var(--r-2) var(--r-2) 0;
-  background: var(--seal-wash);
+  border-left: 1.5px dashed var(--line);
 }
 
 .seam__label {
   color: var(--slate);
-  font-size: var(--t-12);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.seam__half--seal .seam__label {
+.seam__half--seal .seam__label,
+.seam__half--seal .amount {
   color: var(--seal);
 }
 
-/* Envelope */
+/* The dock: payee and amount, then the hold under the thumb. */
+
+.approval__dock {
+  position: sticky;
+  bottom: var(--tabbar-h);
+  z-index: 5;
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0 calc(var(--sp-4) * -1);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  border-top: var(--hair) solid var(--line);
+  background: var(--paper);
+}
+
+.approval__dock-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.approval__dock-to {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval__decline {
+  min-height: 44px;
+}
 
 .env {
   display: grid;
@@ -613,9 +690,11 @@
 }
 
 .env__heading {
-  font-size: var(--t-13);
-  font-weight: 600;
   color: var(--slate);
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .env__rows {
@@ -640,10 +719,9 @@
 .env__revoked {
   display: grid;
   gap: var(--sp-3);
-  padding: var(--sp-4);
-  border: 1px solid color-mix(in oklab, var(--seal) 45%, var(--line));
-  border-radius: var(--r-3);
-  background: var(--seal-wash);
+  padding: var(--sp-4) 0;
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .env__revoked-title {
@@ -773,8 +851,10 @@
 
 .history__day-title {
   color: var(--slate);
-  font-size: var(--t-13);
+  font-size: var(--t-11);
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .history__list {
@@ -844,15 +924,6 @@
 
 .hrow__status .status {
   font-size: var(--t-12);
-}
-
-/* Inside the sheet the hold keeps its own states: the dock rule above would otherwise outrank them. */
-.approval__dock .hold--holding {
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--seal) 60%, transparent);
-}
-
-.approval__dock .hold--done {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--seal) 45%, transparent);
 }
 
 /* Live requests from the hub: when it asked, what went wrong, and the approver token. */
