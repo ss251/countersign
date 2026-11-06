@@ -6,7 +6,11 @@ export type OrderStatus =
   | "paid"
   | "partially_refunded"
   | "refunded"
+  | "refund_pending"
   | "cancelled";
+
+/** How an escrow order closed: released to the merchant, cancelled by them, or refunded after the deadline. */
+export type CloseKind = "release" | "cancel" | "deadline_refund";
 
 export interface Order {
   id: string;
@@ -14,9 +18,12 @@ export interface Order {
   customer: string;
   merchant: string;
   amount: string;
+  /** The escrow toll kept from a released order; "0" for direct payments. */
+  fee?: string;
   refunded: string;
   refundable: string;
   status: OrderStatus;
+  closeKind?: CloseKind | null;
   createdAt: number;
   settleTx: string;
   closeTx?: string | null;
@@ -24,6 +31,7 @@ export interface Order {
   offerHash?: string;
   deadline?: number;
   resource?: string | null;
+  description?: string | null;
 }
 
 export interface RefundRecord {
@@ -61,9 +69,17 @@ export interface RelayStatus {
 export type StatusTone = "money" | "settled" | "neutral";
 
 export interface Totals {
+  /** Money that reached the merchant: direct payments, and escrow orders released to them. */
   received: string;
+  /** Money still in escrow, not yet the merchant's. */
+  held: string;
+  /** Money the merchant sent back by transfer. Cancels and deadline refunds were never received. */
   refunded: string;
+  /** Escrow tolls kept on released orders. */
+  fees: string;
+  /** received - fees - refunded, as a magnitude; see netNegative. */
   net: string;
+  netNegative: boolean;
   count: number;
 }
 
@@ -130,6 +146,8 @@ export function statusLabel(status: OrderStatus): string {
       return "Partly refunded";
     case "refunded":
       return "Refunded";
+    case "refund_pending":
+      return "Refund settling";
     case "cancelled":
       return "Cancelled";
   }
@@ -144,6 +162,7 @@ export function statusTone(status: OrderStatus): StatusTone {
       return "settled";
     case "partially_refunded":
     case "refunded":
+    case "refund_pending":
     case "cancelled":
       return "neutral";
   }
@@ -161,20 +180,76 @@ export function refundLabel(order: Pick<Order, "status" | "refundable">): string
   return order.status === "held" ? `Cancel and refund ${amount}` : `Refund ${amount}`;
 }
 
+/** True when the money of this order reached the merchant. */
+export function wasReceived(order: Pick<Order, "kind" | "status" | "closeKind">): boolean {
+  if (order.kind === "escrow") return order.closeKind === "release";
+  return order.status !== "pending";
+}
+
 export function totals(orders: readonly Order[]): Totals {
   let received = 0n;
+  let held = 0n;
   let refunded = 0n;
+  let fees = 0n;
   for (const order of orders) {
-    if (order.status === "pending" || order.status === "cancelled") continue;
-    received += parseAtomic(order.amount, "USDT");
+    const amount = parseAtomic(order.amount, "USDT");
+    if (order.kind === "escrow" && order.status === "held") held += amount;
+    if (!wasReceived(order)) continue;
+    received += amount;
     refunded += parseAtomic(order.refunded, "USDT");
+    fees += parseAtomic(order.fee ?? "0", "USDT");
   }
+  const net = received - fees - refunded;
   return {
     received: received.toString(),
+    held: held.toString(),
     refunded: refunded.toString(),
-    net: (received > refunded ? received - refunded : 0n).toString(),
+    fees: fees.toString(),
+    net: (net < 0n ? -net : net).toString(),
+    netNegative: net < 0n,
     count: orders.length,
   };
+}
+
+/** What the merchant sold, in words: the payment's description, the hub's offer title, the URL, or the id. */
+export function itemLabel(order: Pick<Order, "id" | "description" | "resource">, hubTitle?: string | null): string {
+  const text = order.description?.trim() || hubTitle?.trim() || order.resource?.trim();
+  return text || `Order ${shortHash(order.id)}`;
+}
+
+/** "6 Nov 2026, 14:32 IST": the viewer's own clock, with its zone named. */
+export function humanDate(ms: number): string {
+  const date = new Date(ms);
+  const pick = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const day = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  // en-IN names India's zone "IST"; other zones still get their usual short name.
+  const zone = pick(new Intl.DateTimeFormat("en-IN", { timeZoneName: "short" }).formatToParts(date), "timeZoneName");
+  return zone ? `${day}, ${time} ${zone}` : `${day}, ${time}`;
+}
+
+export type RefundReply = { ok: true; txHash: string; refunded?: string } | { ok: false; reason: string };
+
+/**
+ * The merchant service answers a refund two ways. A paid order is sent back by transfer:
+ * `{ ok, txHash, txUrl, refunded, remaining }`. A held escrow order is cancelled on chain:
+ * `{ ok, transaction, url, status: "cancelled" }`. Both are a success.
+ */
+export function normalizeRefundReply(body: unknown, httpStatus: number): RefundReply | null {
+  if (!body || typeof body !== "object" || !("ok" in body)) return null;
+  const reply = body as Record<string, unknown>;
+  if (reply.ok === false) {
+    return { ok: false, reason: typeof reply.reason === "string" ? reply.reason : `http_${httpStatus}` };
+  }
+  if (reply.ok !== true) return null;
+  const txHash = typeof reply.txHash === "string" ? reply.txHash : typeof reply.transaction === "string" ? reply.transaction : null;
+  if (!txHash) return null;
+  return typeof reply.refunded === "string" ? { ok: true, txHash, refunded: reply.refunded } : { ok: true, txHash };
 }
 
 export function txUrl(hash: string): string {

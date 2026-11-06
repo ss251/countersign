@@ -3,7 +3,7 @@ import type { ReceiptOrder } from "./model.ts";
 import {
   addressUrl,
   formatUsdt,
-  localIso,
+  humanDate,
   shortAddress,
   shortHash,
   statusLabel,
@@ -83,6 +83,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
 
   const order = state.order;
   const tone = statusTone(order.status);
+  const close = closeWords(order.closeKind);
   const refundRecords = order.refunds ?? [];
   const refundTxs = order.refundTxs ?? [];
   const refunds =
@@ -124,9 +125,7 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           <div className="mx-receipt__fact">
             <dt>Date</dt>
             <dd className="num">
-              <time dateTime={new Date(order.createdAt).toISOString()}>
-                {localIso(order.createdAt)}
-              </time>
+              <time dateTime={new Date(order.createdAt).toISOString()}>{humanDate(order.createdAt)}</time>
             </dd>
           </div>
           <div className="mx-receipt__fact">
@@ -146,6 +145,22 @@ export function Receipt({ id, fixture }: ReceiptProps) {
               </a>
             </dd>
           </div>
+          {close && order.closeTx ? (
+            <div className="mx-receipt__fact">
+              <dt>{close.term}</dt>
+              <dd>
+                <span className="mx-receipt__close">{close.words} </span>
+                <a
+                  className="mono"
+                  href={txUrl(order.closeTx)}
+                  title={order.closeTx}
+                  aria-label={`${close.term} transaction ${order.closeTx}`}
+                >
+                  {shortHash(order.closeTx)}
+                </a>
+              </dd>
+            </div>
+          ) : null}
           {refunds.map((refund, index) => (
             <div className="mx-receipt__fact" key={`${refund.txHash}-${index}`}>
               <dt>Refund</dt>
@@ -171,4 +186,18 @@ export function Receipt({ id, fixture }: ReceiptProps) {
       </article>
     </div>
   );
+}
+
+/** How the escrow finished, in the customer's words. */
+function closeWords(kind: ReceiptOrder["closeKind"]): { term: string; words: string } | null {
+  switch (kind) {
+    case "release":
+      return { term: "Released", words: "Delivered, then paid to the merchant." };
+    case "cancel":
+      return { term: "Cancelled", words: "Cancelled by the merchant. Full amount returned." };
+    case "deadline_refund":
+      return { term: "Refunded", words: "Refunded after the deadline. Full amount returned." };
+    default:
+      return null;
+  }
 }

@@ -140,6 +140,13 @@
   color: var(--slate);
 }
 
+.mx-orders__heading {
+  margin: 0 0 var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
 .mx-orders {
   min-width: 0;
 }
@@ -295,7 +302,7 @@
 }
 
 .mx-refunded {
-  color: var(--settle);
+  color: var(--slate);
   font-size: var(--t-12);
   font-weight: 500;
   white-space: nowrap;
@@ -321,8 +328,8 @@
   color: inherit;
 }
 
-.mx-result--ok {
-  color: var(--settle);
+.mx-result--done {
+  color: var(--slate);
 }
 
 .mx-result--error {

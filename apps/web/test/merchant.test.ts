@@ -3,6 +3,10 @@ import {
   addressUrl,
   canRefund,
   formatUsdt,
+  humanDate,
+  itemLabel,
+  normalizeRefundReply,
+  wasReceived,
   formatWbt,
   formatWeiWbt,
   refundLabel,
@@ -15,7 +19,7 @@ import {
   txUrl,
   type Order,
 } from "../src/routes/merchant/model.ts";
-import { fixtureOrders } from "../src/routes/merchant/fixtures.ts";
+import { fixtureCsv, fixtureOrders, fixtureRefundTx } from "../src/routes/merchant/fixtures.ts";
 
 describe("formatUsdt", () => {
   test("formats atomic amounts without floats", () => {
@@ -88,25 +92,111 @@ describe("refunds", () => {
 });
 
 describe("totals", () => {
-  test("sums the fixtures", () => {
+  test("sums the fixtures: held money is not received money", () => {
     expect(totals(fixtureOrders)).toEqual({
-      received: "3400000",
+      received: "1350000",
+      held: "400000",
       refunded: "500000",
-      net: "2900000",
-      count: 5,
+      fees: "500",
+      net: "849500",
+      netNegative: false,
+      count: 6,
     });
   });
 
-  test("leaves pending and cancelled out of received", () => {
-    const sample = fixtureOrders[0]!;
-    const pending: Order = { ...sample, status: "pending", amount: "990000" };
-    const cancelled: Order = { ...sample, status: "cancelled", amount: "880000" };
-    expect(totals([pending, cancelled])).toEqual({
-      received: "0",
-      refunded: "0",
-      net: "0",
-      count: 2,
+  const base = fixtureOrders[0]!;
+  const order = (patch: Partial<Order>): Order => ({ ...base, ...patch });
+
+  test("a held escrow order is held, not received", () => {
+    const sums = totals([order({ kind: "escrow", status: "held", amount: "400000", closeKind: null })]);
+    expect(sums.held).toBe("400000");
+    expect(sums.received).toBe("0");
+  });
+
+  test("cancelled and deadline-refunded escrow orders were never received", () => {
+    const sums = totals([
+      order({ kind: "escrow", status: "cancelled", amount: "300000", closeKind: "cancel" }),
+      order({ kind: "escrow", status: "refunded", amount: "200000", closeKind: "deadline_refund" }),
+    ]);
+    expect(sums).toMatchObject({ received: "0", held: "0", refunded: "0", net: "0" });
+  });
+
+  test("a released order is received less its toll, and a transfer refund comes off net", () => {
+    const sums = totals([
+      order({ kind: "escrow", status: "refunded", amount: "50000", fee: "500", refunded: "50000", closeKind: "release" }),
+    ]);
+    expect(sums).toMatchObject({ received: "50000", fees: "500", refunded: "50000", net: "500", netNegative: true });
+  });
+
+  test("a pending direct payment is not received yet", () => {
+    expect(totals([order({ status: "pending", amount: "990000" })]).received).toBe("0");
+  });
+});
+
+describe("wasReceived", () => {
+  test("direct payments once settled, escrow orders only when released", () => {
+    expect(wasReceived({ kind: "exact", status: "paid", closeKind: null })).toBe(true);
+    expect(wasReceived({ kind: "exact", status: "pending", closeKind: null })).toBe(false);
+    expect(wasReceived({ kind: "escrow", status: "held", closeKind: null })).toBe(false);
+    expect(wasReceived({ kind: "escrow", status: "paid", closeKind: "release" })).toBe(true);
+    expect(wasReceived({ kind: "escrow", status: "cancelled", closeKind: "cancel" })).toBe(false);
+  });
+});
+
+describe("itemLabel", () => {
+  const id = "0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc";
+  test("prefers the description, then the hub title, then the URL, then the id", () => {
+    expect(itemLabel({ id, description: "Mumbai weather forecast", resource: "https://x" }, "title")).toBe(
+      "Mumbai weather forecast",
+    );
+    expect(itemLabel({ id, description: null, resource: "https://x" }, "whitechain-dev")).toBe("whitechain-dev");
+    expect(itemLabel({ id, description: " ", resource: "https://x/y" }, null)).toBe("https://x/y");
+    expect(itemLabel({ id }, null)).toBe("Order 0x4dc4…42bc");
+  });
+});
+
+describe("humanDate", () => {
+  test("reads like a person writes it: day, short month, year, 24 h time and the zone", () => {
+    expect(humanDate(Date.UTC(2026, 10, 6, 9, 2, 19))).toMatch(/^6 Nov 2026, \d{2}:\d{2}( \S+)?$/);
+  });
+});
+
+describe("normalizeRefundReply", () => {
+  test("a transfer refund reply", () => {
+    expect(
+      normalizeRefundReply({ ok: true, txHash: "0xaa", txUrl: "u", refunded: "250000", remaining: "0" }, 200),
+    ).toEqual({ ok: true, txHash: "0xaa", refunded: "250000" });
+  });
+
+  test("a cancel reply is a success too, without an amount", () => {
+    expect(normalizeRefundReply({ ok: true, transaction: "0xbb", url: "u", status: "cancelled" }, 200)).toEqual({
+      ok: true,
+      txHash: "0xbb",
     });
+  });
+
+  test("a refusal keeps its reason; junk is not a reply", () => {
+    expect(normalizeRefundReply({ ok: false, reason: "not_refundable" }, 409)).toEqual({
+      ok: false,
+      reason: "not_refundable",
+    });
+    expect(normalizeRefundReply({ ok: false }, 502)).toEqual({ ok: false, reason: "http_502" });
+    expect(normalizeRefundReply({ ok: true }, 200)).toBeNull();
+    expect(normalizeRefundReply("nope", 200)).toBeNull();
+  });
+});
+
+describe("fixtures", () => {
+  test("no transaction hash appears twice", () => {
+    const hashes = fixtureOrders.flatMap((o) => [o.settleTx, ...(o.closeTx ? [o.closeTx] : []), ...o.refundTxs]);
+    hashes.push(...fixtureOrders.map((o) => fixtureRefundTx(o.id)));
+    expect(new Set(hashes.map((h) => h.toLowerCase())).size).toBe(hashes.length);
+  });
+
+  test("the fixture export has the relay's columns", () => {
+    expect(fixtureCsv().split("\n")[0]).toBe(
+      "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls",
+    );
   });
 });
 
