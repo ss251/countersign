@@ -972,3 +972,232 @@ tests (`ba0204b`, test the guard exception table). Only `scripts/release/build.t
 `scripts/release/test/` changed. No package source, root `package.json`, `bun.lock`,
 `tsconfig.json`, `.gitignore`, key or env file was touched.
 
+## cs-70g: a tarball also declares the optional peers its dependencies really import
+
+### The changes
+
+`scripts/release/surface.ts` removes the `cli` row from `EXTRA_DEPENDENCIES`: the CLI
+loads the MCP server through `../../mcp/src/main.ts`, so the server is inlined and the
+tarball declares no `@countersign-hub/*` dependency. The mechanism and its tests stay;
+the table is now empty for `relay`, `mcp` and `cli`.
+
+It also adds `PEER_COMPLETIONS`, a per-package table of `{ package, needsBy, reason }`.
+`mcp` declares one completion: `@x402/evm` for `@circle-fin/x402-batching`, because that
+package's server entry imports `@x402/evm` unconditionally while listing it only as an
+optional peer. `relay` and `cli` have no entries. `checkPeerCompletionTable` rejects an
+empty `package`, `needsBy` or `reason`. `completePeerDependencies` adds each range from
+the repository dependency union after the import scan (so pruning cannot remove it),
+sorts the staged keys, prints one line per completion, fails on a missing union range
+naming the package, and fails with
+`stale peer completion for <pkg>: <peer> (needed by <dep>, which is not a dependency)`
+when `needsBy` is not staged.
+
+`scripts/release/siblings.ts` adds the pure `requiredSiblings`, which reads a tarball's
+staged dependencies and returns every `@countersign-hub/*` dependency that has a tarball
+in the directory plus the names that do not. `scripts/release/smoke.ts` reads each
+tarball's own `package.json`, prints `install: <name> + <sibling> ...`, installs the
+tarball and its siblings in one `npm i`, checks the tarball being processed by its exact
+package name instead of the first directory entry, and prints
+`FAIL install: <name> depends on <dep>, which has no tarball in <dir> and is not
+published` (exit 1) when a sibling is absent.
+
+Changed assertions: no existing test asserted the `cli` row of `EXTRA_DEPENDENCIES`, so
+removing that row changed no assertion. The three `extraDependencyRanges` tests in
+`manifest.test.ts` pass explicit tables and are unchanged. Every existing assertion in
+`surface.test.ts` is unchanged; the new cases are appended, and the new file is
+`test/siblings.test.ts`.
+
+### Gate 1: install, typecheck, tests
+
+```
+$ bun install --linker hoisted && bun run typecheck
+bun install v1.3.14 (0d9b296a)
+
++ @countersign/relay@workspace:packages/relay
+
+3 packages installed [216.00ms]
+$ tsc -p tsconfig.json
+$ bun test scripts/release
+bun test v1.3.14 (0d9b296a)
+
+ 95 pass
+ 0 fail
+ 173 expect() calls
+Ran 95 tests across 12 files. [116.00ms]
+```
+
+The 84 tests from cs-70f are unchanged. The 11 new tests cover the completion range from
+the union, the sorted keys, a missing union package, a stale completion, the empty
+`package`/`needsBy`/`reason` table checks, the printed line, the empty `relay` and `cli`
+tables, and the three sibling cases (a dependency with a tarball, one without, and a
+tarball with no `@countersign-hub/*` dependency).
+
+### Gate 2: the relay is unchanged
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --only relay --out .release
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: packed files clean (4 files)
+relay: .release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-relay-0.1.0 init: ...
+install: relay
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 10s
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+node 20 --version: v20.20.2
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+The size and the four files match cs-70d and cs-70f exactly.
+
+### Gate 3: all three packages, for real
+
+```
+$ git fetch origin
+$ git worktree add --detach "$HOME/Developer/countersign-wt/k3-all" origin/cs/tr-09
+$ cd "$HOME/Developer/countersign-wt/k3-all"
+$ git merge --no-edit origin/cs/cs-70
+$ git merge --no-edit cs/cs-70
+$ bun install --linker hoisted
+
+749 packages installed [10.96s]
+```
+
+`origin/cs/tr-09` is `9e025ab` and already carries K1 (`packages/mcp` and the CLI `bin`).
+The cs-70g commits were still local and could not be pushed, so the worktree merged the
+local `cs/cs-70` after `origin/cs/cs-70`, as cs-70f did. Both merges were clean. `bun
+install` updated `bun.lock` and marked `packages/cli/src/bin.ts` executable; neither
+change was committed.
+
+```
+$ rm -rf .release && bun scripts/release/build.ts --require mcp,cli,relay --out .release
+mcp: dependencies 5 of 14 declared: @circle-fin/x402-batching, @modelcontextprotocol/sdk, ajv, viem, zod
+mcp: peer completion @x402/evm for @circle-fin/x402-batching (its server entry imports @x402/evm but lists it only as an optional peer, which npm does not install)
+mcp: packed files clean (2 files)
+mcp: .release/countersign-hub-mcp-0.1.0.tgz
+  size: 19640 bytes
+  files:
+    dist/index.js
+    package.json
+cli: dependencies 0 of 0 declared:
+cli: guard exception packages/buyer/src/openai/server.ts "Bun." (started only by the buyer openai subcommand, which the countersign wrapper does not expose)
+cli: guard exception packages/runner/src/child.ts "Bun." (runWithBun runs only when globalThis.Bun is defined; under Node defaultSpawner returns node and node:child_process is used)
+cli: packed files clean (3 files)
+cli: smoke test does not run a sell job through the child spawner; that path is guarded by the runtime check only
+cli: .release/countersign-hub-cli-0.1.0.tgz
+  size: 862006 bytes
+  files:
+    dist/bin.js
+    dist/child-entry.js
+    package.json
+relay: "." not published (not on the publish surface: packages/relay/package.json exports it for the workspace)
+relay: dependencies 2 of 14 declared: ajv, viem
+relay: packed files clean (4 files)
+relay: .release/countersign-hub-relay-0.1.0.tgz
+  size: 8642 bytes
+  files:
+    dist/browser.js
+    dist/pay-fetch.js
+    dist/paywall.js
+    package.json
+```
+
+The staged `mcp` dependencies are `@circle-fin/x402-batching` 4.0.0,
+`@modelcontextprotocol/sdk` 1.32.2, `@x402/evm` 2.30.0, `ajv` ^8.20.0, `viem`
+^2.57.16 and `zod` 4.6.7: the completion adds `@x402/evm` with the range from
+`packages/rail/package.json`, and the line above says why. The staged `cli`
+dependencies are `{}`: it imports its sibling packages by relative path and inlines
+every third-party package, so the new tarball is 862006 bytes (cs-70f's was 636862
+before the MCP server was inlined). The staged `relay` dependencies are `ajv` and
+`viem`, unchanged.
+
+```
+$ bun scripts/release/smoke.ts --dir .release
+node --version: v26.7.0
+PASS countersign-hub-cli-0.1.0 init: ...
+install: cli
+PASS countersign-hub-cli-0.1.0 install: added 1 package in 171ms
+PASS cli published name: @countersign-hub/cli (expected @countersign-hub/cli)
+node 22 --version: v22.23.4
+PASS cli bin countersign --help [node v26.7.0]: countersign 0.1.0 Sell. ... Buy. ...
+PASS cli bin countersign --help [node v22.23.4]: countersign 0.1.0 Sell. ... Buy. ...
+PASS cli child entry dist/child-entry.js [node v26.7.0]
+PASS cli child entry dist/child-entry.js [node v22.23.4]
+PASS countersign-hub-mcp-0.1.0 init: ...
+install: mcp
+PASS countersign-hub-mcp-0.1.0 install: added 112 packages in 6s
+PASS mcp published name: @countersign-hub/mcp (expected @countersign-hub/mcp)
+node 20 --version: v20.20.2
+PASS mcp export @countersign-hub/mcp [node v26.7.0]
+PASS mcp export @countersign-hub/mcp [node v20.20.2]
+PASS countersign-hub-relay-0.1.0 init: ...
+install: relay
+PASS countersign-hub-relay-0.1.0 install: added 19 packages in 2s
+PASS relay published name: @countersign-hub/relay (expected @countersign-hub/relay)
+node 20 --version: v20.20.2
+PASS relay export @countersign-hub/relay/paywall [node v26.7.0]
+PASS relay export @countersign-hub/relay/paywall [node v20.20.2]
+PASS relay export @countersign-hub/relay/pay-fetch [node v26.7.0]
+PASS relay export @countersign-hub/relay/pay-fetch [node v20.20.2]
+PASS relay export @countersign-hub/relay/browser [node v26.7.0]
+PASS relay export @countersign-hub/relay/browser [node v20.20.2]
+PASS relay root is not resolvable [node v26.7.0]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+PASS relay root is not resolvable [node v20.20.2]: ... ERR_PACKAGE_PATH_NOT_EXPORTED ...
+```
+
+The mcp install added 112 packages and now includes `@x402/evm`, so the import that
+failed with `ERR_MODULE_NOT_FOUND` in cs-70f resolves. The CLI install added 1 package
+because its staged dependencies are empty; no sibling install was needed, and the
+printed line is `install: cli`. The relay install added 19 packages, unchanged. The
+sibling mechanism is exercised by the pure tests; in this build no tarball declares a
+`@countersign-hub/*` dependency, so no `npm i` needed more than one tarball.
+
+The three tarballs and their packed files:
+
+```
+countersign-hub-mcp-0.1.0.tgz    19640 bytes  dist/index.js, package.json
+countersign-hub-cli-0.1.0.tgz   862006 bytes  dist/bin.js, dist/child-entry.js, package.json
+countersign-hub-relay-0.1.0.tgz   8642 bytes  dist/browser.js, dist/pay-fetch.js, dist/paywall.js, package.json
+```
+
+The worktree was removed afterwards with `git worktree remove --force` and
+`git worktree prune`.
+
+### Gate 4: missing lanes still fail
+
+```
+$ bun scripts/release/build.ts --require mcp,cli,relay --out .release-req
+missing required packages: mcp, cli (packages/mcp, packages/cli not found)
+exit=1
+```
+
+`.release-req` was removed afterwards.
+
+### Commits and files
+
+The feature is `fdd6eea` (declare the optional peers a dependency imports and install
+sibling tarballs together) and the tests are `0b9cb69` (test peer completions and smoke
+sibling installs). Only `scripts/release/surface.ts`, `scripts/release/build.ts`,
+`scripts/release/smoke.ts`, the new `scripts/release/siblings.ts`, and tests under
+`scripts/release/test/` changed. No package source, root `package.json`, `bun.lock`,
+`tsconfig.json`, `.gitignore`, key or env file was touched.
+
+
