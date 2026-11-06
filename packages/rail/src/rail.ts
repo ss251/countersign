@@ -115,6 +115,14 @@ export interface Rail {
   verify(payment: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResult>;
   /** `lockSig` is the payee's Lock(jobId, funder) signature; only the escrow v2 rail uses it. */
   settle(payment: PaymentPayload, requirements: PaymentRequirements, opts?: { lockSig?: Hex }): Promise<SettleResult>;
+  /** True when the hub must verify, deliver, check the delivery, and only then settle. */
+  readonly settlesAfterDelivery?: boolean;
+  /**
+   * For a rail that settles after delivery: the settlement id this payment will get and the last
+   * unix second at which it can still settle, read from the payment without submitting anything.
+   * null when this payment cannot wait (the hub then settles before dispatch, as today).
+   */
+  pending?(payment: PaymentPayload): { transaction: string; validUntil: number } | null;
   /** Present exactly when declaration.kind is "escrow". */
   readonly escrow?: EscrowOps;
 }
