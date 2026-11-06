@@ -175,6 +175,37 @@ describe("after the wallet signed", () => {
     });
   });
 
+  test("whichever screen asks, a refund that cannot settle never opens the wallet", async () => {
+    const { calls, fetch } = relay(ok);
+    let asked = false;
+    const never = async () => ((asked = true), "0x" as Hex);
+
+    // A delivered job in its review window: the escrow's cancel needs Funded.
+    const inReview = await sendWalletRefund(input({ fetch, order: order({ status: "in_review" }), signTypedData: never }));
+    expect(inReview.kind).toBe("refused");
+
+    // A merchant the relayer will not pay gas for.
+    const offList = await sendWalletRefund(
+      input({
+        fetch,
+        signTypedData: never,
+        status: {
+          address: "0xa2EEfc657138eE5367291F8e2Ac45BAC28486006",
+          balanceWei: "1",
+          balanceWbt: "1",
+          ceiling: { capWei: "1", usedWei: "0", remainingWei: "1", txCount: 0, maxTx: 1, resetsAt: 0 },
+          network: "eip155:1874",
+          chainId: 1874,
+          policy: { maxFeePerGasWei: "1", minBalanceWei: "1", allowedPayees: [CUSTOMER] },
+        },
+      }),
+    );
+    expect(offList.kind).toBe("refused");
+
+    expect(asked).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
   test("a wallet that is not the order's merchant is refused before it signs", async () => {
     const { calls, fetch } = relay(ok);
     let asked = false;
@@ -182,7 +213,9 @@ describe("after the wallet signed", () => {
     const outcome = await sendWalletRefund(
       input({ fetch, address: other.address, signTypedData: async () => ((asked = true), "0x" as Hex) }),
     );
-    expect(outcome).toEqual({ kind: "refused", reason: "not_your_order" });
+    // Refused by the desk's own check, in words, before the relay client's not_your_order is reached.
+    expect(outcome.kind).toBe("refused");
+    expect(outcome.kind === "refused" ? outcome.reason : "").toMatch(/is not this order's merchant/);
     expect(asked).toBe(false);
     expect(calls).toHaveLength(0);
   });

@@ -951,7 +951,7 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
           order={walletAsk.order}
           amount={walletAsk.amount}
           {...(walletAsk.reason ? { reason: walletAsk.reason } : {})}
-          {...(relayStatus?.escrow ? { escrow: relayStatus.escrow } : {})}
+          status={relayStatus}
           relayUrl={RELAY_URL}
           hubTitle={walletAsk.order.offerHash ? titles[walletAsk.order.offerHash] : null}
           onFinish={finishWallet}

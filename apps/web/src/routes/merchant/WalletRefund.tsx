@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Address } from "viem";
 import { useAccount, useSignTypedData, useSwitchChain } from "wagmi";
-import type { Order, RefundReason } from "./model.ts";
+import type { Order, RefundReason, RelayStatus } from "./model.ts";
 import { Sheet } from "./Panel.tsx";
 import {
   declinedInWallet,
@@ -24,8 +24,11 @@ interface WalletRefundProps {
   amount: bigint;
   reason?: RefundReason;
   relayUrl: string;
-  /** The escrow the relayer calls, from its /status: a cancel is signed for that contract and no other. */
-  escrow?: string;
+  /**
+   * The relay's /status: its escrow, the one contract a cancel is signed for, and its payee
+   * allowlist. Null while the relay has not answered; the relay still checks both.
+   */
+  status: RelayStatus | null;
   hubTitle?: string | null;
   onFinish: (outcome: WalletRefundOutcome) => void;
 }
@@ -37,7 +40,7 @@ type Stage = "ready" | "switching" | "signing" | "sending";
  * who gets the money, how much, on which chain, for which job, and what happens next. The wallet
  * opens only on the merchant's click, and only on Whitechain; a network switch is its own click.
  */
-export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle, onFinish }: WalletRefundProps): ReactNode {
+export function WalletRefund({ order, amount, reason, relayUrl, status, hubTitle, onFinish }: WalletRefundProps): ReactNode {
   const { address, chainId, chain } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { signTypedDataAsync } = useSignTypedData();
@@ -87,8 +90,9 @@ export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle
 
   const sign = async () => {
     if (!address || busy || !onWhitechain) return;
-    // The wallet may have changed accounts while the sheet was open: check again before it signs.
-    const refusal = walletRefusal(order, address, null);
+    // The wallet may have changed accounts while the sheet was open: say so here, and keep the sheet
+    // open so the merchant can switch back. sendWalletRefund checks the same again before it signs.
+    const refusal = walletRefusal(order, address, status);
     if (refusal) {
       setProblem(refusal);
       return;
@@ -100,8 +104,9 @@ export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle
       amount,
       relayUrl,
       address: address as Address,
+      status,
       ...(reason ? { reason } : {}),
-      ...(escrow ? { escrow } : {}),
+      ...(status?.escrow ? { escrow: status.escrow } : {}),
       signTypedData: (typedData) => signTypedDataAsync(typedData as Parameters<typeof signTypedDataAsync>[0]),
       // Signed: from here the relayer has it, so the sheet says so.
       onSigned: () => setStage("sending"),

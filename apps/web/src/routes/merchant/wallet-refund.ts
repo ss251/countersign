@@ -130,6 +130,8 @@ export interface WalletSendInput {
   /** Called once the wallet has signed, before the relay is asked. */
   onSigned?: () => void;
   fetch?: typeof fetch;
+  /** The relay's /status, for its payee allowlist; without it the relay still checks. */
+  status?: RelayStatus | null;
 }
 
 /**
@@ -137,6 +139,11 @@ export interface WalletSendInput {
  * refundOrder (the merchant service's path too, so the two cannot drift).
  */
 export async function sendWalletRefund(input: WalletSendInput): Promise<WalletSendOutcome> {
+  // Checked again here, beside the only call that opens the wallet: a refund that cannot settle
+  // never reaches it, whichever screen asked (STEER-2225 Fix 3, point 5).
+  const refusal = walletRefusal(input.order, input.address, input.status ?? null);
+  if (refusal) return { kind: "refused", reason: refusal };
+
   let signed = false;
   let walletError: unknown;
   const merchant = walletAccount(input.address, async (typedData) => {
