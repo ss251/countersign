@@ -13,7 +13,7 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
 
 - **Custody.** The hub never holds the buyer's money.
   - On the escrow rails (Arc, Whitechain) funds move from the buyer to `CountersignedEscrow`, and from the escrow to the seller or back to the buyer, on chain ([spec/escrow.md](spec/escrow.md)).
-  - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator ([hedera.md](hedera.md)).
+  - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator only after the hub has checked the delivery ([hedera.md](hedera.md)). A payment the buyer's own wallet has already sent is not held.
   - On the held Hedera rail (`hedera-scheduled`) the money stays in the buyer's own account, inside a schedule that runs only when both the seller and the hub have signed it. The hub co-signs only after checking the delivery, so neither can release it alone. Every transfer out of the seller's payee account, earnings included, needs the hub's co-signature too; tonight that co-sign is done by hand ([hedera.md](hedera.md) "Scheduled checkout").
   - On the `eip3009` rail the buyer's signed `TransferWithAuthorization` moves USDC on Arc directly to the seller, and the hub's relayer submits it.
   - On the Gateway rail the buyer's deposit sits in Circle Gateway. Gateway debits the buyer at once and credits the seller in a later batch.
@@ -39,13 +39,14 @@ As the escrows production uses have them: v2 on both chains, for unbonded jobs o
 | `cancel` | the payee, or anyone with the payee's `Cancel(jobId)` signature | any time the job is `Funded` | the buyer, the full amount |
 
 - **Deadline.** An offer gives the seller 10 seconds to 7 days to deliver ([spec/offer.md](spec/offer.md)). The hub's escrow rail accepts a countersigned deadline no shorter than the offer promises, with 15 seconds of clock skew, and no more than 300 seconds longer.
-- **Failed delivery, by rail.** The escrow rails and the held Hedera rail keep the buyer's money from the seller when a delivery fails. On every other rail the payment has settled before the call is delivered.
+- **Failed delivery, by rail.** The escrow rails, the held Hedera rail and an x402 `exact` payment on the Hedera rail keep the buyer's money from the seller when a delivery fails. On every other rail the payment has settled before the call is delivered.
 
   | Rail | Where the money is during the call | If the delivery fails |
   |---|---|---|
   | Escrow: `escrow` (Arc), `whitechain` | In `CountersignedEscrow` | It returns to the buyer in full by `refund` after the deadline. The hub sweeps those refunds every 30 seconds, and anyone else may call `refund` too. |
   | Held Hedera: `hedera-scheduled` | In the buyer's own account, inside a schedule | The hub does not co-sign, so the schedule cannot execute and expires with nothing moved: [`0.0.11343208`](https://testnet.mirrornode.hedera.com/api/v1/schedules/0.0.11343208) was signed by the seller but not the hub, and never executed. |
-  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` (none of them live on the production hub; `gateway` and `hedera` are listed, because older offers name them) | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
+  | Hedera: `hedera`, x402 `exact` through a facilitator | In the buyer's own account: the hub holds the signed transfer unsubmitted until the output checks out | It is never submitted, so nothing moves. The hub answers `502` "Not delivered. Nothing was charged", and the transfer expires unused. If the seller delivers but the settle fails, the hub answers `502`, withholds the output, and names the transfer and the time after which it cannot land |
+  | Direct: `eip3009`, `gateway`, `mpp`, and on `hedera` a payment the buyer's wallet has already sent (none of the three rails is live on the production hub; `gateway` is listed, because older offers name it) | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
 
   A rail is live when the hub declares it on its `/rails`, and listed when offers or discovery name it but the hub does not settle it. The production hub's live rails are on [`/rails`](https://hub-production-e85e.up.railway.app/rails) and in [status.md](status.md).
 
