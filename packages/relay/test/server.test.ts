@@ -218,6 +218,111 @@ describe("relay server", () => {
     expect(one.receivedAt).toBe(NOW * 1000);
   });
 
+  test("order responses include refund reasons, refund times and the close reason", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const paymentId = fakeHash();
+    relay.ledger.recordPayment({
+      id: paymentId,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: paymentId,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    relay.ledger.recordRefund({
+      paymentId,
+      amount: 400_000n,
+      txHash: fakeHash(),
+      blockNumber: 11n,
+      nonce: fakeNonce(),
+      reason: "duplicate",
+      at: NOW * 1000 + 5,
+    });
+
+    const payment = (await (await app.request(`/orders/${paymentId}`)).json()) as {
+      slipHash: string | null;
+      closedAt: number | null;
+      refunds: { reason: string | null; at: number | null }[];
+    };
+    expect(payment.slipHash).toBeNull();
+    expect(payment.closedAt).toBeNull();
+    expect(payment.refunds.map((refund) => [refund.reason, refund.at])).toEqual([
+      ["duplicate", NOW * 1000 + 5],
+    ]);
+
+    const jobId = fakeHash();
+    relay.ledger.recordJob({
+      jobId,
+      offerHash: fakeHash(),
+      buyer: relay.buyer.address,
+      payee: relay.merchant.address,
+      amount: 1_500_000n,
+      deadline: NOW * 1000 + 120_000,
+      fundTx: fakeHash(),
+      fundBlock: 12n,
+      createdAt: NOW * 1000,
+    });
+    relay.ledger.closeJob(
+      jobId,
+      "cancelled",
+      fakeHash(),
+      undefined,
+      8_000,
+      "requested_by_customer",
+    );
+    const order = (await (await app.request(`/orders/${jobId}`)).json()) as {
+      closeReason: string | null;
+      slipHash: string | null;
+      closedAt: number | null;
+    };
+    expect(order.closeReason).toBe("requested_by_customer");
+    expect(order.slipHash).toBeNull();
+    expect(order.closedAt).toBe(8_000);
+
+    const list = (await (
+      await app.request(`/orders?merchant=${relay.merchant.address}`)
+    ).json()) as {
+      orders: { id: string; closeReason: string | null; closedAt: number | null }[];
+    };
+    expect(list.orders.find((entry) => entry.id === jobId)).toMatchObject({
+      closeReason: "requested_by_customer",
+      closedAt: 8_000,
+    });
+  });
+
+  test("refund and cancel refuse a reason outside the accepted values", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const post = (path: string, payload: unknown) =>
+      app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+    const refund = await post("/refund", {
+      paymentId: fakeHash(),
+      authorization: {},
+      signature: "0x",
+      reason: "because",
+    });
+    expect(refund.status).toBe(400);
+    expect(await refund.json()).toEqual({ ok: false, reason: "invalid_payload" });
+
+    const cancel = await post("/escrow/cancel", {
+      jobId: `0x${"12".repeat(32)}`,
+      sellerSig: "0xab",
+      reason: "because",
+    });
+    expect(cancel.status).toBe(400);
+    expect(await cancel.json()).toEqual({ ok: false, reason: "invalid_payload" });
+    expect(relay.chain.writes).toHaveLength(0);
+  });
+
   test("list routes refuse without a filter", async () => {
     const app = appFor(createTestRelay());
     for (const path of ["/payments", "/orders", "/payments.csv", "/orders.csv"]) {

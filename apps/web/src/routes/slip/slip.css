@@ -2,8 +2,8 @@
   display: grid;
   gap: var(--sp-6);
   padding: var(--sp-6) var(--sp-8) var(--sp-8);
-  border-radius: var(--r-3);
-  background: var(--raised);
+  border-radius: var(--r-1);
+  background: none;
   box-shadow: var(--elev-1);
 }
 

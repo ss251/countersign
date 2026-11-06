@@ -18,7 +18,7 @@ bash apps/web/deploy.sh                    # console: builds apps/web, uploads d
 bash deploy/railway/deploy-hub.sh cs/int   # hub: uploads `git archive cs/int`, production dependencies only
 ```
 
-- `apps/web/deploy.sh` builds with `VITE_HUB_URL=/hub` by default. With `VITE_HUB_URL` set but empty, it builds a console that shows labelled fixture data. `DRY_RUN=1` stages the upload without sending it.
+- `apps/web/deploy.sh` builds with `VITE_HUB_URL=https://hub-production-e85e.up.railway.app` by default, so the console reads the live hub unless a visitor opens it with `?hub=off`. The hub answers CORS for every route the console calls. `VITE_HUB_URL=/hub` builds against the console's same-origin proxy instead. `DRY_RUN=1` stages the upload without sending it.
 - `deploy-hub.sh` deploys an exact commit: only committed files, nothing from the working tree.
 
 ### Variables
@@ -34,10 +34,12 @@ All values live in Railway, never in the repository.
 
 ## Target: Railway's GitHub app
 
+Not installed yet. Installing the app on the repository is an account-level permission and needs the owner's approval. Once it is in:
+
 - Production follows `main`.
-- Each pull request gets an ephemeral environment with its own URL, posted on the pull request and torn down when it closes.
-- PR environments and wait-for-CI are on, so nothing red deploys. There are no hand-rolled previews.
-- Installing the app on the repository is an account-level permission and needs the owner's approval.
+- Wait-for-CI is on, so nothing red deploys.
+
+Preview environments per pull request are cut ([decisions.md](decisions.md), D14), and there are no hand-rolled previews. If previews come back, the rule below applies.
 
 ## Preview secrets rule
 
@@ -45,6 +47,6 @@ This holds before any preview environment exists, and for every one after.
 
 1. **A preview hub never holds a key that matters.** It runs in fixture mode or with testnet-only demo keys. It never carries the Whitechain relayer key, a Hedera operator key, the deployer key, or any key that holds funds.
 2. **Previews come from a sanitised `preview` environment, never from `production`.** Railway copies the base environment's variables into each PR environment, so the base must not hold anything a preview may not have.
-3. **Never put a secret in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle. Once it is pushed, it cannot be taken back. The console's `VITE_*` variables are public paths (`/hub`, `/relay`, `/merchant-api`) and nothing else.
+3. **Never put a secret in a `VITE_*` variable.** Vite inlines every `VITE_*` value into the public JavaScript bundle. Once it is pushed, it cannot be taken back. A deployed console sets only public values: the hub URL and the same-origin paths `/relay` and `/merchant-api`. The merchant desk also reads `VITE_MERCHANT_TOKEN`, which is for a desk built on the merchant's own machine and is never set for a deployed build.
 
 A key that ends up anywhere it should not is rotated at once, not cleaned up afterwards.

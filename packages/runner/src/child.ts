@@ -6,6 +6,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { McpSpec } from "./mcp.ts";
 
 export class CeilingError extends Error {
   override name = "CeilingError";
@@ -16,10 +17,12 @@ export interface ChildLimits {
   maxOutputBytes: number;
 }
 
-export interface ChildSpec {
+export interface SkillSpec {
   adapter: "skill";
   skillPath: string;
 }
+
+export type ChildSpec = SkillSpec | McpSpec;
 
 const CHILD_ENTRY = join(import.meta.dir, "child-entry.ts");
 

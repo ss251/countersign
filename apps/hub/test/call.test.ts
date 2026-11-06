@@ -56,12 +56,12 @@ describe("paid calls", () => {
     expect(body.x402Version).toBe(2);
     expect(body.resource.url).toBe(`http://hub.test/offers/${hash}/call`);
     expect(body.resource.description).toBe(offer.title);
-    expect(body.accepts.map((item) => item.network)).toEqual(["eip155:1874", "eip155:5042002"]);
+    expect(body.accepts.map((item) => item.network)).toEqual(["eip155:5042002", "eip155:1874"]);
 
     const entry = body.accepts[0];
     if (!entry) throw new Error("missing accepts entry");
     expect(entry.scheme).toBe("countersign");
-    expect(entry.network).toBe("eip155:1874");
+    expect(entry.network).toBe("eip155:5042002");
     expect(entry.amount).toBe(offer.price);
     expect(entry.payTo).toBe(offer.seller);
     expect(entry.extra).toMatchObject({ escrow: "0x4444444444444444444444444444444444444444", chainId: 5042002 });
@@ -81,6 +81,24 @@ describe("paid calls", () => {
     expect(body.code).toBe("bad-input");
     expect(body.message).toBe("Refused. The input does not match the offer's schema.");
     expect(body.errors.length).toBeGreaterThan(0);
+    expect(hub.rail.challengeCalls).toBe(0);
+    expect(hub.rail.verifyCalls).toHaveLength(0);
+    expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
+  test("an input canonical JSON refuses is refused before any rail method runs", async () => {
+    const hash = await publishOk(
+      hub,
+      makeOffer({ input: { type: "object", properties: { q: { type: "number" } }, required: ["q"] } }),
+    );
+
+    const response = await call(hub, hash, { q: 1.5 });
+    expect(response.status).toBe(422);
+
+    const body = (await response.json()) as ErrorBody & { errors: string[] };
+    expect(body.code).toBe("bad-input");
+    expect(body.message).toContain("cannot hash");
+    expect(body.message).toContain("Nothing was charged.");
     expect(hub.rail.challengeCalls).toBe(0);
     expect(hub.rail.verifyCalls).toHaveLength(0);
     expect(hub.rail.settleCalls).toHaveLength(0);

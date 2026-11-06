@@ -52,7 +52,7 @@ export default function BuyerPage({ query }: PageProps) {
     const id = window.setInterval(async () => {
       if (document.visibilityState !== "visible") return;
       const r = await api.approvals().catch(() => null);
-      if (!alive || !r || r.source !== "hub") return;
+      if (!alive || !r || r.source !== "hub" || !r.data) return;
       const { data, signed: keep, closed } = latest.current;
       setApprovals(mergeApprovals(data ?? [], r.data, new Set(keep), closed));
     }, 3000);

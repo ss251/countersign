@@ -22,7 +22,9 @@ const result = await reconcile(entries, agent, USDC_TESTNET);
 say(`topic    ${topicId}`);
 say(`agent    ${agent}`);
 say(`asset    ${USDC_TESTNET}`);
-say(`counts   matched ${result.matched.length}  unbacked ${result.unbacked.length}  unlogged ${result.unlogged.length}`);
+say(
+  `counts   matched ${result.matched.length}  unbacked ${result.unbacked.length}  unlogged ${result.unlogged.length}  pending ${result.pending.length}  released ${result.released.length}`,
+);
 for (const { logged, why } of result.unbacked) {
   say(`unbacked sequence ${logged.sequence}  ${logged.entry.tx ?? "(no tx)"}  ${why}`);
 }
@@ -33,6 +35,8 @@ if (json) {
     { label: "matched", value: result.matched.length },
     { label: "unbacked", value: result.unbacked.length },
     { label: "unlogged", value: result.unlogged.length },
+    { label: "pending", value: result.pending.length },
+    { label: "released", value: result.released.length },
   ];
   for (const tx of result.unlogged) {
     evidence.push({ label: "unlogged tx", value: tx, url: hashscanTx(tx) });
