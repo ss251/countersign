@@ -10,6 +10,7 @@ import {
   TopicMessageSubmitTransaction,
   Transaction,
   TransactionId,
+  TransferTransaction,
 } from "@hiero-ledger/sdk";
 import { USDC_TESTNET } from "../constants.ts";
 import type { Facilitator } from "../facilitator.ts";
@@ -71,6 +72,7 @@ const WANT: ExpectedTransfer = {
   payTo: PAYEE,
   feePayer: FEE_PAYER,
   offerHash: OFFER_HASH,
+  maxTimeoutSeconds: 120,
 };
 const MEMO = offerMemo(OFFER_HASH);
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -121,7 +123,22 @@ function wantFrom(req: PaymentRequirements): ExpectedTransfer {
     payTo: req.payTo,
     feePayer: req.extra!.feePayer as string,
     offerHash: req.extra!.offerHash as string,
+    maxTimeoutSeconds: req.maxTimeoutSeconds,
   };
+}
+
+async function transferWithDuration(want: ExpectedTransfer, seconds: number): Promise<string> {
+  const token = TokenId.fromString(want.asset);
+  const tx = new TransferTransaction()
+    .addTokenTransfer(token, AccountId.fromString(PAYER), -want.amount)
+    .addTokenTransfer(token, AccountId.fromString(want.payTo), want.amount)
+    .setTransactionId(TransactionId.generate(AccountId.fromString(want.feePayer)))
+    .setTransactionMemo(offerMemo(want.offerHash))
+    .setTransactionValidDuration(seconds)
+    .setNodeAccountIds([NODE])
+    .freeze();
+  await tx.sign(payerKey);
+  return Buffer.from(tx.toBytes()).toString("base64");
 }
 
 interface FakeOpts {
@@ -210,6 +227,8 @@ const MUTATIONS = [
   "unsigned",
   "expired-past",
   "expired-boundary",
+  "not-yet-valid",
+  "validity-too-long",
 ] as const;
 
 type Mutation = (typeof MUTATIONS)[number];
@@ -223,6 +242,7 @@ interface MutationResult {
 
 async function mutate(rng: Rng, kind: Mutation, want: ExpectedTransfer, i: number): Promise<MutationResult> {
   let build: Build = {};
+  let raw: string | undefined;
   let at: ((t: InspectedTransfer) => number) | undefined;
   switch (kind) {
     case "amount-plus":
@@ -307,15 +327,21 @@ async function mutate(rng: Rng, kind: Mutation, want: ExpectedTransfer, i: numbe
     case "expired-boundary":
       at = (t) => t.validStart + t.validDurationSeconds + (i % 2 === 0 ? 0 : rng.int(10_000));
       break;
+    case "not-yet-valid":
+      build = { startOffset: 60 + rng.int(10_000) };
+      break;
+    case "validity-too-long":
+      raw = await transferWithDuration(want, want.maxTimeoutSeconds + 1);
+      break;
   }
-  const t = await transfer(build);
-  const inspected = decodeTransfer(t.base64);
+  const base64 = raw ?? (await transfer(build)).base64;
+  const inspected = decodeTransfer(base64);
   const check = checkTransfer(inspected, want, at ? at(inspected) : NOW());
   const tokens = Object.entries(inspected.tokens)
     .map(([token, entries]) => `${token}=[${entries.map((e) => `${e.account}:${e.amount}`).join(",")}]`)
     .join(" ");
   const detail = `feePayer=${inspected.feePayer} memo=${JSON.stringify(inspected.memo)} tokens=${tokens} hbar=${inspected.hbar.length} nft=${inspected.nftCount} signers=${inspected.signerCount} window=${inspected.validStart}+${inspected.validDurationSeconds}`;
-  return { base64: t.base64, inspected, check, detail };
+  return { base64, inspected, check, detail };
 }
 
 async function nonTransfer(rng: Rng, i: number): Promise<string> {
@@ -364,24 +390,31 @@ describe("hedera rail fuzz", () => {
   }, 20_000);
 
   const SEED_PAYER = 0x51ee_1002;
-  test(`property 1: a changed payer account is refused by checkTransfer (seed 0x${SEED_PAYER.toString(16)})`, async () => {
+  test(`property 1: a changed payer account is refused by verify and settle (seed 0x${SEED_PAYER.toString(16)})`, async () => {
     const rng = prng(SEED_PAYER);
-    const accepted: string[] = [];
+    const { f, calls } = fakeFacilitator({ name: "payer", feePayer: FEE_PAYER });
+    const r = await rail([f], { verifyPayerSignature: async ({ payer }) => ({ ok: payer === PAYER }) });
+    const req = r.challenge(offer(), ctx);
+    const bad: string[] = [];
     const cases = 320;
     for (let i = 0; i < cases; i++) {
       const from = randomAccount(rng, [PAYER, PAYEE, FEE_PAYER]);
-      const t = await transfer({ from });
-      const inspected = decodeTransfer(t.base64);
-      const check = checkTransfer(inspected, WANT, NOW());
-      if (check.ok) {
-        accepted.push(`from=${from} -> checkTransfer accepted with payer=${check.payer}`);
+      const payment = await pay(req, { from });
+      const v = await r.verify(payment, req);
+      const s = await r.settle(payment, req);
+      if (v.isValid || v.invalidReason !== "signature_invalid") {
+        bad.push(`from=${from} -> verify ${JSON.stringify(v)}`);
+      }
+      if (s.success || s.errorReason !== "signature_invalid") {
+        bad.push(`from=${from} -> settle ${JSON.stringify(s)}`);
       }
     }
-    expect({ cases, accepted: accepted.length, examples: accepted.slice(0, 5) }).toEqual({
+    expect({
       cases,
-      accepted: 0,
-      examples: [],
-    });
+      bad: bad.length,
+      examples: bad.slice(0, 5),
+      facilitator: { verify: calls.verify, settle: calls.settle },
+    }).toEqual({ cases, bad: 0, examples: [], facilitator: { verify: 0, settle: 0 } });
   }, 20_000);
 
   const SEED_SIG = 0x51ee_1003;
@@ -420,7 +453,7 @@ describe("hedera rail fuzz", () => {
       const to = randomAccount(rng, [from]);
       const feePayer = randomAccount(rng, [from, to]);
       const hash = randomHash(rng);
-      const want: ExpectedTransfer = { asset, amount, payTo: to, feePayer, offerHash: hash };
+      const want: ExpectedTransfer = { asset, amount, payTo: to, feePayer, offerHash: hash, maxTimeoutSeconds: 180 };
       const t = await transfer({ from, to, amount, asset, feePayer, memo: offerMemo(hash) });
       const inspected = decodeTransfer(t.base64);
       const check = checkTransfer(inspected, want, NOW());

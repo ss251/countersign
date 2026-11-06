@@ -74,6 +74,7 @@ export interface ExpectedTransfer {
   payTo: string;
   feePayer: string;
   offerHash: string;
+  maxTimeoutSeconds: number;
 }
 
 export type TransferRefusal =
@@ -84,7 +85,9 @@ export type TransferRefusal =
   | "wrong_asset"
   | "extra_transfers"
   | "expired"
-  | "unsigned";
+  | "unsigned"
+  | "not_yet_valid"
+  | "validity_too_long";
 
 export type TransferCheck =
   | { ok: true; payer: string }
@@ -132,7 +135,14 @@ export function checkTransfer(t: InspectedTransfer, want: ExpectedTransfer, nowS
   if (debit.account === want.feePayer || debit.account === want.payTo) {
     return refuse("extra_transfers", "Refused. The fee payer or the seller cannot be the payer.");
   }
+  // checkTransfer cannot bind an account to a key offline; the rail's signature check does that against the payer's on-chain key.
   if (t.signerCount === 0) return refuse("unsigned", "Refused. The payment carries no signature.");
+  if (t.validDurationSeconds > want.maxTimeoutSeconds) {
+    return refuse("validity_too_long", "Refused. The signed payment stays valid longer than this offer allows.");
+  }
+  if (t.validStart > nowSeconds + 10) {
+    return refuse("not_yet_valid", "Refused. The signed payment is not valid yet.");
+  }
   if (nowSeconds >= t.validStart + t.validDurationSeconds) {
     return refuse("expired", "Refused. The signed payment expired before it was settled.");
   }

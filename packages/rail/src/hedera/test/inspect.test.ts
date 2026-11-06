@@ -4,7 +4,14 @@ import { MEMO_PREFIX, offerHashFromMemo, offerMemo } from "../memo.ts";
 import { hashscanTx, parseTxId, toMirrorTxId, toSdkTxId } from "../txid.ts";
 import { FEE_PAYER, OFFER_HASH, PAYEE, PAYER, topicMessage, transfer } from "./fixtures.ts";
 
-const want: ExpectedTransfer = { asset: "0.0.429274", amount: 10000n, payTo: PAYEE, feePayer: FEE_PAYER, offerHash: OFFER_HASH };
+const want: ExpectedTransfer = {
+  asset: "0.0.429274",
+  amount: 10000n,
+  payTo: PAYEE,
+  feePayer: FEE_PAYER,
+  offerHash: OFFER_HASH,
+  maxTimeoutSeconds: 120,
+};
 const now = () => Math.floor(Date.now() / 1000);
 
 async function reason(b: Parameters<typeof transfer>[0], w: Partial<ExpectedTransfer> = {}, at = now()) {
@@ -111,5 +118,15 @@ describe("checkTransfer", () => {
     const d = decodeTransfer(t.base64);
     expect(checkTransfer(d, want, d.validStart + d.validDurationSeconds)).toMatchObject({ ok: false, reason: "expired" });
     expect(checkTransfer(d, want, d.validStart + d.validDurationSeconds - 1).ok).toBe(true);
+  });
+  test("refuses a payment that is not valid yet", async () => {
+    const t = await transfer({ startOffset: 60 });
+    const d = decodeTransfer(t.base64);
+    expect(checkTransfer(d, want, d.validStart - 11)).toMatchObject({ ok: false, reason: "not_yet_valid" });
+    expect(checkTransfer(d, want, d.validStart - 10).ok).toBe(true);
+  });
+  test("refuses a payment that stays valid longer than the offer allows", async () => {
+    expect(await reason({}, { maxTimeoutSeconds: 119 })).toBe("validity_too_long");
+    expect(await reason({}, { maxTimeoutSeconds: 120 })).toBe("ok");
   });
 });
