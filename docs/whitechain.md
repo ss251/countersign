@@ -92,6 +92,8 @@ Every payment below was settled in USDT `0xcedf…55a7` through the relay (`pack
 |---|---|---|
 | 2026-11-06 09:41 | Buyer `0xcb39…4298` pays merchant `0xd588…C71c` 0.25 USDT with x402 `exact`, one EIP-3009 signature, no gas | [`0x4dc46065…42bc`](https://explorer.testnet.whitechain.io/tx/0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc) |
 | 2026-11-06 09:42 | Merchant refunds the full 0.25 USDT in one click. The merchant signs an EIP-3009 transfer back, and the relay pays its gas | [`0x565830d7…88e5`](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5) |
+| 2026-11-06 09:49 | Buyer pays 0.30 USDT into the countersign escrow with x402 `countersign`. One `ReceiveWithAuthorization` signature binds offer, payee, amount and deadline. Job `0xd3247aa4…8e7e` | [`0x3e82355d…2447`](https://explorer.testnet.whitechain.io/tx/0x3e82355da37166f668d4bc1c428d8b03a262915ef2a856ebb10b1423b89e2447) |
+| 2026-11-06 09:50 | Merchant refunds the held order in one click. The merchant signs `Cancel(jobId)`, the relay submits `cancel`, and the escrow returns the full 0.30 USDT with no toll | [`0x1e99d1ac…c5d9`](https://explorer.testnet.whitechain.io/tx/0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9) |
 
 To reproduce, run the relay, the merchant's server and the buyer, each with only its own key in its environment:
 
