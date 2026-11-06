@@ -95,13 +95,103 @@ describe("offer search", () => {
     const hit = body.results[0];
     if (!hit) throw new Error("missing search hit");
 
-    expect(hit.why).toContain('title has "question"');
-    expect(hit.why).toContain('summary has "question"');
-    expect(hit.why).toContain('upstream has "arc"');
-    expect(hit.why).toContain('takes "question"');
+    expect(hit.why).toContain('title has "arc" and "question"');
     expect(hit.why).toContain('returns "answer"');
     expect(hit.why).toContain("served by a skill");
+    expect(hit.why).not.toContain('summary has "question"');
     expect(new Set(hit.why).size).toBe(hit.why.length);
+
+    const quoted = hit.why.flatMap((reason) =>
+      [...reason.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? ""),
+    );
+    expect(new Set(quoted).size).toBe(quoted.length);
+  });
+
+  test("stopwords and the question property are not credited", async () => {
+    const offer = makeOffer({
+      title: "Deploy a contract on Arc",
+      summary: "Deploys a contract on Arc and returns its address.",
+      input: { type: "object", properties: { question: { type: "string" } } },
+      output: { type: "object", properties: { address: { type: "string" } } },
+    });
+    await publishOk(hub, offer);
+
+    const body = await search(hub, { q: "deploy a contract on arc" });
+    const hit = body.results[0];
+    if (!hit) throw new Error("missing search hit");
+
+    expect(hit.why).toContain('title has "deploy", "contract" and "arc"');
+    expect(hit.why.some((reason) => reason.includes('"on"') || reason.includes('"a"'))).toBe(false);
+    expect(hit.why.some((reason) => reason.startsWith("summary has"))).toBe(false);
+  });
+
+  test("matching is whole-word, not substring", async () => {
+    const question = makeOffer({
+      title: "Unrelated",
+      summary: "Nothing to see.",
+      input: { type: "object", properties: { question: { type: "string" } } },
+    });
+    const arc = makeOffer({ title: "Arc", summary: "Just arc." });
+    await publishOk(hub, question);
+    await publishOk(hub, arc);
+
+    const ion = await search(hub, { q: "ion" });
+    expect(ion.results).toEqual([]);
+
+    const architecture = await search(hub, { q: "architecture" });
+    expect(architecture.results).toEqual([]);
+  });
+
+  test("a prefix of at least four characters matches a word", async () => {
+    await publishOk(hub, makeOffer({ title: "Deploy a contract", summary: "Something else." }));
+
+    const body = await search(hub, { q: "contracts" });
+    const hit = body.results[0];
+    if (!hit) throw new Error("missing search hit");
+
+    expect(hit.why).toEqual(['title has "contracts"']);
+  });
+
+  test("camelCase property names are split into words", async () => {
+    await publishOk(
+      hub,
+      makeOffer({
+        title: "Unrelated",
+        summary: "Nothing here.",
+        input: { type: "object", properties: { questionText: { type: "string" } } },
+      }),
+    );
+
+    const body = await search(hub, { q: "question" });
+    const hit = body.results[0];
+    if (!hit) throw new Error("missing search hit");
+
+    expect(hit.why).toContain('takes "question"');
+  });
+
+  test("a stopword-only query returns no results", async () => {
+    await publishOk(hub, makeOffer({ title: "Echo the question" }));
+
+    const body = await search(hub, { q: "what is the" });
+    expect(body).toEqual({ query: "what is the", results: [] });
+  });
+
+  test("a token credited to the title still scores every field it matches", async () => {
+    await publishOk(
+      hub,
+      makeOffer({
+        title: "Arc gateway",
+        summary: "An arc gateway.",
+        upstream: { url: "https://example.test/arc", licence: "MIT" },
+      }),
+    );
+
+    const body = await search(hub, { q: "arc" });
+    const hit = body.results[0];
+    if (!hit) throw new Error("missing search hit");
+
+    expect(hit.why).toEqual(['title has "arc"']);
+    expect(hit.score).toBe(5);
   });
 
   test("the rail filter drops offers without that rail", async () => {

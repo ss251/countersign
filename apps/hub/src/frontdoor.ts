@@ -109,10 +109,22 @@ const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SETTLEMENT_LIMIT = 100;
 const DEFAULT_SETTLEMENT_LIMIT = 20;
 
+const STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "but", "of", "on", "in", "at", "to", "for",
+  "from", "by", "with", "about", "into", "onto", "over", "as", "is", "are",
+  "was", "were", "be", "been", "it", "its", "this", "that", "these", "those",
+  "i", "me", "my", "we", "our", "you", "your", "he", "she", "they", "them",
+  "their", "can", "could", "would", "should", "will", "shall", "may", "might",
+  "do", "does", "did", "done", "how", "what", "which", "who", "whom", "why",
+  "when", "where", "please", "want", "need", "some", "any", "all", "get",
+  "make", "let", "just", "so", "if", "then", "than", "there", "here", "not",
+  "no", "yes", "up", "out", "via", "per", "using", "use",
+]);
+
 export function searchOffers(deps: FrontdoorDeps, params: SearchParams): SearchResponse {
   const query = (params.q ?? "").trim();
   const tokens = tokenise(query);
-  if (tokens.length === 0) return { query: "", results: [] };
+  if (tokens.length === 0) return { query, results: [] };
 
   const limit = intParam(params.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
   const rail = (params.rail ?? "").trim();
@@ -267,32 +279,54 @@ function scoreOffer(
   tokens: string[],
   online: boolean,
 ): { score: number; why: string[] } {
-  const title = offer.title.toLowerCase();
-  const summary = offer.summary.toLowerCase();
+  const title = wordsOf(offer.title);
+  const summary = wordsOf(offer.summary);
   const adapter = offer.adapter.toLowerCase();
-  const upstream = offer.upstream?.url.toLowerCase() ?? "";
-  const inputs = propertyNames(offer.input);
-  const outputs = propertyNames(offer.output);
-  const seen = new Set<string>();
-  const why: string[] = [];
+  const upstream = wordsOf(offer.upstream?.url ?? "");
+  const inputs = propertyWords(offer.input);
+  const outputs = propertyWords(offer.output);
+  const titleTokens: string[] = [];
+  const takesTokens: string[] = [];
+  const returnsTokens: string[] = [];
+  const summaryTokens: string[] = [];
+  const upstreamTokens: string[] = [];
+  let adapterMatched = false;
   let score = 0;
 
-  const add = (points: number, sentence: string): void => {
-    score += points;
-    if (seen.has(sentence)) return;
-    seen.add(sentence);
-    why.push(sentence);
-  };
-
   for (const token of tokens) {
-    if (title.includes(token)) add(3, `title has "${token}"`);
-    if (summary.includes(token)) add(1, `summary has "${token}"`);
-    if (adapter.includes(token)) add(2, `served by ${article(offer.adapter)}`);
-    if (upstream.includes(token)) add(1, `upstream has "${token}"`);
-    if (inputs.some((name) => name.toLowerCase().includes(token))) add(2, `takes "${token}"`);
-    if (outputs.some((name) => name.toLowerCase().includes(token))) add(2, `returns "${token}"`);
+    const inTitle = matchesAny(title, token);
+    const inInput = matchesAny(inputs, token);
+    const inOutput = matchesAny(outputs, token);
+    const inAdapter = token === adapter;
+    const inSummary = matchesAny(summary, token);
+    const inUpstream = matchesAny(upstream, token);
+
+    if (inTitle) score += 3;
+    if (inInput) score += 2;
+    if (inOutput) score += 2;
+    if (inAdapter) score += 2;
+    if (inSummary) score += 1;
+    if (inUpstream) score += 1;
+
+    if (inTitle) titleTokens.push(token);
+    else if (inInput) takesTokens.push(token);
+    else if (inOutput) returnsTokens.push(token);
+    else if (inAdapter) adapterMatched = true;
+    else if (inSummary) summaryTokens.push(token);
+    else if (inUpstream) upstreamTokens.push(token);
   }
-  if (online) add(1, "seller is online");
+
+  const why: string[] = [];
+  if (titleTokens.length > 0) why.push(`title has ${quotedList(titleTokens)}`);
+  if (takesTokens.length > 0) why.push(`takes ${quotedList(takesTokens)}`);
+  if (returnsTokens.length > 0) why.push(`returns ${quotedList(returnsTokens)}`);
+  if (adapterMatched) why.push(`served by ${article(offer.adapter)}`);
+  if (summaryTokens.length > 0) why.push(`summary has ${quotedList(summaryTokens)}`);
+  if (upstreamTokens.length > 0) why.push(`upstream has ${quotedList(upstreamTokens)}`);
+  if (online) {
+    score += 1;
+    why.push("seller is online");
+  }
 
   return { score, why };
 }
@@ -301,11 +335,49 @@ function tokenise(query: string): string[] {
   const seen = new Set<string>();
   const tokens: string[] = [];
   for (const token of query.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (token.length < 2 || seen.has(token)) continue;
+    if (token.length < 2 || seen.has(token) || STOPWORDS.has(token)) continue;
     seen.add(token);
     tokens.push(token);
   }
   return tokens;
+}
+
+function wordsOf(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== "");
+}
+
+function propertyWords(schema: { [key: string]: unknown }): string[] {
+  const words: string[] = [];
+  for (const name of propertyNames(schema)) {
+    const split = name
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      .toLowerCase();
+    for (const word of split.split(/[^a-z0-9]+/)) {
+      if (word !== "") words.push(word);
+    }
+  }
+  return words;
+}
+
+function matchesAny(words: string[], token: string): boolean {
+  return words.some((word) => matchesWord(token, word));
+}
+
+function matchesWord(token: string, word: string): boolean {
+  if (token === word) return true;
+  const shorter = token.length < word.length ? token : word;
+  if (shorter.length < 4) return false;
+  return token.startsWith(word) || word.startsWith(token);
+}
+
+function quotedList(tokens: string[]): string {
+  const quoted = tokens.map((token) => `"${token}"`);
+  if (quoted.length <= 1) return quoted[0] ?? "";
+  return `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1] ?? ""}`;
 }
 
 function propertyNames(schema: { [key: string]: unknown }): string[] {
