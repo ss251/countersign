@@ -19,7 +19,7 @@ export type Network = `eip155:${number}` | "hedera:testnet" | "hedera:mainnet" |
  * - escrow:     CountersignedEscrow on Arc, USDC, the buyer's EIP-3009 authorisation names the escrow
  * - eip3009:    direct USDC transfer on Arc, no escrow (in progress, #19)
  * - gateway:    Circle Gateway nanopayment on Arc, credited to the seller in a batch
- * - erc8183:    reserved: ERC-8183 job escrow with a JobHook committing the slip (not built, #24)
+ * - erc8183:    countersign's escrow holding its money in an ERC-8183 job on Arc's shared core; a JobHook emits the slip hash (D21)
  * - whitechain: CountersignedEscrow on Whitechain Sepolia, USDT, gas paid by our relayer
  * - hedera:     HTS USDC on Hedera testnet through an x402 facilitator, every spend on an HCS topic
  * - mpp:        Machine Payments Protocol: Tempo testnet first, Stripe's card method behind a flag; the slip carries the MPP receipt id (in progress, #84)
