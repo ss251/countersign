@@ -67,29 +67,51 @@ export async function checkEnsLock(offer: Offer, resolve: EnsResolve | undefined
   return { ok: true, address: resolved };
 }
 
+/**
+ * Two independent public Sepolia endpoints. The resolver asks every endpoint it is given and
+ * refuses unless they agree, so no single RPC decides who a named seller is.
+ */
+export const DEFAULT_SEPOLIA_RPCS = ["https://11155111.rpc.thirdweb.com", "https://ethereum-sepolia-rpc.publicnode.com"];
+
+/** The 4-byte selector of EIP-3668 `OffchainLookup(address,string[],bytes,bytes4,bytes)`. */
+const OFFCHAIN_LOOKUP = "0x556f1830";
+
 export interface SepoliaEnsOptions {
-  /** A Sepolia RPC. Defaults to viem's public Sepolia endpoint. */
+  /** One Sepolia RPC. Kept for callers that pin a single endpoint; prefer `rpcUrls`. */
   rpcUrl?: string;
+  /** Sepolia RPCs that must all agree. Defaults to DEFAULT_SEPOLIA_RPCS. */
+  rpcUrls?: string[];
   /** How long an answer is reused, in milliseconds. Default 60 s; 0 disables the cache. */
   cacheMs?: number;
   now?: () => number;
+  /** Test seam: replaces the RPC lookups, one per endpoint. */
+  lookups?: EnsResolve[];
   /** Test seam: replaces the RPC lookup. */
   lookup?: EnsResolve;
 }
 
+/** Parse a comma-separated list of RPC URLs from an environment variable, or undefined when empty. */
+export function rpcUrlsFrom(value: string | undefined): string[] | undefined {
+  const urls = (value ?? "").split(",").map((url) => url.trim()).filter((url) => url !== "");
+  return urls.length > 0 ? urls : undefined;
+}
+
 /**
- * Forward-resolve names on Sepolia through the Universal Resolver. Answers, including
- * "no address", are cached briefly; failed lookups are not cached and still throw.
+ * Forward-resolve names on Sepolia through the Universal Resolver, on every configured endpoint.
+ *
+ * - CCIP-Read (EIP-3668) is off. A name whose resolver answers with an OffchainLookup would
+ *   otherwise make this process fetch a URL the name's owner chose. Such a name is unresolved.
+ * - Every endpoint must give the same answer. A disagreement throws, which callers treat as a
+ *   failed lookup and refuse.
+ * - Answers, including "no address", are cached briefly. Failed lookups are not cached and throw.
  */
 export function sepoliaEnsResolver(options: SepoliaEnsOptions = {}): EnsResolve {
-  const lookup =
-    options.lookup ??
-    (() => {
-      // CCIP-Read off: a forward lookup of a seller name needs no offchain data, and following
-      // OffchainLookup would fetch a URL the name's owner chooses (cs-w1 B13). It fails closed instead.
-      const client = createPublicClient({ chain: sepolia, transport: http(options.rpcUrl), ccipRead: false });
-      return async (name: string) => (await client.getEnsAddress({ name: normalize(name) })) ?? null;
-    })();
+  const lookups =
+    options.lookups ??
+    (options.lookup
+      ? [options.lookup]
+      : (options.rpcUrls ?? (options.rpcUrl ? [options.rpcUrl] : DEFAULT_SEPOLIA_RPCS)).map(rpcLookup));
+  if (lookups.length === 0) throw new Error("sepoliaEnsResolver needs at least one RPC.");
   const cacheMs = options.cacheMs ?? 60_000;
   const now = options.now ?? Date.now;
   const cache = new Map<string, { value: Address | null; expiresAt: number }>();
@@ -98,10 +120,45 @@ export function sepoliaEnsResolver(options: SepoliaEnsOptions = {}): EnsResolve 
     const at = now();
     const hit = cache.get(name);
     if (hit && hit.expiresAt > at) return hit.value;
-    const value = await lookup(name);
-    if (cacheMs > 0) cache.set(name, { value, expiresAt: at + cacheMs });
-    return value;
+    const answers = await Promise.all(lookups.map((lookup) => lookup(name)));
+    const first = answers[0] ?? null;
+    for (const answer of answers) {
+      if ((answer === null) !== (first === null) || (answer !== null && first !== null && !sameAddress(answer, first))) {
+        throw new Error(`Sepolia endpoints disagree on ${name}.`);
+      }
+    }
+    if (cacheMs > 0) cache.set(name, { value: first, expiresAt: at + cacheMs });
+    return first;
   };
+}
+
+function rpcLookup(rpcUrl: string): EnsResolve {
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl), ccipRead: false });
+  return async (name: string) => {
+    try {
+      return (await client.getEnsAddress({ name: normalize(name) })) ?? null;
+    } catch (error) {
+      if (isOffchainLookup(error)) return null;
+      throw error;
+    }
+  };
+}
+
+/** True when an error, or any error it wraps, carries an OffchainLookup revert. */
+function isOffchainLookup(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const e = current as { data?: unknown; raw?: unknown; cause?: unknown };
+    const data = e.data as { errorName?: unknown } | string | undefined;
+    if (typeof data === "object" && data !== null && data.errorName === "OffchainLookup") return true;
+    for (const raw of [data, e.raw]) {
+      if (typeof raw === "string" && raw.toLowerCase().startsWith(OFFCHAIN_LOOKUP)) return true;
+    }
+    current = e.cause;
+  }
+  return false;
 }
 
 function sameAddress(a: string, b: string): boolean {

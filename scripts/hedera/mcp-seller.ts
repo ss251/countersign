@@ -13,6 +13,7 @@ import {
   type JsonSchema,
   type Offer,
 } from "../../packages/core/src/index.ts";
+import { USDC_TESTNET } from "../../packages/rail/src/hedera/constants.ts";
 import { offerInputSchema } from "../../packages/rail/src/hedera/mcp-schema.ts";
 import { prepareCountersign } from "../../packages/rail/src/hedera/schedule.ts";
 import type { Hex, RunnerAccount } from "../../packages/runner/src/account.ts";
@@ -216,7 +217,7 @@ async function main(): Promise<void> {
         HD_SELLER_SIGN_KEY,
         order.schedule.id,
         {
-          asset: order.asset,
+          asset: USDC_TESTNET,
           amount: BigInt(order.amount),
           payTo: order.payTo,
           offerHash: order.offerHash,

@@ -108,6 +108,19 @@ export function startRunner(cfg: RunnerConfig): RunnerHandle {
       return fail(target, order, "Refused. The deadline has passed.");
     }
 
+    if (order.rail === "hedera-scheduled") {
+      if (!cfg.countersign || !order.schedule) {
+        const reason = "Refused. This runner cannot countersign a held Hedera payment.";
+        notify(order, entry.offer.title, false, reason);
+        return fail(target, order, reason);
+      }
+      if (order.amount !== entry.offer.price || order.payTo !== entry.offer.payTo?.["hedera-scheduled"]) {
+        const reason = "Refused. The held order's terms differ from the served offer.";
+        notify(order, entry.offer.title, false, reason);
+        return fail(target, order, reason);
+      }
+    }
+
     const inputCheck = checkSchema(entry.offer.input, order.input);
     if (!inputCheck.ok) {
       const reason = "Refused. The input does not match the offer's schema.";
