@@ -1,6 +1,7 @@
 /**
- * The seller CLI. The key comes only from CS_SELLER_KEY; it is never printed
- * and never accepted as an argument.
+ * The seller CLI. A signed-in session signs through the hub (CS_SESSION and
+ * CS_HUB); CS_SELLER_KEY is the Advanced: CI override and wins when it is set.
+ * No key or session token is ever printed or accepted as an argument.
  *
  *   bun packages/runner/src/cli.ts publish --hub <url> --skill <path> --price <atomic> ...
  *   bun packages/runner/src/cli.ts publish --hub <url> --openapi <spec.json> --operation <id>
@@ -41,6 +42,11 @@ import {
   type OpenApiSpec,
 } from "./openapi.ts";
 import { publishOffer, type PublishedOffer } from "./publish.ts";
+import {
+  assertRemoteCanServe,
+  NOT_SIGNED_IN,
+  remoteAccountFromSession,
+} from "./remote-signer.ts";
 import { readSkill, skillOffer, type Skill } from "./skill.ts";
 
 const DEFAULT_DEADLINE = 120;
@@ -147,6 +153,7 @@ function publishWithState(
   offer: Offer,
   skillSha256: string,
 ): Promise<PublishedOffer> {
+  assertRemoteCanServe(account, offer);
   return publishOffer(options.hub, account, offer, {
     ...(options.state !== undefined ? { stateDir: options.state } : {}),
     skillSha256,
@@ -279,11 +286,28 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
 }
 
 async function sellerAccount(): Promise<RunnerAccount> {
+  // Read once and dropped from this process's environment on EVERY path, the override's included,
+  // so nothing started later can see it (cs-audit on #287, point 2). Each command asks once.
+  const session = process.env.CS_SESSION;
+  delete process.env.CS_SESSION;
+
   const key = process.env.CS_SELLER_KEY;
-  if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+  if (key) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+      throw new Error("The CI signing override in this environment is malformed.");
+    }
+    return privateKeyToAccount(key as Hex);
   }
-  return privateKeyToAccount(key as Hex);
+
+  if (session) {
+    // The session goes only to the hub that issued it: CS_HUB, which the CLI sets from the stored
+    // session. Never to a --hub given on the command line (cs-audit on #288).
+    const issuer = process.env.CS_HUB;
+    if (!issuer) throw new Error(NOT_SIGNED_IN);
+    return remoteAccountFromSession({ hubUrl: issuer, session });
+  }
+
+  throw new Error(NOT_SIGNED_IN);
 }
 
 export function parseOptions(args: string[]): Options {

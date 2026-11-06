@@ -65,17 +65,19 @@ export type RefundAccess =
   | { kind: "ready" }
   | { kind: "locked" }
   /** The merchant service is out of reach, or it signs for another merchant (`signer`). */
-  | { kind: "away"; signer: string | null };
+  | { kind: "away"; signer: string | null }
+  /** The connected browser wallet is this merchant: refunds are signed in it and sent through the relay. */
+  | { kind: "wallet"; address: string };
 
 export function canAct(access: RefundAccess): boolean {
-  return access.kind === "sample" || access.kind === "ready";
+  return access.kind === "sample" || access.kind === "ready" || access.kind === "wallet";
 }
 
 /** Why this page cannot refund, in one sentence the merchant can act on. */
 export function awayWords(access: Extract<RefundAccess, { kind: "away" }>, merchant: string): string {
   return access.signer
     ? `The merchant service here signs for ${shortAddress(access.signer)}, not ${shortAddress(merchant)}, so only that merchant's own service can refund these orders.`
-    : "Refunds are signed with the merchant's own key, on the merchant's own machine, and this page cannot reach that service. Open the desk where the merchant service runs to refund.";
+    : "Refunds are signed with the merchant's own key, and this page cannot reach the merchant service. Connect the merchant's wallet to sign them here, or open the desk where the merchant service runs.";
 }
 
 export type PanelView = "detail" | "refund";
@@ -538,7 +540,18 @@ function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, o
  * Below the desk width the order opens as a modal sheet: a bottom sheet on a phone, a drawer on a
  * tablet. The native dialog traps focus, makes the page behind inert and closes on Escape.
  */
-export function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({
+  label,
+  onClose,
+  children,
+  locked = false,
+}: {
+  label: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** While true, Escape and the backdrop do nothing: a signature or a send is in flight. */
+  locked?: boolean;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [closing, setClosing] = useState(false);
   const closedRef = useRef(false);
@@ -566,7 +579,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose: ()
   };
 
   const requestClose = () => {
-    if (closing) return;
+    if (closing || locked) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       finish();
       return;

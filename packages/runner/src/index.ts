@@ -1,4 +1,21 @@
-export type { Address, Hex, ReleaseTypedData, RunnerAccount } from "./account.ts";
+export type {
+  Address,
+  Hex,
+  LockTypedData,
+  ReleaseTypedData,
+  RunnerAccount,
+  RunnerTypedData,
+} from "./account.ts";
+export {
+  assertRemoteCanServe,
+  BONDED_REMOTE_REFUSAL,
+  NOT_SIGNED_IN,
+  remoteAccountFromSession,
+  remoteRunnerAccount,
+  type RemoteRunnerAccount,
+  type RemoteSessionOptions,
+  type RemoteSignerOptions,
+} from "./remote-signer.ts";
 export {
   startRunner,
   type FundingConfig,
