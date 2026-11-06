@@ -1,14 +1,18 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { checkEnvelope } from "@countersign/core";
 import { Link } from "../../app/router.tsx";
 import { api, useResource, type Resource } from "../../lib/api.ts";
+import { envelopeChecklist } from "../../lib/checklist.ts";
 import { formatDuration, formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
 import type { EnvelopeView, Listing } from "../../lib/types.ts";
+import { AddressGlyph } from "../../ui/AddressGlyph.tsx";
+import { Checklist } from "../../ui/Checklist.tsx";
 import { HoldToSign } from "../../ui/HoldToSign.tsx";
-import { Amount, Button, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
+import { Amount, CopyButton, FixtureNote, Hash, Tag, cx } from "../../ui/primitives.tsx";
 import { rank, type Match } from "../buyer/assistant.ts";
 import { buyCommand } from "../offer/index.tsx";
+import { exampleNeeds, groupMatches, modKey, plainReason, selectable, type Verdict } from "./palette.ts";
 import "./assistant.css";
 
 interface Answer {
@@ -20,288 +24,382 @@ interface Answer {
   searched: number;
 }
 
+const HINT_KEY = "countersign.palette-hint";
+
 /**
- * Find a paid tool and countersign it inside your envelope. Every step shown is real work:
- * the search that ran, how long it took, and what the envelope said about each match.
+ * A command palette for paid tools. One mono input; matches grouped by what your envelope says
+ * about them; one plain reason per row. ↑ and ↓ move, Enter opens the purchase card, Esc closes.
+ * Every step shown is real work: the search that ran and the envelope check over each match.
  */
-export function Assistant({ envelope, layout }: { envelope: Resource<EnvelopeView>; layout: "phone" | "desk" }) {
+export function Assistant({
+  envelope,
+  layout,
+  initialQuery = "",
+  initialPick,
+  onOpen,
+}: {
+  envelope: Resource<EnvelopeView>;
+  layout: "page" | "phone" | "overlay";
+  initialQuery?: string;
+  initialPick?: string;
+  /** In the ⌘K overlay, Enter hands the query and the chosen offer to the assistant's page. */
+  onOpen?: (query: string, hash: string) => void;
+}) {
   const listings = useResource(() => api.listings(), []);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [busy, setBusy] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const [picked, setPicked] = useState<string | null>(initialPick ?? null);
+  const [hint, setHint] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const asked = useRef(0);
   const inputId = useId();
+  const listId = useId();
   const all = listings.data ?? [];
+  const view = envelope.data;
 
   const ask = async (need: string) => {
     const text = need.trim();
-    if (!text) return;
-    setQuery(text);
+    const n = ++asked.current;
+    if (!text) {
+      setAnswer(null);
+      setBusy(false);
+      return;
+    }
     setBusy(true);
-    setPicked(null);
     const t0 = performance.now();
     let found: Answer;
     try {
-      const hub = await api.search(text);
-      if (hub.data) {
-        found = {
-          need: text,
-          by: "hub",
-          ms: Math.round(performance.now() - t0),
-          searched: all.length,
-          matches: hub.data.map((r) => ({
-            listing: { hash: r.offerHash as Listing["hash"], offer: r.offer, seller: { name: shortHex(r.offer.seller) }, status: "listed", online: r.online },
-            score: r.score,
-            why: r.why.map((w) => `${w.charAt(0).toUpperCase()}${w.slice(1)}${/[.!?]$/.test(w) ? "" : "."}`),
-          })),
-        };
-      } else {
-        found = { need: text, by: "here", ms: Math.round(performance.now() - t0), searched: all.length, matches: rank(all, text) };
-      }
+      const hub = await api.search(text, 8);
+      found = hub.data
+        ? {
+            need: text,
+            by: "hub",
+            ms: Math.round(performance.now() - t0),
+            searched: all.length,
+            matches: hub.data.map((r) => ({
+              listing: {
+                hash: r.offerHash as Listing["hash"],
+                offer: r.offer,
+                seller: { name: shortHex(r.offer.seller), named: false },
+                status: "listed",
+                online: r.online,
+              },
+              score: r.score,
+              why: r.why,
+            })),
+          }
+        : { need: text, by: "here", ms: Math.round(performance.now() - t0), searched: all.length, matches: rank(all, text, 8) };
     } catch {
-      found = { need: text, by: "here", ms: Math.round(performance.now() - t0), searched: all.length, matches: rank(all, text) };
+      found = { need: text, by: "here", ms: Math.round(performance.now() - t0), searched: all.length, matches: rank(all, text, 8) };
     }
+    // A slower, older answer never replaces a newer one.
+    if (n !== asked.current) return;
     setAnswer(found);
+    setActive(0);
     setBusy(false);
+    if (layout === "page") {
+      try {
+        if (!window.localStorage.getItem(HINT_KEY)) {
+          window.localStorage.setItem(HINT_KEY, "1");
+          setHint(true);
+        }
+      } catch {
+        // Private mode: the hint simply does not show.
+      }
+    }
+  };
+
+  // Search as the person types, once they pause; Enter searches at once.
+  useEffect(() => {
+    const id = window.setTimeout(() => void ask(query), 180);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, listings.data]);
+
+  const verdicts = useMemo(() => new Map((answer?.matches ?? []).map((m) => [m.listing.hash, verdictFor(m.listing, view)])), [answer, view]);
+  const groups = groupMatches(answer?.matches ?? [], (m) => verdicts.get(m.listing.hash) ?? null);
+  const rows = selectable(groups);
+  const current = rows.length ? rows[Math.min(active, rows.length - 1)] : undefined;
+  const chosen = answer?.matches.find((m) => m.listing.hash === picked);
+  const examples = exampleNeeds(all);
+  const fixtures = listings.source === "fixtures" || envelope.source === "fixtures";
+  const checked = [...verdicts.values()].filter(Boolean).length;
+  const refused = groups.find((g) => g.id === "refused")?.rows.length ?? 0;
+
+  const open = (m: Match) => {
+    if (onOpen) onOpen(query.trim(), m.listing.hash);
+    else setPicked(m.listing.hash);
+  };
+
+  // Keep the selected row in view as the arrows move it. No animation: keyboard moves are instant.
+  useEffect(() => {
+    if (!current) return;
+    listRef.current?.querySelector(`[data-hash="${current.listing.hash}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [current]);
+
+  // The page answers ⌘K by focusing its own input instead of opening a second palette.
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus();
+    window.addEventListener("countersign:palette", focus);
+    return () => window.removeEventListener("countersign:palette", focus);
+  }, []);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (rows.length === 0) return;
+      e.preventDefault();
+      setActive((i) => (e.key === "ArrowDown" ? Math.min(i + 1, rows.length - 1) : Math.max(i - 1, 0)));
+    } else if (e.key === "Escape" && layout !== "overlay" && query) {
+      e.preventDefault();
+      setQuery("");
+    }
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void ask(query);
+    if (answer && answer.need === query.trim() && current) open(current);
+    else void ask(query);
   };
 
-  const view = envelope.data;
-  const verdicts = useMemo(() => new Map((answer?.matches ?? []).map((m) => [m.listing.hash, verdictFor(m.listing, view)])), [answer, view]);
-  const inside = [...verdicts.values()].filter((v) => v?.decision.ok).length;
-  const chosen = answer?.matches.find((m) => m.listing.hash === picked);
-  const examples = exampleNeeds(all);
-  const fixtures = listings.source === "fixtures" || envelope.source === "fixtures";
+  const allow = (m: Match) => {
+    if (!view || view.mirror) return undefined;
+    return () => {
+      const seller = m.listing.offer.seller.toLowerCase();
+      envelope.set({
+        ...view,
+        envelope: { ...view.envelope, allowlist: [...new Set([...view.envelope.allowlist, seller])] },
+        names: { ...view.names, [seller]: view.names[seller] ?? m.listing.seller.name },
+      });
+    };
+  };
 
-  const form = (
-    <form className={cx("ask__form", layout === "phone" && "ask__form--pinned")} onSubmit={submit} role="search">
-      <label className={layout === "phone" ? "sr-only" : "ask__label"} htmlFor={inputId}>
-        What does your agent need?
-      </label>
-      <div className="ask__row">
+  const palette = (
+    <div className={cx("palette", `palette--${layout}`)}>
+      <form className="palette__form" onSubmit={submit} role="search">
+        <label className="sr-only" htmlFor={inputId}>
+          What does your agent need?
+        </label>
+        <svg className="palette__glass" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M10.4 10.4L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
         <input
           ref={inputRef}
           id={inputId}
-          className="input"
+          className="palette__input"
           type="search"
+          role="combobox"
+          aria-expanded={rows.length > 0}
+          aria-controls={listId}
+          aria-activedescendant={current ? `${listId}-${current.listing.hash}` : undefined}
+          aria-autocomplete="list"
           enterKeyHint="search"
           autoComplete="off"
+          autoCapitalize="off"
           spellCheck={false}
+          // A finger opens the keyboard itself; a keyboard user expects the caret already there.
+          autoFocus={layout !== "phone" && window.matchMedia("(pointer: fine)").matches}
           placeholder="What does your agent need?"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKeyDown}
         />
-        <Button variant="primary" type="submit" disabled={!query.trim() || busy}>
-          {busy ? "Finding" : "Find"}
-        </Button>
-      </div>
-    </form>
-  );
+        {busy ? <span className="palette__busy" aria-hidden="true" /> : null}
+      </form>
 
-  const conversation = (
-    <div className="ask__talk">
       {answer ? (
-        <>
-          <h1 className="ask__need">{answer.need}</h1>
-          <details className="ask__steps">
-            <summary>Assistant steps</summary>
+        <div className="palette__body">
+          <details className="palette__steps">
+            <summary className="num">
+              {answer.by === "hub" ? `Searched the hub in ${answer.ms} ms` : `Ranked ${answer.searched} offers here in ${answer.ms} ms`}
+              {answer.matches.length ? ` · checked ${checked} against your envelope` : ""} <FixtureNote show={fixtures} />
+            </summary>
             <ol>
               <li>
                 {answer.by === "hub"
-                  ? `Searched the hub’s live offers with its own search, in ${answer.ms} ms.`
-                  : `Ranked the hub’s ${answer.searched} live ${answer.searched === 1 ? "offer" : "offers"} here, in ${answer.ms} ms. The hub has no search of its own yet.`}
+                  ? `The hub’s own search ranked its live offers for “${answer.need}”.`
+                  : `This hub has no search of its own, so its ${answer.searched} live offers were ranked here for “${answer.need}”.`}
               </li>
               <li>
                 {answer.matches.length === 0
-                  ? "Nothing fit, so nothing went to the envelope."
-                  : `${answer.matches.length} fit. Checked each against your envelope: ${inside} inside, ${answer.matches.length - inside} refused.`}
+                  ? "Nothing matched, so nothing reached the envelope."
+                  : `Each match was checked against your envelope: ${answer.matches.length - refused} inside, ${refused} refused.`}
               </li>
               <li>Nothing is signed until you hold to countersign, and the agent pays with its own key.</li>
             </ol>
           </details>
+
           {answer.matches.length === 0 ? (
-            <div className="ask__fallback" role="status">
-              <p className="ask__fallback-title">Nothing on this hub fits that yet.</p>
+            <div className="palette__none" role="status">
+              <p className="palette__none-title">Nothing on this hub fits “{answer.need}”.</p>
               <p>
                 Try fewer or plainer words, or <Link to="/registry">browse every offer</Link>.
               </p>
             </div>
-          ) : null}
-          <div className="ask__chips" aria-label="Follow-ups">
-            <button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setAnswer(null);
-                setQuery("");
-                inputRef.current?.focus();
-              }}
-            >
-              Ask for something else
-            </button>
-            <Link to="/registry" className="chip">
-              Browse every offer
-            </Link>
-          </div>
-        </>
-      ) : (
-        <div className="ask__empty">
-          <h1 className="ask__need">Find a paid tool and countersign it inside your envelope.</h1>
-          <p className="ask__lede">
-            Say what your agent needs. The assistant searches the hub’s live offers, says why each one fits, and checks it
-            against your limits before you sign anything.
-          </p>
-          {examples.length ? (
-            <div className="ask__chips" aria-label="Examples">
-              {examples.map((x) => (
-                <button key={x} type="button" className="chip" onClick={() => void ask(x)}>
-                  {x}
-                </button>
+          ) : (
+            <div ref={listRef} id={listId} className="palette__list" role="listbox" aria-label="Matches">
+              {groups.map((g) => (
+                <div key={g.id} role="group" aria-labelledby={`${listId}-${g.id}`} className={cx("pgroup", `pgroup--${g.id}`)}>
+                  <p id={`${listId}-${g.id}`} className="pgroup__label label" role="presentation">
+                    {g.label}
+                  </p>
+                  {g.rows.map((m) => (
+                    <Row
+                      key={m.listing.hash}
+                      id={`${listId}-${m.listing.hash}`}
+                      m={m}
+                      verdict={verdicts.get(m.listing.hash) ?? null}
+                      active={current?.listing.hash === m.listing.hash}
+                      picked={picked === m.listing.hash}
+                      onHover={() => {
+                        const i = rows.findIndex((r) => r.listing.hash === m.listing.hash);
+                        if (i >= 0) setActive(i);
+                      }}
+                      onOpen={() => open(m)}
+                      onAllow={allow(m)}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
+          )}
+          {layout === "overlay" ? (
+            <p className="palette__keys" aria-hidden="true">
+              <kbd>↑</kbd>
+              <kbd>↓</kbd> move <kbd>↵</kbd> open <kbd>esc</kbd> close
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="palette__body">
+          {examples.length ? (
+            <>
+              <p className="label palette__try">Try one of these. Each finds a live offer.</p>
+              <ul className="palette__examples">
+                {examples.map((x) => (
+                  <li key={x.need}>
+                    <button type="button" className="example" onClick={() => setQuery(x.need)}>
+                      <span className="example__need mono">{x.need}</span>
+                      <span className="example__hits">finds {x.hits.offer.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : (
-            <p className="ask__lede">This hub has no offers yet, so there is nothing to find.</p>
+            <p className="palette__try">{listings.loading ? "Reading the hub’s offers…" : "This hub has no offers yet, so there is nothing to find."}</p>
           )}
         </div>
       )}
     </div>
   );
 
-  const results = answer && answer.matches.length ? (
-    <section className="ask__results" aria-label="Matches">
-      <p className="ask__count num" aria-live="polite">
-        {answer.matches.length === 1 ? "1 offer fits" : `${answer.matches.length} offers fit`}, best first <FixtureNote show={fixtures} />
-      </p>
-      <ul className="matches">
-        {answer.matches.map((m) => (
-          <MatchCard
-            key={m.listing.hash}
-            m={m}
-            verdict={verdicts.get(m.listing.hash) ?? null}
-            picked={picked === m.listing.hash}
-            onPick={() => setPicked(m.listing.hash)}
-            onAllow={
-              // The agent's signed mirror is read-only here: its allowlist changes on the agent's machine.
-              view && !view.mirror
-                ? () => {
-                    const seller = m.listing.offer.seller.toLowerCase();
-                    envelope.set({
-                      ...view,
-                      envelope: { ...view.envelope, allowlist: [...new Set([...view.envelope.allowlist, seller])] },
-                      names: { ...view.names, [seller]: view.names[seller] ?? m.listing.seller.name },
-                    });
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </ul>
-      {chosen && view ? <CountersignCard key={chosen.listing.hash} listing={chosen.listing} view={view} /> : null}
-    </section>
-  ) : null;
+  if (layout === "overlay") return palette;
 
-  if (layout === "desk") {
-    return (
-      <div className="ask ask--desk">
-        <div className="ask__left">
-          {form}
-          {conversation}
-        </div>
-        <div className="ask__right">{results ?? <p className="ask__placeholder">Matches appear here, best first, each with the reason it fits.</p>}</div>
-      </div>
-    );
-  }
   return (
-    <div className="ask ask--phone">
-      {conversation}
-      {results}
-      {form}
+    <div className={cx("ask", `ask--${layout}`)}>
+      <div className="ask__palette">
+        {layout === "page" ? (
+          <header className="ask__head">
+            <p className="page__eyebrow">Assistant</p>
+            <h1 className="page__title">Find a paid tool and countersign it inside your envelope.</h1>
+            {hint ? (
+              <p className="ask__hint" role="status">
+                Next time, press <kbd>{modKey()}</kbd>
+                <kbd>K</kbd> on any screen.
+              </p>
+            ) : null}
+          </header>
+        ) : null}
+        {palette}
+      </div>
+      <div className="ask__card">
+        {chosen && view ? (
+          <PurchaseCard key={chosen.listing.hash} listing={chosen.listing} view={view} />
+        ) : layout === "page" ? (
+          <p className="ask__placeholder">Choose a match with Enter, or click it, to see exactly what your agent would countersign.</p>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-/** Three needs that hit real offers: one in plain words, two from the hub's own titles. */
-function exampleNeeds(listings: Listing[]): string[] {
-  const listed = listings.filter((l) => l.status === "listed");
-  const out: string[] = [];
-  if (listed.some((l) => /arc/i.test(l.offer.title + l.offer.summary))) out.push("deploy on arc");
-  for (const l of listed) {
-    if (out.length >= 3) break;
-    const words = l.offer.title.replace(/[-_]+/g, " ").trim();
-    if (!out.includes(words) && !(words.includes("arc") && out[0] === "deploy on arc")) out.push(words);
-  }
-  return out.slice(0, 3);
-}
-
-function verdictFor(listing: Listing, view: EnvelopeView | undefined) {
+function verdictFor(listing: Listing, view: EnvelopeView | undefined): Verdict {
   if (!view) return null;
   const amount = listing.offer.price;
   const decision = checkEnvelope(view.envelope, view.spent, { seller: listing.offer.seller, offerHash: listing.hash, amount }, nowUnix());
   return { decision, asks: view.askAbove !== null && BigInt(amount) > BigInt(view.askAbove) };
 }
 
-function MatchCard({
+/** One match: the seller's glyph, the offer and one plain reason, the price, and the key that opens it. */
+function Row({
+  id,
   m,
   verdict,
+  active,
   picked,
-  onPick,
+  onHover,
+  onOpen,
   onAllow,
 }: {
+  id: string;
   m: Match;
-  verdict: ReturnType<typeof verdictFor>;
+  verdict: Verdict;
+  active: boolean;
   picked: boolean;
-  onPick: () => void;
+  onHover: () => void;
+  onOpen: () => void;
   /** The way forward when the envelope refuses only because the seller is not on the allowlist. */
   onAllow?: () => void;
 }) {
   const { offer } = m.listing;
+  const refusal = verdict && !verdict.decision.ok ? verdict.decision : null;
+  const allowlistOnly = refusal?.reason === "not-allowlisted";
   return (
-    <li className={cx("match", picked && "is-picked")}>
-      <div className="match__head">
-        <p className="match__title">
+    <div
+      id={id}
+      data-hash={m.listing.hash}
+      role="option"
+      aria-selected={active}
+      aria-disabled={refusal ? true : undefined}
+      className={cx("prow", active && "is-active", picked && "is-picked", refusal && "prow--refused")}
+      onMouseMove={refusal ? undefined : onHover}
+      onClick={refusal ? undefined : onOpen}
+    >
+      <AddressGlyph address={offer.seller} size={20} />
+      <span className="prow__main">
+        <span className="prow__title">
           {offer.title} <Tag>{offer.adapter}</Tag>
-        </p>
+        </span>
+        <span className="prow__why">{refusal ? refusal.message : plainReason(m.why)}</span>
+        {refusal && allowlistOnly ? (
+          onAllow ? (
+            <span className="prow__allow">
+              <button type="button" className="prow__allow-button" onClick={onAllow}>
+                Allow this seller
+              </button>
+              <span className="prow__allow-note">Adds it to your envelope’s allowlist and checks again. Nothing is bought.</span>
+            </span>
+          ) : (
+            <span className="prow__allow-note">Your allowlist lives on your agent’s machine. Add this seller there, and its next signed copy shows here.</span>
+          )
+        ) : null}
+      </span>
+      <span className="prow__price">
         <Amount money={usd(offer.price, offer.rails[0])} size="sm" />
-      </div>
-      <p className="match__meta">
-        {m.listing.seller.name} · {RAIL_LABEL[offer.rails[0]!]}
-        {m.listing.online ? " · runner online" : ""}
-      </p>
-      <p className="match__why">{m.why.join(" ")}</p>
-      {verdict ? (
-        <p className={cx("match__verdict", !verdict.decision.ok && "is-refused")}>
-          {!verdict.decision.ok
-            ? verdict.decision.message
-            : verdict.asks
-              ? "Inside your envelope. Above your ask limit, so it needs your countersignature."
-              : "Inside your envelope. Your agent can buy this on its own."}
-        </p>
-      ) : null}
-      {verdict?.decision.ok ? (
-        <Button variant="secondary" block onClick={onPick} aria-pressed={picked}>
-          {picked ? "Chosen" : `Choose ${offer.title}`}
-        </Button>
-      ) : verdict && !verdict.decision.ok && verdict.decision.reason === "not-allowlisted" && onAllow ? (
-        <>
-          <Button variant="secondary" block onClick={onAllow}>
-            Allow this seller
-          </Button>
-          <p className="match__hint">Adds the seller to your envelope’s allowlist and checks again. Nothing is bought.</p>
-        </>
-      ) : verdict && !verdict.decision.ok && verdict.decision.reason === "not-allowlisted" ? (
-        <p className="match__hint">Your allowlist lives on your agent’s machine. Add this seller there, and its next signed copy shows here.</p>
-      ) : null}
-    </li>
+      </span>
+      <span className="prow__key" aria-hidden="true">
+        {active ? "↵" : ""}
+      </span>
+    </div>
   );
 }
 
-/** The countersign card: exactly what the agent signs, the hold, then the call it makes. */
-function CountersignCard({ listing, view }: { listing: Listing; view: EnvelopeView }) {
+/** The purchase card: exactly what the agent signs, your envelope's checklist, the hold, then the call it makes. */
+function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView }) {
   const [signed, setSigned] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
@@ -309,45 +407,59 @@ function CountersignCard({ listing, view }: { listing: Listing; view: EnvelopeVi
   const hub = hubBase();
   const base = hub && /^https?:/.test(hub) ? hub : `${window.location.origin}${hub ?? ""}`;
   const command = buyCommand(listing.hash, offer.input, base);
+  const checks = envelopeChecklist(view, {
+    seller: offer.seller,
+    offerHash: listing.hash,
+    amount: offer.price,
+    sellerName: listing.seller.named === false ? "this seller" : listing.seller.name,
+  });
   useEffect(() => ref.current?.scrollIntoView({ block: "nearest" }), []);
   return (
-    <section ref={ref} className="cs-card" aria-labelledby="cs-card-title">
-      <h2 id="cs-card-title" className="cs-card__title">
-        Countersign card
-      </h2>
-      <p className="cs-card__exact">
-        {view.agentName} countersigns exactly <Amount money={money} size="lg" flight />
+    <section ref={ref} className="pcard" aria-labelledby="pcard-title">
+      <header className="pcard__head">
+        <p className="label">Purchase</p>
+        <h2 id="pcard-title" className="pcard__title">
+          <Link to={`/offer/${listing.hash}`}>{offer.title}</Link>
+        </h2>
+      </header>
+      <p className="pcard__exact">
+        <span className="label">{view.agentName} countersigns exactly</span>
+        <Amount money={money} size="lg" flight />
       </p>
-      <dl className="cs-card__terms">
+      <dl className="pcard__fields">
         <div>
-          <dt>Offer</dt>
-          <dd>
-            {offer.title} <Hash value={listing.hash} label="offer hash" copy={false} />
-          </dd>
-        </div>
-        <div>
-          <dt>Payee locked</dt>
+          <dt className="label">Payee, locked</dt>
           <dd>
             <Hash value={offer.seller} label="payee" copy={false} />
           </dd>
         </div>
         <div>
-          <dt>Rail</dt>
+          <dt className="label">Rail</dt>
           <dd>{RAIL_LABEL[offer.rails[0]!]}</dd>
         </div>
         <div>
-          <dt>Deadline</dt>
+          <dt className="label">Deadline</dt>
           <dd className="num">{formatDuration(offer.deadline)}, then anyone can refund</dd>
         </div>
+        <div>
+          <dt className="label">Offer hash</dt>
+          <dd>
+            <Hash value={listing.hash} label="offer hash" copy={false} />
+          </dd>
+        </div>
       </dl>
+      <div className="pcard__checks">
+        <p className="label">Your envelope</p>
+        <Checklist items={checks} />
+      </div>
       <HoldToSign ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`} left={listing.seller.name} right="you" onSigned={() => setSigned(true)} />
       {signed ? (
-        <div className="cs-card__next" role="status">
-          <p className="cs-card__next-title">Countersigned for {view.agentName}.</p>
-          <p className="cs-card__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
+        <div className="pcard__next" role="status">
+          <p className="pcard__next-title">Countersigned for {view.agentName}.</p>
+          <p className="pcard__next-body">Your agent makes the paid call with its own key. Nothing has moved yet, and nothing moves at any other price.</p>
           <div className="command">
             <div className="command__head">
-              <p className="field__label">The call it makes</p>
+              <p className="label">The call it makes</p>
               <CopyButton value={command} label="buy command" />
             </div>
             <pre className="command__body mono">{command}</pre>
