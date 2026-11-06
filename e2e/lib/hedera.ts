@@ -4,7 +4,7 @@
  */
 
 import { HEDERA } from "./chains.ts";
-import { sleep } from "./http.ts";
+import { readWithRetry, sleep } from "./http.ts";
 
 /** "0.0.123@1730880000.123456789" or "0.0.123-1730880000-123456789" -> the mirror's dash form. */
 export function mirrorTxId(id: string): string {
@@ -33,7 +33,8 @@ export async function mirrorGet(path: string): Promise<{ status: number; body: u
 }
 
 async function getJson(path: string): Promise<{ status: number; body: unknown }> {
-  const res = await fetch(`${HEDERA.mirror}${path}`, { signal: AbortSignal.timeout(20_000), headers: { accept: "application/json" } });
+  // Mirror reads move nothing: a transport failure, where the mirror never answered, is retried.
+  const res = await readWithRetry(() => fetch(`${HEDERA.mirror}${path}`, { signal: AbortSignal.timeout(20_000), headers: { accept: "application/json" } }));
   const text = await res.text();
   let body: unknown;
   try {
