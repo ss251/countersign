@@ -65,7 +65,7 @@ export interface Offer {
   price: string;
   /** Seconds the seller has to deliver once the escrow is funded. */
   deadline: number;
-  /** Atomic amount the seller declares as bond. Declared only; no contract collects it yet. */
+  /** Atomic amount the seller puts up as bond. A supporting escrow collects and locks it at funding. */
   bond: string;
   /** Accepted rails, most preferred first. */
   rails: RailId[];
