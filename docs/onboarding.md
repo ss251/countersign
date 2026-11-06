@@ -111,7 +111,7 @@ The proofs:
 
 The [seller guide](guides/seller.md) covers every flag. The runner's `mcp` adapter already serves one production offer, Hedera's Agent Kit, which [hedera.md](hedera.md#the-hedera-agent-kit-as-a-metered-offer) describes.
 
-No production offer carries a seller bond yet, because production runs v1 on Arc and only unbonded jobs on v2 on Whitechain. Escrow v2, which adds the bond, is deployed on Arc testnet and Whitechain testnet, and production's Whitechain rail now runs on it, for unbonded jobs only. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
+No production offer carries a seller bond yet, because production runs only unbonded jobs on escrow v2, on both chains. Escrow v2, which adds the bond, is deployed on Arc testnet and Whitechain testnet, and production's Whitechain rail now runs on it, for unbonded jobs only. Under v2 a bonded job pays the seller only through the hub's release. If the hub, or Whitechain's relay, is down for more than 600 seconds past the job's deadline, anyone may refund, and the refund pays the buyer the price plus the bond, even if you delivered.
 
 ## What signing in allows
 
