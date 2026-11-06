@@ -62,6 +62,8 @@ export interface EscrowOps {
   /** The seller hands the money back before the deadline. */
   cancel(jobId: Hex, sellerSig: Hex): Promise<SettleResult>;
   status(jobId: Hex): Promise<"none" | "funded" | "released" | "refunded">;
+  /** The contract's toll in basis points. Reads the view once per rail instance, then caches it. */
+  tollBps?(): Promise<number>;
 }
 
 export interface Rail {

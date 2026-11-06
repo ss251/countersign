@@ -44,8 +44,9 @@
   border-radius: var(--r-2);
 }
 
+/* The slip you are reading: a rule around it on the paper, not a raised tile. */
 .tree__row--current {
-  background: var(--raised);
+  background: none;
   box-shadow: var(--elev-1);
 }
 
