@@ -71,11 +71,20 @@ offer. The Tempo receipt does not echo it back. When
 both methods are offered, `requirements.amount` is the card amount in cents; the
 Tempo amount lives in the Tempo challenge, which the rail also HMAC-binds.
 
-The Tempo method is built once per rail with mppx's `testnet: true` and the
-pathUSD currency, so every Tempo challenge names chain 42431. There is no option
-that produces the mainnet chain or a mainnet currency address. A Tempo
-credential may carry a transaction hash the buyer already broadcast, a signed
-transaction mppx broadcasts at settlement, or a zero-amount proof.
+The Tempo payee is the offer's own: `offer.payTo.mpp` when the seller set one,
+otherwise the seller's identity address (`offer.seller`). Both the challenge's
+`recipient` and `requirements.payTo` name that address, and an invalid mpp
+payee gets no challenge: `challenge` throws. The rail-level `recipient` is only
+a fallback for an offer that names no payee at all; it is kept for the demo
+server.
+
+The Tempo method is built with mppx's `testnet: true` and the pathUSD currency,
+one instance per payee cached by address, so every Tempo challenge names chain
+42431 and validation and settlement use the method for that offer's payee.
+There is no option that produces the mainnet chain or a mainnet currency
+address. A Tempo credential may carry a transaction hash the buyer already
+broadcast, a signed transaction mppx broadcasts at settlement, or a zero-amount
+proof.
 
 ## The declaration
 
@@ -213,6 +222,10 @@ Settle maps to the slip like this:
   the Stripe PaymentIntent id `pi_...` for the card method).
 - `settlement.receipt` = the serialized `Payment-Receipt` header.
 - `settlement.network` = `mpp:tempo`, or `mpp:stripe` for the card method.
+- `settlement.payer` = the Tempo payer's checksummed address, read from the
+  credential's `did:pkh:eip155:42431:<address>` source. `verify` returns the
+  same value as `payer`. It is left unset when the source is missing or
+  malformed; that is not a refusal, and mppx still verifies the transfer.
 
 The receipt deserializes to the MPP shape. This one is from the live
 `/rail/paid` payment above:
