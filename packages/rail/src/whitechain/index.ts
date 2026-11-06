@@ -19,7 +19,12 @@ export interface WhitechainRailOptions {
   /** Base URL of the relay, without a trailing slash. */
   relayUrl: string;
   rpcUrl?: string;
+  /** Escrow contract version. Version 2 requires `escrow`; default 1, the deployed v1 escrow. */
+  version?: 1 | 2;
+  /** Version 2 only: the deployed escrow. Version 1 defaults to WHITECHAIN_ESCROW. */
   escrow?: Address;
+  /** Version 2 only: the bearer token the relay requires on /escrow/fail. */
+  relayToken?: string;
   fetch?: typeof fetch;
   publicClient?: PublicClient<Transport, Chain>;
 }
@@ -27,11 +32,15 @@ export interface WhitechainRailOptions {
 export function whitechainRail(opts: WhitechainRailOptions): Rail {
   const call = opts.fetch ?? globalThis.fetch;
   const relayUrl = opts.relayUrl.replace(/\/+$/, "");
+  const version = opts.version ?? 1;
+  if (version === 2 && !opts.escrow) throw new Error("whitechain escrow v2 needs its escrow address");
+  const escrowAddress = opts.escrow ?? WHITECHAIN_ESCROW;
   const base = escrowRail({
     id: "whitechain",
     chainId: 1874,
     rpcUrl: opts.rpcUrl ?? WHITECHAIN_RPC_URL,
-    escrow: opts.escrow ?? WHITECHAIN_ESCROW,
+    escrow: escrowAddress,
+    ...(version === 2 ? { version: 2 as const } : {}),
     token: WHITECHAIN_USDT,
     tokenName: "Tether USD",
     tokenVersion: "1",
@@ -46,11 +55,15 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
   });
 
   /** POST JSON to the relay. Null when the relay is unreachable or does not answer with JSON. */
-  async function post(path: string, body: unknown): Promise<Record<string, unknown> | null> {
+  async function post(
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<Record<string, unknown> | null> {
     try {
       const res = await call(`${relayUrl}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),
       });
       const json: unknown = await res.json();
@@ -80,8 +93,12 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
   }
 
   /** The relay answers { ok, transaction, url, status } or { ok: false, reason }. */
-  async function close(path: string, body: unknown): Promise<SettleResult> {
-    const out = await post(path, body);
+  async function close(
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<SettleResult> {
+    const out = await post(path, body, headers);
     if (!out) return unreachable();
     if (out.ok === true && typeof out.transaction === "string") {
       return { success: true, transaction: out.transaction, network: NETWORK };
@@ -100,6 +117,20 @@ export function whitechainRail(opts: WhitechainRailOptions): Rail {
     refund: (jobId: Hex) => close("/escrow/refund", { jobId }),
     status: base.escrow!.status,
   };
+
+  if (version === 2) {
+    const token = opts.relayToken?.trim();
+    escrow.accept = (jobId, buyerSig) => close("/escrow/accept", { jobId, buyerSig });
+    escrow.dispute = (jobId, buyerSig) => close("/escrow/dispute", { jobId, buyerSig });
+    escrow.releaseAfterWindow = (jobId) => close("/escrow/release-after-window", { jobId });
+    if (token) {
+      escrow.failDelivery = (jobId) =>
+        close("/escrow/fail", { jobId }, { authorization: `Bearer ${token}` });
+    }
+    escrow.reviewOf = base.escrow!.reviewOf;
+    escrow.tollBps = base.escrow!.tollBps;
+    escrow.disputeWindowSeconds = base.escrow!.disputeWindowSeconds;
+  }
 
   return { declaration: base.declaration, challenge: base.challenge, verify, settle, escrow };
 }
