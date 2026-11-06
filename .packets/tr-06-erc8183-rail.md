@@ -1,6 +1,6 @@
 # tr-06: the erc8183 rail, countersign's escrow over Arc's ERC-8183 core, with a JobHook that emits the slip hash (refs #24)
 
-**Design: decided.** cs-truth wrote this on Opus from the captain's STEER-2235 item 1 and `docs/decisions.md` D21, which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose. Never edit `contracts/src/CountersignedEscrow.sol` or `contracts/src/ICountersignedEscrow.sol`: another person owns them tonight.
+**Design: decided.** cs-truth wrote this on Opus from the project lead's STEER-2235 item 1 and `docs/decisions.md` D21, which is already committed on this branch. Implement exactly what follows. Nothing here is left for you to choose. Never edit `contracts/src/CountersignedEscrow.sol` or `contracts/src/ICountersignedEscrow.sol`: another person owns them tonight.
 
 ## Goal
 
@@ -133,7 +133,7 @@ Use `contracts/test/mocks/MockEIP3009.sol` as USDC.
 
 **`contracts/test/CountersignedEscrow8183.t.sol`:**
 1. **Fund.** It emits `Funded`. The core's job has `client == provider == evaluator == escrow`, `budget == amount` and status `Funded`, and the escrow holds no tokens afterwards.
-2. **A settle emits the hook (the captain's test).** `release` emits `JobHook.SlipCommitted(job8183Of[jobId], slipHash, address(escrow))` and `Released(jobId, slipHash, payee, paid, toll)`, with `paid + toll == amount`. The payee and treasury balances rise by exactly those, and the core's job is `Completed`.
+2. **A settle emits the hook (the project lead's test).** `release` emits `JobHook.SlipCommitted(job8183Of[jobId], slipHash, address(escrow))` and `Released(jobId, slipHash, payee, paid, toll)`, with `paid + toll == amount`. The payee and treasury balances rise by exactly those, and the core's job is `Completed`.
 3. **Moved price.** `fund` with the buyer's signature for another amount reverts `CountersignatureMismatch`.
 4. **Replay.** A second `fund` with the same countersignature reverts.
 5. **Deadline refund.** `refund` before the deadline reverts as v1 does. After it, a stranger's `refund` emits `Refunded(jobId, buyer, amount, false)`, and the buyer gets the full amount.
@@ -160,7 +160,6 @@ Every existing test still passes, unedited: all 47 forge tests, `network.test.ts
 - **Never run `git stash`.** Every worktree of a clone shares one stash stack. Use a temporary commit or a second worktree.
 - **Existing tests:** never edit, weaken, skip or delete one to make it pass. If one fails, fix the code, or stop and report the root cause.
 - **Commits:** small, present tense, ending `refs #24`, with no emoji and no `Co-authored-by`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 
@@ -181,4 +180,4 @@ Stop if any of these happens:
 
 ## Report
 
-Write `~/Developer/countersign-mac/reports/tr-06-erc8183-rail.md` (on the MacBook): the diff summary, the test names, and the gate output counts.
+Write `~/Developer/countersign-mac/reports/tr-06-erc8183-rail.md` (on the second machine): the diff summary, the test names, and the gate output counts.
