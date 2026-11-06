@@ -25,6 +25,7 @@ npx -y @countersign-hub/cli envelope set --cap 0.5 --per-merchant 0.1 --ask-abov
 npx -y @countersign-hub/cli envelope show
 ```
 
+- `CS_BUYER_KEY` is a raw EVM private key. It signs on your machine and is never sent to the hub. Use a fresh testnet key made only for this, never a main wallet, holding only what it needs.
 - The key exists only in this shell. Keep it privately if you want to spend the test funds again.
 - `agent` in the output is the address to fund. At https://faucet.circle.com choose Arc Testnet and USDC, then paste that address.
 - On Arc the hub pays the gas, so USDC is all the agent needs.
@@ -96,6 +97,7 @@ npx -y @countersign-hub/cli sell openapi --spec path/to/openapi.json --operation
   --hub https://hub-production-e85e.up.railway.app --price 10000
 ```
 
+- `CS_SELLER_KEY` is a raw EVM private key. It signs your offers and slips on your machine and is never sent to the hub. Use a fresh testnet key made only for this, never a main wallet.
 - The runner dials out to the hub, so you open no port.
 - `--price` is in atomic units: `10000` is 0.01 USDC.
 - It prints `published <offer hash> <title>`, then `runner ready`. The offer is online only while it runs. Add `--publish-only` to list the offer without serving it.
