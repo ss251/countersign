@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseSkill, priceToAtomic, publishCommand, serveCommand } from "../src/routes/seller/logic.ts";
+import { RAIL_IDS } from "@countersign/core";
+import { parseSkill, priceToAtomic, publishCommand, RAIL_ORDER, serveCommand } from "../src/routes/seller/logic.ts";
 
 describe("parseSkill", () => {
   test("reads the name and description from the front matter", () => {
@@ -97,5 +98,12 @@ describe("publish commands", () => {
     expect(serveCommand({ ...options, rails: [...options.rails] })).toBe(
       "bun packages/runner/src/cli.ts serve --hub https://hub.example --skill ./SKILL.md --price 50000 --deadline 120 --rails escrow,whitechain --upstream-url https://example.com/skill --licence 'Apache 2.0'",
     );
+  });
+});
+
+describe("rail order", () => {
+  test("offers every rail core knows, each once", () => {
+    expect([...RAIL_ORDER].sort()).toEqual([...RAIL_IDS].sort());
+    expect(new Set(RAIL_ORDER).size).toBe(RAIL_ORDER.length);
   });
 });

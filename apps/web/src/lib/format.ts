@@ -108,6 +108,10 @@ export function networkName(network: string): string {
       return "Hedera testnet";
     case "hedera:mainnet":
       return "Hedera";
+    case "mpp:stripe":
+      return "Stripe";
+    case "mpp:tempo":
+      return "Tempo";
     default:
       return network;
   }

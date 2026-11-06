@@ -2,8 +2,22 @@ import { AmountError, parseUnits, type RailId } from "@countersign/core";
 import { symbolFor } from "../../lib/format.ts";
 import type { Purchase } from "../../lib/types.ts";
 
+/**
+ * Where each rail sits in the wizard. `satisfies Record<RailId, number>` makes this exhaustive:
+ * a rail added to core fails the build here until it is ranked, so it can never go missing.
+ */
+const RAIL_RANK = {
+  escrow: 0,
+  gateway: 1,
+  eip3009: 2,
+  whitechain: 3,
+  hedera: 4,
+  mpp: 5,
+  erc8183: 6,
+} satisfies Record<RailId, number>;
+
 /** The rails a seller may tick, in the order the wizard shows them. */
-export const RAIL_ORDER: readonly RailId[] = ["escrow", "gateway", "eip3009", "whitechain", "hedera", "erc8183"];
+export const RAIL_ORDER: readonly RailId[] = (Object.keys(RAIL_RANK) as RailId[]).sort((a, b) => RAIL_RANK[a] - RAIL_RANK[b]);
 
 export const SKILL_NO_FRONT_MATTER = "This file has no front matter. A SKILL.md starts with --- and a name.";
 export const SKILL_NO_NAME = "The front matter needs a name.";

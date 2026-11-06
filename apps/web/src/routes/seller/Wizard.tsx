@@ -27,6 +27,7 @@ const RAIL_NOTE: Record<RailId, string> = {
   whitechain: "USDT in escrow on Whitechain; buyers pay no gas.",
   hedera: "USDC on Hedera through an x402 facilitator.",
   erc8183: "The ERC-8183 job escrow, with the slip committed by its hook.",
+  mpp: "Stripe's Machine Payments Protocol, by card or Tempo stablecoin; the slip records its receipt.",
 };
 
 /** SKILL.md in, a signed offer out: the page builds the terms, the seller's runner signs them. */
