@@ -94,15 +94,25 @@ function LimitRow({
   const [error, setError] = useState<string | null>(null);
   const id = useId();
 
+  const check = (raw: string): string | null => {
+    try {
+      parseUnits(raw.trim(), 6);
+      return null;
+    } catch (err) {
+      return err instanceof AmountError ? "Enter an amount like 0.25, with at most 6 decimals." : String(err);
+    }
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    try {
-      onSave(parseUnits(value.trim(), 6).toString());
-      setEditing(false);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof AmountError ? "Enter an amount like 0.25, with at most 6 decimals." : String(err));
+    const problem = check(value);
+    if (problem) {
+      setError(problem);
+      return;
     }
+    onSave(parseUnits(value.trim(), 6).toString());
+    setEditing(false);
+    setError(null);
   };
 
   if (!editing) {
@@ -138,12 +148,20 @@ function LimitRow({
           id={id}
           className="input num"
           inputMode="decimal"
+          enterKeyHint="done"
           autoComplete="off"
-          autoFocus
+          data-1p-ignore
+          data-lpignore="true"
+          // The keyboard opens only where a fine pointer asked for it; on a phone the tap does.
+          autoFocus={window.matchMedia("(pointer: fine)").matches}
           value={value}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            // Late to accuse, quick to forgive: once an error shows, it clears as soon as the value is fixed.
+            if (error) setError(check(e.target.value));
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setEditing(false);
           }}
@@ -237,8 +255,13 @@ function Allowlist({
             <input
               className="input mono"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                if (error) setError(null);
+              }}
               autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
               autoCapitalize="off"
               spellCheck={false}
               placeholder="0x…"

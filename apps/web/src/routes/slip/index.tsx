@@ -18,14 +18,35 @@ export default function SlipPage({ params }: PageProps) {
   const hash = params[0] ?? "";
   const view = useResource(() => api.slip(hash), [hash]);
   const children = view.data?.slip.body.children.length ?? 0;
-  const tree = useResource(() => api.tree(hash), [hash, children > 0]);
+  // Only a slip with children has a tree; asking for one otherwise refetches the same slip.
+  const tree = useResource(
+    () => (children > 0 ? api.tree(hash) : Promise.resolve({ data: undefined, source: "fixtures" as const })),
+    [hash, children > 0],
+  );
   const [verdict, setVerdict] = useState<VerdictData | null>(null);
   const [reading, setReading] = useState(false);
 
   useEffect(() => {
     setVerdict(null);
-    if (view.data) void verifySlip(view.data.slip).then(setVerdict);
-  }, [view.data]);
+    if (!view.data) return;
+    const { slip } = view.data;
+    let live = true;
+    // Show what the slip proves by itself at once, then the fifth check: the chain holding its hash.
+    void verifySlip(slip).then((offline) => {
+      if (!live) return;
+      setVerdict(offline);
+      if (view.source !== "hub" || !canReadChain(slip)) return;
+      setReading(true);
+      void verifySlip(slip, { readChain: true }).then((onchain) => {
+        if (!live) return;
+        setVerdict(onchain);
+        setReading(false);
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [view.data, view.source]);
 
   const readChain = () => {
     if (!view.data) return;
