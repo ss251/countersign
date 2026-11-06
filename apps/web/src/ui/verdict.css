@@ -110,3 +110,26 @@
 .verdict--compact .vcheck {
   padding: var(--sp-2) 0;
 }
+
+/* Not checked: no tick, no cross, and it does not count toward the verdict. */
+.vcheck--info .vcheck__glyph,
+.vcheck--info .vcheck__title {
+  color: var(--slate);
+}
+
+.verdict__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.verdict__explorer {
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.verdict__fine {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
