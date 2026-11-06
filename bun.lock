@@ -39,6 +39,16 @@
         "vite": "^8.3.6",
       },
     },
+    "e2e": {
+      "name": "@countersign/e2e",
+      "version": "0.0.0",
+      "dependencies": {
+        "@countersign/buyer": "workspace:*",
+        "@countersign/core": "workspace:*",
+        "@countersign/rail": "workspace:*",
+        "viem": "^2.57.16",
+      },
+    },
     "packages/buyer": {
       "name": "@countersign/buyer",
       "version": "0.0.0",
@@ -117,6 +127,8 @@
     "@countersign/buyer": ["@countersign/buyer@workspace:packages/buyer"],
 
     "@countersign/core": ["@countersign/core@workspace:packages/core"],
+
+    "@countersign/e2e": ["@countersign/e2e@workspace:e2e"],
 
     "@countersign/hub": ["@countersign/hub@workspace:apps/hub"],
 
