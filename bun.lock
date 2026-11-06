@@ -39,6 +39,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@countersign/core": "workspace:*",
+        "viem": "^2.57.16",
       },
     },
     "packages/core": {
