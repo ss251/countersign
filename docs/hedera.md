@@ -73,6 +73,8 @@ Each message on topic `0.0.11337070` is one canonical-JSON entry:
 
   It exits 1 if either of the first two lists is non-empty.
 
+The audit has caught a real gap. At 15:59 IST a rail smoke test (`scripts/hedera/smoke.ts`) paid 0.01 USDC with the agent's key without going through the agent, so nothing was logged: [`0.0.9185802@1793959186.794495705`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959186.794495705). A later agent run settled [`0.0.9185802@1793959685.864333631`](https://hashscan.io/testnet/transaction/0.0.9185802@1793959685.864333631) (entry #3) and was refused at its cap (entry #4). The audit after that run reported `matched 2  unbacked 0  unlogged 1` and named the smoke payment. The log cannot be edited, so that line stays. Smoke tests that pay with the agent's key will append their spends like the agent does.
+
 ## Payment flow
 
 1. **Challenge.** The agent asks for a paid resource. The hub answers `402` with a `PAYMENT-REQUIRED` header: x402 v2 `PaymentRequirements` with `scheme: exact`, `network: hedera:testnet`, `asset: 0.0.429274`, `amount` in atomic USDC, `payTo` = the seller's account, and `extra.feePayer` = the chosen facilitator's fee-payer account.
