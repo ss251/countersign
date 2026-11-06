@@ -69,6 +69,8 @@ export type HubToRunner =
   | { t: "challenge"; nonce: string }
   | { t: "ready"; seller: Address; offers: Hex[] }
   | { t: "job"; order: JobOrder }
+  /** Ask the seller to accept a bonded job by signing its EIP-712 Lock(jobId). */
+  | { t: "lock"; jobId: Hex; offerHash: Hex; escrow: Address; chainId: number; bond: string }
   | { t: "ping"; ts: number }
   | { t: "error"; message: string };
 
@@ -83,6 +85,10 @@ export type RunnerToHub =
       countersign?: string;
     }
   | { t: "fail"; jobId: Hex; reason: string }
+  /** The seller accepts a bonded job and locks its bond with this Lock(jobId) signature. */
+  | { t: "locked"; jobId: Hex; sig: Hex }
+  /** The seller refuses to lock a bonded job, in a sentence a person can read. */
+  | { t: "lock-refused"; jobId: Hex; reason: string }
   | { t: "pong"; ts: number };
 
 /** POST /offers body. */
