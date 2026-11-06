@@ -219,7 +219,7 @@ export async function readFeedback(
   agentId: bigint,
   fromBlock: bigint,
 ): Promise<ReadFeedback[]> {
-  const latest = await publicClient.getBlockNumber();
+  const latest = await publicClient.getBlockNumber({ cacheTime: 0 });
   const found: ReadFeedback[] = [];
   for (let start = fromBlock; start <= latest; start += WINDOW) {
     const end = start + WINDOW - 1n > latest ? latest : start + WINDOW - 1n;
