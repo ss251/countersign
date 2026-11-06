@@ -365,11 +365,11 @@ export async function bondFromEnv(args: string[], log: (line: string) => void = 
   const key = process.env.CS_SELLER_KEY;
   if (!key) {
     throw new Error(
-      "CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key. Bond commands need CS_SELLER_KEY (Advanced: CI): a signed-in session cannot send transactions.",
+      "Bond commands are not available from a signed-in session yet: they send transactions, and the hub only signs.",
     );
   }
   if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+    throw new Error("The CI signing override in this environment is malformed.");
   }
   await runBond(parseBondArgs(args), key as Hex, log);
 }

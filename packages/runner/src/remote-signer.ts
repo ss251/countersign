@@ -8,7 +8,7 @@ import type { Address, Hex, RunnerAccount, RunnerTypedData } from "./account.ts"
 
 export const NOT_SIGNED_IN = "Not signed in. Run: npx -y @countersign-hub/cli login";
 export const BONDED_REMOTE_REFUSAL =
-  "A bonded offer needs CS_SELLER_KEY (Advanced: CI): the hub does not sign Lock for a signed-in session yet.";
+  "A bonded offer cannot be served from a signed-in session yet: the hub does not sign Lock for it.";
 
 const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;

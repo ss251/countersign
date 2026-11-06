@@ -289,12 +289,15 @@ async function sellerAccount(hub: string): Promise<RunnerAccount> {
   const key = process.env.CS_SELLER_KEY;
   if (key) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
-      throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
+      throw new Error("The CI signing override in this environment is malformed.");
     }
     return privateKeyToAccount(key as Hex);
   }
 
+  // Read once, then dropped from this process's environment, so nothing started later can see it.
+  // Each command asks for the seller account once, so the token is not needed again.
   const session = process.env.CS_SESSION;
+  delete process.env.CS_SESSION;
   if (session) {
     return remoteAccountFromSession({ hubUrl: process.env.CS_HUB ?? hub, session });
   }

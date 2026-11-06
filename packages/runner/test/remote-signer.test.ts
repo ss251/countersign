@@ -444,8 +444,8 @@ describe("the seller CLI's account precedence", () => {
     try {
       await withEnv(
         { CS_SELLER_KEY: undefined, CS_SESSION: SESSION, CS_HUB: sessionHub.url },
-        () =>
-          main([
+        async () => {
+          await main([
             "publish",
             "--hub",
             target.url,
@@ -455,7 +455,10 @@ describe("the seller CLI's account precedence", () => {
             "1000",
             "--state",
             stateDir(),
-          ]),
+          ]);
+          // Read once and dropped: nothing this process starts later can see the token.
+          expect(process.env.CS_SESSION).toBeUndefined();
+        },
       );
 
       expect(signRequests(target)).toHaveLength(0);
