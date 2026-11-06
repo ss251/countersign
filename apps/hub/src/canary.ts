@@ -6,9 +6,16 @@ export interface CanaryOptions {
   attempts: number;
   gapMs: number;
   timeoutMs: number;
+  /** A runner whose last pong is older than this is gone, not lying: its offer is skipped this round. */
+  stalePongMs?: number;
 }
 
-export const CANARY_DEFAULTS: CanaryOptions = { attempts: 3, gapMs: 5_000, timeoutMs: 10_000 };
+export const STALE_PONG_MS = 25_000;
+
+export const CANARY_DEFAULTS: CanaryOptions = { attempts: 3, gapMs: 5_000, timeoutMs: 10_000, stalePongMs: STALE_PONG_MS };
+
+/** Results that mean the runner went away during the attempt, not that it refused. */
+const GONE = new Set(["offline", "pong-timeout", "closed"]);
 
 export interface CanaryDeps {
   store: Store;
@@ -34,21 +41,39 @@ export async function runCanary(
     let lastReason = "timeout";
     let passed = false;
     let offline = false;
+    const staleAfter = options.stalePongMs ?? STALE_PONG_MS;
+    const stale = (): boolean => {
+      const age = deps.runners.pongAgeMs(offerHash);
+      return age === null || age > staleAfter;
+    };
     for (let attempt = 0; attempt < options.attempts; attempt += 1) {
+      if (stale()) {
+        lastReason = "no recent pong";
+        offline = true;
+        break;
+      }
       const result = await deps.runners.canary(offerHash, options.timeoutMs);
       if (result.ok) {
         passed = true;
         break;
       }
       lastReason = result.reason;
-      if (result.reason === "offline") {
+      if (GONE.has(result.reason)) {
+        offline = true;
+        break;
+      }
+      if (stale()) {
+        lastReason = "no recent pong";
         offline = true;
         break;
       }
       if (attempt + 1 < options.attempts) await wait(options.gapMs);
     }
 
-    if (offline) continue;
+    if (offline) {
+      deps.log?.(`[canary] skipped ${offerHash}: ${lastReason}`);
+      continue;
+    }
     if (passed) {
       deps.log?.(`[canary] ok ${offerHash}`);
       continue;

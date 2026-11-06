@@ -78,7 +78,6 @@ Touch nothing else. View code is out of bounds: nothing under `apps/web`. Never 
 - No network in tests.
 - Never log keys or signatures.
 - Small present-tense commits, no emoji, no `Co-authored-by`. End each commit message with `refs #37` or `refs #10`.
-- Never write the name of any earlier project.
 
 ## Acceptance
 

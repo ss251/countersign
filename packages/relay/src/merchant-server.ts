@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
@@ -8,9 +9,10 @@ import { parseAtomic } from "@countersign/core";
 import { DEFAULT_MERCHANT_ORIGINS, loadMerchantConfig } from "./config.ts";
 import { isRefundReason } from "./ledger.ts";
 import type { RefundReason } from "./ledger.ts";
-import { signCancel, signRefund } from "./merchant.ts";
+import { signRefund } from "./merchant.ts";
+import { refundOrderWithStatus } from "./refund-client.ts";
 import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
 
 export type MerchantAppOptions = {
   merchant: LocalAccount;
@@ -112,60 +114,31 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       merchant?: string;
       amount?: string;
       refunded?: string;
+      escrow?: string;
     };
     if (!order.id || !order.merchant || !order.customer || !order.amount) {
       return c.json({ ok: false, reason: "order_not_found" }, 502);
     }
-    if (order.merchant.toLowerCase() !== merchant.address.toLowerCase()) {
-      return c.json({ ok: false, reason: "not_your_order" }, 403);
-    }
 
-    if (
-      order.kind === "escrow" &&
-      (order.status === "held" || order.status === "in_review")
-    ) {
-      let full: bigint;
-      try {
-        full = parseAtomic(order.amount);
-      } catch {
-        return c.json({ ok: false, reason: "order_not_found" }, 502);
-      }
-      if (amount !== undefined && amount !== full) {
-        return c.json({ ok: false, reason: "partial_cancel_not_possible" }, 400);
-      }
-      const sellerSig = await signCancel({ merchant, escrow, jobId: order.id as Hex });
-      return forward(`${relayUrl}/escrow/cancel`, {
-        jobId: order.id,
-        sellerSig,
-        ...(reason ? { reason } : {}),
-      });
-    }
-
-    if (order.status === "paid" || order.status === "partially_refunded") {
-      let signed;
-      try {
-        signed = await signRefund({
-          merchant,
-          payment: {
-            payer: getAddress(order.customer),
-            payTo: getAddress(order.merchant),
-            amount: parseAtomic(order.amount),
-            refunded: parseAtomic(order.refunded ?? "0"),
-          },
-          amount,
-          now: now(),
-        });
-      } catch {
-        return c.json({ ok: false, reason: "refund_not_possible" }, 400);
-      }
-      return forward(`${relayUrl}/refund`, {
-        paymentId: order.id,
-        ...signed,
-        ...(reason ? { reason } : {}),
-      });
-    }
-
-    return c.json({ ok: false, reason: "not_refundable" }, 409);
+    const { reply, status } = await refundOrderWithStatus({
+      relayUrl,
+      merchant,
+      order: {
+        id: order.id,
+        kind: order.kind ?? "",
+        status: order.status ?? "",
+        customer: order.customer,
+        merchant: order.merchant,
+        amount: order.amount,
+        refunded: order.refunded ?? "0",
+        ...(typeof order.escrow === "string" ? { escrow: order.escrow } : {}),
+      },
+      amount,
+      reason,
+      escrow,
+      now,
+    });
+    return c.json(reply, status as ContentfulStatusCode);
   });
 
   app.post("/refund/:paymentId", async (c) => {
@@ -229,6 +202,7 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       signed = await signRefund({
         merchant,
         payment: {
+          id: paymentId,
           payer: getAddress(payment.payer),
           payTo: getAddress(payment.payTo),
           amount: parseAtomic(payment.amount),
@@ -276,18 +250,6 @@ function authorized(header: string | undefined, token: string | undefined): bool
   const expected = Buffer.from(token, "utf8");
   if (provided.length !== expected.length) return false;
   return timingSafeEqual(provided, expected);
-}
-
-async function forward(url: string, payload: unknown): Promise<Response> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return new Response(await response.text(), {
-    status: response.status,
-    headers: { "content-type": "application/json" },
-  });
 }
 
 async function proxy(url: string): Promise<Response> {

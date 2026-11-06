@@ -1,6 +1,6 @@
 # cs-65-e2e-honest-rails: production keeps only rails that return money; the suite says so
 
-Lane: cs-e2e. Base: `cs/e2e`. Branch: `cs/cs-65`. Captain, about 23:40 IST: production drops the
+Lane: cs-e2e. Base: `cs/e2e`. Branch: `cs/cs-65`. Project lead, about 23:40 IST: production drops the
 Gateway and plain x402 Hedera rails by flag, because both debit before the seller runs and cannot be
 reversed. Production's `/rails` must list exactly `escrow`, `whitechain` and `hedera-scheduled`. The
 suite retires the flows that test the removed rails, with that reason, and keeps the held flows.
@@ -8,7 +8,7 @@ suite retires the flows that test the removed rails, with that reason, and keeps
 ## 1. Retire five flows
 
 Each of these gets
-`notRun: () => "retired: <rail> was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed"`,
+`notRun: () => "retired: <rail> was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed"`,
 replacing its existing `notRun`, if any. `<rail>` is `the Gateway rail` or `plain x402 Hedera`, as listed.
 Nothing else in these flows changes, so their code and assertions stay in the file, to restore by
 deleting one line.

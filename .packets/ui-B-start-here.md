@@ -4,7 +4,7 @@
 
 Run `bun install` at the worktree root before anything else. You are on `cs/ui-B`, cut from `cs/ui-A` (wagmi with the injected connector, and `WalletButton` in the shell).
 
-## The captain's words
+## The project lead's words
 
 "A single 'start here' route that explains the three roles in one screen: I want a wallet, I want to sell, I want to buy. The buyer path ends in a real signature."
 

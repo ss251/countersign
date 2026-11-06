@@ -14,7 +14,7 @@ import { NETWORK, USDT } from "./chain.ts";
 import { authorizationToWire, sameAddress, signAuthorization, tokenAbi } from "./eip3009.ts";
 import type { Authorization } from "./eip3009.ts";
 import type { PaymentPayload, PaymentRequirements, SettleResponse } from "./exact.ts";
-import { PAYMENT_RETRY_HEADER } from "./paywall.ts";
+import { PAYMENT_RETRY_HEADER } from "./headers.ts";
 import type { ChainReader } from "./ports.ts";
 
 export type FetchLike = (

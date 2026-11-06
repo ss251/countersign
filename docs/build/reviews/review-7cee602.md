@@ -1,0 +1,8 @@
+> Published copy of the build record. Local paths and machine names are replaced, and the person directing the work is called the project lead.
+
+# Re-review 7cee602 (cs/wc, PR 17) — B9 and B10 fixes, escrow-ops zero guard, RPC fallback
+Reviewer: cs-w1. Result: **blockers=0 should-fix=1**. My B9 and B10 tests pass unedited (and `bun test packages/relay` is green with my cs/w1 copy).
+- **B9 closed.** The paywall claims `from:nonce` before verify; a second presentation gets 409 while the first is in flight and after it settled. The claim is released only when nothing moved (bad verify, handler error or 4xx in "after" mode, failed settle). The relay's idempotent answer is now marked `replayed:true` and the paywall refuses it, so a request that raced past the in-memory claim (a second process, a restart) is not served either. `settle: "before"` is available for handlers with side effects.
+- **B10 closed.** pay-fetch reserves the amount in the same synchronous turn as the budget check, before signing; only a signing failure rolls it back; `validBefore` is capped at now + 300; `reconcile()` releases an authorisation only when the chain reports it unused after it expired, and never without a reader. Optional `payTo` allowlist added.
+- `releaseJob` refuses a zero slip hash before any read or write. The relay's RPC list is chain-checked at startup and the chain-2625 host is refused.
+Should-fix: a settle that fails as `settlement_pending` releases the claim, so the same payment can be presented again while its first transaction may still land. The replayed-settle refusal covers the goods (a second request is not served), but the handler runs twice. Keep the claim for a pending settle until `reconcile` resolves it.

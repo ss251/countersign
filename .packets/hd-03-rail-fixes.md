@@ -17,12 +17,12 @@ Two failing tests already define the work:
 - `packages/rail/src/hedera/inspect.ts`, `packages/rail/src/hedera/rail.ts`, and `packages/rail/src/hedera/index.ts` (exports only).
 - `packages/rail/src/hedera/test/fuzz.test.ts`, `rail.test.ts` and `inspect.test.ts`.
 - `packages/buyer/src/hedera/signer.ts`: one change, step 4.
-- Report: `/Users/thescoho/Developer/countersign-mumbai/reports/hd-03-rail-fixes.md`.
+- Report: `$M/reports/hd-03-rail-fixes.md`.
 - `packages/rail/src/hedera/test/w1-attacks.test.ts` belongs to the reviewer. It must pass unchanged. Do not edit it.
 
 ## Context
 
-Read `rail.ts` (`check`, `settle`, `confirmOnChain`), `inspect.ts` (`checkTransfer`), all four files in `test/`, and the review at `/Users/thescoho/Developer/countersign-mumbai/reports/review-cde4ad8.md`.
+Read `rail.ts` (`check`, `settle`, `confirmOnChain`), `inspect.ts` (`checkTransfer`), all four files in `test/`, and the review at `$M/reports/review-cde4ad8.md`.
 
 ## Required changes
 
