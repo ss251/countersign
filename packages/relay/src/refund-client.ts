@@ -103,6 +103,7 @@ export async function refundOrderWithStatus(
       signed = await signRefund({
         merchant,
         payment: {
+          id: order.id,
           payer: getAddress(order.customer),
           payTo: getAddress(order.merchant),
           amount: atomicOf(order.amount),

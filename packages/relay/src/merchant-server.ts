@@ -202,6 +202,7 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       signed = await signRefund({
         merchant,
         payment: {
+          id: paymentId,
           payer: getAddress(payment.payer),
           payTo: getAddress(payment.payTo),
           amount: parseAtomic(payment.amount),

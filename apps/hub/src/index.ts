@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Address } from "viem";
 import { createHub } from "./app.ts";
+import { runCanary } from "./canary.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
 import { createPrivyVerifier } from "./privy.ts";
@@ -75,7 +76,7 @@ const commit =
   commitCandidate !== undefined && /^[0-9a-f]{40}$/.test(commitCandidate) ? commitCandidate : undefined;
 console.log(`[hub] commit ${commit ? commit.slice(0, 7) : "unknown"}`);
 
-const { app, websocket } = createHub({
+const { app, websocket, runners } = createHub({
   store,
   rails,
   now,
@@ -92,6 +93,20 @@ const server = Bun.serve({ port, fetch: app.fetch, websocket });
 setInterval(() => {
   void runJanitor({ store, rails, now });
 }, 30_000);
+
+const canaryMode = process.env.CANARY === "1" ? "delist" : process.env.CANARY === "report" ? "report" : "off";
+console.log(`[hub] canary: ${canaryMode}`);
+if (canaryMode !== "off") {
+  const everyMs = Number(process.env.CANARY_INTERVAL_S ?? 300) * 1000;
+  let running = false;
+  setInterval(() => {
+    if (running) return;
+    running = true;
+    void runCanary({ store, runners, now, report: canaryMode === "report", log: (line) => console.log(line) }).finally(() => {
+      running = false;
+    });
+  }, everyMs);
+}
 
 console.log(`[hub] listening on ${server.url} rails: ${rails.map((r) => r.declaration.id).join(", ") || "none"}`);
 console.log(`[hub] privy sign-in: ${privy === undefined ? "off" : "on"}`);

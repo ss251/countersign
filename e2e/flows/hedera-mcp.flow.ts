@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { canonicalHash, fromBase64Json, PAYMENT_REQUIRED_HEADER, type Offer, type PaymentRequired, type Slip } from "@countersign/core";
 import { Transaction, TransferTransaction } from "../../packages/rail/src/hedera/sdk.ts";
 import { verifyCli } from "../lib/actors.ts";
-import { agentRun, agentTakes, evidence, hederaExact, OPEN_CAP, type Evidence } from "../lib/agent.ts";
+import { agentRun, evidence, hederaExact, OPEN_CAP, type Evidence } from "../lib/agent.ts";
 import { units, wallets } from "../lib/budget.ts";
 import { ARC, HEDERA } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
@@ -39,7 +39,7 @@ export const hederaMcp: Flow = {
   title: "Hedera Agent Kit MCP call paid through the public hub",
   owner: "cs-hd",
   network: "hedera",
-  notRun: (env) => (!env.options.publicHub ? "no public hub configured" : agentTakes("--offer") ? null : "agent-run.ts has no --offer yet (#42)"),
+  notRun: () => "retired: plain x402 Hedera was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21",
   spends(env) {
     const w = wallets(env.secrets);
     return [

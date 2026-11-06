@@ -218,12 +218,14 @@ const fixtureRefunds: Record<string, RefundRecord[]> = {
 /** An order as /orders/:id reports it, plus any refunds this visit added on top of the fixtures. */
 export function fixtureDetail(order: Order, added: readonly RefundRecord[] = []): ReceiptOrder {
   const refunds = [...(fixtureRefunds[order.id.toLowerCase()] ?? []), ...added];
+  // A made-up hash gets no explorer URL here either (STEER-2130 A7): only chain-held ones do.
+  const real = (hash: string | null | undefined): hash is string => !!hash && !isStandIn(hash);
   return {
     ...order,
     refunds,
-    settleTxUrl: txUrl(order.settleTx),
-    ...(order.closeTx ? { closeTxUrl: txUrl(order.closeTx) } : {}),
-    refundTxUrls: refunds.map((refund) => txUrl(refund.txHash)),
+    ...(real(order.settleTx) ? { settleTxUrl: txUrl(order.settleTx) } : {}),
+    ...(real(order.closeTx) ? { closeTxUrl: txUrl(order.closeTx) } : {}),
+    refundTxUrls: refunds.map((refund) => refund.txHash).filter(real).map((hash) => txUrl(hash)),
   };
 }
 
@@ -235,5 +237,5 @@ export function findFixtureOrder(id: string): ReceiptOrder | null {
 
 /** The export a sample desk downloads: the same builder and columns as a live one. */
 export function fixtureCsv(): string {
-  return ordersCsv(fixtureOrders);
+  return ordersCsv(fixtureOrders, { isStandIn });
 }

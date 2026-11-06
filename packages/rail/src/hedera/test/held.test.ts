@@ -14,7 +14,7 @@ import { keccak256, toBytes, type Hex } from "viem";
 import { HEDERA_TESTNET, USDC_TESTNET } from "../constants.ts";
 import { createHederaHeldRail, heldJobId, type HeldRail, type HeldRailOptions } from "../held.ts";
 import { offerMemo } from "../memo.ts";
-import { NODE, PAYEE, PAYER, offer, payerKey, transfer } from "./fixtures.ts";
+import { NODE, PAYEE, PAYER, hubGatedPayeeKey, hubKey, offer, payerKey, transfer } from "./fixtures.ts";
 
 const NOW = 1_000_000;
 const SCHEDULE_ID = "0.0.500";
@@ -153,7 +153,7 @@ function payerAccount(over: Record<string, unknown> = {}): Record<string, unknow
 }
 
 function payeeAccount(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return { account: PAYEE, receiver_sig_required: true, ...over };
+  return { account: PAYEE, receiver_sig_required: true, key: hubGatedPayeeKey(), ...over };
 }
 
 function scheduleRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -222,6 +222,7 @@ async function railFor(
 ): Promise<{ rail: HeldRail; mirror: ReturnType<typeof mirrorBox> }> {
   const mirror = mirrorBox(state);
   const rail = await createHederaHeldRail({
+    hubKey,
     mirror,
     now: () => NOW,
     waitScheduleMs: 0,
@@ -266,6 +267,7 @@ describe("challenge", () => {
         name: "hedera-scheduled",
         offerHash: HELD_HASH,
         holdSeconds: HELD_OFFER.deadline + 180,
+        hubKey: hubKey.publicKey.toStringRaw(),
       },
     });
   });
@@ -406,7 +408,7 @@ describe("verify", () => {
     const entry = requirements(rail);
     expect(await rail.verify(heldPayment(entry), entry)).toEqual({
       isValid: false,
-      invalidReason: "payee_does_not_hold",
+      invalidReason: "payee_not_hub_gated",
     });
   });
 

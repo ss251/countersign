@@ -114,6 +114,33 @@ This section is a design, and none of it is deployed. Where things stand:
 
 The v1 deployments in the table above stay listed, so slips minted on them still verify. The `Job` struct, `jobOf`, the EIP-712 domain and the `Released` event are unchanged. **`Countersign` changes:** it gains `bond` and `reviewWindow`, so a v2 `jobId` is derived differently from a v1 one, and clients choose the derivation by the pinned escrow's version.
 
+### v2.1: the independent audit's fixes, and "bond implies window" (06 Nov, 22:05 to 23:25 IST)
+
+An independent audit of the option-(d) head (STEER-2205; its text is in `docs/audits/2026-11-06-grok-escrow-v2.md`) confirmed C1, C2, H1 and M1 fixed, and found two highs, a medium and a low. The project lead adopted its fixes. **They replace option (d)**, the arbiter-only bonded fund, and the 19:40 "no payee lock" decision. Where this subsection and the sections below differ, this subsection wins.
+
+**The interface.** The fleet's runner, hub, rail and Whitechain relay build against exactly this:
+
+| Finding | The fix |
+|---|---|
+| **High: the arbiter could lock a bond the payee never accepted.** | `fund` is open again: no arbiter check. It becomes `fund(bytes32 offerHash, Countersignature cs, bytes lockSig)`. A bonded job (`cs.bond != 0`) needs the payee's EIP-712 `Lock(bytes32 jobId)` signature, under the escrow's own domain and checked before `bondOf` is debited, or it reverts `LockMissing(jobId)`. An unbonded job ignores `lockSig`, and callers pass `0x`. `failDelivery` stays the arbiter's only power. |
+| **High: an online seller could keep its bond.** | `cancel` unwinds only a **Funded** job, by its deadline. On a Delivered job it reverts `NotOpen(jobId)`, so release-then-cancel can no longer dodge a dispute or a forfeit. |
+| **Medium: one Dispute signature had two bond outcomes.** | The typehash is `Dispute(bytes32 jobId,uint8 status)`, and `dispute(bytes32 jobId, uint8 status, bytes buyerSig)` requires the signed status to equal the job's (Funded 1 or Delivered 5), else `StatusMismatch(jobId, status)`. |
+| **Low: zero bond and zero window skipped the registry.** | `fund`'s terms check also runs when `termsOf[payee][offerHash].price != 0`, so a registered offer is funded only on its terms. |
+
+**The invariant: a bond implies a review window** (the project lead's decision, 23:25 IST).
+
+- **Why.** A bond is compensation for a buyer who can refuse a delivery. With review window 0, the seller releases on any receipt and takes the payment plus its whole bond back. The bond would be decoration that reads as protection.
+- **This is a deliberate constraint, not a limitation.** It is enforced in three places:
+  1. **The contract.** `setTerms` reverts `BondNeedsWindow()` on a nonzero bond with window 0, so no bonded job can have window 0, because a bonded fund must match registered terms.
+  2. **The hub and the runner.** Offer validation refuses a positive bond with `reviewWindow` absent or 0, so the hub will not publish such an offer and the runner will not sign it.
+  3. **The seller wizard** cannot express the combination.
+- **No migration.** No v2 offer exists yet, and the phone's offers carry no bond.
+
+**How the fleet carries the Lock.** Before settling a bonded v2 escrow payment, the hub asks the seller's runner for `Lock(jobId)` over the runner link. The runner signs only for an offer it serves, at exactly that offer's bond.
+
+- A refusal or a timeout answers 409 `seller-declined` before anything is charged.
+- The signature travels into `fund` as `lockSig`. On Whitechain it goes through the relay's `/settle`.
+
 ### The decisions
 
 1. **The terms come from signatures, never from the arbiter.**

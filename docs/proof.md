@@ -27,7 +27,7 @@ Circle Gateway nanopayment (rail `gateway`):
 | buyer's Gateway deposit (1 USDC) | [`0x4ae04719…1cbc`](https://explorer.testnet.arc.io/tx/0x4ae047192cda083df967bfe371359dd4f4a7bfde7cde1f61ea9b2a9ddab91cbc) |
 | paid call, 0.01 USDC | Gateway transfer `a69f94c8-8771-4d8b-96ba-fe189501f80c`, status `received`. The buyer's Gateway balance dropped from 1 to 0.99 immediately. The seller is credited in Gateway's next batch, so there is no per-call chain tx. |
 | slip | `0xe6822cb77d95f59798fba6560692fd4a7b62008465e29d72f2645cbc292426f4`, `body.rail = "gateway"` |
-| the same through the hosted hub, 0.01 USDC | Offer `0x41536222…0ae0` (Circle's `use-usdc`, seller `0xA55a31E3…B093`, payable on escrow, gateway and hedera) bought on `https://hub-production-e85e.up.railway.app`: Gateway transfer `196e409b-4855-4001-bafc-37ddbaa80076`, slip `0x84072e3e140597a1bc903538ccb223fb6eab4dcf4781e51269933f48f418c529`, `body.rail = "gateway"` |
+| the same through the hosted hub, 0.01 USDC | Offer `0x41536222…0ae0` (Circle's `use-usdc`, seller `0xA55a31E3…B093`, then payable on escrow, gateway and hedera) bought on `https://hub-production-e85e.up.railway.app`: Gateway transfer `196e409b-4855-4001-bafc-37ddbaa80076`, slip `0x84072e3e140597a1bc903538ccb223fb6eab4dcf4781e51269933f48f418c529`, `body.rail = "gateway"` |
 
 First deployment, made with `forge script` and verified on the explorer. The same beats ran on it first.
 

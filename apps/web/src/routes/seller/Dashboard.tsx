@@ -5,7 +5,7 @@ import { formatDay, formatTime, shortHex, symbolFor, usd } from "../../lib/forma
 import { hubBase } from "../../lib/hub.ts";
 import type { Listing, Purchase } from "../../lib/types.ts";
 import { Absent } from "../../ui/Absent.tsx";
-import { Amount, CopyButton, Empty, FixtureNote, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
+import { Amount, CopyButton, Empty, FixtureNote, Hash, RailTag, Status, Tag, cx } from "../../ui/primitives.tsx";
 import { absoluteHub, publishCommand, releaseTotals } from "./logic.ts";
 
 /**
@@ -34,7 +34,10 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
     );
   }
 
-  const offers = (listings.data ?? []).filter((l) => seller && l.offer.seller.toLowerCase() === seller.address);
+  // Online offers first, then the newest, so the one buyers can call right now leads (firstmate, 23:30).
+  const offers = (listings.data ?? [])
+    .filter((l) => seller && l.offer.seller.toLowerCase() === seller.address)
+    .sort((a, b) => Number(b.online === true) - Number(a.online === true) || b.offer.issuedAt - a.offer.issuedAt);
   const sales = (purchases.data ?? []).filter((p) => seller && p.seller.address.toLowerCase() === seller.address);
   const released = sales.filter((p) => p.status === "released").length;
   const refunded = sales.filter((p) => p.status === "refunded").length;
@@ -67,7 +70,7 @@ export function SellerDashboard({ query }: { query: URLSearchParams }) {
               >
                 {sellers.map((s) => (
                   <option key={s.address} value={s.address}>
-                    {s.name} · {shortHex(s.address)}
+                    {sellerOption(s)}
                   </option>
                 ))}
               </select>
@@ -173,6 +176,11 @@ function OfferRow({ listing, sales, counted }: { listing: Listing; sales: Purcha
           {offer.rails.map((r) => (
             <RailTag key={r} rail={r} />
           ))}
+        </span>
+        {/* Same-titled offers are different offers: their hash and publish date tell them apart. */}
+        <span className="ledger-table__id">
+          <Hash value={listing.hash} label="offer hash" copy={false} />
+          <span className="num">{`published ${formatDay(offer.issuedAt)}, ${formatTime(offer.issuedAt)}`}</span>
         </span>
       </th>
       <td className="is-num" data-label="Price">
@@ -292,6 +300,12 @@ function plural(n: number, word: string): string {
 interface SellerRef {
   address: string;
   name: string;
+}
+
+/** A seller's name, then its address only when the name is not already its address. */
+function sellerOption(s: SellerRef): string {
+  const short = shortHex(s.address);
+  return s.name.toLowerCase() === short.toLowerCase() ? short : `${s.name} · ${short}`;
 }
 
 function sellersOf(listings: Listing[]): SellerRef[] {

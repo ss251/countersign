@@ -4,13 +4,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PaymentRequired, PaymentRequirements } from "@countersign/core";
 import { agentTakes, hederaExact, hederaHeld } from "../lib/agent.ts";
 import { formatAmount, planBudget, units, type Wallet } from "../lib/budget.ts";
 import { check, equal, NotRun, runFlow, type Flow, type RunEnv } from "../lib/flow.ts";
 import { readWithRetry } from "../lib/http.ts";
+import { REAL_ROOT, redactPaths } from "../lib/paths.ts";
 import { spawnProc, runCmd } from "../lib/procs.ts";
 import { renderRun } from "../lib/report.ts";
 import { parseEnv, Secrets } from "../lib/secrets.ts";
@@ -49,6 +50,31 @@ describe("secrets", () => {
     const s = Secrets.fromEntries({ BAD_KEY: "not-a-key-but-long-enough" });
     expect(() => s.key("BAD_KEY")).toThrow("BAD_KEY is not a 32-byte hex key");
     expect(() => s.get("MISSING_KEY")).toThrow("MISSING_KEY is not set");
+  });
+
+  test("a stack trace names the repository root as $R", () => {
+    const s = Secrets.fromEntries({});
+    const text = `    at readEntries (${REAL_ROOT}/e2e/lib/hedera.ts:85:26)`;
+    expect(s.redact(text)).toBe("    at readEntries ($R/e2e/lib/hedera.ts:85:26)");
+  });
+
+  test("the home directory becomes ~", () => {
+    const s = Secrets.fromEntries({});
+    expect(s.redact(`${homedir()}/.config/countersign/e2e.env`)).toBe("~/.config/countersign/e2e.env");
+  });
+
+  test("a sibling worktree path becomes $R", () => {
+    const parent = join(tmpdir(), "countersign-wt");
+    const root = join(parent, "cs-64");
+    expect(redactPaths(join(parent, "cs-60", "e2e", "x.ts"), root, join(tmpdir(), "home"))).toBe("$R/e2e/x.ts");
+  });
+
+  test("plain text is unchanged and secret redaction runs before paths", () => {
+    const secret = `${REAL_ROOT}/private/value-long-enough`;
+    const s = Secrets.fromEntries({ X_TOKEN: secret, MERCHANT_TOKEN: TOKEN });
+    expect(s.redact("nothing to rewrite")).toBe("nothing to rewrite");
+    expect(s.redact(`x=${secret}`)).toBe("x=[redacted]");
+    expect(s.redact(`${REAL_ROOT}/e2e/lib/hedera.ts:85 ${TOKEN}`)).toBe("$R/e2e/lib/hedera.ts:85 [redacted]");
   });
 });
 
@@ -184,6 +210,58 @@ describe("budget", () => {
     expect(formatAmount(units("1.5", 18), 18)).toBe("1.5");
     expect(units("0.05", 6)).toBe(50_000n);
     expect(formatAmount(0n, 6)).toBe("0");
+  });
+});
+
+describe("retired flows", () => {
+  const RETIRED = "retired: the Gateway rail was removed from production by flag (captain, 23:40 IST): it debits before the seller runs and cannot be reversed";
+
+  test("a retired flow is reported NOT RUN and reserves nothing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2e-retired-"));
+    let reads = 0;
+    const w: Wallet = {
+      id: "retired.wallet",
+      label: "retired wallet",
+      network: "arc",
+      asset: "USDC",
+      address: "0x1111111111111111111111111111111111111111",
+      decimals: 6,
+      topUp: (amount) => `top up ${amount}`,
+      read: async () => {
+        reads += 1;
+        return 1_000n;
+      },
+    };
+    const flow: Flow = {
+      name: "retired-demo",
+      title: "retired demo",
+      owner: "orch-cs",
+      network: "none",
+      notRun: () => RETIRED,
+      spends: () => [{ wallet: w, amount: 100n, floor: 100n }],
+      run: async () => {
+        throw new Error("a retired flow ran");
+      },
+    };
+    const plan = await planBudget([flow], env(dir));
+    expect(plan.balances.size).toBe(0);
+    expect(plan.short.size).toBe(0);
+    expect(plan.requests).toHaveLength(0);
+    expect(reads).toBe(0);
+
+    const listed = Bun.spawnSync(["bun", join(import.meta.dir, "..", "run.ts"), "--list"], {
+      cwd: join(import.meta.dir, "..", ".."),
+      env: { ...process.env, E2E_ENV_DIR: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(listed.exitCode).toBe(0);
+    const lines = listed.stdout.toString().split("\n");
+    const status = (name: string) => lines.find((line) => line.trim().split(/\s+/)[1] === name);
+    for (const name of ["arc-gateway", "public-gateway", "hedera", "public-hedera", "hedera-mcp"]) {
+      expect(status(name)).toContain("NOT RUN (retired:");
+    }
+    expect(status("hedera-mcp")).toContain("Its Agent Kit offer is paid held in flow 21");
   });
 });
 

@@ -1,9 +1,11 @@
 import { networkName, RAIL_LABEL } from "../lib/format.ts";
+import { termsKind, type TermsKind } from "../lib/terms.ts";
 import type { RailDeclaration } from "../lib/types.ts";
 import { Hash, KV } from "./primitives.tsx";
 
-const KIND: Record<RailDeclaration["kind"], string> = {
+const KIND: Record<TermsKind, string> = {
   escrow: "Escrow. The money locks in a contract until release or refund.",
+  held: "Held. A Hedera schedule moves nothing until the seller's key signs it; that key alone can also release it.",
   direct: "Direct. One transfer, final when it lands.",
   batched: "Batched. The buyer is debited at once and the seller credited in a later batch.",
 };
@@ -25,7 +27,7 @@ export function RailCard({ declaration: d, tx, link = true }: { declaration: Rai
       className="rail-card"
       rows={[
         ["Rail", <strong>{RAIL_LABEL[d.id]}</strong>],
-        ["How", KIND[d.kind]],
+        ["How", KIND[termsKind(d)]],
         [
           "Network",
           <>

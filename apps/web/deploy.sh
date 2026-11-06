@@ -41,6 +41,7 @@ echo "building apps/web from $label"
   VITE_HUB_URL="${VITE_HUB_URL:-https://hub-production-e85e.up.railway.app}" \
   VITE_RELAY_URL="${VITE_RELAY_URL-/relay}" \
   VITE_MERCHANT_URL="${VITE_MERCHANT_URL-/merchant-api}" \
+  VITE_PRIVY_APP_ID="${VITE_PRIVY_APP_ID-$(railway variables --service "${RAILWAY_SERVICE:-web}" --kv 2>/dev/null | sed -n 's/^VITE_PRIVY_APP_ID=//p')}" \
     bunx --bun vite build --logLevel warn
 )
 
@@ -54,6 +55,12 @@ if [ -f "$src/apps/phone/package.json" ]; then
       bunx --bun vite build --logLevel warn
   )
 fi
+
+# STEER-2225: never ship a bundle that could ask for an approval, a permit or eth_sign. The check reads the
+# source maps, so it runs before they are dropped; a ref without the script is checked by this checkout's copy.
+grep_script="$src/apps/web/scripts/wallet-grep.ts"
+[ -f "$grep_script" ] || grep_script="$here/scripts/wallet-grep.ts"
+bun "$grep_script" "$src/apps/web/dist" || { echo "deploy: the bundle failed the wallet check, so nothing was uploaded" >&2; exit 1; }
 
 cp -R "$src/apps/web/dist" "$stage/dist"
 rm -f "$stage"/dist/assets/*.map

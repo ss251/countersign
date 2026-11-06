@@ -1065,11 +1065,21 @@ export const ORDERS_CSV_HEADER =
  * The accountant's export, built from whatever the desk is showing: the relay's orders.csv columns
  * up to refund_tx_urls. Refund reasons stay in the relay's own export, which reads every refund.
  */
-export function ordersCsv(orders: readonly Order[]): string {
+export interface CsvOptions {
+  /**
+   * True for a hash that no chain holds, such as a sample ledger's made-up one. Its URL cell
+   * stays empty, so an export never carries an explorer link to a transaction that does not exist.
+   */
+  isStandIn?: (hash: string) => boolean;
+}
+
+export function ordersCsv(orders: readonly Order[], options: CsvOptions = {}): string {
   const rows = [ORDERS_CSV_HEADER];
   for (const order of orders) {
     const net = contribution(order);
     const explorer = explorerOf(order);
+    const link = (hash: string | null | undefined): string =>
+      hash && !options.isStandIn?.(hash) ? txUrl(hash, explorer) : "";
     rows.push(
       [
         new Date(order.createdAt).toISOString(),
@@ -1082,9 +1092,9 @@ export function ordersCsv(orders: readonly Order[]): string {
         formatUsdt(order.refunded),
         `${net < 0n ? "-" : ""}${formatUsdt((net < 0n ? -net : net).toString())}`,
         order.status,
-        order.settleTx ? txUrl(order.settleTx, explorer) : "",
-        order.closeTx ? txUrl(order.closeTx, explorer) : "",
-        order.refundTxs.map((hash) => txUrl(hash, explorer)).join(" "),
+        link(order.settleTx),
+        link(order.closeTx),
+        order.refundTxs.map(link).filter((url) => url !== "").join(" "),
       ]
         .map(csvField)
         .join(","),
