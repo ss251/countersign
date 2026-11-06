@@ -36,7 +36,7 @@
   top: 0;
   z-index: 20;
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .topbar__inner {
@@ -80,7 +80,7 @@
   transition: color var(--d-1) var(--ease-out);
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .topbar__link:hover {
     color: var(--ink);
   }
@@ -99,14 +99,20 @@
 .topbar__menu {
   display: none;
   align-self: center;
-  min-height: 40px;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--line);
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 0;
   border-radius: var(--r-2);
   background: var(--raised);
+  box-shadow: var(--elev-1);
   color: var(--ink);
   font-size: var(--t-14);
   font-weight: 600;
+  transition: transform var(--d-press) var(--ease-out);
+}
+
+.topbar__menu:active {
+  transform: scale(0.97);
 }
 
 .topbar__sheet {
@@ -120,7 +126,7 @@
   display: flex;
   align-items: center;
   min-height: 48px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
   color: var(--ink);
   font-weight: 500;
   text-decoration: none;
@@ -167,9 +173,11 @@
 }
 
 .notice__retry {
-  padding: var(--sp-2) var(--sp-4);
-  border: 1px solid var(--line);
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 0;
   border-radius: var(--r-2);
   background: var(--raised);
-  font-weight: 500;
+  box-shadow: var(--elev-1);
+  font-weight: 600;
 }

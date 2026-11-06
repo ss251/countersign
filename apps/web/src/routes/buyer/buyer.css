@@ -30,7 +30,7 @@
   min-height: 52px;
   padding: env(safe-area-inset-top) var(--sp-4) 0;
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .phone__brand {
@@ -89,7 +89,7 @@
   grid-template-columns: repeat(3, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--paper);
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .tabbar__tab {
@@ -186,8 +186,8 @@
   display: grid;
   gap: var(--sp-1);
   padding: var(--sp-4) 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .approval__to {
@@ -214,7 +214,7 @@
   margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-8));
   padding: var(--sp-3) var(--sp-4) var(--sp-1);
   background: var(--paper);
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .approval__dock .hold {
@@ -280,7 +280,7 @@
 
 .ledger {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .ledger__step {
@@ -290,7 +290,7 @@
   column-gap: var(--sp-3);
   row-gap: 2px;
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .ledger__marker {
@@ -443,7 +443,7 @@
 
 .env__rows {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .env__muted {
@@ -486,7 +486,7 @@
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .limit__text {
@@ -539,7 +539,7 @@
 
 .allow {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .allow__row {
@@ -548,7 +548,7 @@
   align-items: center;
   gap: var(--sp-3);
   min-height: 48px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .allow__name {
@@ -598,7 +598,7 @@
 
 .history__list {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: var(--hair) solid var(--line);
 }
 
 .hrow {
@@ -606,7 +606,7 @@
   justify-content: space-between;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
   color: var(--ink);
   text-decoration: none;
 }

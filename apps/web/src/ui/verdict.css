@@ -2,9 +2,9 @@
   display: grid;
   gap: var(--sp-3);
   padding: var(--sp-5);
-  border: 1px solid var(--line);
   border-radius: var(--r-3);
   background: var(--raised);
+  box-shadow: var(--elev-1);
 }
 
 .verdict__word {
@@ -15,7 +15,7 @@
 }
 
 .verdict--valid {
-  border-color: color-mix(in oklab, var(--settle) 40%, var(--line));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--settle) 45%, transparent), var(--elev-1);
 }
 
 .verdict--valid .verdict__word {
@@ -23,8 +23,8 @@
 }
 
 .verdict--invalid {
-  border-color: color-mix(in oklab, var(--seal) 45%, var(--line));
   background: var(--seal-wash);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--seal) 50%, transparent);
 }
 
 .verdict--invalid .verdict__word {
@@ -57,7 +57,7 @@
   grid-template-columns: 16px 1fr;
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
 }
 
 .vcheck:last-child {

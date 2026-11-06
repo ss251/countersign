@@ -45,8 +45,8 @@
 }
 
 .tree__row--current {
-  border-color: var(--line);
   background: var(--raised);
+  box-shadow: var(--elev-1);
 }
 
 .tree__row--missing {
