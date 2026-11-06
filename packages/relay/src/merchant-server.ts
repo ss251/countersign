@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
@@ -9,7 +10,7 @@ import { DEFAULT_MERCHANT_ORIGINS, loadMerchantConfig } from "./config.ts";
 import { isRefundReason } from "./ledger.ts";
 import type { RefundReason } from "./ledger.ts";
 import { signRefund } from "./merchant.ts";
-import { refundOrder } from "./refund-client.ts";
+import { refundOrderWithStatus } from "./refund-client.ts";
 import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 import type { Address } from "viem";
 
@@ -119,7 +120,7 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       return c.json({ ok: false, reason: "order_not_found" }, 502);
     }
 
-    const result = await refundOrder({
+    const { reply, status } = await refundOrderWithStatus({
       relayUrl,
       merchant,
       order: {
@@ -137,20 +138,7 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
       escrow,
       now,
     });
-    const status =
-      result.ok === "unknown"
-        ? 502
-        : result.ok === true
-          ? 200
-          : result.reason === "not_your_order"
-            ? 403
-            : result.reason === "partial_cancel_not_possible" ||
-                result.reason === "refund_not_possible"
-              ? 400
-              : result.reason === "not_refundable"
-                ? 409
-                : 200;
-    return c.json(result, status);
+    return c.json(reply, status as ContentfulStatusCode);
   });
 
   app.post("/refund/:paymentId", async (c) => {

@@ -67,9 +67,16 @@ export function walletAccount(
 
 /** Refund one order through the same path the merchant service uses. */
 export async function refundOrder(input: RefundOrderInput): Promise<RefundOrderReply> {
+  return (await refundOrderWithStatus(input)).reply;
+}
+
+/** The same refund path, keeping the HTTP status the merchant service answers with. */
+export async function refundOrderWithStatus(
+  input: RefundOrderInput,
+): Promise<{ reply: RefundOrderReply; status: number }> {
   const { merchant, order } = input;
   if (!sameAddress(order.merchant, merchant.address)) {
-    return { ok: false, reason: "not_your_order" };
+    return { reply: { ok: false, reason: "not_your_order" }, status: 403 };
   }
 
   const relayUrl = input.relayUrl.replace(/\/+$/, "");
@@ -79,7 +86,7 @@ export async function refundOrder(input: RefundOrderInput): Promise<RefundOrderR
   if (order.kind === "escrow" && (order.status === "held" || order.status === "in_review")) {
     const full = atomicOf(order.amount);
     if (input.amount !== undefined && input.amount !== full) {
-      return { ok: false, reason: "partial_cancel_not_possible" };
+      return { reply: { ok: false, reason: "partial_cancel_not_possible" }, status: 400 };
     }
     const escrow = (order.escrow ?? input.escrow ?? WHITECHAIN_ESCROW) as Address;
     const sellerSig = await signCancel({ merchant, escrow, jobId: order.id as Hex });
@@ -105,7 +112,7 @@ export async function refundOrder(input: RefundOrderInput): Promise<RefundOrderR
         now: now(),
       });
     } catch {
-      return { ok: false, reason: "refund_not_possible" };
+      return { reply: { ok: false, reason: "refund_not_possible" }, status: 400 };
     }
     return post(send, `${relayUrl}/refund`, {
       paymentId: order.id,
@@ -114,7 +121,7 @@ export async function refundOrder(input: RefundOrderInput): Promise<RefundOrderR
     });
   }
 
-  return { ok: false, reason: "not_refundable" };
+  return { reply: { ok: false, reason: "not_refundable" }, status: 409 };
 }
 
 function atomicOf(value: string | bigint): bigint {
@@ -125,7 +132,7 @@ async function post(
   send: typeof fetch,
   url: string,
   payload: unknown,
-): Promise<RefundOrderReply> {
+): Promise<{ reply: RefundOrderReply; status: number }> {
   let response: Response;
   try {
     response = await send(url, {
@@ -134,12 +141,14 @@ async function post(
       body: JSON.stringify(payload),
     });
   } catch {
-    return { ok: "unknown", reason: MAY_HAVE_GONE };
+    return { reply: { ok: "unknown", reason: MAY_HAVE_GONE }, status: 502 };
   }
-  if (response.status >= 500) return { ok: "unknown", reason: MAY_HAVE_GONE };
+  if (response.status >= 500) {
+    return { reply: { ok: "unknown", reason: MAY_HAVE_GONE }, status: 502 };
+  }
   try {
-    return (await response.json()) as RefundOrderReply;
+    return { reply: (await response.json()) as RefundOrderReply, status: response.status };
   } catch {
-    return { ok: "unknown", reason: MAY_HAVE_GONE };
+    return { reply: { ok: "unknown", reason: MAY_HAVE_GONE }, status: 502 };
   }
 }
