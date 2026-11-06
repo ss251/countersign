@@ -9,6 +9,7 @@
  *     --min-duration is the least time a funded bonded job may have before its deadline. At least 60:
  *     shorter lets a buyer fund a job the seller cannot meet and take the bond on the default. At most
  *     the offer's deadline minus about 300 s, or honest purchases revert (cs-w1, review of 9240aec).
+ *   A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.
  *   bond terms --show --offer <bytes32> --escrow <address> [--rpc <url>]
  *
  * deposit signs an EIP-3009 ReceiveWithAuthorization from the seller to the escrow, good for ten
@@ -283,6 +284,21 @@ function parseTermsArgs(args: string[]): BondTermsCommand | BondTermsShowCommand
   const offerHash = offer as Hex;
   if (show) return { command: "terms-show", offer: offerHash, ...base };
 
+  if (bond !== undefined && reviewWindow === undefined) {
+    let parsed: bigint | undefined;
+    try {
+      parsed = parseAtomic(bond);
+    } catch {
+      // Not an atomic amount. The checks below report that.
+      parsed = undefined;
+    }
+    if (parsed !== undefined && parsed > 0n) {
+      throw new Error(
+        "Refused. A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.",
+      );
+    }
+  }
+
   if (price === undefined || bond === undefined || reviewWindow === undefined || minDuration === undefined) {
     throw new Error("bond terms needs --offer, --price, --bond, --review-window and --min-duration (or --show).");
   }
@@ -316,6 +332,11 @@ function wholeSeconds(raw: string, flag: string): number {
 
 /** The escrow's own setTerms guards, checked here before anything is sent. */
 function assertTerms(price: bigint, bond: bigint, reviewWindow: number): void {
+  if (bond > 0n && reviewWindow === 0) {
+    throw new Error(
+      "Refused. A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.",
+    );
+  }
   if (bond > price) throw new Error("The bond cannot be more than the price.");
   if (reviewWindow > 86400) throw new Error("The review window cannot be more than 86400 seconds.");
 }
