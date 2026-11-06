@@ -6,6 +6,8 @@ import { arcWrongAmount } from "./arc-wrong-amount.flow.ts";
 import { discovery } from "./discovery.flow.ts";
 import { hedera } from "./hedera.flow.ts";
 import { productionConsole, productionHub } from "./production.flow.ts";
+import { publicGateway } from "./public-gateway.flow.ts";
+import { publicHedera } from "./public-hedera.flow.ts";
 import { publicSpine } from "./public-spine.flow.ts";
 import { ratings } from "./ratings.flow.ts";
 import { refusals } from "./refusals.flow.ts";
@@ -30,6 +32,8 @@ export const MATRIX: Array<{ n: string; flow: Flow }> = [
   { n: "7", flow: merchant },
   { n: "8", flow: discovery },
   { n: "12", flow: publicSpine },
+  { n: "15", flow: publicHedera },
+  { n: "16", flow: publicGateway },
   { n: "14a", flow: productionConsole },
   { n: "14b", flow: productionHub },
   { n: "9", flow: web },
