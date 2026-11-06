@@ -10,6 +10,7 @@ import {
   toBase64Json,
 } from "@countersign/core";
 import { NETWORK, USDT } from "./chain.ts";
+import type { WireAuthorization } from "./eip3009.ts";
 import type {
   PaymentPayload,
   PaymentRequirements,
@@ -33,6 +34,14 @@ export type PaywallOptions = {
   description?: string;
   mimeType?: string;
   maxTimeoutSeconds?: number;
+  /**
+   * When to settle relative to the handler. Defaults to "after".
+   * "after" keeps read-only handlers cheap and gives no goods when settle fails.
+   * "before" charges first, so a handler with side effects never runs unpaid.
+   */
+  settle?: "after" | "before";
+  /** Unix seconds. Defaults to the wall clock. */
+  now?: () => number;
   /** Injectable for tests. Defaults to the global fetch at request time. */
   fetch?: PaywallFetch;
 };
@@ -44,9 +53,29 @@ type PaymentRequired = {
   accepts: PaymentRequirements[];
 };
 
+type Claim = {
+  state: "in_flight" | "settled";
+  /** Unix seconds after which a settled claim may be forgotten. */
+  validBefore: number;
+};
+
+const MAX_CLAIMS = 10_000;
+const ALREADY_USED = "Refused. This payment was already used.";
+
 /**
  * Puts a USDT price on a Hono route. A request without payment gets an x402 v2
  * 402; a paid request is verified through the relay, served, then settled.
+ *
+ * Settle order:
+ * - `"after"` (default): verify, run the handler, then settle. The handler should be read-only or
+ *   idempotent, because a balance that moves between verify and settle still ran it.
+ * - `"before"`: verify, settle, then run the handler. Use this for handlers with side effects;
+ *   the buyer pays before the work happens.
+ *
+ * The authorisation is claimed by `from:nonce` before the handler runs. A second request
+ * presenting the same authorisation gets 409, both while the first is in flight and after it
+ * settled. A claim is released when the request is refused before settlement (bad verify, a
+ * handler error in "after" mode, or a failed settle), so an unused authorisation can be retried.
  */
 export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   const amount = parseUnits(options.price, USDT.decimals);
@@ -54,6 +83,40 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
   const facilitator = options.facilitator.replace(/\/+$/, "");
   const mimeType = options.mimeType ?? "application/json";
   const maxTimeoutSeconds = options.maxTimeoutSeconds ?? 120;
+  const settleOrder = options.settle ?? "after";
+  const now = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const claims = new Map<string, Claim>();
+
+  function prune(at: number): void {
+    for (const [key, claim] of claims) {
+      if (claim.state === "settled" && at > claim.validBefore) claims.delete(key);
+    }
+    if (claims.size >= MAX_CLAIMS) {
+      for (const [key, claim] of claims) {
+        if (claim.state === "settled") claims.delete(key);
+        if (claims.size < MAX_CLAIMS) break;
+      }
+    }
+  }
+
+  function claimOf(payment: PaymentPayload): { key: string; validBefore: number } | null {
+    const wire = payment.payload?.authorization as Partial<WireAuthorization> | undefined;
+    if (!wire || typeof wire.from !== "string" || typeof wire.nonce !== "string") return null;
+    const seconds = Number(wire.validBefore);
+    return {
+      key: `${wire.from.toLowerCase()}:${wire.nonce.toLowerCase()}`,
+      validBefore:
+        Number.isSafeInteger(seconds) && seconds > 0 ? seconds : now() + maxTimeoutSeconds,
+    };
+  }
+
+  function release(key: string): void {
+    if (claims.get(key)?.state === "in_flight") claims.delete(key);
+  }
+
+  function settleClaim(key: string, validBefore: number): void {
+    claims.set(key, { state: "settled", validBefore: Math.max(validBefore, now() + 60) });
+  }
 
   return async (c, next) => {
     const url = c.req.url;
@@ -81,6 +144,13 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       );
     }
 
+    const claim = claimOf(payment);
+    if (claim) {
+      prune(now());
+      if (claims.has(claim.key)) return alreadyUsed(c);
+      claims.set(claim.key, { state: "in_flight", validBefore: claim.validBefore });
+    }
+
     const request: VerifyRequest = {
       x402Version: 2,
       paymentPayload: payment,
@@ -89,8 +159,12 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
     const send = options.fetch ?? globalThis.fetch;
 
     const verify = (await post(send, `${facilitator}/verify`, request)) as VerifyResponse | null;
-    if (!verify) return unreachable(c);
+    if (!verify) {
+      if (claim) release(claim.key);
+      return unreachable(c);
+    }
     if (verify.isValid !== true) {
+      if (claim) release(claim.key);
       return required(
         c,
         requirements,
@@ -100,34 +174,60 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       );
     }
 
-    await next();
+    const settlePayment = async (): Promise<
+      { kind: "settled"; settle: SettleResponse } | { kind: "refused"; response: Response }
+    > => {
+      const settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
+      if (!settle) {
+        if (claim) release(claim.key);
+        return { kind: "refused", response: unreachable(c) };
+      }
+      if (settle.success !== true) {
+        if (claim) release(claim.key);
+        return {
+          kind: "refused",
+          response: required(
+            c,
+            requirements,
+            url,
+            `Refused. ${settle.errorReason ?? "settlement_failed"}`,
+            options,
+          ),
+        };
+      }
+      if (settle.replayed === true) {
+        if (claim) settleClaim(claim.key, claim.validBefore);
+        return { kind: "refused", response: alreadyUsed(c) };
+      }
+      if (claim) settleClaim(claim.key, claim.validBefore);
+      return { kind: "settled", settle };
+    };
+
+    if (settleOrder === "before") {
+      const outcome = await settlePayment();
+      if (outcome.kind === "refused") return outcome.response;
+      await next();
+      return withSettle(c, outcome.settle);
+    }
+
+    try {
+      await next();
+    } catch (error) {
+      if (claim) release(claim.key);
+      throw error;
+    }
     const response = c.res;
-    if (response.status >= 400) return response;
-
-    const settle = (await post(send, `${facilitator}/settle`, request)) as SettleResponse | null;
-    if (!settle) {
-      c.res = unreachable(c);
-      return c.res;
-    }
-    if (settle.success !== true) {
-      c.res = required(
-        c,
-        requirements,
-        url,
-        `Refused. ${settle.errorReason ?? "settlement_failed"}`,
-        options,
-      );
-      return c.res;
+    if (response.status >= 400) {
+      if (claim) release(claim.key);
+      return response;
     }
 
-    const headers = new Headers(response.headers);
-    headers.set(PAYMENT_RESPONSE_HEADER, toBase64Json(settle));
-    c.res = new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-    return c.res;
+    const outcome = await settlePayment();
+    if (outcome.kind === "refused") {
+      c.res = outcome.response;
+      return c.res;
+    }
+    return withSettle(c, outcome.settle);
   };
 
   function required(
@@ -146,6 +246,22 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
     c.header(PAYMENT_REQUIRED_HEADER, toBase64Json(body));
     return c.json(body, 402);
   }
+}
+
+function withSettle(c: Context, settle: SettleResponse): Response {
+  const response = c.res;
+  const headers = new Headers(response.headers);
+  headers.set(PAYMENT_RESPONSE_HEADER, toBase64Json(settle));
+  c.res = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  return c.res;
+}
+
+function alreadyUsed(c: Context): Response {
+  return c.json({ error: ALREADY_USED }, 409);
 }
 
 function requirementsFor(

@@ -235,4 +235,97 @@ describe("whitechainPaywall", () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "The payment service is unreachable." });
   });
+
+  test("a concurrent replay gets 409 and never runs the handler", async () => {
+    const relay = createTestRelay();
+    const { fetch } = stub();
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => NOW }, async (c) => {
+      served += 1;
+      await Bun.sleep(50);
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    const first = call();
+    await Bun.sleep(10);
+    const second = await call();
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ error: "Refused. This payment was already used." });
+    expect((await first).status).toBe(200);
+    expect(served).toBe(1);
+  });
+
+  test("a replay after settlement gets 409 and never runs the handler", async () => {
+    const relay = createTestRelay();
+    const { fetch, calls } = stub();
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => NOW }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    expect((await call()).status).toBe(200);
+    const replay = await call();
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toEqual({ error: "Refused. This payment was already used." });
+    expect(served).toBe(1);
+    expect(calls.filter((call) => call.path === "/settle")).toHaveLength(1);
+  });
+
+  test("a replay after a failed handler is allowed because no money moved", async () => {
+    const relay = createTestRelay();
+    const { fetch, calls } = stub();
+    let attempts = 0;
+    const app = appFor(relay, { fetch, now: () => NOW }, (c) => {
+      attempts += 1;
+      return attempts === 1 ? c.json({ error: "boom" }, 500) : c.json({ ok: true });
+    });
+    const header = await headerFor(relay);
+    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+
+    expect((await call()).status).toBe(500);
+    expect((await call()).status).toBe(200);
+    expect(attempts).toBe(2);
+    expect(calls.filter((call) => call.path === "/verify")).toHaveLength(2);
+    expect(calls.filter((call) => call.path === "/settle")).toHaveLength(1);
+  });
+
+  test("a settle answer with replayed true is refused as already used", async () => {
+    const relay = createTestRelay();
+    const { fetch } = stub({
+      settle: () => ({
+        success: true,
+        replayed: true,
+        transaction: "0xabc",
+        network: NETWORK,
+        amount: "50000",
+      }),
+    });
+    const app = appFor(relay, { fetch, now: () => NOW });
+    const res = await app.request("/forecast", {
+      headers: { [PAYMENT_SIGNATURE_HEADER]: await headerFor(relay) },
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "Refused. This payment was already used." });
+  });
+
+  test("settle before runs the handler only after the payment settled", async () => {
+    const relay = createTestRelay();
+    const { fetch, calls } = stub();
+    let settledBeforeHandler = false;
+    const app = appFor(relay, { fetch, now: () => NOW, settle: "before" }, (c) => {
+      settledBeforeHandler = calls.some((call) => call.path === "/settle");
+      return c.json({ forecast: "rain" });
+    });
+    const res = await app.request("/forecast", {
+      headers: { [PAYMENT_SIGNATURE_HEADER]: await headerFor(relay) },
+    });
+    expect(res.status).toBe(200);
+    expect(settledBeforeHandler).toBe(true);
+    expect(res.headers.get(PAYMENT_RESPONSE_HEADER)).not.toBeNull();
+  });
 });

@@ -258,6 +258,7 @@ describe("settleExact", () => {
     const second = await settleExact(cloneBody(body), relay.ctx);
     expect(second.success).toBe(true);
     expect(second.transaction).toBe(first.transaction);
+    expect(second.replayed).toBe(true);
     expect(relay.chain.writes).toHaveLength(1);
   });
 

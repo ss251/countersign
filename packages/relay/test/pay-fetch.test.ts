@@ -225,7 +225,7 @@ describe("createPayFetch", () => {
     expect(calls).toBe(1);
   });
 
-  test("spent counts only a settled call", async () => {
+  test("spent counts when it signs, not when it sees a receipt", async () => {
     const relay = createTestRelay();
     const requirements = makeRequirements(
       relay.merchant.address,
@@ -243,11 +243,109 @@ describe("createPayFetch", () => {
 
     const failed = await pay(RESOURCE);
     expect(failed.payment).toBeUndefined();
-    expect(pay.spent()).toBe("0");
+    expect(pay.spent()).toBe("0.05");
 
     const good = await pay(RESOURCE);
     expect(good.payment).toEqual({ transaction: "0xdef", url: RESOURCE, amount: "50000" });
-    expect(pay.spent()).toBe("0.05");
+    expect(pay.spent()).toBe("0.1");
     expect(calls).toBe(4);
+  });
+
+  test("validBefore is capped at five minutes", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+      { maxTimeoutSeconds: 1_000_000_000 },
+    );
+    let payload: PaymentPayload | undefined;
+    const fetch: FetchLike = async (_input, init) => {
+      if (!new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER)) return challenge(requirements);
+      payload = signatureOf(init);
+      return settled();
+    };
+    const pay = createPayFetch({ account: relay.buyer, fetch, now: () => NOW });
+    await pay(RESOURCE);
+    const auth = authorizationFromWire(payload!.payload.authorization);
+    expect(auth.validBefore).toBe(BigInt(NOW + 300));
+  });
+
+  test("a merchant that always answers 500 gets at most one authorisation under a one-call budget", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+      { maxTimeoutSeconds: 1_000_000_000 },
+    );
+    let signed = 0;
+    const fetch: FetchLike = async (_input, init) => {
+      if (!new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER)) return challenge(requirements);
+      signed += 1;
+      return new Response("boom", { status: 500 });
+    };
+    const pay = createPayFetch({
+      account: relay.buyer,
+      fetch,
+      now: () => NOW,
+      maxPerCall: "0.10",
+      budget: "0.05",
+    });
+
+    const failed = await pay(RESOURCE);
+    expect(failed.status).toBe(500);
+    await expect(pay(RESOURCE)).rejects.toBeInstanceOf(SpendLimitError);
+    expect(signed).toBe(1);
+    expect(pay.spent()).toBe("0.05");
+  });
+
+  test("reconcile releases an expired authorisation the chain never used", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+      { maxTimeoutSeconds: 60 },
+    );
+    let at = NOW;
+    const fetch: FetchLike = async (_input, init) => {
+      if (!new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER)) return challenge(requirements);
+      return new Response("boom", { status: 500 });
+    };
+    const reader = {
+      readContract: async () => false,
+    };
+    const pay = createPayFetch({ account: relay.buyer, fetch, now: () => at, reader });
+    await pay(RESOURCE);
+    expect(pay.spent()).toBe("0.05");
+
+    at = NOW + 60;
+    await pay.reconcile();
+    expect(pay.spent()).toBe("0.05");
+
+    at = NOW + 61;
+    await pay.reconcile();
+    expect(pay.spent()).toBe("0");
+  });
+
+  test("an unknown merchant is refused before signing", async () => {
+    const relay = createTestRelay();
+    const requirements = makeRequirements(
+      relay.merchant.address,
+      parseUnits("0.05", USDT.decimals),
+    );
+    let calls = 0;
+    const fetch: FetchLike = async (_input, init) => {
+      calls += 1;
+      if (!new Headers(init?.headers).get(PAYMENT_SIGNATURE_HEADER)) return challenge(requirements);
+      throw new Error("signed");
+    };
+    const pay = createPayFetch({
+      account: relay.buyer,
+      fetch,
+      now: () => NOW,
+      payTo: ["0x3333333333333333333333333333333333333333"],
+    });
+    await expect(pay(RESOURCE)).rejects.toBeInstanceOf(SpendLimitError);
+    expect(calls).toBe(1);
+    expect(pay.spent()).toBe("0");
   });
 });
