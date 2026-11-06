@@ -4,7 +4,8 @@
 
 | Deployment | Chain | Escrow | Token |
 |---|---|---|---|
-| Arc testnet | 5042002 | `0x44d11b8909485e3f575F6628b689383E4420f54a` | USDC `0x3600000000000000000000000000000000000000` |
+| Arc testnet, deployed through Arc Studio (the hub's rail) | 5042002 | `0x19c27d770969291e6a0a305dc1be1a845e7c1b76` | USDC `0x3600000000000000000000000000000000000000` |
+| Arc testnet, deployed with `forge script` (first deployment) | 5042002 | `0x44d11b8909485e3f575F6628b689383E4420f54a` | USDC `0x3600000000000000000000000000000000000000` |
 | Whitechain Sepolia | 1874 | `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` |
 
 ## Functions

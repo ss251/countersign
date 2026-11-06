@@ -31,3 +31,9 @@ By captain decision (15:30 IST), the console a judge opens runs on Railway, in a
 ## D7 — escrow pulls with receiveWithAuthorization, and the payee can cancel early (06 Nov)
 
 PLAN §6 says the escrow pulls by `transferWithAuthorization`. It uses `receiveWithAuthorization` instead: the buyer signs the same EIP-3009 message, but only the escrow can submit it. With `transferWithAuthorization`, anyone holding the signature could move the buyer's funds into the escrow without opening a job. `cancel(jobId, sellerSig)` was added so the payee can hand the money back before the deadline, which is the merchant's one-click refund on Whitechain.
+
+## D8 — the hub settles Arc calls through the escrow Arc Studio deployed (06 Nov, 16:15 IST; refs #1)
+
+`arc-studio deployments` for the countersign app listed nothing while the escrow lived only at the `forge script` address `0x44d11b8909485e3f575F6628b689383E4420f54a`. So we sent the three contract files into the Studio session unchanged. Studio reviewed them, wrote its own Foundry tests (43 pass) and deployed `FeeSplit` `0xbf9de410d4a17781df0d9d3dd160018aceb3fe87` and `CountersignedEscrow` `0x19c27d770969291e6a0a305dc1be1a845e7c1b76` on Arc testnet, with solc 0.8.28, 200 runs and cancun, the same settings as `foundry.toml`. We pulled the sources back and diffed them: byte-identical. We read the constructor state on chain: USDC, the new `FeeSplit` with our two payees at 5000/5000, and a 100 bps toll.
+
+From here the hub's `escrow` rail and the buyer's pinned rail table use the Studio-deployed escrow. The forge deployment stays valid and stays in the pinned table. The first live proofs (the 15:19 release and the two refusals) ran on it and are recorded under that address.
