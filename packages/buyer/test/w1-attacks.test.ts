@@ -6,7 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { Address } from "viem";
 import { canonicalHash, type CountersignExtra, type Envelope, type Offer } from "@countersign/core";
 import { Journal, State, buy, countersignPayer } from "../src/index.ts";
-import type { HubClient } from "../src/index.ts";
+import type { HubClient, KnownRail } from "../src/index.ts";
 
 // cs-w1 adversarial tests. A failing test here is a blocker.
 // The buyer signs whatever the hub's 402 says. A hostile or compromised hub must not be able to
@@ -18,6 +18,16 @@ const buyerAcct = privateKeyToAccount(generatePrivateKey());
 const TOKEN: Address = "0x3600000000000000000000000000000000000000";
 const ESCROW: Address = "0x4444444444444444444444444444444444444444";
 const PRICE = "250000";
+const rail: KnownRail = {
+  network: "eip155:5042002",
+  scheme: "countersign",
+  chainId: 5042002,
+  escrow: ESCROW,
+  token: TOKEN,
+  tokenName: "USDC",
+  tokenVersion: "2",
+  rpcUrl: "https://rpc.testnet.arc.network",
+};
 const offer: Offer = {
   v: 1,
   seller: seller.address,
@@ -79,6 +89,7 @@ async function attempt(tamper: { payTo?: Address; amount?: string; offerHash?: `
     state: new State(dir),
     now: 1_762_400_000,
     approve: true,
+    known: [rail],
   }).catch(() => undefined);
   return { signed, countersigned: journal.entries().some((e) => e.kind === "countersigned") };
 }

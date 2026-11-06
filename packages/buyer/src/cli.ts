@@ -4,6 +4,7 @@ import type { Hex } from "viem";
 import { formatUnits, parseUnits, type Envelope } from "@countersign/core";
 import { BuyError, buy } from "./buy.ts";
 import { HubClient } from "./hub-client.ts";
+import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
 import { countersignPayer } from "./payer.ts";
 import { resume } from "./resume.ts";
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
   const hub = new HubClient(one("hub") ?? "http://127.0.0.1:8787");
   const state = new State(one("state"));
   const journal = new Journal(state.journalPath);
+  const known = [...KNOWN_RAILS, ...state.loadRails()];
   const cmd = pos[0];
 
   if (cmd === "discover") {
@@ -72,6 +74,7 @@ async function main(): Promise<void> {
       state,
       now: Math.floor(Date.now() / 1000),
       approve: flags.has("approve"),
+      known,
     });
     console.log(JSON.stringify(result.output, null, 2));
     console.log("Released. Slip minted.");
@@ -102,7 +105,7 @@ async function main(): Promise<void> {
   } else if (cmd === "journal") {
     for (const e of journal.entries()) console.log(JSON.stringify(e));
   } else if (cmd === "resume") {
-    const rows = await resume({ hub, journal, state });
+    const rows = await resume({ hub, journal, state, known });
     if (rows.length === 0) console.log("Nothing to resume.");
     for (const r of rows) console.log(`${r.jobId}  ${r.status}${r.appended ? `  -> ${r.appended}` : ""}`);
   } else {
