@@ -108,6 +108,8 @@ export const HEDERA_DECLARATION: RailDeclaration = {
   gasPaidBy: "facilitator",
   finality: "Final at Hedera consensus, a few seconds after the facilitator submits.",
   explorerTx: `${HASHSCAN_TESTNET}/transaction/{tx}`,
+  finalitySeconds: 5,
+  cost: { tollBps: 0, fixed: "0" },
 };
 
 function toX402Requirements(r: PaymentRequirements): X402Requirements {
