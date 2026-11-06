@@ -24,6 +24,8 @@ export interface PayContext {
 }
 
 export interface Payer {
+  /** The agent key that signs this payer's payments, when the payer has one. */
+  readonly account?: LocalAccount;
   canPay(req: PaymentRequirements): boolean;
   pay(
     req: PaymentRequirements,
@@ -41,6 +43,7 @@ function randomSalt(): string {
 /** Signs typed data and nothing else. No gas, no chain access. */
 export function countersignPayer(account: LocalAccount): Payer {
   return {
+    account,
     canPay(req) {
       return req.scheme === "countersign" && req.network.startsWith("eip155:");
     },
@@ -78,6 +81,7 @@ export function countersignPayer(account: LocalAccount): Payer {
 /** Signs a Circle Gateway nanopayment, but only for a pinned Gateway and token. */
 export function gatewayPayer(account: LocalAccount, known: KnownGateway[] = KNOWN_GATEWAYS): Payer {
   return {
+    account,
     canPay(req) {
       return knownGatewayFor(req, known) !== undefined;
     },
