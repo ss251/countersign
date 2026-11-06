@@ -6,7 +6,9 @@
 
 import type { Address, Hex } from "viem";
 import type { Offer } from "@countersign/core";
+import { KNOWN_ESCROWS } from "@countersign/verify";
 import { kvGet, kvSet, sellerKey, stableIssuedAt } from "../device/vault.ts";
+import { fundingRefusal, rpcJobReader } from "../runner/funding.ts";
 import { locationSupported, readFix } from "../device/location.ts";
 import { shrinkPhoto } from "../device/photo.ts";
 import { publishOffer, readJob, readSlip } from "../runner/hub.ts";
@@ -159,9 +161,13 @@ export class Phone {
       return;
     }
 
+    const seller = this.signer.address;
+    const readJob = rpcJobReader();
     this.link = new RunnerLink({
       hubUrl: this.state.hubUrl,
       signer: this.signer,
+      // Read the escrow on Arc before anything is captured: a hub cannot get work for a job nobody paid.
+      checkOrder: (order, offer) => fundingRefusal(order, offer, { seller, now: seconds(), known: KNOWN_ESCROWS, read: readJob }),
       skills: () => this.served(),
       onStatus: (link) => this.set({ link }),
       onJob: (update) => this.onJob(update),
