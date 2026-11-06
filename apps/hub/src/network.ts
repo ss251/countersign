@@ -58,6 +58,7 @@ export interface MainnetDirectUsdcProfile {
  */
 export interface MainnetProfile extends Record<SwitchedRail, object> {
   escrow: MainnetEscrowProfile;
+  erc8183: MainnetEscrowProfile;
   eip3009: MainnetDirectUsdcProfile;
   gateway: MainnetGatewayProfile;
   whitechain: NoMainnet;
@@ -73,6 +74,12 @@ export const MAINNET: MainnetProfile = {
   escrow: {
     chainId: pending("Arc mainnet's chain id, confirmed from Circle's Arc network page."),
     escrow: pending("CountersignedEscrow is not deployed on Arc mainnet. Deploy it after review, then record the address."),
+    token: pending("Arc mainnet USDC, confirmed from Circle's USDC contract addresses page."),
+    explorerTx: pending("Arc mainnet's explorer transaction URL, confirmed from Circle's Arc network page."),
+  },
+  erc8183: {
+    chainId: pending("Arc mainnet's chain id, confirmed from Circle's Arc network page."),
+    escrow: pending("CountersignedEscrow8183 is not deployed on Arc mainnet. Deploy it after review, then record the address."),
     token: pending("Arc mainnet USDC, confirmed from Circle's USDC contract addresses page."),
     explorerTx: pending("Arc mainnet's explorer transaction URL, confirmed from Circle's Arc network page."),
   },
@@ -138,6 +145,13 @@ export function mainnetProblems(
     }
   }
   if (rails.includes("escrow") && !env.ARC_RPC_URL) problems.push("ARC_RPC_URL is not set.");
+  // The erc8183 switch is classified exactly like the escrow switch.
+  if (rails.includes("erc8183") && !isPending(profile.erc8183.escrow) && env.ERC8183_ESCROW !== undefined) {
+    if (env.ERC8183_ESCROW.toLowerCase() !== String(profile.erc8183.escrow).toLowerCase()) {
+      problems.push("ERC8183_ESCROW is not the escrow recorded in the mainnet profile.");
+    }
+  }
+  if (rails.includes("erc8183") && !env.ARC_RPC_URL) problems.push("ARC_RPC_URL is not set.");
   return problems;
 }
 

@@ -9,6 +9,9 @@ const ARC_USDC: Address = "0x3600000000000000000000000000000000000000";
  * The rails this hub settles on, from the environment. Keys arrive only by environment.
  *   ARC_ESCROW, ARC_RPC_URL, CS_RELAYER_KEY  -> rail "escrow" (CountersignedEscrow on Arc testnet, USDC);
  *                                               ARC_ESCROW_VERSION=2 turns on delivery review
+ *   ERC8183_ESCROW, ARC_RPC_URL, CS_RELAYER_KEY -> rail "erc8183" (CountersignedEscrow8183, the same
+ *                                               escrow holding its money in an ERC-8183 job on Arc's
+ *                                               shared core; a JobHook emits the slip hash)
  *   WC_RELAY_URL                             -> rail "whitechain" (CountersignedEscrow on Whitechain Sepolia, USDT;
  *                                               the relay holds the WBT gas key and its guards; the hub holds none)
  *   EIP3009_RAIL=1, ARC_RPC_URL, CS_RELAYER_KEY -> rail "eip3009" (direct USDC on Arc testnet; the buyer
@@ -46,6 +49,7 @@ export interface RailSwitch {
  */
 export const RAIL_SWITCHES = [
   { id: "escrow", vars: ["ARC_ESCROW"], requested: (env) => Boolean(env.ARC_ESCROW) },
+  { id: "erc8183", vars: ["ERC8183_ESCROW"], requested: (env) => Boolean(env.ERC8183_ESCROW) },
   { id: "eip3009", vars: ["EIP3009_RAIL"], requested: (env) => env.EIP3009_RAIL === "1" },
   { id: "whitechain", vars: ["WC_RELAY_URL"], requested: (env) => Boolean(env.WC_RELAY_URL) },
   { id: "gateway", vars: ["GATEWAY_RAIL"], requested: (env) => env.GATEWAY_RAIL === "1" },
@@ -88,6 +92,26 @@ export async function railsFromEnv(
         rpcUrl: env.ARC_RPC_URL,
         escrow: env.ARC_ESCROW as Address,
         version: env.ARC_ESCROW_VERSION === "2" ? 2 : 1,
+        token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
+        tokenName: "USDC",
+        tokenVersion: "2",
+        symbol: "USDC",
+        decimals: 6,
+        explorerTx: "https://explorer.testnet.arc.io/tx/{tx}",
+        finality: "Final in the Arc block that includes the release.",
+        gasPaidBy: "hub",
+        ...(env.CS_RELAYER_KEY ? { submitter: privateKeyToAccount(env.CS_RELAYER_KEY as Hex) } : {}),
+      }),
+    );
+  }
+  if (railRequested("erc8183", env) && env.ARC_RPC_URL) {
+    rails.push(
+      escrowRail({
+        id: "erc8183",
+        chainId: 5042002,
+        rpcUrl: env.ARC_RPC_URL,
+        escrow: env.ERC8183_ESCROW as Address,
+        version: 1,
         token: (env.ARC_USDC as Address | undefined) ?? ARC_USDC,
         tokenName: "USDC",
         tokenVersion: "2",
