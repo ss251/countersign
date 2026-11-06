@@ -527,6 +527,13 @@
   letter-spacing: 0;
 }
 
+.mx-receipt__item {
+  margin-top: calc(var(--sp-2) * -1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mx-receipt__id {
   display: flex;
   align-items: center;

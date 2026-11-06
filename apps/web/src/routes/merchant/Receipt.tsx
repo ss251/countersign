@@ -120,11 +120,13 @@ export function Receipt({ id, fixture }: ReceiptProps) {
           {formatUsdt(order.amount)}
           <span className="mx-receipt__unit">USDT</span>
         </p>
+        <p className="mx-receipt__item">{item}</p>
         <ReceiptId id={order.id} />
 
+        {returned.length > 0 ? (
         <dl className="mx-ledger">
           <div className="mx-ledger__line">
-            <dt>{item}</dt>
+            <dt>Paid</dt>
             <dd className="num">{formatUsdt(order.amount)} USDT</dd>
           </div>
           {returned.map((line, index) => (
@@ -135,13 +137,12 @@ export function Receipt({ id, fixture }: ReceiptProps) {
               </dd>
             </div>
           ))}
-          {returned.length > 0 ? (
-            <div className="mx-ledger__line mx-ledger__line--total">
-              <dt>Paid in the end</dt>
-              <dd className="num">{formatUsdt((net > 0n ? net : 0n).toString())} USDT</dd>
-            </div>
-          ) : null}
+          <div className="mx-ledger__line mx-ledger__line--total">
+            <dt>Net paid</dt>
+            <dd className="num">{formatUsdt((net > 0n ? net : 0n).toString())} USDT</dd>
+          </div>
         </dl>
+        ) : null}
 
         <dl className="mx-facts">
           <div className="mx-fact">
