@@ -42,7 +42,7 @@ import {
 } from "../lib/fund.ts";
 import { Keyring } from "../lib/keys.ts";
 import { compareSettlement, REVIEW_FIELD, reviewValuesOf } from "../lib/review.ts";
-import { slipHashFromHref } from "../lib/slip.ts";
+import { escrowRailAddress, slipHashFromHref } from "../lib/slip.ts";
 import { installTestWallet, newTestAccount } from "../lib/wallet.ts";
 import {
   currentRunId,
@@ -216,6 +216,7 @@ interface SlipFields {
   offerHash: Hex;
   amount: bigint;
   buyer: Address;
+  escrow: Address;
 }
 
 /** The hub wraps a slip in `{ body, hash, ... }`; a bare body is accepted too. */
@@ -230,6 +231,7 @@ function slipFieldsOf(value: unknown): SlipFields {
   const offerHash = body.offerHash;
   const amount = body.amount;
   const buyer = body.buyer;
+  const escrow = body.escrow;
   if (typeof jobId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(jobId)) {
     throw new Error("the slip has no 0x job id");
   }
@@ -242,7 +244,16 @@ function slipFieldsOf(value: unknown): SlipFields {
   if (typeof buyer !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(buyer)) {
     throw new Error("the slip has no buyer address");
   }
-  return { jobId: jobId as Hex, offerHash: offerHash as Hex, amount: BigInt(amount), buyer: buyer as Address };
+  if (typeof escrow !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(escrow)) {
+    throw new Error("the slip names no escrow");
+  }
+  return {
+    jobId: jobId as Hex,
+    offerHash: offerHash as Hex,
+    amount: BigInt(amount),
+    buyer: buyer as Address,
+    escrow: escrow as Address,
+  };
 }
 
 interface ListedOffer {
@@ -489,6 +500,22 @@ const runHuman = async (
         throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
       }
 
+      const railsResponse = await fetch(`${hub}/rails`);
+      if (railsResponse.status !== 200) {
+        throw new Error(`the hub answered ${railsResponse.status} for the rails`);
+      }
+      let railsValue: unknown;
+      try {
+        railsValue = await railsResponse.json();
+      } catch {
+        throw new Error("the hub's rails are not JSON");
+      }
+      const declared = escrowRailAddress(railsValue);
+      if (declared === null || slip.escrow.toLowerCase() !== declared.toLowerCase()) {
+        throw new Error(`the slip's escrow ${slip.escrow} is not the escrow production declares (${declared})`);
+      }
+      rec.note(`escrow: ${slip.escrow}`);
+
       const offerResponse = await fetch(`${hub}/offers/${slip.offerHash}`);
       if (offerResponse.status !== 200) {
         throw new Error(`the hub answered ${offerResponse.status} for the offer`);
@@ -510,7 +537,7 @@ const runHuman = async (
       }
 
       const fundedLogs = await client.getLogs({
-        address: ARC.escrow,
+        address: slip.escrow,
         event: FUNDED,
         args: { jobId: slip.jobId },
         fromBlock: funded.blockNumber,
@@ -558,7 +585,7 @@ const runHuman = async (
       rec.tx("escrow fund", fundLog.transactionHash);
 
       let releasedLogs = await client.getLogs({
-        address: ARC.escrow,
+        address: slip.escrow,
         event: RELEASED,
         args: { jobId: slip.jobId },
         fromBlock: funded.blockNumber,
@@ -568,7 +595,7 @@ const runHuman = async (
       while (releasedLogs.length === 0 && Date.now() < releaseDeadline) {
         await page.waitForTimeout(2_000);
         releasedLogs = await client.getLogs({
-          address: ARC.escrow,
+          address: slip.escrow,
           event: RELEASED,
           args: { jobId: slip.jobId },
           fromBlock: funded.blockNumber,
@@ -595,7 +622,7 @@ const runHuman = async (
       if (resultReceipt.status !== "success") {
         throw new Error(`the result transaction ${bought.hash} failed`);
       }
-      const events = escrowEvents(ARC, resultReceipt);
+      const events = escrowEvents({ ...ARC, escrow: slip.escrow }, resultReceipt);
       const recorded =
         events.funded.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase()) ||
         events.released.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase());
