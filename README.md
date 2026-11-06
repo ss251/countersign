@@ -24,7 +24,7 @@ A Circle Gateway rail (batched nanopayments on Arc testnet) runs in the hub behi
 - Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://testnet.arcscan.app/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
 - Whitechain escrow: [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4)
 - Hedera spend log: HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070)
-- Every transaction this README cites, with its explorer link: [docs/proof.md](docs/proof.md) and [docs/hedera.md](docs/hedera.md).
+- More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/hedera.md](docs/hedera.md) for Hedera.
 
 ## How it works
 
