@@ -84,6 +84,12 @@
     "packages/relay": {
       "name": "@countersign/relay",
       "version": "0.0.0",
+      "dependencies": {
+        "@countersign/core": "workspace:*",
+        "@countersign/rail": "workspace:*",
+        "hono": "^4.13.16",
+        "viem": "^2.57.16",
+      },
     },
     "packages/runner": {
       "name": "@countersign/runner",
