@@ -638,3 +638,18 @@ a.hash__value.is-tx {
   font-size: var(--t-14);
 }
 
+
+/* A seller's address glyph: ink on the paper, inside a hairline frame. */
+.glyph {
+  flex: none;
+}
+
+.glyph__frame {
+  fill: none;
+  stroke: var(--line);
+}
+
+.glyph__cell {
+  fill: var(--ink);
+  opacity: 0.86;
+}
