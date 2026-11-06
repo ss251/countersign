@@ -12,7 +12,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { check, equal, type Flow, type FlowCtx } from "../lib/flow.ts";
+import { check, equal, NotRun, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { ROOT } from "../lib/paths.ts";
 
 const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
@@ -179,8 +179,59 @@ export const productionHub: Flow = {
       }
       if (!seen.slipHash) failures.push("no settlement carries a slip hash to read (slip, verify)");
       ctx.note(`checked ${endpoints.length} endpoints for agent ${seen.agent} and seller ${seen.seller}`);
-      ctx.note("scoped out: /envelopes and /approvals. The per-call approval path is dropped (captain, 06 Nov 19:50 IST), so production runs without an approver and those routes answer 503 no-approver by design");
+      ctx.note("the approval routes, /envelopes and /approvals, are checked by production-approvals: they depend on production's approver configuration");
       check(failures.length === 0, `${failures.length} of ${endpoints.length} fail: ${failures.join("; ")}`);
+    });
+  },
+};
+
+/**
+ * 14c · The approval path on production: the envelope mirror and the approvals the buyer's phone
+ * reads. They depend on production's approver configuration (`HUMAN_APPROVAL_TOKEN`). Until it is
+ * set, the hub answers 503 `no-approver` and this flow reports NOT RUN (in progress). Once it is
+ * set, every route must answer 200, open to the console, and the decision route must pass CORS
+ * preflight with an `authorization` header.
+ */
+export const productionApprovals: Flow = {
+  name: "production-approvals",
+  title: "Production approval path for the buyer's phone",
+  owner: "cs-ui",
+  network: "none",
+  notRun: (env) => (env.options.publicHub ? null : "no public hub configured"),
+  async run(ctx) {
+    const hub = (ctx.env.options.publicHub as string).replace(/\/+$/, "");
+    const origin = consoleUrl();
+    const agent = await ctx.step("the agent the phone follows", async () => {
+      const st = await ctx.http("settlements", `${hub}/settlements?limit=1`);
+      equal(st.status, 200, "settlements status");
+      return (st.json as { settlements?: Array<{ buyer?: string }> }).settlements?.[0]?.buyer ?? ctx.env.secrets.address("CS_BUYER_ADDRESS");
+    });
+    const paths = [`/envelopes/${agent}`, `/approvals?agent=${agent}&status=pending`, `/approvals?agent=${agent}&status=decided`];
+    const answers = await ctx.step("the approval routes answer", async () => {
+      const out: Array<{ path: string; status: number; code?: string; allow: string | null }> = [];
+      for (const path of paths) {
+        const res = await ctx.http(`approvals ${path.split("?")[0]}`, `${hub}${path}`, { headers: { origin } });
+        out.push({ path, status: res.status, code: (res.json as { code?: string } | undefined)?.code, allow: res.headers.get("access-control-allow-origin") });
+      }
+      return out;
+    });
+    if (answers.every((a) => a.status === 503 && a.code === "no-approver")) {
+      throw new NotRun("in progress: depends on production approver configuration (HUMAN_APPROVAL_TOKEN, STEER-1955 (c))");
+    }
+    await ctx.step("every approval route answers 200, open to the console", () => {
+      const bad = answers.filter((a) => a.status !== 200 || (a.allow !== "*" && a.allow !== origin));
+      check(bad.length === 0, `${bad.length} of ${answers.length} fail: ${bad.map((a) => `${a.status}${a.code ? ` ${a.code}` : ""} ${a.path.split("?")[0]}`).join("; ")}`);
+    });
+    await ctx.step("the approval decision passes CORS preflight", async () => {
+      const res = await ctx.http("approval decision preflight", `${hub}/approvals/preflight-check/decision`, {
+        method: "OPTIONS",
+        headers: { origin, "access-control-request-method": "POST", "access-control-request-headers": "authorization,content-type" },
+      });
+      check(res.status >= 200 && res.status < 300, `preflight status ${res.status}`);
+      const allow = res.headers.get("access-control-allow-origin");
+      check(allow === "*" || allow === origin, `preflight allow-origin ${allow}`);
+      const headers = (res.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+      check(headers === "*" || headers.includes("authorization"), `preflight allows the authorization header (got "${headers}")`);
     });
   },
 };

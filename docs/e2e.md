@@ -38,6 +38,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 19 | `mpp` | the MPP rail's Tempo method pays for real on Tempo testnet: the challenge is checked before paying, the receipt, the transfer on chain, a replay refused | Tempo Moderato | cs-hd |
 | 14a | `production-console` | the public console's default bundle names the production hub and carries none of the fixture catalogue | none | cs-ui |
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
+| 14c | `production-approvals` | the approval routes the buyer's phone reads answer once production has an approver; in progress until then | none | cs-ui |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
 Flow 9 needs a browser, and a browser driver for it is cut ([decisions.md](decisions.md), D14): the firstmate's screenshot rounds check the screens by hand in a real browser at 390 and 1440 px, light and dark. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`: the seven routes, each at 390 and 1440 px, light and dark.
@@ -230,7 +231,8 @@ The demo server (`scripts/mpp/server.ts`) runs the countersign `mpp` rail on Tem
 Plain HTTP against the public console and hub, every hour. They exist to fail loudly if production slides back to fixtures.
 
 1. **console**: the index and every module script it loads are fetched as text. The default bundle must contain the production hub's URL. It must also contain none of the fixture-only values: addresses and hashes found in the fixture files and nowhere else in the repository, collected fresh on each run.
-2. **hub**: production declares escrow, Gateway and Hedera. The approval routes, `/envelopes` and `/approvals`, are scoped out: the per-call approval path was dropped (captain, 06 Nov 19:50 IST), so production runs without an approver. Every other endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin, One failure message lists every endpoint that fails.
+2. **hub**: production declares escrow, Gateway and Hedera. Every endpoint the overview, registry, offer page, assistant, buyer phone, seller dashboard, merchant desk and slip screens call answers 200. The agent is named after the latest settlement's buyer, as the console does. Each answer is open to the console's origin. One failure message lists every endpoint that fails.
+3. **approvals (14c)**: the approval routes, `/envelopes` and `/approvals`, depend on production's approver configuration. While production answers 503 `no-approver`, the flow reports `NOT RUN (in progress: depends on production approver configuration)`. Once an approver is configured, each route must answer 200, open to the console, and the decision route must pass CORS preflight with an `authorization` header.
 
 ## Results
 
