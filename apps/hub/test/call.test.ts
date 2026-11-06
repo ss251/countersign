@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { Hex } from "viem";
 import {
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -102,6 +103,55 @@ describe("paid calls", () => {
     expect(hub.rail.challengeCalls).toBe(0);
     expect(hub.rail.verifyCalls).toHaveLength(0);
     expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a direct cycle is refused before any rail method runs", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    const same = `0x${hash.slice(2).toUpperCase()}` as Hex;
+
+    const response = await callWithLineage(hub, hash, { q: "hello" }, [same]);
+    expect(response.status).toBe(422);
+
+    const body = (await response.json()) as ErrorBody;
+    expect(body.code).toBe("purchase-cycle");
+    expect(body.message).toBe(
+      "Refused. Paying this offer would repeat an offer hash already in the lineage. Nothing was charged.",
+    );
+    expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
+    expect(hub.rail.challengeCalls).toBe(0);
+    expect(hub.rail.verifyCalls).toHaveLength(0);
+    expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a two-step cycle is refused before any rail method runs", async () => {
+    const outer = await publishOk(hub, makeOffer({ title: "Outer offer" }));
+    const middle = await publishOk(hub, makeOffer({ title: "Middle offer" }));
+
+    const response = await callWithLineage(hub, outer, { q: "hello" }, [outer, middle]);
+    expect(response.status).toBe(422);
+
+    const body = (await response.json()) as ErrorBody;
+    expect(body.code).toBe("purchase-cycle");
+    expect(body.message).toContain("Nothing was charged.");
+    expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
+    expect(hub.rail.challengeCalls).toBe(0);
+    expect(hub.rail.verifyCalls).toHaveLength(0);
+    expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a linear lineage is allowed", async () => {
+    const first = await publishOk(hub, makeOffer({ title: "First offer" }));
+    const second = await publishOk(hub, makeOffer({ title: "Second offer" }));
+    const third = await publishOk(hub, makeOffer({ title: "Third offer" }));
+    runners.push(await connect(hub, third));
+
+    const response = await callWithLineage(hub, third, { q: "hello" }, [first, second]);
+    expect(response.status).toBe(402);
+
+    const body = (await response.json()) as PaymentRequired;
+    expect(body.x402Version).toBe(2);
+    expect(body.accepts.length).toBeGreaterThan(0);
+    expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).not.toBeNull();
   });
 
   test("an offline seller is refused with 503", async () => {
@@ -308,6 +358,14 @@ describe("paid calls", () => {
     expect((swept as { closeTx: string }).closeTx).toBe(hub.rail.refundTx);
   });
 });
+
+function callWithLineage(hub: TestHub, hash: Hex, input: unknown, lineage: Hex[]): Promise<Response> {
+  return fetch(`${hub.url}/offers/${hash}/call`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input, lineage }),
+  });
+}
 
 async function connect(
   hub: TestHub,
