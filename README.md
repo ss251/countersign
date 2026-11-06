@@ -155,7 +155,7 @@ bun packages/verify/src/cli.ts slip.json --rpc https://rpc.testnet.arc.network
 
 The console: `bun run --cwd apps/web dev`.
 
-Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`, `CS_NETWORK` (`testnet` by default; `mainnet` refuses to boot while its profile is pending). The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
+Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `EIP3009_RAIL=1`, `WC_RELAY_URL`, `CS_NETWORK` (`testnet` by default; `mainnet` refuses to boot while its profile is pending). The production hub runs `GATEWAY_RAIL` and `HEDERA_RAIL` off, so its `/rails` lists exactly `escrow`, `whitechain` and `hedera-scheduled`: Gateway and plain x402 Hedera take the buyer's money before the seller runs and cannot give it back. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
 ## End-to-end tests
 
