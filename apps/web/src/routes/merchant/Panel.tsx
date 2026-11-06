@@ -1,0 +1,464 @@
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { Link } from "../../app/router.tsx";
+import type { Order, ReceiptOrder, Refusal, RefundReason } from "./model.ts";
+import {
+  REFUND_REASONS,
+  addressUrl,
+  adjustments,
+  canRefund,
+  checkRefundAmount,
+  contribution,
+  decimalsFor,
+  formatFixed,
+  formatUsdt,
+  humanDate,
+  refundLabel,
+  refusalWords,
+  shortAddress,
+  statusLabel,
+  statusTone,
+  timeline,
+} from "./model.ts";
+import { Timeline } from "./Timeline.tsx";
+
+/** One click refunds; this is the window to take it back before anything is signed. */
+export const UNDO_MS = 4000;
+
+/** Where an order's one-click refund stands. Absent means nothing was asked. */
+export type RowState =
+  | { kind: "undo" }
+  | { kind: "sending" }
+  | { kind: "done"; txHash: string; amount: string; cancelled: boolean }
+  | { kind: "error"; message: string };
+
+export type PartOutcome = { ok: true } | { ok: false; reason: string };
+
+export type PanelView = "detail" | "refund";
+
+interface OrderPanelProps {
+  order: Order;
+  /** The order as /orders/:id reports it, with every refund; null until it loads. */
+  detail: ReceiptOrder | null;
+  item: string;
+  row: RowState | undefined;
+  refusals: readonly Refusal[];
+  canSign: boolean;
+  view: PanelView;
+  receiptTo: string;
+  headingRef: RefObject<HTMLHeadingElement | null>;
+  /** True inside the phone sheet, where nothing takes focus on its own (no keyboard popping up). */
+  touch: boolean;
+  onView: (view: PanelView) => void;
+  onClose: () => void;
+  onRefundAll: () => void;
+  onUndo: () => void;
+  onRefundPart: (amount: bigint, reason: RefundReason) => Promise<PartOutcome>;
+  onUnlock: () => void;
+}
+
+export function OrderPanel(props: OrderPanelProps) {
+  return props.view === "refund" && canRefund(props.order) && props.order.status !== "held" ? (
+    <RefundForm {...props} />
+  ) : (
+    <OrderDetail {...props} />
+  );
+}
+
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button type="button" className="mx-close" onClick={onClose} aria-label="Close the order">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
+function Unit() {
+  return <span className="mx-unit">USDT</span>;
+}
+
+function OrderDetail({
+  order,
+  detail,
+  item,
+  row,
+  refusals,
+  canSign,
+  receiptTo,
+  headingRef,
+  onView,
+  onClose,
+  onRefundAll,
+  onUndo,
+  onUnlock,
+}: OrderPanelProps) {
+  const headingId = useId();
+  const breakdownId = useId();
+  const activityId = useId();
+  const held = order.status === "held";
+  const amount = BigInt(order.amount);
+  const lines = adjustments(order);
+  const net = contribution(order);
+  const money = [amount, net, ...lines.map((line) => ("amount" in line ? line.amount : 0n))];
+  const places = decimalsFor(money);
+  const events = timeline(detail ?? { ...order }, "merchant", refusals);
+
+  return (
+    <div className="mx-panel__inner">
+      <div className="mx-panel__head">
+        <h2 className="mx-panel__title" id={headingId} ref={headingRef} tabIndex={-1}>
+          {item}
+        </h2>
+        <CloseButton onClose={onClose} />
+      </div>
+      <p className="mx-status">
+        <span className={`mx-dot mx-dot--${statusTone(order.status)}`} aria-hidden="true" />
+        {statusLabel(order.status)}
+      </p>
+
+      <p className={`mx-panel__amount mono${held || order.status === "pending" ? " mx-money" : ""}`}>
+        {formatUsdt(order.amount)}
+        <Unit />
+      </p>
+      <p className="mx-panel__meta">
+        From{" "}
+        <a className="mono" href={addressUrl(order.customer)} title={order.customer} target="_blank" rel="noreferrer">
+          {shortAddress(order.customer)}
+        </a>
+        <span aria-hidden="true"> · </span>
+        <time dateTime={new Date(order.createdAt).toISOString()}>{humanDate(order.createdAt)}</time>
+      </p>
+
+      <div className="mx-panel__actions">
+        <PanelRefund
+          order={order}
+          row={row}
+          canSign={canSign}
+          onRefundAll={onRefundAll}
+          onUndo={onUndo}
+          onPart={() => onView("refund")}
+          onUnlock={onUnlock}
+        />
+        <Link className="mx-link" to={receiptTo}>
+          Customer receipt
+        </Link>
+      </div>
+
+      <section className="mx-panel__section" aria-labelledby={breakdownId}>
+        <h3 className="mx-label" id={breakdownId}>
+          Breakdown
+        </h3>
+        <dl className="mx-sum">
+          <div className="mx-sum__line">
+            <dt>Amount</dt>
+            <dd className="mono">
+              {formatFixed(amount, places)}
+              <Unit />
+            </dd>
+          </div>
+          {lines.map((line) =>
+            "amount" in line ? (
+              <div className="mx-sum__line mx-sum__line--less" key={line.kind}>
+                <dt>
+                  {line.kind === "toll"
+                    ? "Toll"
+                    : line.kind === "refunded"
+                      ? "Refunded"
+                      : line.close === "cancel"
+                        ? "Returned on cancel"
+                        : "Returned at deadline"}
+                </dt>
+                <dd className="mono">−{formatFixed(line.amount, places)}</dd>
+              </div>
+            ) : null,
+          )}
+          <div className="mx-sum__line mx-sum__line--total">
+            <dt>{held ? "Held until delivery" : order.status === "pending" ? "Settling" : "Net"}</dt>
+            <dd className={`mono${held || order.status === "pending" ? " mx-money" : ""}`}>
+              {formatFixed(held || order.status === "pending" ? amount : net, places)}
+              <Unit />
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="mx-panel__section" aria-labelledby={activityId}>
+        <h3 className="mx-label" id={activityId}>
+          Activity
+        </h3>
+        <Timeline events={events} labelledBy={activityId} />
+      </section>
+    </div>
+  );
+}
+
+interface PanelRefundProps {
+  order: Order;
+  row: RowState | undefined;
+  canSign: boolean;
+  onRefundAll: () => void;
+  onUndo: () => void;
+  onPart: () => void;
+  onUnlock: () => void;
+}
+
+/** The panel's refund controls, in step with the row: the same undo window, the same result. */
+function PanelRefund({ order, row, canSign, onRefundAll, onUndo, onPart, onUnlock }: PanelRefundProps) {
+  const held = order.status === "held";
+  if (row?.kind === "undo") return <UndoStrip order={order} onUndo={onUndo} />;
+  if (row?.kind === "sending") {
+    return (
+      <button type="button" className="mx-button mx-button--money" disabled>
+        {held ? "Cancelling…" : "Refunding…"}
+      </button>
+    );
+  }
+  if (row?.kind === "done") {
+    return (
+      <p className="mx-outcome" role="status">
+        {row.cancelled ? "Cancelled" : "Refunded"}. {formatUsdt(row.amount)} USDT returned to{" "}
+        <span className="mono">{shortAddress(order.customer)}</span>.
+      </p>
+    );
+  }
+  const refusal =
+    row?.kind === "error" ? (
+      <p className="mx-outcome mx-outcome--refused" role="alert">
+        Refused. {refusalWords(row.message)}.
+      </p>
+    ) : null;
+  if (!canRefund(order)) return refusal;
+  if (!canSign) {
+    return (
+      <p className="mx-outcome">
+        Refunds need the merchant token.{" "}
+        <button type="button" className="mx-button mx-button--quiet" onClick={onUnlock}>
+          Unlock refunds
+        </button>
+      </p>
+    );
+  }
+  return (
+    <>
+      {refusal}
+      <button type="button" className="mx-button mx-button--money" onClick={onRefundAll}>
+        {refundLabel(order)} USDT
+      </button>
+      {held ? null : (
+        <button type="button" className="mx-button mx-button--quiet" onClick={onPart}>
+          Refund part of it
+        </button>
+      )}
+    </>
+  );
+}
+
+/** "Refunding 0.75 USDT · Undo", with the window drawn as a line that runs out. */
+export function UndoStrip({
+  order,
+  onUndo,
+  undoRef,
+}: {
+  order: Order;
+  onUndo: () => void;
+  undoRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  const held = order.status === "held";
+  return (
+    <span className="mx-undo" role="status">
+      <span className="mx-undo__text">
+        {held ? "Cancelling" : "Refunding"} <span className="mono">{formatUsdt(order.refundable)}</span> USDT
+      </span>
+      <button ref={undoRef} type="button" className="mx-button mx-button--quiet" onClick={onUndo}>
+        Undo
+      </button>
+      <span className="mx-undo__bar" aria-hidden="true" style={{ animationDuration: `${UNDO_MS}ms` }} />
+    </span>
+  );
+}
+
+function RefundForm({ order, item, detail, headingRef, touch, onView, onClose, onRefundPart }: OrderPanelProps) {
+  const headingId = useId();
+  const amountId = useId();
+  const errorId = useId();
+  const reasonId = useId();
+  const remainder = BigInt(order.refundable);
+  const [amount, setAmount] = useState(() => formatUsdt(order.refundable));
+  const [reason, setReason] = useState<RefundReason>("requested_by_customer");
+  const [touched, setTouched] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const check = checkRefundAmount(amount, remainder);
+  const error = touched && !check.ok ? check.message : null;
+  const toll = BigInt((detail ?? order).fee ?? "0");
+
+  // A desk gets the amount field ready to edit; a phone keeps its keyboard down until asked.
+  useEffect(() => {
+    if (!touch) inputRef.current?.focus();
+  }, [touch]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setTouched(true);
+    if (!check.ok || sending) return;
+    setSending(true);
+    setRefused(null);
+    const outcome = await onRefundPart(check.atomic, reason);
+    setSending(false);
+    if (outcome.ok) onView("detail");
+    else setRefused(outcome.reason);
+  };
+
+  return (
+    <form className="mx-panel__inner" onSubmit={(event) => void submit(event)} noValidate>
+      <div className="mx-panel__head">
+        <button type="button" className="mx-button mx-button--quiet mx-back" onClick={() => onView("detail")}>
+          Back to the order
+        </button>
+        <CloseButton onClose={onClose} />
+      </div>
+      <h2 className="mx-panel__title" id={headingId} ref={headingRef} tabIndex={-1}>
+        Refund part of this payment
+      </h2>
+      <p className="mx-panel__meta">
+        {item}
+        <span aria-hidden="true"> · </span>
+        <span className="mono">{shortAddress(order.customer)}</span>
+      </p>
+
+      <dl className="mx-sum">
+        <div className="mx-sum__line mx-sum__line--total">
+          <dt>Left to refund</dt>
+          <dd className="mono">
+            {formatUsdt(order.refundable)}
+            <Unit />
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mx-field">
+        <label className="mx-field__label" htmlFor={amountId}>
+          Amount
+        </label>
+        <div className={`mx-input${error ? " mx-input--invalid" : ""}`}>
+          <input
+            ref={inputRef}
+            id={amountId}
+            className="mx-input__field mono"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            value={amount}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            onChange={(event) => {
+              setAmount(event.target.value);
+              setRefused(null);
+            }}
+            onBlur={() => setTouched(true)}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <span className="mx-input__unit" aria-hidden="true">
+            USDT
+          </span>
+        </div>
+        {error ? (
+          <p className="mx-field__error" id={errorId}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mx-field">
+        <label className="mx-field__label" htmlFor={reasonId}>
+          Reason
+        </label>
+        <select
+          id={reasonId}
+          className="mx-select"
+          value={reason}
+          onChange={(event) => setReason(event.target.value as RefundReason)}
+        >
+          {REFUND_REASONS.map((entry) => (
+            <option key={entry.value} value={entry.value}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <p className="mx-final">
+        A refund is a new USDT transfer from you to the customer on Whitechain. It settles in about a second and
+        cannot be undone.
+        {toll > 0n ? ` The ${formatUsdt(toll.toString())} USDT toll is not returned to you.` : ""}
+      </p>
+
+      {refused ? (
+        <p className="mx-outcome mx-outcome--refused" role="alert">
+          Refused. {refusalWords(refused)}.
+        </p>
+      ) : null}
+
+      <div className="mx-panel__actions">
+        <button type="submit" className="mx-button mx-button--money" disabled={sending}>
+          {sending ? "Refunding…" : check.ok ? `Refund ${formatUsdt(check.atomic.toString())} USDT` : "Refund"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Below the desk width the order opens as a modal sheet: a bottom sheet on a phone, a drawer on a
+ * tablet. The native dialog traps focus, makes the page behind inert and closes on Escape.
+ */
+export function Sheet({ labelledBy, onClose, children }: { labelledBy?: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    const root = document.documentElement;
+    const previous = root.style.overflow;
+    root.style.overflow = "hidden";
+    return () => {
+      root.style.overflow = previous;
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  const requestClose = () => {
+    if (closing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) onClose();
+    else setClosing(true);
+  };
+
+  return (
+    <dialog
+      ref={ref}
+      className="mx-sheet"
+      data-closing={closing ? "" : undefined}
+      aria-labelledby={labelledBy}
+      onCancel={(event) => {
+        event.preventDefault();
+        requestClose();
+      }}
+      onClick={(event) => {
+        // A click on the dialog itself, outside its body, is a click on the backdrop.
+        if (event.target === event.currentTarget) requestClose();
+      }}
+      onAnimationEnd={(event) => {
+        if (closing && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="mx-sheet__body">{children}</div>
+    </dialog>
+  );
+}

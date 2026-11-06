@@ -31,6 +31,10 @@ Touch nothing else, and no view code. Never commit `bun.lock`.
    - **Relay:** `/refund` and `/escrow/cancel` accept `reason`.
    - **Ledger:** the `refunds` table gets a nullable `reason` column, and jobs get `close_reason` for a cancel. Add both with `ALTER TABLE` only when missing.
    - **Orders:** `/orders/:id` returns each refund's `reason` and the order's `closeReason`.
+   - **Timeline fields (read only):** the merchant view's timeline needs three facts the ledger already has or can record.
+     - The `refunds` table gets a nullable `created_at` (ms), set on insert and added with `ALTER TABLE` only when missing. `/orders/:id` returns it as each refund's `at`, or `null` for older rows.
+     - Escrow orders carry `slipHash` (the job's `slip_hash`) and `closedAt` (the job's `closed_at`) in both `/orders` and `/orders/:id`.
+     - Direct payments carry `slipHash: null` and `closedAt: null`.
    - **CSV:** the orders CSV gets a final `refund_reasons` column, space-joined.
    - **Tests:** a reason round-trips on refund and on cancel, and a bad reason is refused.
 

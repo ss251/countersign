@@ -19,8 +19,21 @@ import {
   txUrl,
   type Order,
 } from "../src/routes/merchant/model.ts";
-import { fixtureCsv, fixtureOrders, fixtureRefundTx } from "../src/routes/merchant/fixtures.ts";
-import { filterCounts, matchesFilter, receivedAt } from "../src/routes/merchant/model.ts";
+import { fixtureCsv, fixtureOrders, fixtureRefundTx, findFixtureOrder } from "../src/routes/merchant/fixtures.ts";
+import {
+  adjustments,
+  checkRefundAmount,
+  contribution,
+  decimalsFor,
+  equation,
+  filterCounts,
+  formatFixed,
+  ledger,
+  matchesFilter,
+  reasonLabel,
+  receivedAt,
+  timeline,
+} from "../src/routes/merchant/model.ts";
 
 describe("formatUsdt", () => {
   test("formats atomic amounts without floats", () => {
@@ -60,15 +73,16 @@ describe("status vocabulary", () => {
     for (const status of statuses) expect(statusLabel(status).length).toBeGreaterThan(0);
   });
 
-  test("only Paid is green; every other badge is neutral", () => {
+  test("green is paid, blue is money in flight, returned money is ink", () => {
     expect(statuses.map((status) => [status, statusTone(status)])).toEqual([
-      ["pending", "neutral"],
-      ["held", "neutral"],
+      ["pending", "money"],
+      ["held", "money"],
       ["paid", "settled"],
       ["partially_refunded", "neutral"],
       ["refunded", "neutral"],
       ["cancelled", "neutral"],
     ]);
+    expect(statusTone("refund_pending")).toBe("money");
   });
 });
 
@@ -269,5 +283,147 @@ describe("receivedAt", () => {
   test("a direct payment is received when it settles; a cancel never is", () => {
     expect(receivedAt({ ...base, kind: "exact", status: "paid", closeKind: null, createdAt: 5_000 })).toBe(5_000);
     expect(receivedAt({ ...base, kind: "escrow", status: "cancelled", closeKind: "cancel" })).toBeNull();
+  });
+});
+
+describe("the clearing desk's arithmetic", () => {
+  const base = fixtureOrders[0]!;
+  const order = (patch: Partial<Order>): Order => ({ ...base, ...patch });
+
+  test("released + held = total, then total − refunded − toll = net", () => {
+    const sums = equation(fixtureOrders);
+    expect(sums).toEqual({
+      released: 1_350_000n,
+      held: 400_000n,
+      total: 1_750_000n,
+      refunded: 500_000n,
+      toll: 500n,
+      net: 1_249_500n,
+    });
+    expect(sums.released + sums.held).toBe(sums.total);
+    expect(sums.total - sums.refunded - sums.toll).toBe(sums.net);
+  });
+
+  test("the running balance ends at the header's net, newest first", () => {
+    const rows = ledger(fixtureOrders);
+    expect(rows[0]!.balance).toBe(equation(fixtureOrders).net);
+    const times = rows.map((row) => row.order.createdAt);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    // Each step moves by exactly what the row's amount and its adjustments say.
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      expect(rows[index]!.balance - rows[index + 1]!.balance).toBe(contribution(rows[index]!.order));
+    }
+  });
+
+  test("a filter never changes a balance: it is the ledger's, not the view's", () => {
+    const held = ledger(fixtureOrders).filter((row) => row.order.status === "held");
+    expect(held).toHaveLength(1);
+    expect(held[0]!.balance).not.toBe(400_000n);
+  });
+
+  test("each row explains why the balance moved by less than its amount", () => {
+    expect(adjustments(order({ kind: "escrow", status: "held", closeKind: null }))).toEqual([{ kind: "held" }]);
+    expect(adjustments(order({ status: "pending" }))).toEqual([{ kind: "settling" }]);
+    expect(
+      adjustments(order({ kind: "escrow", status: "cancelled", closeKind: "cancel", amount: "300000" })),
+    ).toEqual([{ kind: "returned", amount: 300_000n, close: "cancel" }]);
+    expect(
+      adjustments(order({ kind: "escrow", status: "partially_refunded", closeKind: "release", fee: "500", refunded: "10000" })),
+    ).toEqual([
+      { kind: "toll", amount: 500n },
+      { kind: "refunded", amount: 10_000n },
+    ]);
+    expect(adjustments(order({}))).toEqual([]);
+  });
+
+  test("a cancelled order adds nothing; a held one adds all of it", () => {
+    expect(contribution(order({ kind: "escrow", status: "cancelled", closeKind: "cancel", amount: "300000" }))).toBe(0n);
+    expect(contribution(order({ kind: "escrow", status: "held", closeKind: null, amount: "400000" }))).toBe(400_000n);
+  });
+});
+
+describe("fixed decimals", () => {
+  test("a column gets the fewest places that show every value exactly", () => {
+    expect(decimalsFor([50_000n, 1_000_000n])).toBe(2);
+    expect(decimalsFor([1_249_500n, 500n])).toBe(4);
+    expect(decimalsFor([1n])).toBe(6);
+  });
+
+  test("pads to the column and never hides a digit of money", () => {
+    expect(formatFixed(1_350_000n, 4)).toBe("1.3500");
+    expect(formatFixed(500n, 2)).toBe("0.0005");
+    expect(formatFixed(-500_000n, 2)).toBe("−0.50");
+    expect(formatFixed(0n, 2)).toBe("0.00");
+  });
+});
+
+describe("checkRefundAmount", () => {
+  const left = 750_000n;
+  test("accepts a plain decimal up to what is left", () => {
+    expect(checkRefundAmount("0.25", left)).toEqual({ ok: true, atomic: 250_000n });
+    expect(checkRefundAmount(" .5 ", left)).toEqual({ ok: true, atomic: 500_000n });
+    expect(checkRefundAmount("0.75", left)).toEqual({ ok: true, atomic: 750_000n });
+  });
+
+  test("refuses empty, malformed, zero, too precise and too much, in words", () => {
+    expect(checkRefundAmount("", left)).toEqual({ ok: false, message: "Enter an amount." });
+    expect(checkRefundAmount("1,5", left)).toEqual({ ok: false, message: "Enter an amount like 0.25." });
+    expect(checkRefundAmount(".", left)).toEqual({ ok: false, message: "Enter an amount like 0.25." });
+    expect(checkRefundAmount("0", left)).toEqual({ ok: false, message: "Enter more than 0." });
+    expect(checkRefundAmount("0.0000001", left)).toEqual({ ok: false, message: "USDT has six decimals at most." });
+    expect(checkRefundAmount("0.76", left)).toEqual({ ok: false, message: "Only 0.75 USDT is left to refund." });
+  });
+});
+
+describe("timeline", () => {
+  test("a released escrow order: funded, then released with its slip, newest first", () => {
+    const record = findFixtureOrder("0x01a66ebcdaa75420b747496de7e523ed0293ecf27d6733c56aead58719dcb231")!;
+    const events = timeline(record, "merchant");
+    expect(events.map((event) => event.key)).toEqual(["release", "fund"]);
+    expect(events[0]).toMatchObject({
+      tone: "settled",
+      title: "Released to you",
+      detail: "Toll 0.0005 USDT.",
+      slipHash: "0x7f69ea83dd410372d0ec8eb178f7a45affd16f11f5865655381495afff5edf6c",
+    });
+    expect(timeline(record, "customer")[0]!.title).toBe("Released to the merchant");
+  });
+
+  test("a refund the relay did not time keeps its place and shows its block", () => {
+    const record = findFixtureOrder("0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc")!;
+    const events = timeline(record, "customer");
+    expect(events.map((event) => event.title)).toEqual(["Refunded 0.25 USDT", "Paid 0.25 USDT"]);
+    expect(events[0]).toMatchObject({ at: null, block: "12361744", tone: "neutral" });
+  });
+
+  test("a refund carries its reason; a refusal this visit is red and newest", () => {
+    const record = findFixtureOrder("0x9a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b")!;
+    const events = timeline(record, "merchant", [{ at: Date.now(), reason: "merchant_balance_low" }]);
+    expect(events[0]).toMatchObject({ tone: "refused", title: "Refund refused. Merchant balance low" });
+    expect(events[1]).toMatchObject({ title: "Refunded 0.25 USDT", detail: "Requested by customer" });
+    expect(events[2]).toMatchObject({ title: "Received 1.00 USDT", tone: "settled" });
+  });
+
+  test("a cancel speaks to each reader", () => {
+    const record = findFixtureOrder("0xd3247aa41d6a23adfe6ae673d6ad2c676da8fdfb188a4c4c5dd8b06ca7bb8e7e")!;
+    expect(timeline(record, "merchant")[0]!.title).toBe("Cancelled. 0.30 USDT returned to the customer");
+    expect(timeline(record, "customer")[0]!.title).toBe("Cancelled by the merchant. 0.30 USDT returned to you");
+  });
+});
+
+describe("refund reasons", () => {
+  test("names the four reasons and nothing else", () => {
+    expect(reasonLabel("not_delivered")).toBe("Not delivered");
+    expect(reasonLabel("chargeback")).toBeNull();
+    expect(reasonLabel(null)).toBeNull();
+  });
+});
+
+describe("fixture refunds", () => {
+  test("every simulated attempt gets a hash of its own", () => {
+    const id = fixtureOrders[3]!.id;
+    const hashes = [0, 1, 2, 3, 4].map((attempt) => fixtureRefundTx(id, attempt));
+    expect(new Set(hashes).size).toBe(hashes.length);
+    for (const hash of hashes) expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });

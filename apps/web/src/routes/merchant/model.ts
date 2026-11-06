@@ -12,6 +12,21 @@ export type OrderStatus =
 /** How an escrow order closed: released to the merchant, cancelled by them, or refunded after the deadline. */
 export type CloseKind = "release" | "cancel" | "deadline_refund";
 
+/** Why money went back. The relay keeps it with the refund; it is optional everywhere. */
+export type RefundReason = "requested_by_customer" | "duplicate" | "not_delivered" | "other";
+
+export const REFUND_REASONS: ReadonlyArray<{ value: RefundReason; label: string }> = [
+  { value: "requested_by_customer", label: "Requested by customer" },
+  { value: "duplicate", label: "Duplicate payment" },
+  { value: "not_delivered", label: "Not delivered" },
+  { value: "other", label: "Other" },
+];
+
+export function reasonLabel(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  return REFUND_REASONS.find((entry) => entry.value === reason)?.label ?? null;
+}
+
 export interface Order {
   id: string;
   kind: OrderKind;
@@ -34,6 +49,11 @@ export interface Order {
   deadline?: number;
   resource?: string | null;
   description?: string | null;
+  /** The countersigned slip's hash, emitted on chain when the escrow released. */
+  slipHash?: string | null;
+  /** When an escrow order closed (released, cancelled or refunded), in ms. */
+  closedAt?: number | null;
+  closeReason?: RefundReason | null;
 }
 
 export interface RefundRecord {
@@ -41,6 +61,10 @@ export interface RefundRecord {
   txHash: string;
   blockNumber?: string;
   nonce?: string;
+  status?: "pending" | "confirmed";
+  reason?: string | null;
+  /** When the refund was sent, in ms; older relays do not record it. */
+  at?: number | null;
 }
 
 export interface ReceiptOrder extends Order {
@@ -155,16 +179,21 @@ export function statusLabel(status: OrderStatus): string {
   }
 }
 
-/** Only Paid is green. Held money is blue where it is shown as an amount; its badge stays neutral. */
+/**
+ * The colour of a status dot. Green is settled: the merchant was paid. Blue is money still in
+ * flight: held in escrow, or a transfer that has not landed. Returned money settles nothing, so
+ * refunded and cancelled are ink.
+ */
 export function statusTone(status: OrderStatus): StatusTone {
   switch (status) {
     case "paid":
       return "settled";
     case "pending":
     case "held":
+    case "refund_pending":
+      return "money";
     case "partially_refunded":
     case "refunded":
-    case "refund_pending":
     case "cancelled":
       return "neutral";
   }
@@ -363,4 +392,264 @@ export function receivedAt(order: Pick<Order, "kind" | "status" | "closeKind" | 
   if (!wasReceived(order)) return null;
   // Older relays send no receivedAt; a direct payment settles when it is created.
   return order.kind === "exact" ? order.createdAt : null;
+}
+
+/* ------------------------------------------------------------ the desk's arithmetic */
+
+/** The header: released + held = total, then total − refunded − toll = net. Atomic USDT. */
+export interface Equation {
+  released: bigint;
+  held: bigint;
+  total: bigint;
+  refunded: bigint;
+  toll: bigint;
+  net: bigint;
+}
+
+export function equation(orders: readonly Order[]): Equation {
+  const sums = totals(orders);
+  const released = BigInt(sums.received);
+  const held = BigInt(sums.held);
+  const refunded = BigInt(sums.refunded);
+  const toll = BigInt(sums.fees);
+  const total = released + held;
+  return { released, held, total, refunded, toll, net: total - refunded - toll };
+}
+
+/** What one order adds to the balance. Held money counts, exactly as it does in the header's Net. */
+export function contribution(order: Order): bigint {
+  const amount = parseAtomic(order.amount, "USDT");
+  if (order.kind === "escrow" && order.status === "held") return amount;
+  if (!wasReceived(order)) return 0n;
+  return amount - parseAtomic(order.fee ?? "0", "USDT") - parseAtomic(order.refunded, "USDT");
+}
+
+export interface LedgerRow {
+  order: Order;
+  /** The running balance once this order is counted, oldest first. */
+  balance: bigint;
+}
+
+/** Every order with its running balance, newest first. The top row's balance is the header's Net. */
+export function ledger(orders: readonly Order[]): LedgerRow[] {
+  const oldestFirst = [...orders].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  let balance = 0n;
+  const rows = oldestFirst.map((order) => {
+    balance += contribution(order);
+    return { order, balance };
+  });
+  return rows.reverse();
+}
+
+/** The lines under an amount that explain why the balance moved by less than it. */
+export type Adjustment =
+  | { kind: "toll"; amount: bigint }
+  | { kind: "refunded"; amount: bigint }
+  | { kind: "returned"; amount: bigint; close: "cancel" | "deadline_refund" }
+  | { kind: "held" }
+  | { kind: "settling" };
+
+export function adjustments(order: Order): Adjustment[] {
+  if (order.status === "pending") return [{ kind: "settling" }];
+  if (order.kind === "escrow" && order.status === "held") return [{ kind: "held" }];
+  if (order.closeKind === "cancel" || order.closeKind === "deadline_refund") {
+    return [{ kind: "returned", amount: parseAtomic(order.amount, "USDT"), close: order.closeKind }];
+  }
+  const lines: Adjustment[] = [];
+  const fee = parseAtomic(order.fee ?? "0", "USDT");
+  const refunded = parseAtomic(order.refunded, "USDT");
+  if (fee > 0n) lines.push({ kind: "toll", amount: fee });
+  if (refunded > 0n) lines.push({ kind: "refunded", amount: refunded });
+  return lines;
+}
+
+function fractionDigits(atomic: bigint): number {
+  const magnitude = atomic < 0n ? -atomic : atomic;
+  return (magnitude % USDT_SCALE).toString().padStart(USDT_DECIMALS, "0").replace(/0+$/, "").length;
+}
+
+/** The fewest decimals, at least `min`, that show every value exactly, so a column lines up. */
+export function decimalsFor(values: readonly bigint[], min = 2): number {
+  return values.reduce((most, value) => Math.max(most, fractionDigits(value)), min);
+}
+
+/**
+ * Atomic USDT at a fixed number of decimals, with a true minus sign. Never rounds: a value that
+ * needs more places than asked gets them, so no digit of money is ever hidden.
+ */
+export function formatFixed(atomic: bigint, decimals: number): string {
+  const places = Math.min(Math.max(decimals, fractionDigits(atomic)), USDT_DECIMALS);
+  const negative = atomic < 0n;
+  const magnitude = negative ? -atomic : atomic;
+  const whole = magnitude / USDT_SCALE;
+  const fraction = (magnitude % USDT_SCALE).toString().padStart(USDT_DECIMALS, "0").slice(0, places);
+  return `${negative ? "−" : ""}${whole}${places > 0 ? `.${fraction}` : ""}`;
+}
+
+export type AmountCheck = { ok: true; atomic: bigint } | { ok: false; message: string };
+
+/** A refund amount typed by the merchant: a plain decimal, more than zero, never more than what is left. */
+export function checkRefundAmount(input: string, remainder: bigint): AmountCheck {
+  const text = input.trim();
+  if (text === "") return { ok: false, message: "Enter an amount." };
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!match || ((match[1] ?? "") === "" && (match[2] ?? "") === "")) {
+    return { ok: false, message: "Enter an amount like 0.25." };
+  }
+  const fraction = match[2] ?? "";
+  if (fraction.length > USDT_DECIMALS) return { ok: false, message: "USDT has six decimals at most." };
+  const atomic = BigInt(match[1] || "0") * USDT_SCALE + BigInt(fraction.padEnd(USDT_DECIMALS, "0"));
+  if (atomic <= 0n) return { ok: false, message: "Enter more than 0." };
+  if (atomic > remainder) {
+    return { ok: false, message: `Only ${formatUsdt(remainder.toString())} USDT is left to refund.` };
+  }
+  return { ok: true, atomic };
+}
+
+/** "merchant_balance_low" -> "Merchant balance low" */
+export function refusalWords(reason: string): string {
+  const cleaned = reason
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\.+$/, "");
+  if (cleaned === "") return "The refund did not go through";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function formatBlock(block: string): string {
+  return /^\d+$/.test(block) ? Number(block).toLocaleString("en-GB") : block;
+}
+
+/* ------------------------------------------------------------------- the timeline */
+
+export type EventTone = "money" | "settled" | "neutral" | "refused";
+
+export interface TimelineEvent {
+  key: string;
+  tone: EventTone;
+  /** What happened, in words. */
+  title: string;
+  /** A second line: the reason, the toll, the deadline. */
+  detail?: string | null;
+  at?: number | null;
+  block?: string | null;
+  txHash?: string | null;
+  slipHash?: string | null;
+}
+
+/** A refund the chain or the relay refused during this visit. Nothing records these server side. */
+export interface Refusal {
+  at: number;
+  reason: string;
+}
+
+/**
+ * What happened to an order, newest first, each step with its proof. `who` sets the voice: the
+ * merchant reads "Released to you", the customer reads "Released to the merchant".
+ */
+export function timeline(
+  order: ReceiptOrder,
+  who: "merchant" | "customer",
+  refusals: readonly Refusal[] = [],
+): TimelineEvent[] {
+  const amount = formatUsdt(order.amount);
+  const events: TimelineEvent[] = [];
+
+  if (order.kind === "escrow") {
+    const deadline = order.deadline ? shortHumanDate(order.deadline) : null;
+    const back = who === "merchant" ? "the customer" : "you";
+    events.push({
+      key: "fund",
+      tone: "money",
+      title: order.status === "pending" ? `Funding escrow with ${amount} USDT` : `${amount} USDT held in escrow`,
+      detail: deadline
+        ? `Releases on delivery. Returns to ${back} if not delivered by ${deadline}.`
+        : "Releases on delivery.",
+      at: order.createdAt,
+      txHash: order.settleTx,
+    });
+  } else {
+    events.push({
+      key: "pay",
+      tone: order.status === "pending" ? "money" : "settled",
+      title: `${who === "merchant" ? "Received" : "Paid"} ${amount} USDT`,
+      detail: order.status === "pending" ? "Settling on Whitechain." : null,
+      at: order.createdAt,
+      txHash: order.settleTx,
+    });
+  }
+
+  const closedAt = order.closedAt ?? null;
+  if (order.closeKind === "release") {
+    const fee = parseAtomic(order.fee ?? "0", "USDT");
+    events.push({
+      key: "release",
+      tone: "settled",
+      title: who === "merchant" ? "Released to you" : "Released to the merchant",
+      detail: fee > 0n ? `Toll ${formatUsdt(fee.toString())} USDT.` : null,
+      at: order.receivedAt ?? closedAt,
+      txHash: order.closeTx ?? null,
+      slipHash: order.slipHash ?? null,
+    });
+  } else if (order.closeKind === "cancel") {
+    events.push({
+      key: "cancel",
+      tone: "neutral",
+      title:
+        who === "merchant"
+          ? `Cancelled. ${amount} USDT returned to the customer`
+          : `Cancelled by the merchant. ${amount} USDT returned to you`,
+      detail: reasonLabel(order.closeReason),
+      at: closedAt,
+      txHash: order.closeTx ?? null,
+    });
+  } else if (order.closeKind === "deadline_refund") {
+    events.push({
+      key: "deadline",
+      tone: "neutral",
+      title: `Not delivered in time. ${amount} USDT returned${who === "merchant" ? " to the customer" : " to you"}`,
+      at: closedAt,
+      txHash: order.closeTx ?? null,
+    });
+  }
+
+  const records: RefundRecord[] = order.refunds?.length
+    ? order.refunds
+    : order.refundTxs.map((txHash) => ({ txHash }));
+  records.forEach((refund, index) => {
+    const value = refund.amount ?? (records.length === 1 ? order.refunded : undefined);
+    const shown = value && value !== "0" ? `${formatUsdt(value)} USDT` : null;
+    const pending = refund.status === "pending";
+    events.push({
+      key: `refund-${refund.txHash}-${index}`,
+      tone: pending ? "money" : "neutral",
+      title: pending ? `Refund${shown ? ` of ${shown}` : ""} settling` : `Refunded${shown ? ` ${shown}` : ""}`,
+      detail: reasonLabel(refund.reason),
+      at: refund.at ?? null,
+      block: refund.blockNumber ?? null,
+      txHash: refund.txHash,
+    });
+  });
+
+  // Steps the relay did not time inherit the time of the step before them, so the order holds.
+  let last = 0;
+  const timed = events.map((event) => {
+    last = event.at ?? last;
+    return { event, when: last };
+  });
+  refusals.forEach((refusal, index) => {
+    timed.push({
+      event: {
+        key: `refused-${refusal.at}-${index}`,
+        tone: "refused",
+        title: `Refund refused. ${refusalWords(refusal.reason)}`,
+        at: refusal.at,
+      },
+      when: refusal.at,
+    });
+  });
+  timed.sort((a, b) => a.when - b.when);
+  return timed.map((entry) => entry.event).reverse();
 }
