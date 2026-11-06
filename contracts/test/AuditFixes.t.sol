@@ -621,6 +621,30 @@ contract AuditFixesTest is EscrowSigning {
         assertEq(escrow.bondOf(seller), 0, "the late seller keeps no bond");
     }
 
+    /// cs-audit's Medium 2 on e513fe7: before the deadline a seller self-releases a junk slip the moment its
+    /// job is funded, so the job is Delivered and the hub's gate can no longer call failDelivery (Funded only).
+    /// Only the arbiter may release at all: the junk release reverts, the job stays Funded, and the gate's
+    /// failDelivery pays the buyer the amount plus the bond.
+    function test_M3_a_seller_cannot_self_release_junk_before_the_deadline() public {
+        bytes32 jobId = _fundJob(8, BOND, WINDOW);
+        bytes32 junk = keccak256("no delivery, on time");
+        bytes memory junkSig = _sig(sellerKey, keccak256(abi.encode(escrow.RELEASE_TYPEHASH(), jobId, junk)));
+        bytes4 needsArbiter = bytes4(keccak256("ReleaseNeedsArbiter(bytes32)"));
+
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(needsArbiter, jobId));
+        escrow.release(jobId, junk, junkSig);
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(needsArbiter, jobId));
+        escrow.release(jobId, junk, junkSig);
+        assertEq(_status(jobId), uint8(ICountersignedEscrow.Status.Funded), "a junk release opens no window");
+
+        uint256 buyerBefore = token.balanceOf(buyer);
+        vm.prank(arbiter);
+        escrow.failDelivery(jobId);
+        assertEq(token.balanceOf(buyer) - buyerBefore, PRICE + BOND, "the gate's failure pays the amount and the bond");
+    }
+
     function test_H1_refund_waits_for_settleBy() public {
         bytes32 jobId = _fundJob(1, BOND, WINDOW);
         uint256 settleBy = _settleBy(jobId);
