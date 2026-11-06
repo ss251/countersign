@@ -2,6 +2,18 @@
 
 How countersign runs on Whitechain Sepolia: network facts, the USDT it settles in, how the gas relayer pays for the buyer, and how contracts get verified. Every value below was read from the chain or the explorer on 2026-11-06, not copied from a list.
 
+## Why this needs onchain settlement
+
+For the README, in one line:
+
+> The buyer is software, so the payment has to enforce itself. On Whitechain a USDT payment refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, returns itself when a deadline passes with no dispute desk, and leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash, release it on a delivery receipt, or settle a five-cent call in a second. With the relayer paying gas, neither the customer nor the merchant ever holds WBT.
+
+## What the merchant and the customer each get
+
+- **Customer:** signs one authorisation and never sees gas, a seed phrase or a chain picker. Any payment or refund can be checked on the explorer, or on the receipt page at `#/merchant/receipt/<order id>`.
+- **Merchant:** sees every order at `#/merchant` as it settles. Refunds an order in one click: a held escrow order is cancelled, and a paid order is sent back as a gasless USDT transfer. Exports a CSV for the accountant. Never holds WBT.
+- **Business side of gas:** the relayer holds the WBT. Half of every escrow toll flows back to it through `FeeSplit`. The guards in [What stops the relayer being drained](#what-stops-the-relayer-being-drained) bound what anyone can make it spend.
+
 ## Network
 
 | | |
