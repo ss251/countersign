@@ -170,6 +170,12 @@ export function openapiDocument(deps: DiscoveryDeps): JsonObject {
     "/slips/{slipHash}": {
       get: { summary: "Read a countersigned slip.", parameters: [pathParam("slipHash")] },
     },
+    "/trees/{root}": {
+      get: {
+        summary: "The receipt tree committed by a slip: the root and every slip its children name.",
+        parameters: [pathParam("root")],
+      },
+    },
     "/orders": ordersPath(),
     "/orders/{id}": orderPath(),
     "/jobs": jobsPath(),

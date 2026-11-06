@@ -27,6 +27,7 @@ import { registerReview } from "./review.ts";
 import { HubRouter } from "./route.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
+import { receiptTree } from "./trees.ts";
 import type { Listing } from "./types.ts";
 
 export interface HubDeps {
@@ -175,6 +176,12 @@ export function createHub(deps: HubDeps) {
     const slip = deps.store.getSlip(c.req.param("slipHash"));
     if (!slip) return fail(404, "unknown-slip", "Refused. That slip is not known.");
     return json(slip);
+  });
+
+  app.get("/trees/:root", (c) => {
+    const tree = receiptTree(deps.store, c.req.param("root"));
+    if (!tree) return fail(404, "unknown-root", "Refused. That slip is not known.");
+    return json(tree);
   });
 
   app.get("/ratings", async () => json({ ratings: await ratings.all() }));
