@@ -70,6 +70,11 @@ export interface Offer {
   rails: RailId[];
   /** Payee per rail where it is not `seller`, e.g. a Hedera account id "0.0.1234". */
   payTo?: Partial<Record<RailId, string>>;
+  /**
+   * The seller's ENS name on Sepolia, in normal form. When present it must resolve to
+   * `seller`, and every EVM payee must be that address (the payee lock, see ens.ts).
+   */
+  ens?: string;
   issuedAt: number;
 }
 

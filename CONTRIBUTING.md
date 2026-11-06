@@ -25,10 +25,18 @@ git switch -c fix/escrow-refund-message origin/cs/int
 
 - Branch from `origin/cs/int` and name the branch `type/slug`, for example `feat/hedera-payto` or `docs/slip-spec`.
 - Never commit to `main` or `cs/int`.
-- Open the pull request against `cs/int`:
+- Open the pull request against `cs/int`. Its title becomes the commit subject, so write it as `#NN <what changed and why it matters>`, where `#NN` is the issue it closes. Put the detail in the body: what landed, why, the gate counts, proof links and `Closes #NN`.
 
   ```sh
-  gh pr create --base cs/int
+  gh pr create --base cs/int --title "#12 refuse a release whose slip hash is zero" --body-file pr.md
+  ```
+
+- Every pull request is squash-merged, so it lands as one commit. Small commits on your branch are fine.
+- After your pull request is merged, merge `origin/cs/int` into your branch before you start new work, so your next pull request shows only new work:
+
+  ```sh
+  git fetch origin
+  git merge origin/cs/int
   ```
 
 - `cs/int` is where work integrates. `main` follows it after every green gate.
@@ -58,7 +66,9 @@ bun run web:build     # when apps/web changes
 
 - Findings arrive as comments on the pull request.
 - Address them with new commits on the same branch.
-- A pull request merges with zero blockers, as a merge commit.
+- A pull request merges with zero blockers as one squashed commit. Merge commits and rebase merges are disabled on this repository and delete-branch-on-merge is on, so GitHub does the squash and the pull request title becomes the commit subject.
+- Title every pull request `#NN <what changed and why it matters>`, where NN is the issue it closes. Put the detail in the pull request body: what changed, why, and the proof. The squashed commit carries only the title, so the body is where a reader finds the rest.
+- Never force-push a published branch, and never rebase one.
 - Never merge your own pull request.
 
 ## Secrets and safety

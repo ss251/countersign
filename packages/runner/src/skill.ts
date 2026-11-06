@@ -35,6 +35,8 @@ export interface SkillOfferArgs {
   rails: RailId[];
   payTo?: Partial<Record<RailId, string>>;
   upstream?: { url: string; licence: string };
+  /** The seller's ENS name on Sepolia; it must resolve to `seller`. */
+  ens?: string | undefined;
   now: number;
 }
 
@@ -108,6 +110,7 @@ export function skillOffer(args: SkillOfferArgs): Offer {
   };
   if (args.payTo !== undefined && Object.keys(args.payTo).length > 0) offer.payTo = args.payTo;
   if (args.upstream !== undefined) offer.upstream = args.upstream;
+  if (args.ens !== undefined) offer.ens = args.ens;
   return offer;
 }
 

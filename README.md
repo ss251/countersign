@@ -135,6 +135,10 @@ The console: `bun run --cwd apps/web dev`.
 
 Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`, `ARC_RPC_URL`, `CS_RELAYER_KEY`, `GATEWAY_RAIL=1`, `HEDERA_RAIL=1`, `WC_RELAY_URL`. The Hedera scripts and their keys are described in [docs/hedera.md](docs/hedera.md#setup).
 
+## End-to-end tests
+
+`bun run e2e` runs every flow countersign claims against Arc testnet, Whitechain Sepolia and Hedera testnet, and checks each payment on chain itself. A run moves real testnet funds; `bun run e2e -- --dry` checks balances and spends nothing. The browser flow is not run on the build machine and reports `NOT RUN`. The last full run, with every transaction linked: [e2e/runs/LATEST.md](e2e/runs/LATEST.md). How each flow is checked: [docs/e2e.md](docs/e2e.md).
+
 ## Repository map
 
 | Path | What |
@@ -148,7 +152,8 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 | `packages/verify` | The standalone slip verifier. |
 | `packages/relay` | The Whitechain relay: x402 facilitator and gas payer for the whitechain rail. |
 | `contracts/` | `CountersignedEscrow`, `FeeSplit`, Foundry tests, deployments. |
-| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `terms.md`. |
+| `docs/` | `spec/`, `decisions.md`, `proof.md`, `hedera.md`, `whitechain.md`, `e2e.md`, `terms.md`. |
+| `e2e/` | The end-to-end suite and its run reports. |
 | `examples/catalogue` | The sponsor skills the demo sellers serve, unmodified, with upstream and licence. |
 | `scripts/` | Hedera setup, agent run and audit; Gateway deposit and balance. |
 | `marks/` | The mark and wordmark. |

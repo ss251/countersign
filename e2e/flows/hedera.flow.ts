@@ -15,7 +15,8 @@ import { startHub, startSkillSeller, USE_ARC } from "../lib/actors.ts";
 import { units, wallets } from "../lib/budget.ts";
 import { HEDERA } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
-import { hashscanTx, mirrorTransaction, mirrorTxId, netToken, topicMessage } from "../lib/hedera.ts";
+import { hashscanTx, mirrorTransaction, mirrorTxId, netToken, tokenDebits, topicMessage, topicSince } from "../lib/hedera.ts";
+import { sleep } from "../lib/http.ts";
 import { runCmd } from "../lib/procs.ts";
 
 const PRICE = 10_000n; // 0.01 USDC
@@ -81,6 +82,8 @@ export const hedera: Flow = {
     const agentId = s.get("HD_AGENT_ID");
     const sellerAccount = s.get("HD_SELLER_ID");
     const topicId = s.get("HD_TOPIC_ID");
+    // The window this run reconciles: a little before its first payment.
+    const since = Math.floor(Date.now() / 1000) - 5;
 
     const hub = await ctx.step("hub up with the Hedera rail", () => startHub(ctx, { hedera: true }));
     const seller = await ctx.step("seller lists an offer paid on Hedera", () =>
@@ -162,6 +165,30 @@ export const hedera: Flow = {
       equal(entry.kind, "refused", "refusal entry kind");
       equal(entry.reason, "over-cap", "refusal reason");
       sameHex(entry.offerHash ?? "", seller.offerHash, "refusal entry offer");
+    });
+
+    await ctx.step("the spend log is complete for this run", async () => {
+      // Every USDC the agent paid in this window has a spend entry naming its transaction, and
+      // every spend entry in the window is backed by such a payment.
+      let debits = await tokenDebits(agentId, HEDERA.usdc, since);
+      for (let i = 0; i < 10 && !debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(paid.tx)); i++) {
+        await sleep(3000);
+        debits = await tokenDebits(agentId, HEDERA.usdc, since);
+      }
+      const spends = (await topicSince(topicId, since))
+        .map((m) => m.json as { kind?: string; tx?: string; amount?: string })
+        .filter((e) => e.kind === "spend" && typeof e.tx === "string");
+      ctx.save("reconcile.json", { since, debits, spends });
+      check(debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(paid.tx)), "the mirror lists this run's payment as an agent debit");
+      for (const d of debits) {
+        const e = spends.find((x) => mirrorTxId(x.tx as string) === mirrorTxId(d.txId));
+        check(e, `agent payment ${d.txId} has no spend entry on the log`);
+        equal(e.amount, d.amount.toString(), `logged amount for ${d.txId}`);
+      }
+      for (const e of spends) {
+        check(debits.some((d) => mirrorTxId(d.txId) === mirrorTxId(e.tx as string)), `spend entry ${e.tx} has no agent payment behind it`);
+      }
+      ctx.note(`reconciled ${debits.length} agent payment(s) and ${spends.length} spend entr${spends.length === 1 ? "y" : "ies"} since ${since}`);
     });
   },
 };
