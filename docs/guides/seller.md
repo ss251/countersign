@@ -1,0 +1,88 @@
+# Seller guide
+
+How to sell a skill through a countersign hub, get paid, and know what you have agreed to. Everything here is on testnets.
+
+## What you need
+
+- [bun](https://bun.sh) 1.3 and a clone of this repository, with `bun install --frozen-lockfile` run.
+- A seller key, as `CS_SELLER_KEY` (0x-prefixed, 32 bytes). It signs your offers, proves your runner to the hub, and signs every slip. It never leaves your machine, and it is never accepted as an argument or printed.
+- The URL of a hub.
+- A skill: a Markdown file whose front matter, between two `---` lines, has a `name` and a `description`.
+
+A throwaway key for trying it out:
+
+```sh
+export CS_SELLER_KEY=$(cast wallet new --json | jq -r '.[0].private_key')
+```
+
+## Publish and serve
+
+`serve` publishes each skill and then stays connected to answer calls. `publish` only lists one offer and exits.
+
+```sh
+bun packages/runner/src/cli.ts serve --hub https://hub-production-e85e.up.railway.app \
+  --skill examples/catalogue/circle/use-arc/SKILL.md --price 10000
+```
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--hub <url>` | The hub to publish to and connect to | required |
+| `--skill <path>` | A skill to sell. Repeat it for several. | required |
+| `--price <atomic>` | Price in atomic units of a 6-decimal USD stablecoin: `10000` is 0.01 USDC | required |
+| `--deadline <seconds>` | How long you have to deliver once paid, from 10 s to 7 days | `120` |
+| `--rails <a,b>` | Rails you accept, most preferred first: `escrow`, `whitechain`, `gateway`, `hedera` | `escrow` |
+| `--pay-to <rail>=<id>` | Where a rail pays, when it is not your seller address. Required for `hedera`, which pays an account id such as `0.0.1234`. | your address |
+| `--upstream-url`, `--licence` | For a skill you did not write: where it comes from and its licence. They go together. | none |
+| `--state <dir>` | Where the runner remembers each offer's `issuedAt` | `~/.countersign/runner` |
+
+The runner prints each offer hash it published, then `runner ready`, then one line per job: `<jobId> <title> ok`, or the reason it refused.
+
+### Your offer is fixed by its hash
+
+The offer hash covers every field, the price included. Changing the price, the deadline, the rails or a payee makes a new offer with a new hash, and the old one stays listed. Re-running `serve` with the same inputs publishes the same hash, because the runner keeps the original `issuedAt` in its state directory.
+
+There is no delist route. To stop selling, stop the runner. Your listings then show `online: false`, and calls answer "The seller is offline. Nothing was charged." before any payment is asked for.
+
+## What a buyer's call does on your machine
+
+1. The runner dials out to the hub over a WebSocket and opens no port. It proves it holds your key by signing the hub's fresh nonce.
+2. For each paid job, it runs the skill in a child process. The child gets only `PATH` and a fresh, empty `HOME`, so your other environment variables, your key included, never reach it. A job has 30 seconds and 1 MB of output.
+3. The skill's input is `{question?, section?}`. With `section`, the runner returns that section of the skill. Without it, the runner returns the whole body.
+4. The runner checks the output against the offer's output schema and signs a slip over the job, the hashes of the input and the output, and the delivery time.
+
+If the connection drops, the runner reconnects on its own.
+
+## Getting paid
+
+| Rail | When the money arrives | What you receive |
+|---|---|---|
+| `escrow` (Arc testnet USDC) | When the hub releases with your slip signature, before the deadline | `price - toll`. The toll is 1% (`tollBps` 100) on the deployed escrow. |
+| `whitechain` (Whitechain Sepolia USDT) | The same, submitted by the relay | `price - toll` |
+| `hedera` (Hedera testnet USDC) | Before your skill runs: the buyer's transfer settles to your `--pay-to` account | the full price |
+| `gateway` (Circle Gateway, Arc testnet) | Gateway debits the buyer at once and credits you in a later batch | the full price, through Gateway |
+
+Gas is paid by the hub's relayer (Arc), the relay (Whitechain), the facilitator (Hedera) or Circle (Gateway). You need no gas token.
+
+## What you are agreeing to
+
+The full terms are in [terms.md](../terms.md). In short:
+
+- **Escrow rails.** If you do not deliver before the deadline, or your output fails the schema, the buyer gets the full amount back by refund after the deadline. The escrow also lets you, as payee, `cancel` a funded job and return the full amount to the buyer at once. The runner has no command for this yet: it is a direct contract call.
+- **Direct rails** (Hedera, Gateway). You are paid before you deliver. A failed delivery still counts against your rating.
+- **Your rating** is derived from slips that check out, not reported by anyone ([ratings.md](../ratings.md)). A failure your runner reports counts against you. A failure that was not yours, such as the hub cutting a job short, is `excused`.
+- **The bond** in your offer is declared, not collected. No deployed contract takes it.
+
+## Your key
+
+Your key signs offers, runner logins and every slip. A slip is what releases the escrow to you, so anyone with your key can:
+
+- release your funded jobs;
+- publish offers in your name.
+
+Keep it in the environment of the runner only. The child processes that run your skills never see it.
+
+## See also
+
+- [threat-model.md](../threat-model.md): what a hostile hub or buyer can and cannot do to you.
+- [spec/offer.md](../spec/offer.md): every field of an offer.
+- [hedera.md](../hedera.md#setup): selling on the Hedera rail.
