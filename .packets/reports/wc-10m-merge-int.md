@@ -73,7 +73,7 @@ packages (no changes)` and left the diff exactly as shown.
 The first run was created at `../wc-10m-iso` exactly as specified.
 `bun install --frozen-lockfile` succeeded (1483 packages), but `bun run
 typecheck` failed on `Buffer` assignability because TypeScript resolved
-`/Users/sailesh/node_modules/@types/node@20.14.2` from an unrelated
+`~/node_modules/@types/node@20.14.2` from an unrelated
 `node_modules` in the home directory. That directory is outside the project and
 was not touched.
 
