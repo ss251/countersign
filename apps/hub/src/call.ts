@@ -95,10 +95,17 @@ export async function paidCall(
     return failure(400, "bad-payment", "Refused. The payment header does not decode.");
   }
 
-  const match = options.find(
-    (option) =>
-      option.entry.scheme === payment.accepted.scheme && option.entry.network === payment.accepted.network,
-  );
+  const match = options.find((option) => {
+    const entry = option.entry;
+    const accepted = payment.accepted;
+    return (
+      entry.scheme === accepted.scheme &&
+      entry.network === accepted.network &&
+      sameText(accepted.asset, entry.asset) &&
+      sameText(accepted.payTo, entry.payTo) &&
+      namesMatch(accepted.extra, entry.extra)
+    );
+  });
   if (!match) {
     return paymentRequired(offer, resource, accepts, "Refused. This offer does not take that rail.");
   }
@@ -275,6 +282,17 @@ function failedDelivery(
     ? "Refused. The seller's output does not match the offer. Your money returns at the deadline."
     : "Refused. The seller's output does not match the offer. This rail settles before delivery, so the payment is not returned automatically; the slip records the failure.";
   return failure(502, "failed-delivery", message, railId);
+}
+
+/** Two `exact` rails may share scheme and network; the signing-domain name keeps them apart. */
+function namesMatch(
+  accepted: Record<string, unknown> | undefined,
+  entry: Record<string, unknown> | undefined,
+): boolean {
+  const a = accepted?.name;
+  const b = entry?.name;
+  if (a === undefined && b === undefined) return true;
+  return typeof a === "string" && typeof b === "string" && a === b;
 }
 
 function duplicatePayment(railId: string): CallOutcome {
