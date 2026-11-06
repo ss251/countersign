@@ -11,6 +11,7 @@ import {
   tokenAbi,
 } from "./eip3009.ts";
 import type { Authorization, WireAuthorization } from "./eip3009.ts";
+import { reconcilePendingPayment } from "./reconcile.ts";
 
 export type PaymentExtra = {
   assetTransferMethod?: string;
@@ -115,6 +116,12 @@ export async function verifyExact(
   } catch {
     return invalid("invalid_payload");
   }
+  if (!ctx.relayer.isAllowedPayee(auth.to)) {
+    return invalid("payee_not_registered");
+  }
+  if (amount < ctx.relayer.minAmount) {
+    return invalid("amount_below_minimum");
+  }
   if (auth.value !== amount) {
     return invalid("invalid_exact_evm_payload_authorization_value_mismatch");
   }
@@ -192,6 +199,16 @@ export async function settleExact(
   if (existingAuth) {
     const existing = ctx.ledger.findByAuthorization(existingAuth.from, existingAuth.nonce);
     if (existing) {
+      if (existing.status === "pending" && (await reconcilePendingPayment(existing.id, ctx))) {
+        const promoted = ctx.ledger.getPayment(existing.id) ?? existing;
+        return {
+          success: true,
+          payer: promoted.payer,
+          transaction: promoted.txHash,
+          network: NETWORK,
+          amount: atomicToWire(promoted.amount),
+        };
+      }
       if (existing.status === "settled") {
         return {
           success: true,
@@ -241,6 +258,7 @@ export async function settleExact(
       blockNumber: outcome.blockNumber,
       settledAt: readNow(ctx.now) * 1000,
       resource: resourceUrl(input.paymentPayload.resource),
+      description: resourceDescription(input.paymentPayload.resource),
     });
     return {
       success: true,
@@ -263,6 +281,7 @@ export async function settleExact(
       blockNumber: 0n,
       settledAt: readNow(ctx.now) * 1000,
       resource: resourceUrl(input.paymentPayload.resource),
+      description: resourceDescription(input.paymentPayload.resource),
     });
     return {
       success: false,
@@ -351,4 +370,12 @@ function resourceUrl(resource: PaymentPayload["resource"]): string | null {
   if (typeof resource === "string") return resource;
   if (resource && typeof resource === "object" && typeof resource.url === "string") return resource.url;
   return null;
+}
+
+/** The human-readable item from the x402 ResourceInfo, capped for the ledger. */
+export function resourceDescription(resource: unknown): string | null {
+  if (!resource || typeof resource !== "object") return null;
+  const description = (resource as { description?: unknown }).description;
+  if (typeof description !== "string") return null;
+  return description.slice(0, 120);
 }

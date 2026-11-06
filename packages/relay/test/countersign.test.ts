@@ -63,6 +63,31 @@ describe("verifyCountersign", () => {
     expect(await verifyCountersign(mismatch, csContext(relay))).toEqual({ isValid: false, invalidReason: "invalid_payload" });
   });
 
+  test("refuses an unregistered payee before the escrow signature check", async () => {
+    const relay = createTestRelay();
+    const { body } = await makeCountersignBody(relay);
+    const moved = clone(body);
+    const stranger = "0x3333333333333333333333333333333333333333";
+    moved.paymentRequirements.payTo = stranger;
+    moved.paymentPayload.accepted.payTo = stranger;
+    expect(await verifyCountersign(moved, csContext(relay))).toEqual({
+      isValid: false,
+      invalidReason: "payee_not_registered",
+    });
+  });
+
+  test("refuses an amount below the minimum", async () => {
+    const relay = createTestRelay();
+    const { body } = await makeCountersignBody(relay);
+    const moved = clone(body);
+    moved.paymentRequirements.amount = "5000";
+    moved.paymentPayload.accepted.amount = "5000";
+    expect(await verifyCountersign(moved, csContext(relay))).toEqual({
+      isValid: false,
+      invalidReason: "amount_below_minimum",
+    });
+  });
+
   test("a failed simulation is invalid_transaction_state", async () => {
     const relay = createTestRelay();
     const { body } = await makeCountersignBody(relay);
@@ -115,6 +140,28 @@ describe("settleCountersign", () => {
     const again = await settleCountersign(body, csContext(relay));
     expect(again.errorReason).toBe("settlement_pending");
     expect(again.transaction).toBe(first.transaction);
+    expect(relay.chain.writes).toHaveLength(1);
+  });
+
+  test("a settle retry promotes a pending job whose fund receipt landed", async () => {
+    const relay = createTestRelay();
+    const { body, jobId } = await makeCountersignBody(relay);
+    relay.chain.timeoutReceipt = true;
+    const first = await settleCountersign(body, csContext(relay));
+    expect(first.errorReason).toBe("settlement_pending");
+    expect(relay.ledger.getJob(jobId)!.status).toBe("pending");
+    relay.chain.timeoutReceipt = false;
+    relay.chain.receipts.set(first.transaction, {
+      status: "success",
+      blockNumber: 60n,
+      gasUsed: 100_000n,
+      effectiveGasPrice: 1n,
+    });
+    const again = await settleCountersign(body, csContext(relay));
+    expect(again.success).toBe(true);
+    expect(again.jobId).toBe(jobId);
+    expect(relay.ledger.getJob(jobId)!.status).toBe("funded");
+    expect(relay.ledger.getJob(jobId)!.fundBlock).toBe(60n);
     expect(relay.chain.writes).toHaveLength(1);
   });
 

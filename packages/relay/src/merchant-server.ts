@@ -1,10 +1,11 @@
+import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem";
 import { parseAtomic } from "@countersign/core";
-import { loadMerchantConfig } from "./config.ts";
+import { DEFAULT_MERCHANT_ORIGINS, loadMerchantConfig } from "./config.ts";
 import { signCancel, signRefund } from "./merchant.ts";
 import { WHITECHAIN_ESCROW } from "./whitechain-config.ts";
 import type { Address, Hex } from "viem";
@@ -15,18 +16,39 @@ export type MerchantAppOptions = {
   now?: () => number;
   /** The escrow whose jobs this merchant cancels. Defaults to the Whitechain deployment. */
   escrow?: Address;
+  /** The bearer token every protected route requires. Without one every route fails closed. */
+  token?: string;
+  origins?: string[];
 };
 
 export function createMerchantApp(options: MerchantAppOptions): Hono {
   const { merchant, relayUrl } = options;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const escrow = options.escrow ?? WHITECHAIN_ESCROW;
+  const origins = options.origins ?? DEFAULT_MERCHANT_ORIGINS;
   const app = new Hono();
 
   // The merchant view is served from another origin (vite in development, static hosting after).
-  app.use("*", cors({ origin: "*" }));
+  app.use(
+    "*",
+    cors({
+      origin: origins,
+      allowHeaders: ["Authorization", "Content-Type"],
+      allowMethods: ["GET", "POST", "OPTIONS"],
+    }),
+  );
+
+  app.use("*", async (c, next) => {
+    if (c.req.method === "OPTIONS" || c.req.path === "/me") return next();
+    if (!authorized(c.req.header("Authorization"), options.token)) {
+      return c.json({ ok: false, reason: "unauthorized" }, 401);
+    }
+    return next();
+  });
 
   app.get("/me", (c) => c.json({ address: merchant.address }));
+
+  app.get("/status", async () => proxy(`${relayUrl}/status`));
 
   app.get("/payments", async (c) => {
     return proxy(`${relayUrl}/payments?payTo=${encodeURIComponent(merchant.address)}`);
@@ -198,9 +220,24 @@ export function createMerchantApp(options: MerchantAppOptions): Hono {
 if (import.meta.main) {
   const config = loadMerchantConfig(process.env);
   const merchant = privateKeyToAccount(config.merchantPrivateKey);
-  const app = createMerchantApp({ merchant, relayUrl: config.relayUrl });
+  const app = createMerchantApp({
+    merchant,
+    relayUrl: config.relayUrl,
+    token: config.token,
+    origins: config.origins,
+  });
   Bun.serve({ port: config.port, fetch: app.fetch });
   console.log(`merchant listening on ${config.port} as ${merchant.address}`);
+}
+
+function authorized(header: string | undefined, token: string | undefined): boolean {
+  if (!token || typeof header !== "string") return false;
+  const prefix = "Bearer ";
+  if (!header.startsWith(prefix)) return false;
+  const provided = Buffer.from(header.slice(prefix.length), "utf8");
+  const expected = Buffer.from(token, "utf8");
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(provided, expected);
 }
 
 async function forward(url: string, payload: unknown): Promise<Response> {

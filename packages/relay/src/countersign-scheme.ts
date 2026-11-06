@@ -1,17 +1,21 @@
 import { getAddress, isAddress } from "viem";
 import type { Address, Chain, PublicClient, Transport } from "viem";
 import { escrowRail } from "@countersign/rail";
+import { parseAtomic } from "@countersign/core";
 import type { CountersignExtra, CountersignPayload, SettleResult, VerifyResult } from "@countersign/core";
 import { NETWORK } from "./chain.ts";
-import { readNow } from "./exact.ts";
+import { readNow, resourceDescription } from "./exact.ts";
 import type { ExactClock } from "./exact.ts";
 import type { Ledger } from "./ledger.ts";
+import type { ChainReader } from "./ports.ts";
+import { reconcilePendingJob } from "./reconcile.ts";
 import type { EscrowFundCall, Relayer, RelayRefusalReason } from "./relayer.ts";
 import { whitechainEscrowConfig } from "./whitechain-config.ts";
 
 export type CountersignContext = {
   /** Handed to escrowRail as its publicClient. Only readContract is used. */
   chainClient: unknown;
+  reader: ChainReader;
   relayer: Relayer;
   ledger: Ledger;
   now: ExactClock;
@@ -84,6 +88,18 @@ async function check(input: unknown, ctx: CountersignContext, allowedEscrows: Ad
     return invalid("invalid_payload");
   }
 
+  if (typeof req.payTo !== "string" || !ctx.relayer.isAllowedPayee(req.payTo)) {
+    return invalid("payee_not_registered");
+  }
+  let amount: bigint;
+  try {
+    if (typeof req.amount !== "string") return invalid("invalid_payload");
+    amount = parseAtomic(req.amount);
+  } catch {
+    return invalid("invalid_payload");
+  }
+  if (amount < ctx.relayer.minAmount) return invalid("amount_below_minimum");
+
   const rail = railFor(ctx);
   let verdict: VerifyResult;
   try {
@@ -135,6 +151,15 @@ export async function settleCountersign(
     const existing = ctx.ledger.getJob(rawNonce.nonce);
     if (existing) {
       if (existing.status === "pending") {
+        if (await reconcilePendingJob(existing.jobId, ctx)) {
+          return {
+            success: true,
+            payer: existing.buyer,
+            transaction: existing.fundTx,
+            network: NETWORK,
+            jobId: existing.jobId,
+          };
+        }
         return fail("settlement_pending", { payer: existing.buyer, transaction: existing.fundTx, jobId: existing.jobId });
       }
       return {
@@ -155,6 +180,7 @@ export async function settleCountersign(
   const outcome = await ctx.relayer.submit(fundCall(extra, payload), payer);
   const terms = payload.terms;
   const resource = resourceUrl(checked.body.paymentPayload.resource);
+  const description = resourceDescription(checked.body.paymentPayload.resource);
   const record = (status: "funded" | "pending", txHash: string, block: bigint) =>
     ctx.ledger.recordJob({
       jobId,
@@ -168,6 +194,7 @@ export async function settleCountersign(
       status,
       createdAt: readNow(ctx.now) * 1000,
       resource,
+      description,
     });
 
   switch (outcome.status) {

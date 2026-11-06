@@ -2,6 +2,18 @@
 
 How countersign runs on Whitechain Sepolia: network facts, the USDT it settles in, how the gas relayer pays for the buyer, and how contracts get verified. Every value below was read from the chain or the explorer on 2026-11-06, not copied from a list.
 
+## Why this needs onchain settlement
+
+For the README, in one line:
+
+> The buyer is software, so the payment has to enforce itself. On Whitechain a USDT payment refuses to settle at a price the buyer did not sign, waits in escrow until the work is delivered, returns itself when a deadline passes with no dispute desk, and leaves a public record the customer can check without trusting us. A card network cannot bind a payment to an offer hash, release it on a delivery receipt, or settle a five-cent call in a second. With the relayer paying gas, neither the customer nor the merchant ever holds WBT.
+
+## What the merchant and the customer each get
+
+- **Customer:** signs one authorisation and never sees gas, a seed phrase or a chain picker. Any payment or refund can be checked on the explorer, or on the receipt page at `#/merchant/receipt/<order id>`.
+- **Merchant:** sees every order at `#/merchant` as it settles. Refunds an order in one click: a held escrow order is cancelled, and a paid order is sent back as a gasless USDT transfer. Exports a CSV for the accountant. Never holds WBT.
+- **Business side of gas:** the relayer holds the WBT. Half of every escrow toll flows back to it through `FeeSplit`. The guards in [What stops the relayer being drained](#what-stops-the-relayer-being-drained) bound what anyone can make it spend.
+
 ## Network
 
 | | |
@@ -75,6 +87,7 @@ The relayer is the only wallet that ever gets WBT from outside, and it pays for 
 | 2026-11-06 09:27 | relayer receives 1.9 WBT | [`0xd41d2ecd…9779`](https://explorer.testnet.whitechain.io/tx/0xd41d2ecd6aa2a8bd5d173a51b331bddc8b46cf47c078a70a8b5f1c0703e97779) |
 | 2026-11-06 09:33 | relayer swaps 0.2 WBT for 14.664556 USDT, paid to the buyer (`BuyTestUsdt.s.sol`) | [`0x0c1bb12a…0301`](https://explorer.testnet.whitechain.io/tx/0x0c1bb12ac1af1e49f4285703a8c1f23b67391601857548c64484818226bb0301) |
 | 2026-11-06 09:34 | relayer sends 0.1 WBT to the deployer (`TopUpWbt.s.sol`) | [`0xdf4ab567…935b`](https://explorer.testnet.whitechain.io/tx/0xdf4ab567d18958c673c423ed9df7622e22ffd046d8640262ecf2808b20b8935b) |
+| 2026-11-06 09:54 | relayer swaps 0.02 WBT for 1.46572 USDT, paid to the merchant as a refund float. After release the merchant holds the price minus the 1% toll, but a full refund returns the whole price | [`0x5c7d0b07…c0e`](https://explorer.testnet.whitechain.io/tx/0x5c7d0b0709cb83bc1452278fdc789e02e9aa6de645d70ccf2c059c87437c8c0e) |
 
 Both scripts read keys from the environment through `vm.envUint`, so a key never appears in a command line:
 
@@ -92,6 +105,29 @@ Every payment below was settled in USDT `0xcedf…55a7` through the relay (`pack
 |---|---|---|
 | 2026-11-06 09:41 | Buyer `0xcb39…4298` pays merchant `0xd588…C71c` 0.25 USDT with x402 `exact`, one EIP-3009 signature, no gas | [`0x4dc46065…42bc`](https://explorer.testnet.whitechain.io/tx/0x4dc460652c20607ee4a16f699c90f3a0bb94b3ce3696099932cbeb1d95fd42bc) |
 | 2026-11-06 09:42 | Merchant refunds the full 0.25 USDT in one click. The merchant signs an EIP-3009 transfer back, and the relay pays its gas | [`0x565830d7…88e5`](https://explorer.testnet.whitechain.io/tx/0x565830d7a63f64b7ab3c910b2063345f3d75695d6405d4ffb5495d53e79388e5) |
+| 2026-11-06 09:49 | Buyer pays 0.30 USDT into the countersign escrow with x402 `countersign`. One `ReceiveWithAuthorization` signature binds offer, payee, amount and deadline. Job `0xd3247aa4…8e7e` | [`0x3e82355d…2447`](https://explorer.testnet.whitechain.io/tx/0x3e82355da37166f668d4bc1c428d8b03a262915ef2a856ebb10b1423b89e2447) |
+| 2026-11-06 09:50 | Merchant refunds the held order in one click. The merchant signs `Cancel(jobId)`, the relay submits `cancel`, and the escrow returns the full 0.30 USDT with no toll | [`0x1e99d1ac…c5d9`](https://explorer.testnet.whitechain.io/tx/0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9) |
+
+| 2026-11-06 10:09 | An AI agent buys a forecast from a separate shop app over x402, with no gas, no seed phrase and no chain choice. The shop adds a USDT price to one route with `whitechainPaywall` (`packages/relay/examples/shop.ts`, 23 lines). The agent pays with `createPayFetch` under a per-call limit (`packages/relay/examples/agent.ts`, 17 lines). 0.05 USDT | [`0x1c366946…5f07`](https://explorer.testnet.whitechain.io/tx/0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07) |
+
+### The drop-in, in about 20 lines each side
+
+A business that wants USDT on Whitechain for an API adds one middleware to a route:
+
+```ts
+app.get("/forecast",
+  whitechainPaywall({ price: "0.05", payTo: MERCHANT, facilitator: "http://127.0.0.1:8402" }),
+  (c) => c.json(forecast()));
+```
+
+The agent that pays wraps `fetch` once, with its own spend limits. Every call over the limit is refused before anything is signed:
+
+```ts
+const pay = createPayFetch({ account, maxPerCall: "0.10", budget: "5.00" });
+const res = await pay("https://shop.example/forecast");   // 402 -> signs one EIP-3009 authorisation -> 200
+```
+
+Verification and settlement go through the relay, the facilitator countersign runs. The relay pays the gas, so neither side ever holds WBT.
 
 To reproduce, run the relay, the merchant's server and the buyer, each with only its own key in its environment:
 
@@ -121,6 +157,16 @@ The relayer pays gas for strangers, so every call goes through `Relayer.submit` 
 7. **Refunds must point at a real payment.** The refund path only carries a transfer that runs from a recorded payment's merchant back to that payment's payer, for no more than what is still refundable. It cannot be used as a free transfer service.
 
 The relay also refuses to start if its RPC does not answer as chain 1874.
+
+**What a call costs the relayer.** These are the fees the explorer reports at the 5 gwei base fee:
+
+| Call | Fee |
+|---|---|
+| EIP-3009 transfer (exact payment or refund) | 0.00051 WBT |
+| escrow `fund` | 0.00108 WBT |
+| escrow `cancel` | 0.00033 WBT |
+
+One faucet drip of about 1.5 WBT therefore pays for roughly 1,400 to 3,000 customer calls.
 
 **Where the relayer's WBT comes from.** Today it comes from the testnet faucet. On every escrow payment, half of the 1% toll goes through `FeeSplit` to the relayer's address. The business's fee pays for the gas, and the relayer can swap that USDT for WBT on the same pool.
 

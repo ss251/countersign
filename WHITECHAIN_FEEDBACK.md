@@ -12,6 +12,8 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 
 - **15:12** — The first gasless USDT payment and its one-click refund each confirmed within about a second, using 1 s blocks. The buyer and the merchant still hold zero WBT. EIP-3009 on `0xcedf…` made the "payer never sees gas" flow simple to build, and permit was not needed.
 
+- **15:52** — The explorer decodes our relayed calls by name: `transferWithAuthorization` on Tether USD, and `fund`/`cancel` on our verified escrow with their argument names. A customer who opens a receipt link can see what happened. Small nit: calls through the USDT proxy show `arg0 … arg8` instead of `from`, `to`, `value`. The implementation is verified but the proxy is not, and verifying the proxy would make every USDT receipt readable.
+
 ## Where we got stuck
 
 - **14:50** — Two different tokens called USDT. The prize requires `0xcedfB561…f55a7`, but the token list in the docs gives `0xaa7962d0…8f46` as USDT. That contract reports `USDT.e` (bridged from Tron). The docs never mention `0xcedf…`. We only confirmed it was the right token by reading its proxy and its minter (`USDTBridge`) on the explorer.

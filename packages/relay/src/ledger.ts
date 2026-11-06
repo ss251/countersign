@@ -16,9 +16,12 @@ export type PaymentRecord = {
   blockNumber: bigint;
   settledAt: number;
   resource: string | null;
+  description: string | null;
   status: PaymentStatus;
   refunded: bigint;
 };
+
+export type RefundStatus = "pending" | "confirmed";
 
 export type RefundRecord = {
   paymentId: string;
@@ -26,6 +29,24 @@ export type RefundRecord = {
   txHash: string;
   blockNumber: bigint;
   nonce: string;
+  status: RefundStatus;
+  validBefore: number;
+};
+
+export type NewRefund = Omit<RefundRecord, "status" | "validBefore">;
+
+export type NewPendingRefund = {
+  paymentId: string;
+  amount: bigint;
+  txHash: string;
+  nonce: string;
+};
+
+export type SpendRecord = {
+  txHash: string;
+  payer: string;
+  costWei: bigint;
+  at: number;
 };
 
 export type NewPayment = {
@@ -39,6 +60,7 @@ export type NewPayment = {
   blockNumber: bigint;
   settledAt: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type JobStatus = "pending" | "funded" | "released" | "cancelled" | "refunded";
@@ -58,6 +80,7 @@ export type JobRecord = {
   createdAt: number;
   closedAt: number | null;
   resource: string | null;
+  description: string | null;
 };
 
 export type NewJob = {
@@ -72,6 +95,7 @@ export type NewJob = {
   status?: "pending" | "funded";
   createdAt: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type JobFilter = {
@@ -80,10 +104,12 @@ export type JobFilter = {
 };
 
 export type OrderKind = "exact" | "escrow";
+export type CloseKind = "release" | "cancel" | "deadline_refund";
 export type OrderStatus =
   | "paid"
   | "partially_refunded"
   | "refunded"
+  | "refund_pending"
   | "pending"
   | "held"
   | "cancelled";
@@ -94,9 +120,11 @@ export type Order = {
   customer: string;
   merchant: string;
   amount: bigint;
+  fee: bigint;
   refunded: bigint;
   refundable: bigint;
   status: OrderStatus;
+  closeKind: CloseKind | null;
   createdAt: number;
   settleTx: string;
   closeTx: string | null;
@@ -104,6 +132,7 @@ export type Order = {
   offerHash?: string;
   deadline?: number;
   resource?: string | null;
+  description?: string | null;
 };
 
 export type OrderFilter = {
@@ -126,6 +155,7 @@ type JobRow = {
   created_at: number;
   closed_at: number | null;
   resource: string | null;
+  description: string | null;
 };
 
 export type PaymentFilter = {
@@ -144,6 +174,7 @@ type PaymentRow = {
   block_number: string;
   settled_at: number;
   resource: string | null;
+  description: string | null;
   status: string;
 };
 
@@ -153,6 +184,15 @@ type RefundRow = {
   tx_hash: string;
   block_number: string;
   nonce: string;
+  status: string;
+  valid_before: number;
+};
+
+type SpendRow = {
+  tx_hash: string;
+  payer: string;
+  cost_wei: string;
+  at: number;
 };
 
 const SCHEMA = `
@@ -167,6 +207,7 @@ const SCHEMA = `
     block_number TEXT NOT NULL,
     settled_at INTEGER NOT NULL,
     resource TEXT,
+    description TEXT,
     status TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS payments_authorization
@@ -176,7 +217,9 @@ const SCHEMA = `
     amount TEXT NOT NULL,
     tx_hash TEXT NOT NULL,
     block_number TEXT NOT NULL,
-    nonce TEXT NOT NULL
+    nonce TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'confirmed',
+    valid_before INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS refunds_payment
     ON refunds (payment_id);
@@ -194,24 +237,40 @@ const SCHEMA = `
     slip_hash TEXT,
     created_at INTEGER NOT NULL,
     closed_at INTEGER,
-    resource TEXT
+    resource TEXT,
+    description TEXT
   );
   CREATE INDEX IF NOT EXISTS jobs_payee ON jobs (payee);
   CREATE INDEX IF NOT EXISTS jobs_buyer ON jobs (buyer);
+  CREATE TABLE IF NOT EXISTS spends (
+    tx_hash TEXT NOT NULL,
+    payer TEXT NOT NULL,
+    cost_wei TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS spends_at ON spends (at);
 `;
 
 const ORDERS_CSV_HEADER =
-  "date_utc,order_id,kind,customer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
+  "date_utc,order_id,kind,customer,merchant,amount_usdt,fee_usdt,refunded_usdt,net_usdt,status,settle_tx_url,close_tx_url,refund_tx_urls";
 
 const CSV_HEADER =
   "date_utc,payment_id,payer,merchant,amount_usdt,refunded_usdt,net_usdt,status,settle_tx_url,refund_tx_urls";
 
+export type LedgerOptions = {
+  /** The escrow toll in basis points, used for released escrow order fees. */
+  tollBps?: number;
+};
+
 export class Ledger {
   private readonly db: Database;
+  private readonly tollBps: number;
 
-  constructor(path: string) {
+  constructor(path: string, options: LedgerOptions = {}) {
     this.db = new Database(path, { create: true });
     this.db.exec(SCHEMA);
+    this.migrate();
+    this.tollBps = options.tollBps ?? 0;
   }
 
   recordPayment(payment: NewPayment): void {
@@ -265,6 +324,26 @@ export class Ledger {
     return row ? this.toPayment(row) : null;
   }
 
+  recordSpend(spend: SpendRecord): void {
+    this.db
+      .query("INSERT INTO spends (tx_hash, payer, cost_wei, at) VALUES (?, ?, ?, ?)")
+      .run(spend.txHash, spend.payer, spend.costWei.toString(), spend.at);
+  }
+
+  recentSpends(sinceMs: number): SpendRecord[] {
+    const rows = this.db
+      .query<SpendRow, [number]>(
+        "SELECT * FROM spends WHERE at > ? ORDER BY at ASC, rowid ASC",
+      )
+      .all(sinceMs);
+    return rows.map((row) => ({
+      txHash: row.tx_hash,
+      payer: row.payer,
+      costWei: BigInt(row.cost_wei),
+      at: row.at,
+    }));
+  }
+
   listPayments(filter: PaymentFilter = {}): PaymentRecord[] {
     const conditions: string[] = [];
     const params: SQLQueryBindings[] = [];
@@ -285,10 +364,12 @@ export class Ledger {
     return rows.map((row) => this.toPayment(row));
   }
 
-  recordRefund(refund: RefundRecord): void {
+  recordRefund(refund: NewRefund): void {
     this.db
       .query(
-        "INSERT INTO refunds (payment_id, amount, tx_hash, block_number, nonce) VALUES (?, ?, ?, ?, ?)",
+        `INSERT INTO refunds
+          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before)
+         VALUES (?, ?, ?, ?, ?, 'confirmed', 0)`,
       )
       .run(
         refund.paymentId,
@@ -299,16 +380,51 @@ export class Ledger {
       );
   }
 
+  recordPendingRefund(refund: NewPendingRefund, validBefore: number): void {
+    this.db
+      .query(
+        `INSERT INTO refunds
+          (payment_id, amount, tx_hash, block_number, nonce, status, valid_before)
+         VALUES (?, ?, ?, '0', ?, 'pending', ?)`,
+      )
+      .run(
+        refund.paymentId,
+        atomicToWire(refund.amount),
+        refund.txHash,
+        refund.nonce,
+        validBefore,
+      );
+  }
+
+  confirmRefund(paymentId: string, nonce: string, blockNumber: bigint): boolean {
+    const result = this.db
+      .query(
+        `UPDATE refunds SET status = 'confirmed', block_number = ?
+         WHERE payment_id = ? AND LOWER(nonce) = LOWER(?) AND status = 'pending'`,
+      )
+      .run(blockNumber.toString(), paymentId, nonce);
+    return result.changes > 0;
+  }
+
+  deleteRefund(paymentId: string, nonce: string): boolean {
+    const result = this.db
+      .query(
+        "DELETE FROM refunds WHERE payment_id = ? AND LOWER(nonce) = LOWER(?) AND status = 'pending'",
+      )
+      .run(paymentId, nonce);
+    return result.changes > 0;
+  }
+
   refundable(id: string): bigint {
     const payment = this.getPayment(id);
     if (payment) {
       if (payment.status !== "settled") return 0n;
-      const remaining = payment.amount - payment.refunded;
+      const remaining = payment.amount - this.reservedFor(payment.id);
       return remaining > 0n ? remaining : 0n;
     }
     const job = this.getJob(id);
     if (!job || job.status !== "released") return 0n;
-    const remaining = job.amount - this.refundedFor(job.jobId);
+    const remaining = job.amount - this.reservedFor(job.jobId);
     return remaining > 0n ? remaining : 0n;
   }
 
@@ -316,8 +432,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO jobs
-          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (job_id, offer_hash, buyer, payee, amount, deadline, fund_tx, fund_block, status, created_at, resource, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         job.jobId,
@@ -331,6 +447,7 @@ export class Ledger {
         job.status ?? "funded",
         job.createdAt,
         job.resource ?? null,
+        job.description ?? null,
       );
   }
 
@@ -418,8 +535,9 @@ export class Ledger {
           order.customer,
           order.merchant,
           formatUnits(order.amount, USDT.decimals),
+          formatUnits(order.fee, USDT.decimals),
           formatUnits(order.refunded, USDT.decimals),
-          formatUnits(order.amount - order.refunded, USDT.decimals),
+          formatSigned(order.amount - order.fee - order.refunded),
           order.status,
           txUrl(order.settleTx),
           order.closeTx ? txUrl(order.closeTx) : "",
@@ -434,26 +552,36 @@ export class Ledger {
 
   private paymentOrder(payment: PaymentRecord): Order {
     const refunds = this.listRefunds(payment.id);
+    const hasPending = refunds.some((refund) => refund.status === "pending");
     return {
       id: payment.id,
       kind: "exact",
       customer: payment.payer,
       merchant: payment.payTo,
       amount: payment.amount,
+      fee: 0n,
       refunded: payment.refunded,
       refundable: this.refundable(payment.id),
-      status: payment.status === "pending" ? "pending" : transferStatus(payment.amount, payment.refunded),
+      status:
+        payment.status === "pending"
+          ? "pending"
+          : hasPending
+            ? "refund_pending"
+            : transferStatus(payment.amount, payment.refunded),
+      closeKind: null,
       createdAt: payment.settledAt,
       settleTx: payment.txHash,
       closeTx: null,
       refundTxs: refunds.map((refund) => refund.txHash),
       resource: payment.resource,
+      description: payment.description,
     };
   }
 
   private jobOrder(job: JobRecord): Order {
     const refunds = this.listRefunds(job.jobId);
-    const refunded = refunds.reduce((total, refund) => total + refund.amount, 0n);
+    const refunded = job.status === "released" ? this.refundedFor(job.jobId) : 0n;
+    const hasPending = refunds.some((refund) => refund.status === "pending");
     let status: OrderStatus;
     switch (job.status) {
       case "pending":
@@ -463,7 +591,7 @@ export class Ledger {
         status = "held";
         break;
       case "released":
-        status = transferStatus(job.amount, refunded);
+        status = hasPending ? "refund_pending" : transferStatus(job.amount, refunded);
         break;
       case "cancelled":
         status = "cancelled";
@@ -478,9 +606,11 @@ export class Ledger {
       customer: job.buyer,
       merchant: job.payee,
       amount: job.amount,
-      refunded: job.status === "released" ? refunded : 0n,
+      fee: job.status === "released" ? this.feeFor(job.amount) : 0n,
+      refunded,
       refundable: this.refundable(job.jobId),
       status,
+      closeKind: closeKindOf(job.status),
       createdAt: job.createdAt,
       settleTx: job.fundTx,
       closeTx: job.closeTx,
@@ -488,6 +618,7 @@ export class Ledger {
       offerHash: job.offerHash,
       deadline: job.deadline,
       resource: job.resource,
+      description: job.description,
     };
   }
 
@@ -503,7 +634,13 @@ export class Ledger {
       txHash: row.tx_hash,
       blockNumber: BigInt(row.block_number),
       nonce: row.nonce,
+      status: row.status === "pending" ? "pending" : "confirmed",
+      validBefore: row.valid_before,
     }));
+  }
+
+  listPendingRefunds(paymentId: string): RefundRecord[] {
+    return this.listRefunds(paymentId).filter((refund) => refund.status === "pending");
   }
 
   toCsv(payTo: string): string {
@@ -512,11 +649,13 @@ export class Ledger {
       if (payment.status !== "settled") continue;
       const refunds = this.listRefunds(payment.id);
       const status =
-        payment.refunded === 0n
-          ? "paid"
-          : payment.refunded >= payment.amount
-            ? "refunded"
-            : "partially_refunded";
+        refunds.some((refund) => refund.status === "pending")
+          ? "refund_pending"
+          : payment.refunded === 0n
+            ? "paid"
+            : payment.refunded >= payment.amount
+              ? "refunded"
+              : "partially_refunded";
       rows.push(
         [
           new Date(payment.settledAt).toISOString(),
@@ -545,8 +684,8 @@ export class Ledger {
     this.db
       .query(
         `INSERT INTO payments
-          (id, network, payer, pay_to, amount, nonce, tx_hash, block_number, settled_at, resource, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, network, payer, pay_to, amount, nonce, tx_hash, block_number, settled_at, resource, description, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         payment.id,
@@ -559,6 +698,7 @@ export class Ledger {
         payment.blockNumber.toString(),
         payment.settledAt,
         payment.resource ?? null,
+        payment.description ?? null,
         status,
       );
   }
@@ -575,13 +715,59 @@ export class Ledger {
       blockNumber: BigInt(row.block_number),
       settledAt: row.settled_at,
       resource: row.resource,
+      description: row.description,
       status: row.status === "pending" ? "pending" : "settled",
       refunded: this.refundedFor(row.id),
     };
   }
 
   private refundedFor(paymentId: string): bigint {
+    return this.listRefunds(paymentId)
+      .filter((refund) => refund.status === "confirmed")
+      .reduce((total, refund) => total + refund.amount, 0n);
+  }
+
+  private reservedFor(paymentId: string): bigint {
     return this.listRefunds(paymentId).reduce((total, refund) => total + refund.amount, 0n);
+  }
+
+  private feeFor(amount: bigint): bigint {
+    return (amount * BigInt(this.tollBps)) / 10_000n;
+  }
+
+  private migrate(): void {
+    const columns = this.db
+      .query<{ name: string }, []>("PRAGMA table_info(refunds)")
+      .all();
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("status")) {
+      this.db.exec("ALTER TABLE refunds ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'");
+    }
+    if (!names.has("valid_before")) {
+      this.db.exec("ALTER TABLE refunds ADD COLUMN valid_before INTEGER NOT NULL DEFAULT 0");
+    }
+    for (const table of ["payments", "jobs"] as const) {
+      const existing = this.db
+        .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+        .all();
+      if (!existing.some((column) => column.name === "description")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN description TEXT`);
+      }
+    }
+  }
+}
+
+function closeKindOf(status: JobStatus): CloseKind | null {
+  switch (status) {
+    case "released":
+      return "release";
+    case "cancelled":
+      return "cancel";
+    case "refunded":
+      return "deadline_refund";
+    case "pending":
+    case "funded":
+      return null;
   }
 }
 
@@ -609,7 +795,14 @@ function toJob(row: JobRow): JobRecord {
     createdAt: row.created_at,
     closedAt: row.closed_at,
     resource: row.resource,
+    description: row.description,
   };
+}
+
+function formatSigned(value: bigint): string {
+  return value < 0n
+    ? `-${formatUnits(-value, USDT.decimals)}`
+    : formatUnits(value, USDT.decimals);
 }
 
 function csvField(value: string): string {

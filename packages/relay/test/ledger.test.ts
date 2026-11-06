@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { NETWORK, txUrl } from "../src/chain.ts";
 import { Ledger } from "../src/ledger.ts";
 import { fakeHash, fakeNonce } from "./support.ts";
@@ -132,5 +136,48 @@ describe("ledger", () => {
     ledger.promotePending(id, { blockNumber: 77n, settledAt: 5000 });
     expect(ledger.getPayment(id)?.status).toBe("settled");
     expect(ledger.getPayment(id)?.blockNumber).toBe(77n);
+  });
+
+  test("adds the description column to a database from before it", () => {
+    const path = join(tmpdir(), `countersign-ledger-${crypto.randomUUID()}.sqlite`);
+    const old = new Database(path, { create: true });
+    old.exec(`
+      CREATE TABLE payments (
+        id TEXT PRIMARY KEY, network TEXT NOT NULL, payer TEXT NOT NULL, pay_to TEXT NOT NULL,
+        amount TEXT NOT NULL, nonce TEXT NOT NULL, tx_hash TEXT NOT NULL,
+        block_number TEXT NOT NULL, settled_at INTEGER NOT NULL, resource TEXT, status TEXT NOT NULL
+      );
+      CREATE TABLE jobs (
+        job_id TEXT PRIMARY KEY, offer_hash TEXT NOT NULL, buyer TEXT NOT NULL, payee TEXT NOT NULL,
+        amount TEXT NOT NULL, deadline INTEGER NOT NULL, fund_tx TEXT NOT NULL,
+        fund_block TEXT NOT NULL, status TEXT NOT NULL, close_tx TEXT, slip_hash TEXT,
+        created_at INTEGER NOT NULL, closed_at INTEGER, resource TEXT
+      );
+    `);
+    old.close();
+
+    const ledger = new Ledger(path);
+    const id = fakeHash();
+    ledger.recordPayment({
+      ...payment(id, 1_000_000n, 1000),
+      description: "Nightly build minutes",
+    });
+    expect(ledger.getPayment(id)?.description).toBe("Nightly build minutes");
+    const jobId = fakeHash();
+    ledger.recordJob({
+      jobId,
+      offerHash: fakeHash(),
+      buyer: PAYER,
+      payee: MERCHANT,
+      amount: 1_000_000n,
+      deadline: 2000,
+      fundTx: fakeHash(),
+      fundBlock: 1n,
+      createdAt: 1000,
+      description: "Custom settlement review",
+    });
+    expect(ledger.getJob(jobId)?.description).toBe("Custom settlement review");
+    ledger.close();
+    rmSync(path, { force: true });
   });
 });

@@ -27,6 +27,8 @@ export type HederaRefusal =
   | "malformed"
   | "unknown_fee_payer"
   | "signature_invalid"
+  | "not_yet_valid"
+  | "validity_too_long"
   | "replay"
   | "facilitator_refused"
   | "facilitator_unavailable";
@@ -41,6 +43,8 @@ export const HEDERA_REFUSALS: Record<HederaRefusal, string> = {
   extra_transfers: "Refused. The payment moves more than the price.",
   expired: "Refused. The signed payment expired before it was settled.",
   unsigned: "Refused. The payment carries no signature.",
+  not_yet_valid: "Refused. The signed payment is not valid yet.",
+  validity_too_long: "Refused. The signed payment stays valid longer than this offer allows.",
   requirements_mismatch: "Refused. The price moved after you signed.",
   not_hedera: "Refused. This payment is not for the hedera rail.",
   malformed: "Refused. The payment could not be read.",
@@ -50,6 +54,12 @@ export const HEDERA_REFUSALS: Record<HederaRefusal, string> = {
   facilitator_refused: "Refused by the facilitator.",
   facilitator_unavailable: "Not settled. The facilitator did not answer; nothing was charged.",
 };
+
+export interface SettledStore {
+  has(id: string): boolean | Promise<boolean>;
+  /** Records the id atomically; false when it was already there. */
+  claim(id: string): boolean | Promise<boolean>;
+}
 
 export interface HederaRailOptions {
   /** Preference order. Defaults to the hosted facilitators in constants.ts. */
@@ -65,6 +75,22 @@ export interface HederaRailOptions {
   confirmTimeoutMs?: number;
   /** How often to re-ask the facilitators for their fee payers. 0 turns it off. */
   refreshEveryMs?: number;
+  /** Transaction ids already seen. Defaults to an in-memory store. */
+  seen?: SettledStore;
+  /** Seconds of clock slack when comparing a mirror consensus time with the attempt's start. */
+  clockSkewSeconds?: number;
+}
+
+function memoryStore(): SettledStore {
+  const ids = new Set<string>();
+  return {
+    has: (id) => ids.has(id),
+    claim: (id) => {
+      if (ids.has(id)) return false;
+      ids.add(id);
+      return true;
+    },
+  };
 }
 
 export interface HederaRail extends Rail {
@@ -94,14 +120,14 @@ function toX402Payload(p: PaymentPayload): X402Payload {
 
 export async function createHederaRail(opts: HederaRailOptions = {}): Promise<HederaRail> {
   const facilitators = opts.facilitators ?? FACILITATORS.map((f) => httpFacilitator(f.name, f.url));
-  const maxTimeoutSeconds = Math.min(opts.maxTimeoutSeconds ?? 120, 180);
+  const maxTimeoutSeconds = Math.min(Math.max(opts.maxTimeoutSeconds ?? 120, 30), 180);
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   const verifySig = opts.verifyPayerSignature ?? createHederaVerifyPayerSignature();
+  const clockSkewSeconds = opts.clockSkewSeconds ?? 5;
+  // Transaction ids already claimed. A claim is never released: a failed payment is re-signed, not retried.
+  const seen = opts.seen ?? memoryStore();
   const byFeePayer = new Map<string, Facilitator>();
   let active: { name: string; feePayer: string } | null = null;
-  // Transaction ids already settled through this rail. The network rejects a duplicate anyway;
-  // this refuses it before a seller does any work for it.
-  const settled = new Set<string>();
 
   async function refresh(): Promise<void> {
     let first: typeof active = null;
@@ -154,33 +180,43 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     }
     const result = checkTransfer(
       inspected,
-      { asset: requirements.asset, amount, payTo: requirements.payTo, feePayer, offerHash: hash },
+      {
+        asset: requirements.asset,
+        amount,
+        payTo: requirements.payTo,
+        feePayer,
+        offerHash: hash,
+        maxTimeoutSeconds: requirements.maxTimeoutSeconds,
+      },
       now(),
     );
     if (!result.ok) return { ok: false, reason: result.reason };
-    if (settled.has(inspected.transactionId)) return { ok: false, reason: "replay", payer: result.payer };
     return { ok: true, payer: result.payer, transaction, transactionId: inspected.transactionId, facilitator };
   }
 
-  /** After a facilitator failed to answer, the chain decides whether the payment landed. */
+  /** After a facilitator failed to answer, the chain decides whether this attempt landed the payment. */
   async function confirmOnChain(
     transactionId: string,
     requirements: PaymentRequirements,
     payer: string,
     timeoutMs: number,
-  ): Promise<boolean> {
+    startedAt: number,
+  ): Promise<"settled" | "replay" | "none"> {
     const deadline = Date.now() + timeoutMs;
+    const oldest = startedAt - clockSkewSeconds;
     for (;;) {
       const tx = await getTransaction(transactionId, opts.mirror).catch(() => null);
       if (tx) {
         const moved = tx.tokens[requirements.asset] ?? [];
-        return (
+        const exact =
           tx.result === "SUCCESS" &&
           netFor(moved, requirements.payTo) === BigInt(requirements.amount) &&
-          netFor(moved, payer) === -BigInt(requirements.amount)
-        );
+          netFor(moved, payer) === -BigInt(requirements.amount);
+        if (!exact) return "none";
+        const consensusSeconds = Number(tx.consensusTimestamp.split(".")[0]);
+        return consensusSeconds >= oldest ? "settled" : "replay";
       }
-      if (Date.now() > deadline) return false;
+      if (Date.now() > deadline) return "none";
       await new Promise((r) => setTimeout(r, 2_000));
     }
   }
@@ -213,6 +249,7 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     async verify(payment, requirements): Promise<VerifyResult> {
       const c = check(payment, requirements);
       if (!c.ok) return { isValid: false, invalidReason: c.reason, payer: c.payer };
+      if (await seen.has(c.transactionId)) return { isValid: false, invalidReason: "replay", payer: c.payer };
       const sig = await verifySig({ payer: c.payer, transaction: c.transaction, network: HEDERA_TESTNET }).catch(() => ({
         ok: false,
       }));
@@ -233,7 +270,17 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
     async settle(payment, requirements): Promise<SettleResult> {
       const c = check(payment, requirements);
       if (!c.ok) return { success: false, errorReason: c.reason, payer: c.payer, transaction: "", network: HEDERA_TESTNET };
+      const sig = await verifySig({ payer: c.payer, transaction: c.transaction, network: HEDERA_TESTNET }).catch(() => ({
+        ok: false,
+      }));
+      if (!sig.ok) {
+        return { success: false, errorReason: "signature_invalid", payer: c.payer, transaction: "", network: HEDERA_TESTNET };
+      }
+      if (!(await seen.claim(c.transactionId))) {
+        return { success: false, errorReason: "replay", payer: c.payer, transaction: "", network: HEDERA_TESTNET };
+      }
       // A signed payload names one facilitator's fee payer, so it can only ever settle through that one.
+      const startedAt = now();
       let remote: Awaited<ReturnType<Facilitator["settle"]>> | null = null;
       try {
         remote = await c.facilitator.settle(toX402Payload(payment), toX402Requirements(payment.accepted));
@@ -246,15 +293,17 @@ export async function createHederaRail(opts: HederaRailOptions = {}): Promise<He
           // The id is fixed by what the buyer signed; any other answer is not this payment.
           return { success: false, errorReason: "facilitator_refused", payer: c.payer, transaction: "", network: HEDERA_TESTNET };
         }
-        settled.add(c.transactionId);
         return { success: true, payer: c.payer, transaction: c.transactionId, network: HEDERA_TESTNET };
       }
       // No answer, or a failure: before telling the buyer nothing was charged, ask the chain.
       const confirmMs = opts.confirmTimeoutMs ?? 20_000;
       const waitMs = remote === null ? confirmMs : Math.min(confirmMs, 6_000);
-      if (await confirmOnChain(c.transactionId, requirements, c.payer, waitMs)) {
-        settled.add(c.transactionId);
+      const outcome = await confirmOnChain(c.transactionId, requirements, c.payer, waitMs, startedAt);
+      if (outcome === "settled") {
         return { success: true, payer: c.payer, transaction: c.transactionId, network: HEDERA_TESTNET };
+      }
+      if (outcome === "replay") {
+        return { success: false, errorReason: "replay", payer: c.payer, transaction: "", network: HEDERA_TESTNET };
       }
       return {
         success: false,

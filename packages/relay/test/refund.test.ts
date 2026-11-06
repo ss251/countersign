@@ -4,6 +4,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { NETWORK } from "../src/chain.ts";
 import { signAuthorization } from "../src/eip3009.ts";
 import { refundPayment } from "../src/refund.ts";
+import { reconcilePendingRefunds } from "../src/reconcile.ts";
 import type { RefundResult } from "../src/refund.ts";
 import { createTestRelay, fakeHash, fakeNonce, makeAuthorization, NOW } from "./support.ts";
 
@@ -50,6 +51,96 @@ async function refund(
     signature: await signAuthorization(input.signer, authorization),
   };
 }
+
+describe("pending refunds", () => {
+  test("reconcile drops a pending refund once its window has expired", async () => {
+    const relay = createTestRelay();
+    const paymentId = fakeHash();
+    relay.ledger.recordPayment({
+      id: paymentId,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: paymentId,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    relay.ledger.recordPendingRefund(
+      { paymentId, amount: 1_000_000n, txHash: fakeHash(), nonce: fakeNonce() },
+      NOW - 61,
+    );
+    expect(relay.ledger.refundable(paymentId)).toBe(0n);
+    await reconcilePendingRefunds(paymentId, relay.ctx);
+    expect(relay.ledger.listRefunds(paymentId)).toHaveLength(0);
+    expect(relay.ledger.refundable(paymentId)).toBe(1_000_000n);
+  });
+
+  test("reconcile confirms a pending refund whose receipt succeeded", async () => {
+    const relay = createTestRelay();
+    const paymentId = fakeHash();
+    relay.ledger.recordPayment({
+      id: paymentId,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: paymentId,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    const txHash = fakeHash();
+    relay.ledger.recordPendingRefund(
+      { paymentId, amount: 400_000n, txHash, nonce: fakeNonce() },
+      NOW + 600,
+    );
+    relay.chain.receipts.set(txHash, {
+      status: "success",
+      blockNumber: 12n,
+      gasUsed: 1n,
+      effectiveGasPrice: 1n,
+    });
+    await reconcilePendingRefunds(paymentId, relay.ctx);
+    const refunds = relay.ledger.listRefunds(paymentId);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]!.status).toBe("confirmed");
+    expect(refunds[0]!.blockNumber).toBe(12n);
+    expect(relay.ledger.getOrder(paymentId)!.refunded).toBe(400_000n);
+    expect(relay.ledger.refundable(paymentId)).toBe(600_000n);
+  });
+
+  test("reconcile deletes a pending refund whose receipt reverted", async () => {
+    const relay = createTestRelay();
+    const paymentId = fakeHash();
+    relay.ledger.recordPayment({
+      id: paymentId,
+      network: NETWORK,
+      payer: relay.buyer.address,
+      payTo: relay.merchant.address,
+      amount: 1_000_000n,
+      nonce: fakeNonce(),
+      txHash: paymentId,
+      blockNumber: 10n,
+      settledAt: NOW * 1000,
+    });
+    const txHash = fakeHash();
+    relay.ledger.recordPendingRefund(
+      { paymentId, amount: 1_000_000n, txHash, nonce: fakeNonce() },
+      NOW + 600,
+    );
+    relay.chain.receipts.set(txHash, {
+      status: "reverted",
+      blockNumber: 12n,
+      gasUsed: 1n,
+      effectiveGasPrice: 1n,
+    });
+    await reconcilePendingRefunds(paymentId, relay.ctx);
+    expect(relay.ledger.listRefunds(paymentId)).toHaveLength(0);
+    expect(relay.ledger.refundable(paymentId)).toBe(1_000_000n);
+  });
+});
 
 describe("refundPayment", () => {
   test("refuses an unknown payment id", async () => {

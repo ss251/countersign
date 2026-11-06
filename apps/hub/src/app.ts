@@ -14,6 +14,8 @@ import {
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
 import { paidCall } from "./call.ts";
+import { agentCard, listResources, skillsIndex } from "./discovery.ts";
+import { openapiDocument } from "./openapi.ts";
 import { RunnerLink } from "./runners.ts";
 import { Store } from "./store.ts";
 import type { Listing } from "./types.ts";
@@ -95,6 +97,21 @@ export function createHub(deps: HubDeps) {
   });
 
   app.get("/rails", (c) => json({ rails: deps.rails.map((rail) => rail.declaration) }));
+
+  app.get("/discovery/resources", (c) =>
+    json(
+      listResources(deps, {
+        limit: c.req.query("limit"),
+        offset: c.req.query("offset"),
+        query: c.req.query("query"),
+      }),
+    ),
+  );
+
+  app.get("/.well-known/agent-card.json", (c) => json(agentCard(deps)));
+  app.get("/.well-known/agent.json", (c) => json(agentCard(deps)));
+  app.get("/.well-known/skills/index.json", (c) => json(skillsIndex(deps)));
+  app.get("/openapi.json", (c) => json(openapiDocument(deps)));
 
   app.get("/slips/:slipHash", (c) => {
     const slip = deps.store.getSlip(c.req.param("slipHash"));

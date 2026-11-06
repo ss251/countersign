@@ -131,6 +131,7 @@ x402 v2 over HTTP, the "authorization" flow (verify → resource → settle → 
 
 ## Constraints
 
+- **No browser of any kind on this machine.** No headless Chrome, Playwright, Puppeteer or screenshot tools. Verify with tests and `curl` only. UI checks go back to the lane, which raises NEEDS-BROWSER.
 - No floats for money.
 - Never log headers, signatures or keys.
 - Keep both example files short and readable. They are what judges read.
