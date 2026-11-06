@@ -14,6 +14,8 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 
 - **15:52** — The explorer decodes our relayed calls by name: `transferWithAuthorization` on Tether USD, and `fund`/`cancel` on our verified escrow with their argument names. A customer who opens a receipt link can see what happened. Small nit: calls through the USDT proxy show `arg0 … arg8` instead of `from`, `to`, `value`. The implementation is verified but the proxy is not, and verifying the proxy would make every USDT receipt readable.
 
+- **16:30** — Having two independent public endpoints for 1874, `rpc.testnet.whitechain.io` and Ankr's `rpc.ankr.com/whitechain_testnet`, made a fallback transport easy. Our relay reads through Ankr first, falls back to the official host, and checks every URL's chain id before it starts. The full purchase through our hub (fund, deliver, release, then a one-click refund) went through on that setup without a single retry.
+
 ## Where we got stuck
 
 - **14:50** — Two different tokens called USDT. The prize requires `0xcedfB561…f55a7`, but the token list in the docs gives `0xaa7962d0…8f46` as USDT. That contract reports `USDT.e` (bridged from Tron). The docs never mention `0xcedf…`. We only confirmed it was the right token by reading its proxy and its minter (`USDTBridge`) on the explorer.
@@ -27,4 +29,5 @@ Written as we hit things during the build, newest at the bottom. Times are IST, 
 
 - A USDT page. It should give the prize token's address, its EIP-712 domain (`Tether USD`, version `1`), which EIP-3009 functions it supports, and how to get some for testing.
 - Guidance for a signer that runs unattended. The skill rightly says never to paste keys and to use an interactive keystore. A gas relayer, though, has to sign with no human present. One paragraph on server-side key handling (env file at mode 0600, a separate hot wallet, a spending ceiling) would cover the relayer case the Scale track asks for.
+- One page listing every official endpoint for Sepolia with its chain id: RPC, WebSocket, explorer and API. The old 2625 host should appear there marked as retired.
 - A licence file in `whitechain-labs/skills`. The README says MIT, but the repository has no `LICENSE`, so GitHub shows it as unlicensed.

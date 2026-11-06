@@ -10,5 +10,5 @@ The protocol, one page per object. Code in `packages/core` is the reference; the
 | [escrow.md](escrow.md) | `CountersignedEscrow`: fund, release, refund, and the events |
 | [rail.md](rail.md) | the Rail interface: challenge, verify, settle |
 | [slip.md](slip.md) | the receipt minted on release, and how to verify it with the hub gone |
-| [tree.md](tree.md) | receipt trees: a root that commits its children |
+| [tree.md](tree.md) | receipt trees: not built ([#18](https://github.com/ss251/countersign/issues/18)) |
 | [discovery.md](discovery.md) | the A2A card, the skills index and OpenAPI the hub publishes |

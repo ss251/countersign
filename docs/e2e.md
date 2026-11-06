@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Each flow below runs end to end. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees. What the suite does not cover yet is listed at the end.
+Each flow below runs end to end. Every payment path [status.md](status.md) lists as shipped has a flow here, except the USDT paywall drop-in, which `packages/relay/test/dropin-e2e.test.ts` covers. Where money moves, the test moves real money on a public testnet and then checks the chain itself. The hub's word is never the evidence: a flow passes only when an explorer, an RPC or a mirror node agrees. What the suite does not cover yet is listed at the end.
 
 ```
 bun run e2e                      # every flow, in order
@@ -36,7 +36,7 @@ The last full run is in [`e2e/runs/LATEST.md`](../e2e/runs/LATEST.md).
 | 14b | `production-hub` | every hub endpoint a console screen calls answers 200 on production, open to the console's origin | none | orch-cs |
 | 9 | `web` | every route at 390 and 1440 px, light and dark, with no console errors and no clipped nav | none | cs-ui |
 
-Flow 9 needs a browser, and the captain cut a headless browser for it (STEER-1812): the firstmate's screenshot rounds at 390 and 1440 px, light and dark, cover those checks. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`.
+Flow 9 needs a browser, and a browser driver for it is cut ([decisions.md](decisions.md), D14): the firstmate's screenshot rounds check the screens by hand in a real browser at 390 and 1440 px, light and dark. The flow reports `NOT RUN (cut: screenshot rounds cover it)`. Its 28 cases stay written in `e2e/flows/web.flow.ts`: the seven routes, each at 390 and 1440 px, light and dark.
 
 ## What each flow asserts
 
@@ -223,7 +223,6 @@ These parts of the product have no end-to-end flow:
 - ERC-8004 identity and feedback;
 - the Stripe MPP rail;
 - receipt trees and lineage;
-- the subgraph;
 - ENS seller names;
 - the mainnet guard;
 - the Escrow v2 review window, dispute and bond.
