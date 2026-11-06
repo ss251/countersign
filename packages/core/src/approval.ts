@@ -11,6 +11,18 @@ import { canonicalJson } from "./canonical.ts";
 
 export type ApprovalDecision = "countersign" | "decline";
 
+/** The agent's signed request for a human decision. `nonce` is 32 random bytes as 0x hex. */
+export interface ApprovalRequest {
+  agent: string;
+  offerHash: string;
+  title: string;
+  amount: string;
+  rail: string;
+  terms: unknown;
+  requestedAt: number;
+  nonce: Hex;
+}
+
 export interface ApprovalDecisionInput {
   approvalId: string;
   agent: string;
@@ -20,11 +32,12 @@ export interface ApprovalDecisionInput {
   terms: unknown;
   decision: ApprovalDecision;
   decidedAt: number;
+  /** Version 2 binds the decision to one request. Omitted for a version 1 body. */
+  requestHash?: string;
 }
 
-export interface ApprovalDecisionBody {
+interface ApprovalDecisionBase {
   kind: "countersign-approval-decision";
-  v: 1;
   approvalId: string;
   /** Lowercase hex. */
   agent: Address;
@@ -39,6 +52,24 @@ export interface ApprovalDecisionBody {
   decidedAt: number;
 }
 
+export interface ApprovalDecisionBodyV1 extends ApprovalDecisionBase {
+  v: 1;
+}
+
+export interface ApprovalDecisionBodyV2 extends ApprovalDecisionBase {
+  v: 2;
+  /** keccak256 of the canonical JSON request, lowercase hex. */
+  requestHash: Hex;
+}
+
+export type ApprovalDecisionBody = ApprovalDecisionBodyV1 | ApprovalDecisionBodyV2;
+
+/** keccak256 over the canonical JSON of the request, without any signature. */
+export function approvalRequestHash(request: ApprovalRequest & { sig?: unknown }): Hex {
+  const { sig: _sig, ...unsigned } = request;
+  return keccak256(toBytes(canonicalJson(unsigned))).toLowerCase() as Hex;
+}
+
 /** keccak256 over the canonical JSON of the terms. Independent of key order. */
 export function termsHashOf(terms: unknown): Hex {
   return keccak256(toBytes(canonicalJson(terms)));
@@ -46,9 +77,8 @@ export function termsHashOf(terms: unknown): Hex {
 
 /** Build the exact body the approver signs and the agent later rebuilds. */
 export function approvalDecisionBody(input: ApprovalDecisionInput): ApprovalDecisionBody {
-  return {
-    kind: "countersign-approval-decision",
-    v: 1,
+  const base = {
+    kind: "countersign-approval-decision" as const,
     approvalId: input.approvalId,
     agent: input.agent.toLowerCase() as Address,
     offerHash: input.offerHash.toLowerCase() as Hex,
@@ -58,6 +88,10 @@ export function approvalDecisionBody(input: ApprovalDecisionInput): ApprovalDeci
     decision: input.decision,
     decidedAt: input.decidedAt,
   };
+  if (input.requestHash === undefined) {
+    return { ...base, v: 1 };
+  }
+  return { ...base, v: 2, requestHash: input.requestHash.toLowerCase() as Hex };
 }
 
 /** The EIP-191 personal_sign message: canonical JSON of the body. */

@@ -1,6 +1,13 @@
-import type { Address } from "viem";
-import { approvalDecisionBody, approvalDecisionSigner, canonicalJson } from "@countersign/core";
+import { bytesToHex, type Address, type Hex } from "viem";
+import {
+  approvalDecisionBody,
+  approvalDecisionSigner,
+  approvalRequestHash,
+  canonicalJson,
+  type ApprovalRequest,
+} from "@countersign/core";
 import type { SigningAccount } from "./mirror.ts";
+import type { State } from "./state.ts";
 
 export type ApprovalOutcome = "countersign" | "decline" | "expired" | "timeout" | "unverified";
 
@@ -14,6 +21,10 @@ function hubUrl(hub: HubRef): string {
   return typeof hub === "string" ? hub.replace(/\/+$/, "") : hub.url;
 }
 
+function freshNonce(): Hex {
+  return bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+}
+
 /**
  * Ask the hub for a human countersignature on a held call, then poll until the phone
  * decides or the wait times out. A `countersign` answer only counts when it carries a
@@ -24,6 +35,7 @@ export async function requestApproval(args: {
   hub: HubRef;
   account: SigningAccount;
   approver: Address;
+  state: State;
   offerHash: string;
   title: string;
   amount: string;
@@ -40,7 +52,7 @@ export async function requestApproval(args: {
   const timeoutMs = args.timeoutMs ?? 120_000;
   const pollMs = args.pollMs ?? 2_000;
   const fetchTimeoutMs = args.fetchTimeoutMs ?? 10_000;
-  const request = {
+  const request: ApprovalRequest = {
     agent: args.account.address,
     offerHash: args.offerHash,
     title: args.title,
@@ -48,7 +60,9 @@ export async function requestApproval(args: {
     rail: args.rail,
     terms: args.terms,
     requestedAt: args.now,
+    nonce: freshNonce(),
   };
+  const requestHash = approvalRequestHash(request);
   const sig = await args.account.signMessage({ message: canonicalJson(request) });
 
   const created = await load(`${base}/approvals`, {
@@ -73,6 +87,7 @@ export async function requestApproval(args: {
       if (typeof status.decidedAt !== "number" || typeof status.decisionSig !== "string") {
         return "unverified";
       }
+      if (args.state.hasConsumedApproval(body.id)) return "unverified";
       const decidedAt = status.decidedAt;
       if (!Number.isSafeInteger(decidedAt)) return "unverified";
       const nowSec = Math.floor(Date.now() / 1000);
@@ -86,14 +101,28 @@ export async function requestApproval(args: {
         amount: args.amount,
         rail: args.rail,
         terms: args.terms,
+        requestHash,
         decision: "countersign",
         decidedAt,
       });
-      const signer = await approvalDecisionSigner(expected, status.decisionSig);
+      let signer = await approvalDecisionSigner(expected, status.decisionSig);
+      if (signer === null || signer.toLowerCase() !== args.approver.toLowerCase()) {
+        const earlier = approvalDecisionBody({
+          approvalId: body.id,
+          agent: args.account.address,
+          offerHash: args.offerHash,
+          amount: args.amount,
+          rail: args.rail,
+          terms: args.terms,
+          decision: "countersign",
+          decidedAt,
+        });
+        signer = await approvalDecisionSigner(earlier, status.decisionSig);
+      }
       if (signer === null || signer.toLowerCase() !== args.approver.toLowerCase()) {
         return "unverified";
       }
-      return "countersign";
+      return args.state.consumeApproval(body.id) ? "countersign" : "unverified";
     }
     const left = deadline - Date.now();
     if (left <= 0) return "timeout";
