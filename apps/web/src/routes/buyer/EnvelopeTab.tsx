@@ -4,24 +4,17 @@ import type { Resource } from "../../lib/api.ts";
 import { formatAmount, formatClock, formatMoney, remainingAtomic, usd } from "../../lib/format.ts";
 import type { Envelope, EnvelopeView } from "../../lib/types.ts";
 import { Meter } from "../../ui/Meter.tsx";
-import { approvalToken, rememberApprovalToken } from "../../lib/hub.ts";
+import { approvalToken } from "../../lib/hub.ts";
 import { Absent } from "../../ui/Absent.tsx";
 import { Amount, Button, Hash } from "../../ui/primitives.tsx";
-import { TokenForm } from "./Approvals.tsx";
+import { TokenGate } from "./Approvals.tsx";
 
 /** The human’s limits: budget, per-seller limit, when to ask, allowlist, revoke. */
-export function EnvelopeTab({ envelope }: { envelope: Resource<EnvelopeView | null> }) {
+export function EnvelopeTab({ envelope, onOpen }: { envelope: Resource<EnvelopeView | null>; onOpen: () => void }) {
   if (envelope.source === "absent") {
     return (
       <Absent reason={envelope.reason ?? "This hub has no envelope to show."} onRetry={envelope.reload}>
-        {envelope.needsToken && !approvalToken() ? (
-          <TokenForm
-            onSave={(t) => {
-              rememberApprovalToken(t);
-              envelope.reload();
-            }}
-          />
-        ) : null}
+        {envelope.needsToken ? <TokenGate rejected={approvalToken() !== null} onOpen={onOpen} /> : null}
       </Absent>
     );
   }
