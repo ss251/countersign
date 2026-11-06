@@ -200,6 +200,8 @@ export function eip3009Rail(cfg: Eip3009RailConfig): Rail {
     kind: "direct",
     gasPaidBy: "hub",
     finality: "Final in the Arc block that includes the transfer, before the work is dispatched.",
+    finalitySeconds: 2,
+    cost: { tollBps: 0, fixed: "0" },
     explorerTx: cfg.explorerTx,
   };
 

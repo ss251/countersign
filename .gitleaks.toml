@@ -15,8 +15,3 @@ regexes = [
   '''7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6''',
   '''47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a''',
 ]
-# Prose in a worker report that the generic-api-key rule misreads as a key:
-# ".packets/reports/cs-15-eip3009.md" line 11 describes extra: {name: tokenName, version: tokenVersion}.
-paths = [
-  '''^\.packets/reports/cs-15-eip3009\.md$''',
-]

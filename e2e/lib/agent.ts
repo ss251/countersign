@@ -23,11 +23,12 @@ export interface AgentRun {
   stderr: string;
 }
 
-export async function agentRun(ctx: FlowCtx, label: string, hub: string, cap: string): Promise<AgentRun> {
+/** Run the agent; with `offer`, it buys only that listed Hedera offer. */
+export async function agentRun(ctx: FlowCtx, label: string, hub: string, cap: string, offer?: string): Promise<AgentRun> {
   const r = await runCmd(
     {
       name: `agent ${label}`,
-      cmd: ["bun", "scripts/hedera/agent-run.ts", hub, "--cap", cap, "--per-merchant", cap, "--times", "1", "--json"],
+      cmd: ["bun", "scripts/hedera/agent-run.ts", hub, "--cap", cap, "--per-merchant", cap, "--times", "1", "--json", ...(offer ? ["--offer", offer] : [])],
       log: join(ctx.dir, `agent-${label}.log`),
       redact: (s) => ctx.env.secrets.redact(s),
     },

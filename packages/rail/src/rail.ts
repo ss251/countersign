@@ -45,6 +45,10 @@ export interface RailDeclaration {
   finality: string;
   /** Explorer URL template with {tx}, e.g. "https://testnet.arcscan.app/tx/{tx}". */
   explorerTx: string;
+  /** How long the seller waits to be credited, in seconds. Absent when the rail does not say. */
+  finalitySeconds?: number;
+  /** What the rail costs on top of the price: a toll in basis points and a fixed atomic amount. */
+  cost?: { tollBps: number; fixed: string };
 }
 
 export interface ChallengeContext {
