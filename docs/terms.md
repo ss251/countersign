@@ -45,7 +45,7 @@ As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md
   |---|---|---|
   | Escrow: `escrow` (Arc), `whitechain` | In `CountersignedEscrow` | It returns to the buyer in full by `refund` after the deadline. The hub sweeps those refunds every 30 seconds, and anyone else may call `refund` too. |
   | Held Hedera: `hedera-scheduled` | In the buyer's own account, inside a schedule | The hub does not submit the seller's countersignature, and the schedule expires with nothing moved, unless the seller's key signs it alone before it expires. That releases the money without delivering, and nothing returns it. |
-  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
+  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` (none of them on the production hub) | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
 
   Which rails a given hub offers is on its `/rails`. Which of them run on the production hub is in [status.md](status.md).
 
