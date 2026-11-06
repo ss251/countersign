@@ -10,7 +10,7 @@ import {
   toBase64Json,
 } from "@countersign/core";
 import { NETWORK, USDT } from "../src/chain.ts";
-import { whitechainPaywall } from "../src/paywall.ts";
+import { PAYMENT_RETRY_HEADER, whitechainPaywall } from "../src/paywall.ts";
 import type { PaywallFetch, PaywallOptions } from "../src/paywall.ts";
 import type { VerifyRequest } from "../src/exact.ts";
 import {
@@ -98,6 +98,12 @@ async function headerFor(relay: TestRelay): Promise<string> {
   });
   const body = await makeVerifyBody({ signer: relay.buyer, authorization, requirements });
   return toBase64Json(body.paymentPayload);
+}
+
+function retryTokenOf(response: Response): string {
+  const token = response.headers.get(PAYMENT_RETRY_HEADER);
+  if (!token) throw new Error("the pending answer carries no retry token");
+  return token;
 }
 
 describe("whitechainPaywall", () => {
@@ -348,8 +354,8 @@ describe("whitechainPaywall", () => {
 
   test("a pending settle keeps the claim and refuses the next presentation", async () => {
     const relay = createTestRelay();
-    let clock = NOW;
-    const { fetch, calls } = stub({
+    const clock = NOW;
+    const { fetch, calls, lookups } = stub({
       settle: () => ({
         success: false,
         errorReason: "settlement_pending",
@@ -364,7 +370,13 @@ describe("whitechainPaywall", () => {
       return c.json({ forecast: "rain" });
     });
     const header = await headerFor(relay);
-    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
 
     const first = await call();
     expect(first.status).toBe(402);
@@ -380,6 +392,8 @@ describe("whitechainPaywall", () => {
       network: NETWORK,
       amount: "50000",
     });
+    const token = retryTokenOf(first);
+    expect(token).toMatch(/^0x[0-9a-f]{32}$/);
     expect(served).toBe(1);
 
     const second = await call();
@@ -389,6 +403,109 @@ describe("whitechainPaywall", () => {
     });
     expect(served).toBe(1);
     expect(calls.filter((entry) => entry.path === "/settle")).toHaveLength(1);
+    expect(lookups).toEqual([]);
+
+    const third = await call(token);
+    expect(third.status).toBe(409);
+    expect(await third.json()).toEqual({
+      error: "Refused. This payment is still settling.",
+    });
+    expect(served).toBe(1);
+    expect(lookups).toEqual(["/orders/0xpending"]);
+  });
+
+  test("a pending retry without the matching token is refused without an order lookup", async () => {
+    const relay = createTestRelay();
+    const { fetch, calls, lookups } = stub({
+      settle: () => ({
+        success: false,
+        errorReason: "settlement_pending",
+        transaction: "0xlanded",
+        network: NETWORK,
+      }),
+      order: () => ({ status: "paid" }),
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => NOW, settle: "before" }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
+
+    const pending = await call();
+    expect(pending.status).toBe(402);
+    const token = retryTokenOf(pending);
+    const sameLength = `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`;
+
+    for (const [name, retryToken] of [
+      ["missing", undefined],
+      ["same-length wrong", sameLength],
+      ["shorter", "0x"],
+      ["longer", `${token}00`],
+    ] as const) {
+      const retry = await call(retryToken);
+      expect({ name, status: retry.status }).toEqual({ name, status: 409 });
+      expect({ name, body: await retry.json() }).toEqual({
+        name,
+        body: { error: "Refused. This payment is still settling." },
+      });
+    }
+
+    expect(served).toBe(0);
+    expect(lookups).toEqual([]);
+    expect(calls.filter((entry) => entry.path === "/settle")).toHaveLength(1);
+  });
+
+  test("a chain observer cannot take the service of a landed pending payment", async () => {
+    const relay = createTestRelay();
+    const { fetch, lookups } = stub({
+      settle: () => ({
+        success: false,
+        errorReason: "settlement_pending",
+        transaction: "0xlanded",
+        network: NETWORK,
+      }),
+      order: () => ({ status: "paid" }),
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, now: () => NOW, settle: "before" }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
+
+    const pending = await call();
+    expect(pending.status).toBe(402);
+    const token = retryTokenOf(pending);
+
+    // The signed authorisation is public once broadcast; replaying it is not enough.
+    const observer = await call();
+    expect(observer.status).toBe(409);
+    expect(await observer.json()).toEqual({
+      error: "Refused. This payment is still settling.",
+    });
+    expect(served).toBe(0);
+    expect(lookups).toEqual([]);
+
+    const payer = await call(token);
+    expect(payer.status).toBe(200);
+    expect(await payer.json()).toEqual({ forecast: "rain" });
+    expect(served).toBe(1);
+    expect(lookups).toEqual(["/orders/0xlanded"]);
   });
 
   test("a pending claim is released once the authorisation has expired", async () => {
@@ -448,13 +565,20 @@ describe("whitechainPaywall", () => {
       return c.json({ forecast: "rain" });
     });
     const header = await headerFor(relay);
-    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
 
     const first = await call();
     expect(first.status).toBe(402);
     expect(served).toBe(0);
+    const token = retryTokenOf(first);
 
-    const retry = await call();
+    const retry = await call(token);
     expect(retry.status).toBe(200);
     expect(await retry.json()).toEqual({ forecast: "rain" });
     expect(served).toBe(1);
@@ -469,7 +593,7 @@ describe("whitechainPaywall", () => {
     expect(lookups).toEqual(["/orders/0xlanded"]);
     expect(calls.filter((entry) => entry.path === "/settle")).toHaveLength(1);
 
-    const third = await call();
+    const third = await call(token);
     expect(third.status).toBe(409);
     expect(await third.json()).toEqual({ error: "Refused. This payment was already used." });
     expect(served).toBe(1);
@@ -493,10 +617,17 @@ describe("whitechainPaywall", () => {
       return c.json({ forecast: "rain" });
     });
     const header = await headerFor(relay);
-    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
 
-    expect((await call()).status).toBe(402);
-    const retry = await call();
+    const first = await call();
+    expect(first.status).toBe(402);
+    const retry = await call(retryTokenOf(first));
     expect(retry.status).toBe(409);
     expect(await retry.json()).toEqual({ error: "Refused. This payment is still settling." });
     expect(served).toBe(0);
@@ -520,10 +651,17 @@ describe("whitechainPaywall", () => {
       return c.json({ forecast: "rain" });
     });
     const header = await headerFor(relay);
-    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
 
-    expect((await call()).status).toBe(402);
-    const retry = await call();
+    const first = await call();
+    expect(first.status).toBe(402);
+    const retry = await call(retryTokenOf(first));
     expect(retry.status).toBe(409);
     expect(await retry.json()).toEqual({ error: "Refused. This payment is still settling." });
     expect(served).toBe(0);
@@ -560,11 +698,17 @@ describe("whitechainPaywall", () => {
         return c.json({ forecast: "rain" });
       });
       const header = await headerFor(relay);
-      const call = () =>
-        app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+      const call = (retryToken?: string) =>
+        app.request("/forecast", {
+          headers: {
+            [PAYMENT_SIGNATURE_HEADER]: header,
+            ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+          },
+        });
 
-      expect((await call()).status).toBe(402);
-      const retry = await call();
+      const first = await call();
+      expect(first.status).toBe(402);
+      const retry = await call(retryTokenOf(first));
       expect({ case: entry.name, status: retry.status }).toEqual({
         case: entry.name,
         status: 409,
@@ -598,10 +742,18 @@ describe("whitechainPaywall", () => {
       return c.json({ forecast: "rain" });
     });
     const header = await headerFor(relay);
-    const call = () => app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
 
-    expect((await call()).status).toBe(402);
-    const [first, second] = await Promise.all([call(), call()]);
+    const pending = await call();
+    expect(pending.status).toBe(402);
+    const token = retryTokenOf(pending);
+    const [first, second] = await Promise.all([call(token), call(token)]);
     expect([first.status, second.status].sort()).toEqual([200, 409]);
     expect(served).toBe(1);
     const refused = first.status === 409 ? first : second;

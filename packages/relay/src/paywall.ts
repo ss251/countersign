@@ -1,5 +1,6 @@
+import { timingSafeEqual } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
-import { getAddress } from "viem";
+import { getAddress, toHex } from "viem";
 import type { Address } from "viem";
 import {
   PAYMENT_REQUIRED_HEADER,
@@ -18,6 +19,8 @@ import type {
   VerifyRequest,
   VerifyResponse,
 } from "./exact.ts";
+
+export const PAYMENT_RETRY_HEADER = "PAYMENT-RETRY";
 
 export type PaywallFetch = (
   input: string | URL | Request,
@@ -59,6 +62,8 @@ type Claim = {
   validBefore: number;
   /** The settle transaction, once one is pending. */
   txHash: string | null;
+  /** The token handed only to the requester whose payment went pending. */
+  retryToken: string | null;
 };
 
 const MAX_CLAIMS = 10_000;
@@ -126,11 +131,17 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       state: "settled",
       validBefore: Math.max(validBefore, now() + 60),
       txHash: null,
+      retryToken: null,
     });
   }
 
-  function pendingClaim(key: string, validBefore: number, txHash: string): void {
-    claims.set(key, { state: "pending", validBefore, txHash });
+  function pendingClaim(
+    key: string,
+    validBefore: number,
+    txHash: string,
+    retryToken: string,
+  ): void {
+    claims.set(key, { state: "pending", validBefore, txHash, retryToken });
   }
 
   return async (c, next) => {
@@ -166,6 +177,9 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       const existing = claims.get(claim.key);
       if (existing) {
         if (existing.state !== "pending") return alreadyUsed(c);
+        if (!sameToken(existing.retryToken, c.req.header(PAYMENT_RETRY_HEADER))) {
+          return stillSettling(c);
+        }
         const txHash = existing.txHash;
         if (txHash) {
           const status = await orderStatus(
@@ -187,6 +201,7 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
         state: "in_flight",
         validBefore: claim.validBefore,
         txHash: null,
+        retryToken: null,
       });
     }
 
@@ -223,7 +238,8 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
       if (settle.success !== true) {
         if (settle.errorReason === "settlement_pending") {
           // The transaction may still land, so keep the payment claimed until it cannot.
-          if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction);
+          const retryToken = toHex(crypto.getRandomValues(new Uint8Array(16)));
+          if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction, retryToken);
           const response = required(
             c,
             requirements,
@@ -232,6 +248,7 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
             options,
           );
           response.headers.set(PAYMENT_RESPONSE_HEADER, toBase64Json(settle));
+          response.headers.set(PAYMENT_RETRY_HEADER, retryToken);
           return { kind: "refused", response };
         }
         if (claim) release(claim.key);
@@ -342,6 +359,14 @@ function alreadyUsed(c: Context): Response {
 
 function stillSettling(c: Context): Response {
   return c.json({ error: STILL_SETTLING }, 409);
+}
+
+function sameToken(expected: string | null, presented: string | undefined): boolean {
+  if (expected === null || presented === undefined) return false;
+  const left = Buffer.from(expected, "utf8");
+  const right = Buffer.from(presented, "utf8");
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 function requirementsFor(
