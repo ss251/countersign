@@ -1441,11 +1441,30 @@
   text-wrap: balance;
 }
 
-/* A customer's address is forty-two glyphs: it wraps rather than pushing the sheet wide at 390. */
+/*
+ * A full address, a job id or a sentence is wider than a phone. The label keeps its own width and
+ * the value wraps in the rest: with the desk's `1fr auto`, the value would take the whole row
+ * first and squeeze "To" or "Job" to nothing at 390.
+ */
+.mx-wallet .mx-fact,
+.mx-relayer__facts .mx-fact {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
 .mx-wallet .mx-fact dd,
 .mx-relayer__facts .mx-fact dd {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* The relayer's addresses stack one per row: on a finger, each row is a 44 px target. */
+@media (pointer: coarse) {
+  .mx-relayer__facts .mx-fact {
+    padding-block: 10px;
+  }
+  .mx-relayer__facts .mx-fact a {
+    padding-block: 10px;
+  }
 }
 
 .mx-wallet .mx-fact dd.mono {
@@ -1551,6 +1570,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The box clips at its rounded edge, so the focus ring is drawn inside it. */
+.mx-snippet__code:focus-visible {
+  outline-offset: -2px;
 }
 
 .mx-snippet__code {

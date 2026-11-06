@@ -41,7 +41,7 @@ function Snippet({ title, path, code }: { title: string; path: string; code: str
         </button>
       </figcaption>
       {/* Focusable, so a keyboard can scroll a line wider than the page. */}
-      <pre className="mx-snippet__code" tabIndex={0} aria-label={`${title}: ${path}`}>
+      <pre className="mx-snippet__code" tabIndex={0} role="region" aria-label={`${title}: ${path}`}>
         <code>{code.replace(/\n$/, "")}</code>
       </pre>
     </figure>

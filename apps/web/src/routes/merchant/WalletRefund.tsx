@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Address } from "viem";
 import { useAccount, useSignTypedData, useSwitchChain } from "wagmi";
 import type { Order, RefundReason } from "./model.ts";
@@ -49,12 +49,31 @@ export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle
   const onWhitechain = chainId === WHITECHAIN_CHAIN_ID;
   const busy = stage !== "ready";
 
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const switched = useRef(false);
+
+  // The sheet opens on its title, never on the money button: a stray Enter must not start a refund.
+  // This runs after the Sheet's own effect, which has already opened the dialog.
+  useEffect(() => {
+    titleRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  // After a switch, the switch button is gone: focus moves on to the action it unlocked.
+  useEffect(() => {
+    if (switched.current && onWhitechain && !busy) {
+      switched.current = false;
+      primaryRef.current?.focus();
+    }
+  }, [onWhitechain, busy]);
+
   const switchNetwork = async () => {
     if (busy) return;
     setProblem(null);
     setStage("switching");
     try {
       await switchChainAsync({ chainId: WHITECHAIN_CHAIN_ID });
+      switched.current = true;
     } catch (error) {
       setProblem(
         declinedInWallet(error)
@@ -111,7 +130,9 @@ export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle
   return (
     <Sheet label={cancel ? "Cancel and return the payment" : "Refund from your wallet"} locked={busy} onClose={() => onFinish({ kind: "closed" })}>
       <div className="mx-wallet">
-        <h2 className="mx-wallet__title">{cancel ? "Cancel and return the payment" : "Refund from your wallet"}</h2>
+        <h2 className="mx-wallet__title" ref={titleRef} tabIndex={-1}>
+          {cancel ? "Cancel and return the payment" : "Refund from your wallet"}
+        </h2>
 
         <dl className="mx-facts">
           {terms.rows.map((row) => (
@@ -147,6 +168,7 @@ export function WalletRefund({ order, amount, reason, relayUrl, escrow, hubTitle
 
         <div className="mx-wallet__actions">
           <button
+            ref={primaryRef}
             type="button"
             className="mx-button mx-button--money"
             onClick={() => void sign()}

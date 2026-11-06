@@ -55,14 +55,17 @@ export function RelayerPanel({ status }: { status: RelayStatus }): ReactNode {
         <h2 className="mx-label" id="mx-relayer-heading">
           Gas relayer
         </h2>
-        <p className="mx-relayer__lead">Customers pay no gas. This relayer pays it, within these limits.</p>
+        <p className="mx-relayer__lead">
+          Customers pay no gas. This relayer pays it, within these limits. Fund it by sending WBT to its address on
+          Whitechain.
+        </p>
       </div>
 
       <dl className="mx-facts mx-relayer__facts">
         <div className="mx-fact">
           <dt>Relayer</dt>
           <dd>
-            <Address value={status.address} /> <span className="mx-quiet">Fund it by sending WBT here, on Whitechain.</span>
+            <Address value={status.address} />
           </dd>
         </div>
         <div className="mx-fact">
