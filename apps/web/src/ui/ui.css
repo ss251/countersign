@@ -290,6 +290,18 @@ a.hash__value.is-tx {
   color: var(--paper);
 }
 
+/* A button that moves money: the countersign family's blue, the one place a button takes colour. */
+.btn--money {
+  background: var(--usdc);
+  color: var(--paper);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn--money:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--usdc) 88%, var(--ink));
+  }
+}
+
 .btn--secondary {
   background: var(--raised);
   box-shadow: var(--elev-1);

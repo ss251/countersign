@@ -1059,3 +1059,61 @@
 .approval .check__glyph {
   margin-top: 0;
 }
+
+/* The review window: accept is the one action, dispute the quieter second. */
+.review {
+  display: grid;
+  justify-items: stretch;
+  gap: var(--sp-1);
+}
+
+.review__dispute {
+  position: relative;
+  justify-self: center;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font-size: var(--t-14);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 0.25em;
+}
+
+/* 32px to the eye, 44px to the thumb. */
+.review__dispute::after {
+  content: "";
+  position: absolute;
+  inset: -6px -8px;
+}
+
+.review__note {
+  color: var(--slate);
+  font-size: var(--t-13);
+  text-wrap: pretty;
+}
+
+/* The countdown: mono, fixed-width digits, so the line never shifts as it ticks. */
+.countdown {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger__note {
+  color: var(--slate);
+  font-family: var(--sans);
+  font-size: var(--t-12);
+}
+
+/* A disputed review is the buyer's refusal: the one red on the ledger. */
+.ledger__step.is-disputed .ledger__label {
+  color: var(--seal);
+}
+
+.ledger__step.is-disputed .ledger__marker {
+  background: var(--seal);
+}

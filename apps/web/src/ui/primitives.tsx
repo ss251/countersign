@@ -147,7 +147,7 @@ export function KV({ rows, className }: { rows: Array<[ReactNode, ReactNode] | n
 
 /* Buttons. Ink is the default action; seal only where the act is a countersignature or a refusal. */
 
-type ButtonVariant = "primary" | "secondary" | "quiet" | "seal";
+type ButtonVariant = "primary" | "secondary" | "quiet" | "seal" | "money";
 
 export function Button({
   variant = "secondary",

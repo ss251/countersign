@@ -414,7 +414,19 @@ function toPurchase(j: HubBuyerJob, listings: HubListing[], decided: HubApproval
 
 /* A job as the phone sees it after the hold. */
 
-export type JobStep = "countersigned" | "funding" | "held" | "delivered" | "released" | "refused" | "refunded" | "failed";
+export type JobStep =
+  | "countersigned"
+  | "funding"
+  | "held"
+  | "delivered"
+  /** Delivered and inside the buyer's review window: accept, dispute, or let it pass. */
+  | "review"
+  | "accepted"
+  | "disputed"
+  | "released"
+  | "refused"
+  | "refunded"
+  | "failed";
 
 export interface JobView {
   step: JobStep;
@@ -430,7 +442,21 @@ export interface JobView {
   reason?: string;
   /** No payment long after the countersignature: the agent may have stopped waiting. */
   slow?: boolean;
+  /** Unix seconds when the review window closes and the escrow may release without the buyer. */
+  reviewEndsAt?: number;
+  /** How the review ended: the buyer accepted, the buyer disputed, or the window passed unchallenged. */
+  ended?: "accepted" | "disputed" | "elapsed";
 }
+
+/** A running job the human can still act on: accept or dispute inside the review window. */
+export interface JobControl {
+  stop: () => void;
+  accept?: () => void;
+  dispute?: () => void;
+}
+
+/** The fixture review window: long enough to read the screen and act, short enough to watch it pass. */
+export const FIXTURE_REVIEW_SECONDS = 30;
 
 /** The steps a job passes in order; a poll that sees a later one fills in the times of those it skipped. */
 const LINE: JobStep[] = ["countersigned", "funding", "held", "delivered", "released"];
@@ -491,7 +517,7 @@ export type Scenario = "release" | "moved" | "deadline";
  * Plays a job forward with fixture timings. The hub replaces this with the job's
  * real events; the screens only ever see JobView.
  */
-export function playJob(approval: Approval, scenario: Scenario, onChange: (job: JobView) => void): () => void {
+export function playJob(approval: Approval, scenario: Scenario, onChange: (job: JobView) => void): JobControl {
   const timers: number[] = [];
   const now = () => Math.floor(Date.now() / 1000);
   let job: JobView = { step: "countersigned", times: { countersigned: now() } };
@@ -513,13 +539,34 @@ export function playJob(approval: Approval, scenario: Scenario, onChange: (job: 
     at(700, () => push({}, "funding"));
     at(1700, () => void fx.then((f) => push({ fundTx: f.fakeHex(`fund:${approval.id}`), deadline }, "held")));
     if (scenario === "release") {
-      at(3300, () => push({}, "delivered"));
-      at(4300, () => void fx.then((f) => push({ slipHash: f.demoSlipHash }, "released")));
-    } else {
-      at(4300, () => push({}, "refunded"));
+      // Delivered, then the buyer's review window: accept, dispute, or let it pass unchallenged.
+      let decided = false;
+      const settle = (ended: NonNullable<JobView["ended"]>) => {
+        if (decided || job.step !== "review") return;
+        decided = true;
+        if (ended === "disputed") {
+          push({ ended }, "disputed");
+          at(1200, () => push({}, "refunded"));
+        } else {
+          if (ended === "accepted") push({ ended }, "accepted");
+          else job = { ...job, ended };
+          at(ended === "accepted" ? 900 : 0, () => void fx.then((f) => push({ slipHash: f.demoSlipHash }, "released")));
+        }
+      };
+      at(3300, () => {
+        push({}, "delivered");
+        push({ reviewEndsAt: now() + FIXTURE_REVIEW_SECONDS }, "review");
+        at(FIXTURE_REVIEW_SECONDS * 1000, () => settle("elapsed"));
+      });
+      return {
+        stop: () => timers.forEach((t) => window.clearTimeout(t)),
+        accept: () => settle("accepted"),
+        dispute: () => settle("disputed"),
+      };
     }
+    at(4300, () => push({}, "refunded"));
   }
-  return () => timers.forEach((t) => window.clearTimeout(t));
+  return { stop: () => timers.forEach((t) => window.clearTimeout(t)) };
 }
 
 /* Loading state for one read. */
