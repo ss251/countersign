@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { Secrets } from "../../lib/secrets.ts";
 import {
   finalizeReport,
+  finalizeRun,
   renderReport,
   REPO_ROOT,
   type ProjectRun,
@@ -109,6 +110,28 @@ describe("the run report", () => {
     expect(written).not.toContain(secret);
     expect(written).not.toContain("planted.json");
     expect(readFileSync(join(runsDir, "LATEST.md"), "utf8").split("\n")[0]).toContain(`${RUN_ID}.md`);
+  });
+
+  test("the leak scan runs when no result.json exists and still deletes a planted file", () => {
+    const root = tempDir();
+    const artifactsDir = join(root, "artifacts");
+    const runsDir = join(root, "runs");
+    const secret = `0x${"ef".repeat(32)}`;
+    const planted = join(artifactsDir, RUN_ID, "privy", "planted.json");
+    mkdirSync(join(artifactsDir, RUN_ID, "privy"), { recursive: true });
+    writeFileSync(planted, JSON.stringify({ note: `the funder key is ${secret}` }));
+
+    const result = finalizeRun(RUN_ID, new Date("2026-01-01T00:00:00.000Z"), {
+      artifactsDir,
+      runsDir,
+      secrets: Secrets.fromEntries({ E2E_HUMAN_FUNDER_KEY: secret }),
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.leaks).toEqual([planted]);
+    expect(existsSync(planted)).toBe(false);
+    expect(result.text).toContain("No project ran.");
+    expect(result.text).not.toContain(secret);
   });
 
   test("a clean run exits zero and keeps its artifacts", () => {
