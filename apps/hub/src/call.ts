@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  checkEnsLock,
   checkSchema,
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
@@ -7,6 +8,7 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   slipCommitHash,
   toBase64Json,
+  type EnsResolve,
   isV2Terms,
   type CountersignTerms,
   type Offer,
@@ -39,6 +41,8 @@ export interface CallDeps {
   now: () => number;
   publicUrl: string;
   jobTimeoutMs?: number;
+  /** Sepolia ENS lookups. A named offer is served only while its name still locks its payees. */
+  ens?: EnsResolve;
 }
 
 export interface CallOutcome {
@@ -62,6 +66,13 @@ export async function paidCall(
   const offer = stored.offer;
   const call = isRecord(body) ? body : {};
   const input = call.input;
+
+  // A name checked at listing can be re-pointed later. Check it again before any 402 or payment,
+  // so the hub never takes money for a named offer whose name no longer locks its payees.
+  const lock = await checkEnsLock(offer, deps.ens);
+  if (lock && !lock.ok) {
+    return failure(lock.code === "ens-unavailable" ? 503 : 409, lock.code, `${lock.message} Nothing was charged.`);
+  }
 
   const inputCheck = checkSchema(offer.input, input);
   if (!inputCheck.ok) {

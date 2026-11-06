@@ -37,8 +37,15 @@ So a buyer that resolves the name itself pays the name's address and nobody else
 |---|---|---|
 | Hub | `POST /offers` | Not listed: `422 ens-mismatch`, `422 ens-unresolved`, or `503 ens-unavailable` when the lookup fails or the hub has no resolver. |
 | Buyer | `buy`, before asking for payment terms | Refused, nothing signed. The journal records `refused` with the same code. |
-| Hub | `GET /sellers` | `name` is the ENS name from the seller's newest named offer, and only while the lock holds. Otherwise `null`. |
+| Hub | `POST /offers/:hash/call`, before any 402 or payment | Refused, nothing charged: `409 ens-mismatch` or `409 ens-unresolved`, or `503 ens-unavailable`. A name re-pointed after listing is caught here. |
+| Hub | `GET /sellers` | `name` is the ENS name from the seller's newest named offer, and only while the lock holds. Otherwise `null`. The console's seller card says which payees, such as a Hedera account, the name does not cover. |
 
 Every check fails closed: a lookup that errors is a refusal, never a pass. The buyer does not take the hub's word for the name. It resolves the name again at buy time, so a name re-pointed after listing is caught. Answers are cached for 60 seconds.
 
-The seller sets the name with `runner publish|serve --ens alice.eth`. The hub reads `HUB_ENS_RPC_URL` and the buyer CLI reads `CS_ENS_RPC_URL`; both default to viem's public Sepolia endpoint. The Hedera buyer agent (`packages/buyer/src/hedera`) does not read `ens` yet.
+How a lookup is made:
+
+- **No offchain data.** CCIP-Read (EIP-3668) is off. A resolver that answers with an `OffchainLookup` would otherwise make the hub, or the buyer's machine, fetch a URL the name's owner chose. Such a name counts as unresolved.
+- **More than one endpoint.** Every configured Sepolia RPC is asked, and the answers must agree. A disagreement is a failed lookup, so a single wrong or hostile RPC cannot choose the payee. The default is two independent public endpoints, `DEFAULT_SEPOLIA_RPCS` in `ens.ts`.
+- **Your own endpoints.** The hub reads `HUB_ENS_RPC_URLS` and the buyer CLI reads `CS_ENS_RPC_URLS`, each comma-separated. `HUB_ENS_RPC_URL` and `CS_ENS_RPC_URL` still name a single endpoint. A buyer paying named sellers should pin at least two endpoints it trusts.
+
+The seller sets the name with `runner publish|serve --ens alice.eth`. The Hedera buyer agent (`packages/buyer/src/hedera`) does not read `ens` yet.
