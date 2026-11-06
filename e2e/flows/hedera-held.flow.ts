@@ -217,8 +217,13 @@ export const hederaHeldPaid: Flow = {
       equal(slip.body.rail, HELD, "slip rail");
       sameHex(slip.body.inputHash, canonicalHash(input), "slip.inputHash is the hash of the tool's arguments");
       equal(mirrorTxId(slip.settlement.transaction), mirrorTxId(paid.createTx), "slip settlement");
-      const v = await verifyCli(ctx, "held", path, ARC.rpc);
+      // With the mirror, the verifier proves the payment itself: the schedule's create by the buyer,
+      // its execution, and the transfer paying the payee exactly the amount (#163).
+      const v = await verifyCli(ctx, "held", path, ARC.rpc, { mirror: HEDERA.mirror });
       equal(v.verdict, "VALID", `verdict (${v.lines.join(" | ")})`);
+      equal(v.checks.get("countersignature"), "ok", "the held payment binds the slip's job");
+      equal(v.checks.get("onchain"), "ok", "the mirror proves the held payment");
+      check(!v.skipped.some((l) => l.includes("onchain")), `the verifier skipped the mirror check (${v.skipped.join(" | ")})`);
     });
   },
 };
