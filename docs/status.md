@@ -164,7 +164,7 @@ The console at [web-production-a58de.up.railway.app](https://web-production-a58d
 | Squash-only merges and delete-branch-on-merge | `SHIPPED` | repository settings | CONTRIBUTING |
 | An Arc Studio project link that opens logged out | `NOT BUILT` | Studio has no public-project link (D6) | README, which says so |
 | Threat model, seller and buyer guides, interop doc | `SHIPPED` | On `main` through promotion [#168](https://github.com/ss251/countersign/pull/168) (`bfe7a3a`), from `39114c8` ([#100](https://github.com/ss251/countersign/pull/100), [#30](https://github.com/ss251/countersign/issues/30)): `docs/threat-model.md`, `docs/guides/buyer.md`, `docs/guides/seller.md`, `docs/interop.md` | |
-| Railway's GitHub app, so production follows `main` | `NOT BUILT` | Needs the owner's install | [deploy.md](deploy.md), as a target |
+| Railway's GitHub app, so production follows `main` | `NOT BUILT` | Tried on 06 Nov at about 22:50 IST and reverted: connecting `ss251/countersign` triggered auto-deploys on all three services (web, hub, relay), and every build failed in Railpack within 13 to 16 s, because the repository is a bun workspace with no Dockerfile or `railway.toml` per app. Production stayed up, since a failed build does not replace a running deployment, and the GitHub source is disconnected again on web, hub and relay. Not retried tonight. After the event: give each app a `railway.toml` or a Dockerfile with explicit build and start commands for a bun workspace | [deploy.md](deploy.md), as a target |
 
 ## Cut
 
