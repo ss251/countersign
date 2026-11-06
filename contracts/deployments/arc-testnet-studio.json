@@ -1,0 +1,14 @@
+{
+  "chainId": 5042002,
+  "deployedBy": "Arc Studio, app 16e0b317-ec5f-406a-8d7d-24bf6d96533b",
+  "source": "contracts/src/CountersignedEscrow.sol, ICountersignedEscrow.sol, FeeSplit.sol at cs/int 1affc18, byte-identical in the Studio sandbox",
+  "compiler": { "solc": "0.8.28", "optimizerRuns": 200, "evmVersion": "cancun" },
+  "escrow": "0x19c27d770969291e6a0a305dc1be1a845e7c1b76",
+  "escrowTx": "0x06638eb4cfa8db52b5e097778160fbc913561e88f56aa8fc2ec195cb6d596c5a",
+  "feeSplit": "0xbf9de410d4a17781df0d9d3dd160018aceb3fe87",
+  "feeSplitTx": "0xbb5b0fb2f4666c9e3a0b2c114110cdda3519f350cbc6cbb4d5ce28a513322c8c",
+  "feeProtocol": "0x052301a8093ac74E833952d8a1095d5694a906A2",
+  "feeOperator": "0xA7C448C92aB52Cf4F14c75F0439033232E938380",
+  "token": "0x3600000000000000000000000000000000000000",
+  "tollBps": 100
+}
