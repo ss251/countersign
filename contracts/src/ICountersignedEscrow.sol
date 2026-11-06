@@ -118,8 +118,9 @@ interface ICountersignedEscrow {
 
     /// @notice The caller, as payee, states the only price, bond and window a bonded or windowed
     ///         job on `offerHash` may carry, and the shortest time to its deadline at funding.
-    ///         A bond needs a review window: with window 0 the payee releases on any receipt and
-    ///         takes the payment plus its whole bond back. A bond also needs minDuration of at least
+    ///         A bond needs a review window of at least MIN_BONDED_REVIEW_WINDOW: with window 0, or a
+    ///         window too short to dispute in, the payee releases on any receipt and takes the payment
+    ///         plus its whole bond back. A bond also needs minDuration of at least
     ///         MIN_BONDED_DURATION, so a bonded job is never opened too close to its deadline.
     function setTerms(bytes32 offerHash, uint256 price, uint256 bond, uint64 reviewWindow, uint64 minDuration)
         external;
