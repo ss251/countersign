@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { getAddress, type Hex } from "viem";
+import { encodeAbiParameters, getAddress, keccak256, parseAbiParameters, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { Order } from "../src/routes/merchant/model.ts";
 import { sendWalletRefund, type WalletSendInput } from "../src/routes/merchant/wallet-refund.ts";
@@ -121,6 +121,20 @@ describe("a paid order: the merchant's wallet signs one transfer back to the cus
     expect(validFor).toBeLessThanOrEqual(300);
     expect(calls[0]?.url).toBe(`${RELAY}/refund`);
     expect(calls[0]?.body.paymentId).toBe(JOB);
+  });
+
+  test("the transfer is tied to this payment, so a double click cannot refund twice", async () => {
+    const first: Seen = {};
+    const second: Seen = {};
+    const { fetch } = relay(ok);
+    await sendWalletRefund(input({ seen: first, fetch, order: paid, amount: 2_500n }));
+    await sendWalletRefund(input({ seen: second, fetch, order: paid, amount: 2_500n }));
+    // The nonce names the payment and what was refunded before it (wc-10d): the token takes it once.
+    const expected = keccak256(
+      encodeAbiParameters(parseAbiParameters("string, string, uint256"), ["countersign refund", JOB, 0n]),
+    );
+    expect(first.message?.nonce).toBe(expected);
+    expect(second.message?.nonce).toBe(expected);
   });
 
   test("declined in the wallet reads as declined, not as the relay client's refund_not_possible", async () => {

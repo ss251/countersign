@@ -100,7 +100,7 @@ export function refundTerms(order: Order, amount: bigint, hubTitle?: string | nu
     ],
     signs: cancel
       ? "Your wallet signs a cancel for this one job, under the escrow's own terms. The signature moves nothing by itself."
-      : `Your wallet signs one ${asset} transfer of exactly this amount, from you to this customer. It is valid for five minutes and can be used once.`,
+      : `Your wallet signs one ${asset} transfer of exactly this amount, from you to this customer, tied to this payment. It is valid for five minutes and can be used once.`,
     happens: cancel
       ? `The relayer submits the cancel and pays the gas. The escrow returns the whole ${asset} payment to the customer.`
       : `The relayer submits it and pays the gas. The ${asset} moves from your wallet to the customer on chain.`,
