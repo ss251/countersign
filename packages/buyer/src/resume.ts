@@ -102,7 +102,7 @@ export async function resume(args: {
       }
       journal.append({ ...base, kind, slipHash, closeTx: job.closeTx ?? undefined });
       out.push({ jobId, status: job.status, appended: kind });
-    } else if (job.status === "refunded") {
+    } else if (job.status === "refunded" || job.status === "disputed") {
       const rail = railFor(open, known);
       let status = 0;
       try {
@@ -110,8 +110,8 @@ export async function resume(args: {
       } catch {
         status = 0;
       }
-      // Refunded (3) and Failed (4) both leave the payment with the buyer.
-      if (status !== 3 && status !== 4) {
+      // Refunded (3), Failed (4) and Disputed (6, which escrow v2 refunds at once) all leave the payment with the buyer.
+      if (status !== 3 && status !== 4 && status !== 6) {
         out.push({ jobId, status: "hub says refunded; chain does not" });
         continue;
       }

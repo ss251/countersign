@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as fx from "../src/fixtures/index.ts";
 import type { Listing } from "../src/lib/types.ts";
-import { deliveryRate, groupBySeller, matches, settlementIndex, withRecords } from "../src/routes/registry/index.tsx";
+import { deliveryRate, groupBySeller, matches, payeesOutsideName, settlementIndex, withRecords } from "../src/routes/registry/index.tsx";
 
 const listings = fx.listings;
 
@@ -59,6 +59,27 @@ describe("registry with the hub's /sellers", () => {
     expect(g.refunded).toBe(1);
     expect(g.failed).toBe(1);
     expect(g.name).toBe(target.name);
+  });
+
+  test("an ENS-named seller lists the payees its name does not cover", () => {
+    const groups = groupBySeller(listings);
+    const target = groups[groups.length - 1]!;
+    const record = (name: string | null) => ({
+      address: target.address,
+      name,
+      payees: { escrow: "0x1111111111111111111111111111111111111111", hedera: "0.0.1234" },
+      offers: [],
+      calls: 0,
+      released: 0,
+      settled: 0,
+      refunded: 0,
+      failed: 0,
+      volume: "0",
+      erc8004: null,
+    });
+    expect(withRecords(groups, [record("alice.eth")]).find((x) => x.address === target.address)?.outsideName).toEqual(["hedera"]);
+    expect(withRecords(groups, [record(null)]).find((x) => x.address === target.address)?.outsideName).toBeUndefined();
+    expect(payeesOutsideName({ escrow: "0x1111111111111111111111111111111111111111" })).toEqual([]);
   });
 
   test("leaves groups alone when the hub does not serve /sellers", () => {

@@ -3,7 +3,7 @@
 // it, then shows it expire with no money moved. Prints ids and links only, never a key.
 //   bun scripts/hedera/schedule.ts [--expiry-demo] [--json]
 import { formatUnits, offerHash, type Envelope, type Offer } from "../../packages/core/src/index.ts";
-import { createHederaAgent, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
+import { createHederaAgent, RELEASE_MARGIN_SECONDS, spentFromLog } from "../../packages/buyer/src/hedera/agent.ts";
 import { readEntries, reconcile } from "../../packages/buyer/src/hedera/spendlog.ts";
 import {
   countersignSchedule,
@@ -213,7 +213,13 @@ try {
     say(`expires  ${schedule.expirationTime ?? "unknown"}`);
     await waitForExpiry(outcome.scheduleId);
 
-    const release = await agent.releaseExpired(outcome.hold);
+    say(`release  waiting ${RELEASE_MARGIN_SECONDS} s past the expiration`);
+    const releaseDeadline = Date.now() + (RELEASE_MARGIN_SECONDS + 60) * 1000;
+    let release = await agent.releaseExpired(outcome.hold);
+    while (release === "pending" && Date.now() < releaseDeadline) {
+      await new Promise((r) => setTimeout(r, 3_000));
+      release = await agent.releaseExpired(outcome.hold);
+    }
     say(`release  ${release}`);
 
     const { entries, found } = await waitForEntry(

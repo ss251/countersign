@@ -12,8 +12,9 @@ const RAIL_RANK = {
   eip3009: 2,
   whitechain: 3,
   hedera: 4,
-  mpp: 5,
-  erc8183: 6,
+  "hedera-scheduled": 5,
+  mpp: 6,
+  erc8183: 7,
 } satisfies Record<RailId, number>;
 
 /** The rails a seller may tick, in the order the wizard shows them. */

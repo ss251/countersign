@@ -14,9 +14,11 @@ What happens when a seller lists an offer on a countersign hub and a buyer agent
 - **Custody.** The hub never holds the buyer's money.
   - On the escrow rails (Arc, Whitechain) funds move from the buyer to `CountersignedEscrow`, and from the escrow to the seller or back to the buyer, on chain ([spec/escrow.md](spec/escrow.md)).
   - On the Hedera rail the buyer's signed transfer goes directly to the seller's account, submitted by a hosted x402 facilitator ([hedera.md](hedera.md)).
+  - On the held Hedera rail (`hedera-scheduled`) the money stays in the buyer's own account, inside a schedule that runs only when the seller's key has signed it too ([hedera.md](hedera.md) "Scheduled checkout").
+  - On the `eip3009` rail the buyer's signed `TransferWithAuthorization` moves USDC on Arc directly to the seller, and the hub's relayer submits it.
   - On the Gateway rail the buyer's deposit sits in Circle Gateway. Gateway debits the buyer at once and credits the seller in a later batch.
 - **Keys.** The hub holds no buyer key and no seller key. The seller's key stays with its runner, and the buyer's with its agent. On the Arc escrow rail the hub holds one relayer key (`CS_RELAYER_KEY`). It submits the buyer's `fund` and the seller's `release` and pays their gas. It cannot change what they signed: the escrow checks the buyer's countersignature on `fund` and the seller's signature on `release`. On the Whitechain rail the hub holds no key: it passes `fund`, `release`, `refund` and `cancel` to the relay (`WC_RELAY_URL`), which submits them and pays the gas. On the Hedera rail the hub holds no Hedera key.
-- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery. On an escrow rail it is never released; on a direct rail the payment has already settled (§4) ([spec/offer.md](spec/offer.md)).
+- **Gates.** The hub refuses a call whose input fails the offer's input schema before payment. It checks the seller's output against the output schema and the signed slip before release. An output that fails is a failed delivery. On an escrow rail it is never released, and on the held Hedera rail the hub never countersigns it; on a direct rail the payment has already settled (§4) ([spec/offer.md](spec/offer.md)).
 
 ## 3. What the buyer's countersignature binds
 
@@ -36,8 +38,15 @@ As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md
 | `cancel` | the payee, or anyone with the payee's `Cancel(jobId)` signature | any time the job is `Funded` | the buyer, the full amount |
 
 - **Deadline.** An offer gives the seller 10 seconds to 7 days to deliver ([spec/offer.md](spec/offer.md)). The hub's escrow rail accepts a countersigned deadline no shorter than the offer promises, with 15 seconds of clock skew, and no more than 300 seconds longer.
-- **Failed delivery.** On an escrow rail the money stays in escrow and returns to the buyer by `refund` after the deadline. The hub sweeps those refunds itself every 30 seconds, and anyone else may call `refund` too.
-- **Direct rails.** On the Hedera and Gateway rails the payment settles before the call is delivered, and there is no escrow. No code in this repository returns a payment on those rails when delivery fails.
+- **Failed delivery, by rail.** Only the escrow rails and the held Hedera rail keep the buyer's money from the seller when a delivery fails. On every other rail the payment has settled before the call is delivered.
+
+  | Rail | Where the money is during the call | If the delivery fails |
+  |---|---|---|
+  | Escrow: `escrow` (Arc), `whitechain` | In `CountersignedEscrow` | It returns to the buyer in full by `refund` after the deadline. The hub sweeps those refunds every 30 seconds, and anyone else may call `refund` too. |
+  | Held Hedera: `hedera-scheduled` | In the buyer's own account, inside a schedule | Nothing moves through the hub: it does not submit the seller's countersignature, and the schedule expires. The seller can still sign the schedule itself before it expires, and then the transfer runs. |
+  | Direct: `hedera`, `eip3009`, `gateway`, `mpp` | With the seller already (`gateway`: debited from the buyer's Gateway balance at once, credited to the seller in a later batch) | It is not returned. No code in this repository returns a payment on these rails, and the slip records the failure. |
+
+  Which rails a given hub offers is on its `/rails`. Which of them run on the production hub is in [status.md](status.md).
 
 ## 5. Fees and the toll
 
@@ -58,4 +67,9 @@ As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md
 
 ## 7. Seller names
 
-Offers name the seller by its address.
+- **By default, an offer names the seller only by its address.**
+- **An offer may also carry the seller's ENS name on Sepolia** (`runner --ens`). The hub lists it, and the buyer pays it, only while two things hold:
+  - the name resolves to the seller;
+  - every EVM payee in the offer is that same address.
+- **A Hedera payee is outside the name.**
+- **Lookups never follow CCIP-Read,** and any failure is a refusal ([spec/offer.md](spec/offer.md)).

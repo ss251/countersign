@@ -16,6 +16,10 @@ export class MirrorError extends Error {
 export interface MirrorOptions {
   base?: string;
   fetch?: typeof fetch;
+  /** One delay per retry after a transient failure; `[]` means one attempt. */
+  retryDelaysMs?: readonly number[];
+  /** Abort one attempt after this many milliseconds. Defaults to MIRROR_ATTEMPT_TIMEOUT_MS. */
+  attemptTimeoutMs?: number;
 }
 
 export interface GetTransactionOptions extends MirrorOptions {
@@ -23,9 +27,44 @@ export interface GetTransactionOptions extends MirrorOptions {
   scheduled?: boolean;
 }
 
-async function get<T>(path: string, opts: MirrorOptions = {}): Promise<T | null> {
+export const MIRROR_RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000];
+export const MIRROR_ATTEMPT_TIMEOUT_MS = 5_000;
+
+function isTransient(r: Response): boolean {
+  return r.status === 429 || r.status >= 500;
+}
+
+/** A mirror read that retries a thrown fetch, a 429, or a 5xx before giving up. */
+export async function mirrorFetch(url: string, opts: MirrorOptions = {}): Promise<Response> {
   const f = opts.fetch ?? fetch;
-  const r = await f((opts.base ?? MIRROR_TESTNET) + path);
+  const delays = opts.retryDelaysMs ?? MIRROR_RETRY_DELAYS_MS;
+  const attemptTimeoutMs = opts.attemptTimeoutMs ?? MIRROR_ATTEMPT_TIMEOUT_MS;
+  let lastError: unknown;
+  for (let retry = 0; ; retry++) {
+    let response: Response | undefined;
+    try {
+      response = await f(url, { signal: AbortSignal.timeout(attemptTimeoutMs) });
+    } catch (error) {
+      lastError = error;
+    }
+    if (response && !isTransient(response)) return response;
+    if (retry >= delays.length) {
+      if (response) return response;
+      throw lastError;
+    }
+    if (response) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // A failed body cancel does not change the retry.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, delays[retry]!));
+  }
+}
+
+async function get<T>(path: string, opts: MirrorOptions = {}): Promise<T | null> {
+  const r = await mirrorFetch((opts.base ?? MIRROR_TESTNET) + path, opts);
   if (r.status === 404) return null;
   if (!r.ok) throw new MirrorError(path, r.status);
   return (await r.json()) as T;
@@ -94,12 +133,17 @@ export function normalizeTransaction(raw: RawTransaction): MirrorTransaction {
   };
 }
 
-/** The first record of a transaction id, or null if unseen. `scheduled` reads the executed child record. */
+/**
+ * The first SUCCESS record of a transaction id, or null if unseen. A duplicate submission can list
+ * DUPLICATE_TRANSACTION ahead of the real record, so the SUCCESS one wins; with none, the first is
+ * returned. `scheduled` reads the executed child record.
+ */
 export async function getTransaction(txId: string, opts: GetTransactionOptions = {}): Promise<MirrorTransaction | null> {
   const suffix = opts.scheduled ? "?scheduled=true" : "";
   const d = await get<{ transactions: RawTransaction[] }>(`/api/v1/transactions/${toMirrorTxId(txId)}${suffix}`, opts);
-  const first = d?.transactions[0];
-  return first ? normalizeTransaction(first) : null;
+  const records = d?.transactions ?? [];
+  const chosen = records.find((t) => t.result === "SUCCESS") ?? records[0];
+  return chosen ? normalizeTransaction(chosen) : null;
 }
 
 export async function waitForTransaction(

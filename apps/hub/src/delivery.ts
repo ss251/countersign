@@ -25,6 +25,7 @@ interface BuildOrderInput {
   buyer: string;
   entry: PaymentRequirements;
   deadline: number;
+  schedule?: { id: string; createTx: string };
   lineage: Hex[];
 }
 
@@ -42,6 +43,7 @@ export function buildOrder(parts: BuildOrderInput): JobOrder {
     deadline: parts.deadline,
     lineage: parts.lineage,
   };
+  if (parts.schedule !== undefined) order.schedule = parts.schedule;
   const extra = isRecord(parts.entry.extra) ? parts.entry.extra : {};
   if (typeof extra.escrow === "string") order.escrow = extra.escrow as Address;
   if (typeof extra.chainId === "number" && Number.isSafeInteger(extra.chainId)) {

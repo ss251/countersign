@@ -20,6 +20,11 @@ export type DirectTermsCheck = { ok: true; direct: KnownDirect } | { ok: false; 
 const UNKNOWN_RAIL = "Refused. This rail is not one this agent knows.";
 const WRONG_PAYEE = "Refused. The payment terms pay someone other than the offer's seller.";
 const WRONG_AMOUNT = "Refused. The payment terms ask a different amount than the offer's price.";
+const WRONG_VERSION = "Refused. The escrow version is not the one this agent pinned.";
+const WRONG_BOND_WINDOW = "Refused. The bond or review window in the payment terms is not the offer's.";
+
+/** An offer that may carry escrow v2's review window; the core Offer type predates it. */
+type OfferWithWindow = Offer & { reviewWindow?: number };
 
 /**
  * Compare a 402 entry with the offer the buyer fetched. Every field the buyer signs must
@@ -40,6 +45,19 @@ export function checkTerms(offer: Offer, offerHash: Hex, entry: PaymentRequireme
   }
   if (extra.offerHash.toLowerCase() !== offerHash.toLowerCase()) {
     return { ok: false, message: "Refused. The payment terms name a different offer." };
+  }
+  const version = rail.version ?? 1;
+  const escrowVersion = (extra as { escrowVersion?: unknown }).escrowVersion;
+  if (version !== 2 && escrowVersion === 2) {
+    return { ok: false, message: WRONG_VERSION };
+  }
+  if (version === 2) {
+    if (escrowVersion !== 2) return { ok: false, message: WRONG_VERSION };
+    const bond = (extra as { bond?: unknown }).bond;
+    const reviewWindow = (extra as { reviewWindow?: unknown }).reviewWindow;
+    if (bond !== (offer.bond ?? "0") || reviewWindow !== ((offer as OfferWithWindow).reviewWindow ?? 0)) {
+      return { ok: false, message: WRONG_BOND_WINDOW };
+    }
   }
   const bond = entry.extra?.bond;
   if (bond !== undefined && bond !== offer.bond) {
