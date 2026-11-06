@@ -143,7 +143,7 @@ function Claim({
         <div className="landing__under">
           <p className="landing__what">
             countersign lets an agent pay for a tool only inside limits you sign. On an escrow rail the payment waits until the
-            output checks out; every payment leaves a slip anyone can verify, without us.
+            output checks out; every settled payment leaves a slip anyone can verify, without us.
           </p>
           <Figures stats={stats} rails={rails} missing={missing} down={down} />
           <div className="landing__cta">

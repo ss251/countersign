@@ -4,7 +4,6 @@ import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
 import { shortHex } from "../../lib/format.ts";
 import type { HubStats, RailDeclaration, Settlement } from "../../lib/types.ts";
-import { Wordmark } from "../../ui/Mark.tsx";
 import { ClearsStage } from "./Clears.tsx";
 import { EvidenceStage } from "./Evidence.tsx";
 import { escrowRelease, otherRailsLines } from "./field.ts";
@@ -14,7 +13,7 @@ import "./home.css";
 import "./landing.css";
 
 /** The landing draws its own chrome: a wordmark and a few links, nothing else. */
-export const surface = "bare";
+export const surface = "story";
 
 const REPO = "https://github.com/ss251/countersign";
 const POLL_MS = 10_000;
@@ -55,20 +54,6 @@ export default function Landing(_props: PageProps) {
 
   return (
     <div className="landing">
-      <header className="landing__bar">
-        <Link to="/" className="landing__brand" aria-label="countersign, home">
-          <Wordmark size={22} />
-        </Link>
-        <nav className="landing__links" aria-label="Views">
-          <Link to="/buyer">Buyer</Link>
-          <Link to="/registry">Registry</Link>
-          <Link to="/verify">Verify</Link>
-          <a href={REPO} target="_blank" rel="noreferrer">
-            GitHub
-          </a>
-        </nav>
-      </header>
-
       <EvidenceStage
         stats={goodStats.current}
         missing={missing}

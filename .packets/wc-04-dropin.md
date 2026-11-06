@@ -155,7 +155,7 @@ All green. `wc -l packages/relay/examples/*.ts` shows 25 lines or fewer for each
 
 ## Report
 
-Write `/Users/thescoho/Developer/countersign-mumbai/reports/wc-04-dropin.md`. Include:
+Write `$M/reports/wc-04-dropin.md`. Include:
 
 - what was built;
 - test counts;
