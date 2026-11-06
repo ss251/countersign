@@ -45,7 +45,10 @@ function refuse(path: string): null {
   return null;
 }
 
-export function fileSessionBackend(dir: string = join(homedir(), ".config", "countersign")): SessionBackend {
+export function fileSessionBackend(
+  dir: string = join(homedir(), ".config", "countersign"),
+  platform: NodeJS.Platform = process.platform,
+): SessionBackend {
   const path = join(dir, "session.json");
   return {
     kind: "file",
@@ -58,7 +61,8 @@ export function fileSessionBackend(dir: string = join(homedir(), ".config", "cou
       }
       try {
         const info = lstatSync(path);
-        if (info.isSymbolicLink() || !info.isFile() || (info.mode & 0o077) !== 0) return refuse(path);
+        const unsafeMode = platform !== "win32" && (info.mode & 0o077) !== 0;
+        if (info.isSymbolicLink() || !info.isFile() || unsafeMode) return refuse(path);
       } catch {
         return null;
       }
