@@ -3,7 +3,7 @@ import type { CountersignPayload, Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
 import { Link } from "../../app/router.tsx";
 import { api, useResource } from "../../lib/api.ts";
-import { formatDateTime, formatMoney, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
+import { formatCompleted, formatDateTime, formatMoney, networkName, RAIL_LABEL, usd } from "../../lib/format.ts";
 import { canReadChain, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
 import { Mark } from "../../ui/Mark.tsx";
 import { RailCard } from "../../ui/RailCard.tsx";
@@ -80,24 +80,27 @@ export default function SlipPage({ params }: PageProps) {
             <span className="slip__brand">
               <Mark size={18} />
               <span className="mono">slip</span>
+              <Hash value={slip.hash} label="slip hash" />
             </span>
-            <span className="slip__head-end">
-              <FixtureNote show={view.source === "fixtures"} />
-              <span className="status status--released">Released</span>
-            </span>
+            <FixtureNote show={view.source === "fixtures"} />
           </header>
 
           <div className="slip__lead">
             <div className="slip__lead-text">
-              <h1 id="slip-title" className="slip__title">
-                {title}
+              <h1 id="slip-title" className="slip__status">
+                Released
               </h1>
-              <p className="slip__sub">
-                {sellerName} was paid on {RAIL_LABEL[body.rail]}, delivered {formatDateTime(body.deliveredAt)}
+              <p className="slip__what">
+                <span className="slip__offer">{title}</span> · {sellerName} was paid on {RAIL_LABEL[body.rail]}
               </p>
+              <p className="slip__when num">Completed on {formatCompleted(body.deliveredAt)}</p>
             </div>
             <Amount money={money} size="xl" />
           </div>
+          <p className="slip__promise">
+            {sellerName} was paid only after the output matched the schema. Had the deadline passed first, anyone could have
+            refunded the buyer, with no ticket and no one to ask.
+          </p>
 
           <Perforation />
 
@@ -174,12 +177,12 @@ export default function SlipPage({ params }: PageProps) {
           ) : null}
 
           <footer className="slip__foot">
-            <Link to={`/verify/${slip.hash}`} className="btn btn--primary">
-              Verify this slip
-            </Link>
-            <Button variant="secondary" onClick={() => download(slip, title)}>
+            <Button variant="primary" onClick={() => download(slip, title)}>
               Download slip.json
             </Button>
+            <Link to={`/verify/${slip.hash}`} className="btn btn--secondary">
+              Verify it yourself
+            </Link>
           </footer>
         </article>
 

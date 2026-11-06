@@ -73,6 +73,20 @@ export function formatDateTime(unix: number): string {
   return fullFormat.format(fromUnix(unix));
 }
 
+const completedFormat = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZoneName: "short",
+});
+
+/** "6 Nov 2026, 15:18 GMT+5:30": a moment a person can place, never raw ISO. */
+export function formatCompleted(unix: number): string {
+  return completedFormat.format(fromUnix(unix));
+}
+
 export function isoOf(unix: number): string {
   return fromUnix(unix).toISOString();
 }
