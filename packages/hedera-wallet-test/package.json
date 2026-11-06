@@ -1,0 +1,19 @@
+{
+  "name": "@countersign/hedera-wallet-test",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@countersign/core": "workspace:*",
+    "@countersign/rail": "workspace:*",
+    "@hiero-ledger/sdk": "2.90.1",
+    "@reown/walletkit": "1.6.0",
+    "@walletconnect/core": "2.25.0",
+    "@walletconnect/sign-client": "2.25.0",
+    "@walletconnect/utils": "2.25.0",
+    "@hashgraph/hedera-wallet-connect": "2.1.3"
+  }
+}
