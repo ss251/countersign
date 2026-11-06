@@ -442,7 +442,6 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const purchase = usePurchase();
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
-  const money = usd(offer.price, offer.rails[0]);
   const hub = hubBase();
   const base = hub && /^https?:/.test(hub) ? hub : `${window.location.origin}${hub ?? ""}`;
   const command = buyCommand(listing.hash, offer.input, base);
@@ -454,6 +453,8 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const chainOnly = why !== null && offer.rails.includes("escrow");
   const declared = (id: RailId) => rails.data?.find((d) => d.id === id);
   const rail: RailId = wallet ? "escrow" : offer.rails[0]!;
+  // The amount in the asset of the rail this card shows: Arc USDC whenever the wallet signs.
+  const money = usd(offer.price, rail);
   const declaration = declared(rail);
   const kind = declaration ? termsKind(declaration) : undefined;
   const input = exampleInput(offer.input);
@@ -564,7 +565,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
           ) : null}
           <HoldToSign
             key={attempt}
-            ariaLabel={`Countersign ${formatMoney(money)} for ${offer.title}`}
+            ariaLabel={`Get your agent's command to countersign ${formatMoney(money)} for ${offer.title}`}
             left={listing.seller.name}
             right="you"
             label="Hold to get your agent's command"
