@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { slipHash, slipTypedData, type Slip, type SlipBody } from "@countersign/core";
+import { keccak256, toBytes } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { verifySlip } from "../src/verify.ts";
 
@@ -10,7 +11,7 @@ const base = { network: "hedera:testnet", amount: "30000", asset: "0.0.429274", 
 
 async function slip(rail: string, accepted: Record<string, unknown>, payload: Record<string, unknown>): Promise<Slip> {
   const body = {
-    v: 1, rail, network: "hedera:testnet", offerHash: h("1"), jobId: h("2"), buyer: "0.0.11337064",
+    v: 1, rail, network: "hedera:testnet", offerHash: h("1"), jobId: keccak256(toBytes(createTx)), buyer: "0.0.11337064",
     seller: seller.address, payTo: String(accepted.payTo), asset: "0.0.429274", amount: "30000",
     inputHash: h("3"), outputHash: h("4"), deliveredAt: 1762440000, children: [],
   } as unknown as SlipBody;

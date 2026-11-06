@@ -217,6 +217,17 @@ describe("a held slip's countersignature", () => {
     expect(finding.ok).toBe(false);
     expect(finding.detail).toBe(`the slip's settlement ${other} is not the schedule's create ${CREATE_TX}`);
   });
+
+  test("is refused when the job is not the schedule the payment names", async () => {
+    const otherJob = keccak256(toBytes("0.0.11337064@1793979999.000000000"));
+    const verdict = await verifySlip(await heldSlip({ body: { jobId: otherJob } }));
+    expect(verdict.valid).toBe(false);
+    const finding = verdict.findings.find((f) => f.check === "countersignature")!;
+    expect(finding.ok).toBe(false);
+    expect(finding.detail).toBe(
+      `the seller signed job ${otherJob}, not the job this schedule paid (${keccak256(toBytes(CREATE_TX))})`,
+    );
+  });
 });
 
 describe("a held slip's mirror", () => {
