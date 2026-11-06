@@ -12,12 +12,15 @@ import {
   type SettleResult,
 } from "./deps.ts";
 import type { Context, Hono } from "hono";
+import { owns, personFrom, type PrivyVerifier } from "./privy.ts";
 import type { JobRecord, Store } from "./store.ts";
 
 export interface ReviewDeps {
   store: Store;
   rails: Rail[];
   now: () => number;
+  /** Privy access-token verifier. Without it, the Privy header is ignored. */
+  privy?: PrivyVerifier;
 }
 
 type Action = "accept" | "dispute";
@@ -31,6 +34,12 @@ async function handleReview(c: Context, deps: ReviewDeps, action: Action): Promi
   const jobId = c.req.param("jobId");
   const job = jobId === undefined ? null : deps.store.getJob(jobId);
   if (job === null) return fail(404, "unknown-job", "Refused. That job is not known.");
+
+  const privyCheck = await personFrom(c.req.raw.headers, deps.privy);
+  if (privyCheck.kind === "refused") return fail(privyCheck.status, privyCheck.code, privyCheck.message);
+  if (privyCheck.kind === "person" && !owns(privyCheck.person, job.buyer)) {
+    return fail(403, "not-your-job", "Refused. This job was not bought by one of your wallets.");
+  }
 
   const now = deps.now();
   const rail = deps.rails.find((candidate) => candidate.declaration.id === job.rail);
