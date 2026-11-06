@@ -119,8 +119,6 @@ export const erc8004Arc: Flow = {
   title: "ERC-8004 identities and earned feedback on Arc",
   owner: "orch-cs",
   network: "arc",
-  // Parked by the firstmate (captain, 19:40 IST) until the hourly suite is green again.
-  onDemand: "parked until the suite is green; run it with --flow erc8004-arc",
   notRun: (env) => (env.options.publicHub ? null : "no public hub configured"),
   async run(ctx) {
     const hub = (ctx.env.options.publicHub as string).replace(/\/+$/, "");

@@ -37,8 +37,7 @@ export const hederaSchedule: Flow = {
   title: "Hedera scheduled checkout: the seller's signature executes it",
   owner: "cs-hd",
   network: "hedera",
-  // Parked by the firstmate (captain, 19:40 IST) until the hourly suite is green again; it also costs HBAR.
-  onDemand: "parked until the suite is green, about 0.18 HBAR a run; run it with --flow hedera-schedule",
+  onDemand: "about 0.18 HBAR a run; run it with --flow hedera-schedule",
   spends(env) {
     const w = wallets(env.secrets);
     return [
