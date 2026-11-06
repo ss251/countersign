@@ -381,3 +381,54 @@ describe("whitechainPaywall concurrent token retries", () => {
     expect(lookups).toEqual([]);
   });
 });
+
+describe("whitechainPaywall a payment the relay still holds as pending", () => {
+  test("after our own retry, invalid_transaction_state with a transaction stays pending behind a token", async () => {
+    const relay = createTestRelay();
+    const { fetch, lookups, settleCalls } = stub({
+      settles: [
+        "throw",
+        { success: false, errorReason: "invalid_transaction_state", transaction: "0xheld", network: NETWORK },
+      ],
+      order: (url) => (url === "/orders/0xheld" ? { status: "paid" } : { status: "pending" }),
+    });
+    let served = 0;
+    const app = appFor(relay, { fetch, settleRetryDelayMs: 0, now: () => NOW }, (c) => {
+      served += 1;
+      return c.json({ forecast: "rain" });
+    });
+    const header = await headerFor(relay);
+    const call = (retryToken?: string) =>
+      app.request("/forecast", {
+        headers: {
+          [PAYMENT_SIGNATURE_HEADER]: header,
+          ...(retryToken ? { [PAYMENT_RETRY_HEADER]: retryToken } : {}),
+        },
+      });
+
+    const first = await call();
+    expect(first.status).toBe(402);
+    const token = retryTokenOf(first);
+    expect(settleCalls()).toBe(2);
+    const servedBefore = served;
+
+    const retry = await call(token);
+    expect(retry.status).toBe(200);
+    expect(served - servedBefore).toBe(1);
+    expect(lookups).toEqual(["/orders/0xheld"]);
+    expect(settleCalls()).toBe(2);
+  });
+
+  test("without our own retry, invalid_transaction_state is still a plain refusal", async () => {
+    const relay = createTestRelay();
+    const { fetch, settleCalls } = stub({
+      settles: [{ success: false, errorReason: "invalid_transaction_state", transaction: "0xother", network: NETWORK }],
+    });
+    const app = appFor(relay, { fetch, settleRetryDelayMs: 0, now: () => NOW });
+    const header = await headerFor(relay);
+    const first = await app.request("/forecast", { headers: { [PAYMENT_SIGNATURE_HEADER]: header } });
+    expect(first.status).toBe(402);
+    expect(first.headers.get(PAYMENT_RETRY_HEADER)).toBeNull();
+    expect(settleCalls()).toBe(1);
+  });
+});

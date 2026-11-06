@@ -274,7 +274,15 @@ export function whitechainPaywall(options: PaywallOptions): MiddlewareHandler {
         return { kind: "refused", response };
       }
       if (settle.success !== true) {
-        if (settle.errorReason === "settlement_pending") {
+        // After our own retry, the relay answers a payment it still holds as pending with
+        // invalid_transaction_state and that payment's transaction. The transaction can still
+        // charge, so the claim stays pending behind a token, exactly as for settlement_pending.
+        const ownPending =
+          retried &&
+          settle.errorReason === "invalid_transaction_state" &&
+          typeof settle.transaction === "string" &&
+          settle.transaction !== "";
+        if (settle.errorReason === "settlement_pending" || ownPending) {
           // The transaction may still land, so keep the payment claimed until it cannot.
           const retryToken = newRetryToken();
           if (claim) pendingClaim(claim.key, claim.validBefore, settle.transaction, retryToken);
