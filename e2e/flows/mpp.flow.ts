@@ -19,7 +19,7 @@ import { createPublicClient, decodeEventLog, defineChain, erc20Abi, getAddress, 
 import { units, type Wallet } from "../lib/budget.ts";
 import { TEMPO } from "../lib/chains.ts";
 import { check, equal, sameHex, type Flow, type FlowCtx } from "../lib/flow.ts";
-import { freePort } from "../lib/http.ts";
+import { freePort, sleep } from "../lib/http.ts";
 import { ROOT } from "../lib/paths.ts";
 import { runCmd, spawnProc } from "../lib/procs.ts";
 
@@ -165,6 +165,18 @@ export const mpp: Flow = {
       ctx.defer(() => proc.stop());
       const ready = await proc.waitFor(/mpp demo on http:\/\/localhost:\d+: (.*)$/m, 30_000);
       check(ready[1]?.includes("chain 42431") && ready[1].includes("Stripe card method off"), `ready line: ${ready[1]}`);
+      // The server prints ready before it listens, so wait for a real answer from the port.
+      const until = Date.now() + 30_000;
+      for (;;) {
+        try {
+          const res = await fetch(`${base}/openapi.json`, { signal: AbortSignal.timeout(2000) });
+          if (res.status === 200) break;
+        } catch {
+          // connection refused or timed out: the server is not listening yet
+        }
+        check(Date.now() < until, "the mpp demo server printed ready but did not answer within 30 s");
+        await sleep(250);
+      }
     });
 
     await ctx.step("the 402 names Tempo testnet, the price and the recipient, before anything pays", async () => {

@@ -217,3 +217,39 @@ The headless browser is no longer cut. A person has to be able to sign in, conne
   - The test then runs that path with a test EIP-1193 provider from a throwaway key.
 - **Funding.** The test wallet is funded with 1 USDC on Arc by a dedicated test-funder key before it buys, and the test asserts the balance. The deployer's own key never sits in CI.
 - **Status.** `docs/status.md` marks this `IN DESIGN` until the project exists, and `SHIPPED` only when it runs green.
+
+## D17 — a call nested inside a purchase of the same offer or seller is refused before payment (06 Nov; refs #27)
+
+A call's `lineage` lists the jobIds of the purchases it is nested inside, outermost first (`CallRequest` in `packages/core/src/wire.ts`). The hub now uses it for what it was declared for: refusing cycles.
+
+- **The rule.** Before any 402 or payment, the hub resolves each lineage jobId it knows. If an ancestor job bought the same offer, or an offer from the same seller, the call is refused with 409 `lineage-cycle`: "Refused. This call is nested inside a purchase of the same offer or from the same seller, so it would close a cycle. Nothing was charged."
+- **Where.** First in the paid-call pipeline, right after the offer is loaded. It runs before the ENS lock, both input gates, the online check and the rails.
+- **What it cannot see.** A jobId this hub does not hold, such as a purchase made through another hub, is skipped. A caller that sends no lineage is not checked. Lineage comes from the caller, so the check stops honest agents from looping, not a buyer who hides its ancestry.
+
+## D19 — the hub checks a signed-in person with Privy on the routes that act for them; signatures still authorise money (06 Nov; refs #21)
+
+**When it is on.** Only when `PRIVY_APP_ID` and `PRIVY_APP_SECRET` are both set. Otherwise every route behaves exactly as before, and a Privy header is ignored.
+
+**The token.**
+- The console sends the person's Privy access token in `X-Privy-Token`. `Authorization: Bearer` stays the operator's `HUMAN_APPROVAL_TOKEN`.
+- The hub verifies the token with `@privy-io/server-auth` (`verifyAuthToken`; the token's app id must be ours), then reads the person's Ethereum wallets with `getUserById`, cached for 60 seconds.
+- An invalid token gets 401 and an unreachable Privy gets 503, both before any 402 or payment.
+
+**The routes that act for a person, and what the person must own.**
+
+| Route | A verified person must own |
+|---|---|
+| `GET /envelopes/:agent` | the approver named in that agent's envelope |
+| `GET /approvals?agent=` | the approver named in that agent's envelope |
+| `POST /approvals/:id/decision` | the approver named in the envelope of the approval's agent |
+| `POST /offers/:offerHash/call` | the payer the rail verified, which must be an EVM address |
+| `POST /jobs/:jobId/accept`, `POST /jobs/:jobId/dispute` | the job's buyer |
+
+- **The three approval routes.** A verified person who owns the approver needs no operator token. A caller with no Privy token uses the operator token exactly as before.
+- **The other three routes.** The token is optional, because agents call them without one. When a token is sent, it must verify and the person must own the address.
+
+**What the token never does.** It never replaces a signature. The payment signature, the approver's decision signature and the buyer's review signature are checked exactly as before, and they alone authorise money.
+
+**Left out on purpose.**
+- `PUT /envelopes/:agent`, `POST /approvals` and `POST /offers` are signed by an agent or a seller key, not by a person.
+- The merchant refund is not a hub route: it lives on the merchant's own service.
