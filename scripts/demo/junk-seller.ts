@@ -16,6 +16,8 @@
 
 import {
   canonicalHash,
+  jobIdOf,
+  lockTypedData,
   offerHash,
   publishMessage,
   RUNNER_PATH,
@@ -92,6 +94,23 @@ socket.addEventListener("message", async (event: MessageEvent) => {
     const sellerSig = await account.signTypedData(slipTypedData(body));
     send({ t: "result", jobId: order.jobId, output: delivered, slip: { body, hash: slipHash(body), sellerSig } });
     console.log(`[junk-seller] delivered junk for job ${order.jobId}`);
+  } else if (message.t === "lock") {
+    // The proof's seller still consents only to its own offer's job, as the runner does (cs-w1's B28):
+    // the hub's countersigned terms must name it as payee and rebuild exactly the job id it is asked to lock.
+    const terms = message.terms;
+    const ours =
+      terms !== undefined &&
+      message.offerHash.toLowerCase() === hash.toLowerCase() &&
+      terms.payee.toLowerCase() === account.address.toLowerCase() &&
+      jobIdOf({ offerHash: message.offerHash, ...terms }, message.chainId, message.escrow).toLowerCase() ===
+        message.jobId.toLowerCase();
+    if (!ours) {
+      send({ t: "lock-refused", jobId: message.jobId, reason: "job-mismatch" });
+      return;
+    }
+    const sig = await account.signTypedData(lockTypedData(message.chainId, message.escrow, message.jobId, message.funder));
+    send({ t: "locked", jobId: message.jobId, sig });
+    console.log(`[junk-seller] locked its bond for job ${message.jobId}, funder ${message.funder}`);
   } else if (message.t === "error") {
     console.error(`[junk-seller] hub: ${message.message}`);
   }
