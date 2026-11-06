@@ -5,7 +5,17 @@
  * names. Accept signs the slip hash of a slip this agent holds and checks itself. The hub
  * relays the signature so the buyer pays no gas; the escrow checks it again on chain.
  */
-import { createPublicClient, getAddress, http, type Address, type Hex, type LocalAccount } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  getAddress,
+  http,
+  type Address,
+  type Hex,
+  type LocalAccount,
+  type Transport,
+} from "viem";
 import {
   acceptTypedData,
   disputeTypedData,
@@ -40,6 +50,12 @@ export interface ReviewArgs {
   now: number;
   known?: KnownRail[];
   readJob?: JobReader;
+  /** When the hub does not relay a dispute, send dispute(jobId, "") from the agent's key. */
+  direct?: boolean;
+  /** The agent's full key, needed to send a direct dispute. The CLI passes it; tests inject a transport. */
+  account?: LocalAccount;
+  /** Test hook: the transport the direct dispute is sent over. Defaults to the rail's own RPC. */
+  transport?: Transport;
 }
 
 export interface ReviewResult {
@@ -47,7 +63,23 @@ export interface ReviewResult {
   escrow: Address;
   chainId: number;
   signature: Hex;
+  /** The tx that carried a direct dispute, when the hub did not relay it. */
+  transaction?: Hex;
 }
+
+/** Escrow v2's dispute(jobId, buyerSig): the buyer itself may submit with an empty signature. */
+const DISPUTE_ABI = [
+  {
+    type: "function",
+    name: "dispute",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "jobId", type: "bytes32" },
+      { name: "buyerSig", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
 
 /** Escrow v2 statuses a dispute can apply to: Funded (1) and Delivered (5). */
 const DISPUTABLE = new Set([1, 5]);
@@ -101,9 +133,61 @@ export async function disputeJob(a: ReviewArgs): Promise<ReviewResult> {
 
   const rail = await fundedOn(a, jobId, entries, known);
   const signature = await a.signer.signTypedData(disputeTypedData(rail.chainId, rail.escrow, jobId));
-  await a.hub.disputeJob(jobId, signature);
-  a.journal.append({ ...record(a, jobId, entries), kind: "disputed" });
-  return { jobId, escrow: rail.escrow, chainId: rail.chainId, signature };
+  let transaction: Hex | undefined;
+  try {
+    await a.hub.disputeJob(jobId, signature);
+  } catch (error) {
+    if (!a.direct) throw error;
+    transaction = await submitDispute(a, rail, jobId);
+  }
+  a.journal.append({
+    ...record(a, jobId, entries),
+    kind: "disputed",
+    ...(transaction !== undefined ? { closeTx: transaction } : {}),
+  });
+  return {
+    jobId,
+    escrow: rail.escrow,
+    chainId: rail.chainId,
+    signature,
+    ...(transaction !== undefined ? { transaction } : {}),
+  };
+}
+
+/**
+ * Submit dispute(jobId, "") from the agent's own key, which makes msg.sender the buyer.
+ * Used only with --direct, and only when the hub would not relay the signed dispute.
+ */
+async function submitDispute(a: ReviewArgs, rail: KnownRail, jobId: Hex): Promise<Hex> {
+  const account = a.account;
+  if (!account) refuse("The agent key is not available to send the dispute itself.");
+  return sendDispute(rail, jobId, account, a.transport);
+}
+
+/** The viem wallet client that carries a direct dispute on the pinned rail's RPC. */
+export async function sendDispute(
+  rail: KnownRail,
+  jobId: Hex,
+  account: LocalAccount,
+  transport?: Transport,
+): Promise<Hex> {
+  const chain = defineChain({
+    id: rail.chainId,
+    name: `rpc-${rail.chainId}`,
+    nativeCurrency: { name: "native", symbol: "NATIVE", decimals: 18 },
+    rpcUrls: { default: { http: [rail.rpcUrl] } },
+  });
+  const wallet = createWalletClient({
+    chain,
+    transport: transport ?? http(rail.rpcUrl),
+    account,
+  });
+  return wallet.writeContract({
+    address: rail.escrow,
+    abi: DISPUTE_ABI,
+    functionName: "dispute",
+    args: [jobId, "0x"],
+  });
 }
 
 /** Read a job from a pinned escrow on chain. */

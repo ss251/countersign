@@ -58,6 +58,23 @@ export interface ChallengeContext {
   now: number;
 }
 
+/** The review a v2 escrow opens when a delivery is committed. Times are unix seconds. */
+export interface ReviewState {
+  window: number;
+  deliveredAt: number;
+  endsAt: number;
+}
+
+/** Every status an escrow can report. v2 adds delivered (5) and disputed (6). */
+export type EscrowStatus =
+  | "none"
+  | "funded"
+  | "released"
+  | "refunded"
+  | "failed"
+  | "delivered"
+  | "disputed";
+
 /** Closing a funded job on an escrow rail. Each call returns the tx that did it. */
 export interface EscrowOps {
   release(jobId: Hex, slipHash: Hex, sellerSig: Hex): Promise<SettleResult>;
@@ -69,7 +86,19 @@ export interface EscrowOps {
   failDelivery?(jobId: Hex): Promise<SettleResult>;
   /** The payee's free (unlocked) bond, in atomic units. */
   bondOfPayee?(payee: Hex): Promise<string>;
-  status(jobId: Hex): Promise<"none" | "funded" | "released" | "refunded" | "failed">;
+  /** Escrow v2: the buyer accepts a delivered job, paying the seller before the window ends. */
+  accept?(jobId: Hex, buyerSig: Hex): Promise<SettleResult>;
+  /** Escrow v2: the buyer disputes a funded or delivered job, refunding itself at once. */
+  dispute?(jobId: Hex, buyerSig: Hex): Promise<SettleResult>;
+  /** Escrow v2: anyone releases a delivered job after its review window. */
+  releaseAfterWindow?(jobId: Hex): Promise<SettleResult>;
+  /** Escrow v2: the delivery's review window, when it was recorded. */
+  reviewOf?(jobId: Hex): Promise<ReviewState>;
+  /** Escrow v2: pays the accrued toll to the treasury. */
+  sweepToll?(): Promise<SettleResult>;
+  /** Seconds after the deadline in which release and failDelivery may land. 0 on v1, 600 on v2. */
+  disputeWindowSeconds?: number;
+  status(jobId: Hex): Promise<EscrowStatus>;
   /** The contract's toll in basis points. Reads the view once per rail instance, then caches it. */
   tollBps?(): Promise<number>;
 }

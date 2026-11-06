@@ -95,16 +95,28 @@ export function tape(rows: Settlement[], g: Geometry): Map<string, Spot> {
   return out;
 }
 
+/**
+ * More rails than this and the groups are crowded: each label splits its chain from its rail on two
+ * short lines, and on a wide screen the stepped-back groups narrow to four columns, so neither the
+ * labels nor the marks of two neighbouring groups can touch, at four rails or five.
+ */
+export const ROOMY = 3;
+
+/** Marks per row for a beat: fewer when crowded groups step back into the left half of a wide screen. */
+export function colsFor(order: RailId[], beat: number, narrow: boolean, g: Geometry): number {
+  return beat >= 3 && !narrow && order.length > ROOMY ? 4 : g.cols;
+}
+
 /** 2b: the same marks grouped by rail, each group a small block standing on the line over its label. */
-export function groups(rows: Settlement[], order: RailId[], g: Geometry, at: number[]): Map<string, Spot> {
+export function groups(rows: Settlement[], order: RailId[], g: Geometry, at: number[], cols: number = g.cols): Map<string, Spot> {
   const out = new Map<string, Spot>();
   order.forEach((rail, i) => {
     const mine = byTime(rows.filter((s) => s.rail === rail));
     const centre = at[i] ?? 50;
-    const width = Math.min(g.cols, mine.length);
+    const width = Math.min(cols, mine.length);
     mine.forEach((s, j) => {
-      const col = j % g.cols;
-      const row = Math.floor(j / g.cols);
+      const col = j % cols;
+      const row = Math.floor(j / cols);
       out.set(keyOf(s), {
         x: centre,
         y: g.base,
@@ -155,7 +167,7 @@ export function markSpots(rows: Settlement[], order: RailId[], beat: number, nar
     return t;
   }
   const at = beat >= 3 && !narrow ? centres(order.length, 0, 42) : centres(order.length);
-  const spots = groups(rows, order, g, at);
+  const spots = groups(rows, order, g, at, colsFor(order, beat, narrow, g));
   if (beat === 2) return spots;
   const dim = beat === 3 ? (narrow ? 0.22 : 0.3) : 0;
   for (const [k, p] of spots) spots.set(k, { ...p, o: dim });
