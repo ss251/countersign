@@ -149,13 +149,21 @@
   pointer-events: auto;
 }
 
-/* The captain's loop sits behind the claim, muted; a poster until it loads; nothing until it exists. */
+/*
+ * The captain's loop sits behind the claim: the poster first, then the video. A flat 25% (an ink
+ * scrim, never a gradient) keeps the statement above 10:1 and the sub-line above 4.5:1 on every
+ * frame, measured against the plate's brightest fibres. The plate is dark, so light shows none of it.
+ */
 .landing__loop {
   position: absolute;
   inset: 0;
-  opacity: 0.42;
+  opacity: 0.25;
   background: url("/media/hero-poster.jpg") center / cover no-repeat;
   pointer-events: none;
+}
+
+:root[data-theme="light"] .landing__loop {
+  display: none;
 }
 
 .landing__loop video {

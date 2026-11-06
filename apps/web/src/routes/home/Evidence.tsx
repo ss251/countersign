@@ -482,31 +482,42 @@ export function Tick({ value }: { value: string }) {
 }
 
 /*
- * The captain's loop, when it exists: decoration that drops in later. A poster first, the video
- * only after first paint, only if the file is there, only while the claim is on screen, and never
- * under reduced motion. The page never waits on it.
+ * The captain's loop: decoration behind the claim, and the page never waits on it. The poster is
+ * the first frame (a CSS background, no script). The video gets its sources only once the browser
+ * is idle after first paint, plays muted and inline while the claim is on screen, and pauses
+ * when it is not. It never loads under reduced motion, on Save-Data, or when light is pinned,
+ * because the plate is dark.
  */
 function HeroLoop({ live }: { live: boolean }) {
-  const [video, setVideo] = useState(false);
+  const [load, setLoad] = useState(false);
+  const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let alive = true;
-    const id = window.setTimeout(() => {
-      fetch("/media/hero.mp4", { method: "HEAD" }).then(
-        (r) => {
-          if (alive && r.ok && (r.headers.get("content-type") ?? "").startsWith("video/")) setVideo(true);
-        },
-        () => undefined,
-      );
-    }, 800);
-    return () => {
-      alive = false;
-      window.clearTimeout(id);
-    };
+    if (document.documentElement.dataset.theme === "light") return;
+    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+    const start = () => setLoad(true);
+    // Safari has no requestIdleCallback; a short timer after first paint stands in.
+    if (typeof (window as Partial<Window>).requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(start, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(start, 800);
+    return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    if (live) v.play().catch(() => undefined);
+    else v.pause();
+  }, [live, load]);
   return (
     <div className="landing__loop" aria-hidden="true">
-      {video && live ? <video src="/media/hero.mp4" poster="/media/hero-poster.jpg" autoPlay muted loop playsInline preload="none" /> : null}
+      {load ? (
+        <video ref={video} muted loop playsInline preload="none" poster="/media/hero-poster.jpg">
+          <source src="/media/hero.webm" type="video/webm" />
+          <source src="/media/hero.mp4" type="video/mp4" />
+        </video>
+      ) : null}
     </div>
   );
 }
