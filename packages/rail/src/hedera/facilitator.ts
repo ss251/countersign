@@ -29,6 +29,9 @@ export interface Facilitator {
   settle(payment: X402Payload, requirements: X402Requirements): Promise<SettleResponse>;
 }
 
+/** Per-attempt timeout for reading a facilitator's fee payer: /supported answers in well under a second. */
+export const FEE_PAYER_LOOKUP_TIMEOUT_MS = 10_000;
+
 export function httpFacilitator(name: string, url: string, timeoutMs = 30_000): Facilitator {
   const client = new HTTPFacilitatorClient({ url, timeoutMs });
   return {
@@ -44,6 +47,31 @@ export function httpFacilitator(name: string, url: string, timeoutMs = 30_000): 
     verify: (payment, requirements) => client.verify(payment, requirements),
     settle: (payment, requirements) => client.settle(payment, requirements),
   };
+}
+
+/**
+ * A facilitator's fee payer, retried across a transient failure. The last error's first line says
+ * why when every attempt fails; a facilitator that lists no fee payer is not an error.
+ */
+export async function feePayerWithRetry(
+  facilitator: Pick<Facilitator, "feePayer">,
+  opts?: { attempts?: number; delayMs?: number; sleep?: (ms: number) => Promise<void> },
+): Promise<{ feePayer: string | null; error?: string }> {
+  const attempts = opts?.attempts ?? 3;
+  const delayMs = opts?.delayMs ?? 1_000;
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const feePayer = await facilitator.feePayer();
+      if (feePayer) return { feePayer };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = message.split("\n")[0] ?? message;
+    }
+    if (attempt < attempts) await sleep(delayMs * attempt);
+  }
+  return { feePayer: null, error: lastError ?? "no fee payer listed" };
 }
 
 /**
