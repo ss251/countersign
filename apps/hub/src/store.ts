@@ -67,6 +67,10 @@ export interface ApprovalRecord {
   status: ApprovalStatus;
   createdAt: number;
   decidedAt: number | null;
+  /** The agent's signature over the request body, unique per request. */
+  requestSig: string | null;
+  /** The approver's signature over the decision body. */
+  decisionSig: string | null;
 }
 
 /** A job joined with its offer's seller and its stored slip, for ratings and stats. */
@@ -148,6 +152,8 @@ interface ApprovalRow {
   status: string;
   created_at: number;
   decided_at: number | null;
+  request_sig: string | null;
+  decision_sig: string | null;
 }
 
 export class Store {
@@ -217,9 +223,19 @@ export class Store {
         terms_json TEXT NOT NULL,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        decided_at INTEGER NULL
+        decided_at INTEGER NULL,
+        request_sig TEXT NULL,
+        decision_sig TEXT NULL
       )
     `);
+    const approvalColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(approvals)").all();
+    if (!approvalColumns.some((column) => column.name === "request_sig")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN request_sig TEXT NULL");
+    }
+    if (!approvalColumns.some((column) => column.name === "decision_sig")) {
+      this.db.run("ALTER TABLE approvals ADD COLUMN decision_sig TEXT NULL");
+    }
+    this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS approvals_request_sig ON approvals(request_sig)");
   }
 
   /** Insert a new offer. Returns false when the hash was already stored. */
@@ -458,10 +474,11 @@ export class Store {
     };
   }
 
-  putApproval(approval: ApprovalRecord): void {
-    this.db
+  /** Insert an approval. False when its id or request signature was already stored. */
+  putApproval(approval: ApprovalRecord): boolean {
+    const result = this.db
       .query(
-        "INSERT INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO approvals (id, agent, offer_hash, title, amount, rail, terms_json, status, created_at, decided_at, request_sig, decision_sig) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         approval.id,
@@ -474,7 +491,28 @@ export class Store {
         approval.status,
         approval.createdAt,
         approval.decidedAt,
+        approval.requestSig,
+        approval.decisionSig,
       );
+    return result.changes > 0;
+  }
+
+  /** True when this exact signed request was already accepted. */
+  hasApprovalRequestSig(sig: string): boolean {
+    const row = this.db
+      .query<{ present: number }, [string]>("SELECT 1 AS present FROM approvals WHERE request_sig = ? LIMIT 1")
+      .get(sig);
+    return row !== null;
+  }
+
+  /** Pending approvals for one agent that have not passed the given creation time. */
+  countPendingApprovals(agent: string, since: number): number {
+    const row = this.db
+      .query<{ n: number }, [string, number]>(
+        "SELECT COUNT(*) AS n FROM approvals WHERE agent = ? AND status = 'pending' AND created_at > ?",
+      )
+      .get(agent.toLowerCase(), since);
+    return row?.n ?? 0;
   }
 
   getApproval(id: string): ApprovalRecord | null {
@@ -496,11 +534,16 @@ export class Store {
     return rows.map(approvalFromRow);
   }
 
-  /** Set a pending approval's decision. False when it was already decided. */
-  decideApproval(id: string, status: Exclude<ApprovalStatus, "pending">, decidedAt: number): boolean {
+  /** Set a pending approval's decision and signature. False when it was already decided. */
+  decideApproval(
+    id: string,
+    status: Exclude<ApprovalStatus, "pending">,
+    decidedAt: number,
+    decisionSig: string,
+  ): boolean {
     const result = this.db
-      .query("UPDATE approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
-      .run(status, decidedAt, id);
+      .query("UPDATE approvals SET status = ?, decided_at = ?, decision_sig = ? WHERE id = ? AND status = 'pending'")
+      .run(status, decidedAt, decisionSig, id);
     return result.changes > 0;
   }
 }
@@ -540,5 +583,7 @@ function approvalFromRow(row: ApprovalRow): ApprovalRecord {
     status: row.status as ApprovalStatus,
     createdAt: row.created_at,
     decidedAt: row.decided_at,
+    requestSig: row.request_sig,
+    decisionSig: row.decision_sig,
   };
 }

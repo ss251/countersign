@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 import {
+  approvalDecisionBody,
+  approvalDecisionMessage,
   canonicalJson,
   type Envelope,
   type EnvelopeSpend,
@@ -29,8 +31,10 @@ import { startRunner, type RunnerHandle } from "./runner-client.ts";
 
 const AGENT_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const OTHER_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+const APPROVER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
 const AGENT = privateKeyToAccount(AGENT_KEY);
 const OTHER = privateKeyToAccount(OTHER_KEY);
+const APPROVER = privateKeyToAccount(APPROVER_KEY);
 const BUYER_A: Address = "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa";
 const BUYER_B: Address = "0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb";
 const TOKEN = "s3cret-human-token";
@@ -45,6 +49,18 @@ const ENVELOPE: Envelope = {
   revoked: false,
   askAbove: "100000",
 };
+const APPROVER_ENVELOPE: Envelope = { ...ENVELOPE, approver: APPROVER.address };
+
+const APPROVAL_REQUEST = {
+  agent: AGENT.address,
+  offerHash: `0x${"22".repeat(32)}`,
+  title: "A call that needs a human",
+  amount: "5000000",
+  rail: "escrow",
+  terms: { deadline: NOW + 120, seller: seller.address },
+  requestedAt: NOW,
+};
+type ApprovalRequest = typeof APPROVAL_REQUEST;
 
 const ESCROW_MESSAGE =
   "Refused. The seller's output does not match the offer. Your money returns at the deadline.";
@@ -141,33 +157,87 @@ function startTokenHub(token: string): {
   };
 }
 
-async function createApproval(url: string, requestedAt = NOW, signer = AGENT): Promise<Response> {
-  const body = {
-    agent: AGENT.address,
-    offerHash: `0x${"22".repeat(32)}`,
-    title: "A call that needs a human",
-    amount: "5000000",
-    rail: "escrow",
-    terms: { deadline: NOW + 120, seller: seller.address },
-    requestedAt,
-  };
-  const sig = await signer.signMessage({ message: canonicalJson(body) });
+async function seedMirror(
+  url: string,
+  envelope: Envelope = APPROVER_ENVELOPE,
+  account = AGENT,
+  signedAt = NOW,
+): Promise<void> {
+  const mirror = await signedMirror(account, envelope, SPENT, signedAt);
+  const response = await putMirror(url, account.address, mirror);
+  if (response.status !== 200) throw new Error(`mirror seed failed with ${response.status}`);
+}
+
+async function approvalRequest(overrides: Partial<ApprovalRequest> = {}): Promise<{
+  body: ApprovalRequest;
+  sig: Hex;
+}> {
+  const body = { ...APPROVAL_REQUEST, ...overrides };
+  const sig = await AGENT.signMessage({ message: canonicalJson(body) });
+  return { body, sig };
+}
+
+function postApproval(url: string, request: { body: ApprovalRequest; sig: Hex }): Promise<Response> {
   return fetch(`${url}/approvals`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...body, sig }),
+    body: JSON.stringify({ ...request.body, sig: request.sig }),
   });
 }
 
-function decide(url: string, id: string, token?: string): Promise<Response> {
+async function createApproval(url: string, overrides: Partial<ApprovalRequest> = {}): Promise<Response> {
+  return postApproval(url, await approvalRequest(overrides));
+}
+
+async function signDecision(
+  id: string,
+  overrides: {
+    decision?: "countersign" | "decline";
+    decidedAt?: number;
+    signer?: typeof AGENT;
+    agent?: string;
+    offerHash?: string;
+    amount?: string;
+    rail?: string;
+    terms?: unknown;
+  } = {},
+): Promise<{ decision: "countersign" | "decline"; decidedAt: number; sig: Hex }> {
+  const decision = overrides.decision ?? "countersign";
+  const decidedAt = overrides.decidedAt ?? NOW;
+  const body = approvalDecisionBody({
+    approvalId: id,
+    agent: overrides.agent ?? APPROVAL_REQUEST.agent,
+    offerHash: overrides.offerHash ?? APPROVAL_REQUEST.offerHash,
+    amount: overrides.amount ?? APPROVAL_REQUEST.amount,
+    rail: overrides.rail ?? APPROVAL_REQUEST.rail,
+    terms: overrides.terms ?? APPROVAL_REQUEST.terms,
+    decision,
+    decidedAt,
+  });
+  const sig = await (overrides.signer ?? APPROVER).signMessage({
+    message: approvalDecisionMessage(body),
+  });
+  return { decision, decidedAt, sig };
+}
+
+function postDecision(
+  url: string,
+  id: string,
+  signed: { decision: unknown; decidedAt: unknown; sig?: unknown },
+  token?: string,
+): Promise<Response> {
   return fetch(`${url}/approvals/${id}/decision`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(token !== undefined ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ decision: "countersign" }),
+    body: JSON.stringify(signed),
   });
+}
+
+function authGet(url: string, token = TOKEN): Promise<Response> {
+  return fetch(url, { headers: { authorization: `Bearer ${token}` } });
 }
 
 describe("jobs by buyer", () => {
@@ -309,27 +379,70 @@ describe("jobs by buyer", () => {
 
 describe("envelope mirror", () => {
   test("stores a signed mirror and serves it back", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      const mirror = await signedMirror(AGENT, ENVELOPE, SPENT, NOW);
+
+      const put = await putMirror(tokenHub.url, AGENT.address.toLowerCase(), mirror);
+      expect(put.status).toBe(200);
+      expect(await put.json()).toEqual({ ok: true });
+
+      const get = await authGet(`${tokenHub.url}/envelopes/${AGENT.address.toUpperCase()}`);
+      expect(get.status).toBe(200);
+      const body = (await get.json()) as {
+        envelope: Envelope;
+        spent: EnvelopeSpend;
+        signedAt: number;
+        sig: string;
+        verified: boolean;
+      };
+      expect(body.envelope).toEqual(ENVELOPE);
+      expect(body.spent).toEqual(SPENT);
+      expect(body.signedAt).toBe(NOW);
+      expect(body.sig).toBe(mirror.sig);
+      expect(body.verified).toBe(true);
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("reads need the approver token", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      const mirror = await signedMirror(AGENT, ENVELOPE, SPENT, NOW);
+      expect((await putMirror(tokenHub.url, AGENT.address, mirror)).status).toBe(200);
+
+      expect((await fetch(`${tokenHub.url}/envelopes/${AGENT.address}`)).status).toBe(401);
+      expect(
+        (await fetch(`${tokenHub.url}/envelopes/${AGENT.address}`, {
+          headers: { authorization: "Bearer wrong" },
+        })).status,
+      ).toBe(401);
+      expect((await authGet(`${tokenHub.url}/envelopes/${AGENT.address}`)).status).toBe(200);
+
+      expect((await fetch(`${tokenHub.url}/approvals?agent=${AGENT.address}`)).status).toBe(401);
+      expect((await authGet(`${tokenHub.url}/approvals?agent=${AGENT.address}`)).status).toBe(200);
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a hub with no token refuses reads with 503", async () => {
+    hub = startHub();
+    expect((await fetch(`${hub.url}/envelopes/${AGENT.address}`)).status).toBe(503);
+    expect((await fetch(`${hub.url}/approvals?agent=${AGENT.address}`)).status).toBe(503);
+  });
+
+  test("an oversized mirror is a 413", async () => {
     hub = startHub();
     const mirror = await signedMirror(AGENT, ENVELOPE, SPENT, NOW);
-
-    const put = await putMirror(hub.url, AGENT.address.toLowerCase(), mirror);
-    expect(put.status).toBe(200);
-    expect(await put.json()).toEqual({ ok: true });
-
-    const get = await fetch(`${hub.url}/envelopes/${AGENT.address.toUpperCase()}`);
-    expect(get.status).toBe(200);
-    const body = (await get.json()) as {
-      envelope: Envelope;
-      spent: EnvelopeSpend;
-      signedAt: number;
-      sig: string;
-      verified: boolean;
-    };
-    expect(body.envelope).toEqual(ENVELOPE);
-    expect(body.spent).toEqual(SPENT);
-    expect(body.signedAt).toBe(NOW);
-    expect(body.sig).toBe(mirror.sig);
-    expect(body.verified).toBe(true);
+    const response = await fetch(`${hub.url}/envelopes/${AGENT.address}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...mirror, pad: "x".repeat(17_000) }),
+    });
+    expect(response.status).toBe(413);
+    expect(((await response.json()) as ErrorBody).code).toBe("too-large");
   });
 
   test("a wrong signer is a 401", async () => {
@@ -365,24 +478,29 @@ describe("envelope mirror", () => {
   });
 
   test("an unknown agent has no mirror", async () => {
-    hub = startHub();
-    const response = await fetch(`${hub.url}/envelopes/${AGENT.address}`);
-    expect(response.status).toBe(404);
-    const body = (await response.json()) as ErrorBody;
-    expect(body.code).toBe("unknown-agent");
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      const response = await authGet(`${tokenHub.url}/envelopes/${AGENT.address}`);
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as ErrorBody;
+      expect(body.code).toBe("unknown-agent");
+    } finally {
+      tokenHub.close();
+    }
   });
 });
 
 describe("human approvals", () => {
-  test("create, list, decide, and refuse a second decision", async () => {
+  test("create, list, decide with the approver's signature, and refuse a second decision", async () => {
     const tokenHub = startTokenHub(TOKEN);
     try {
+      await seedMirror(tokenHub.url);
       const created = await createApproval(tokenHub.url);
       expect(created.status).toBe(201);
       const { id } = (await created.json()) as { id: string };
       expect(id).toMatch(/^[0-9a-f]{32}$/);
 
-      const pending = (await fetch(
+      const pending = (await authGet(
         `${tokenHub.url}/approvals?agent=${AGENT.address.toLowerCase()}&status=pending`,
       ).then((r) => r.json())) as { approvals: { id: string; status: string }[] };
       expect(pending.approvals.map((row) => row.id)).toEqual([id]);
@@ -392,22 +510,25 @@ describe("human approvals", () => {
       expect(one.status).toBe(200);
       expect(((await one.json()) as { status: string }).status).toBe("pending");
 
-      expect((await decide(tokenHub.url, id, "wrong")).status).toBe(401);
-      expect((await decide(tokenHub.url, id)).status).toBe(401);
+      const signed = await signDecision(id);
+      expect((await postDecision(tokenHub.url, id, signed, "wrong")).status).toBe(401);
+      expect((await postDecision(tokenHub.url, id, signed)).status).toBe(401);
 
-      const decided = await decide(tokenHub.url, id, TOKEN);
+      const decided = await postDecision(tokenHub.url, id, signed, TOKEN);
       expect(decided.status).toBe(200);
 
       const after = (await fetch(`${tokenHub.url}/approvals/${id}`).then((r) => r.json())) as {
         status: string;
         decidedAt: number | null;
+        decisionSig: string | null;
       };
       expect(after.status).toBe("countersign");
       expect(after.decidedAt).toBe(NOW);
+      expect(after.decisionSig).toBe(signed.sig);
 
-      expect((await decide(tokenHub.url, id, TOKEN)).status).toBe(409);
+      expect((await postDecision(tokenHub.url, id, signed, TOKEN)).status).toBe(409);
 
-      const decidedList = (await fetch(
+      const decidedList = (await authGet(
         `${tokenHub.url}/approvals?agent=${AGENT.address}&status=decided`,
       ).then((r) => r.json())) as { approvals: { id: string }[] };
       expect(decidedList.approvals.map((row) => row.id)).toEqual([id]);
@@ -416,11 +537,134 @@ describe("human approvals", () => {
     }
   });
 
-  test("a bad signature is a 401 and a stale request is a 409", async () => {
+  test("a decision with no signature is a 400", async () => {
     const tokenHub = startTokenHub(TOKEN);
     try {
-      expect((await createApproval(tokenHub.url, NOW, OTHER)).status).toBe(401);
-      expect((await createApproval(tokenHub.url, NOW - 301)).status).toBe(409);
+      await seedMirror(tokenHub.url);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const response = await postDecision(
+        tokenHub.url,
+        id,
+        { decision: "countersign", decidedAt: NOW },
+        TOKEN,
+      );
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as ErrorBody).code).toBe("bad-request");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a signature from a key that is not the approver is a 401", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const signed = await signDecision(id, { signer: OTHER });
+      const response = await postDecision(tokenHub.url, id, signed, TOKEN);
+      expect(response.status).toBe(401);
+      expect(((await response.json()) as ErrorBody).code).toBe("bad-signature");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a decision time away from the hub's clock is a 400", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const signed = await signDecision(id, { decidedAt: NOW - 301 });
+      const response = await postDecision(tokenHub.url, id, signed, TOKEN);
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as ErrorBody).code).toBe("bad-request");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a bad request signature is a 401 and a stale request is a 409", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const body = APPROVAL_REQUEST;
+      const sig = await OTHER.signMessage({ message: canonicalJson(body) });
+      expect((await postApproval(tokenHub.url, { body, sig })).status).toBe(401);
+      expect((await createApproval(tokenHub.url, { requestedAt: NOW - 301 })).status).toBe(409);
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("an agent without a mirror cannot ask for approvals", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      const response = await createApproval(tokenHub.url);
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as ErrorBody).code).toBe("unknown-agent");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a decision for an envelope with no approver is a 409 no-approver", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url, ENVELOPE);
+      const created = await createApproval(tokenHub.url);
+      const { id } = (await created.json()) as { id: string };
+      const signed = await signDecision(id);
+      const response = await postDecision(tokenHub.url, id, signed, TOKEN);
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as ErrorBody).code).toBe("no-approver");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("a replayed approval request is a 409", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      const request = await approvalRequest();
+      expect((await postApproval(tokenHub.url, request)).status).toBe(201);
+      const replay = await postApproval(tokenHub.url, request);
+      expect(replay.status).toBe(409);
+      expect(((await replay.json()) as ErrorBody).code).toBe("duplicate-request");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("the twenty-first pending request is a 429", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      await seedMirror(tokenHub.url);
+      for (let i = 0; i < 20; i++) {
+        const response = await createApproval(tokenHub.url, { amount: String(5_000_000 + i) });
+        expect(response.status).toBe(201);
+      }
+      const response = await createApproval(tokenHub.url, { amount: "5999999" });
+      expect(response.status).toBe(429);
+      expect(((await response.json()) as ErrorBody).code).toBe("too-many-pending");
+    } finally {
+      tokenHub.close();
+    }
+  });
+
+  test("an oversized approval request is a 413", async () => {
+    const tokenHub = startTokenHub(TOKEN);
+    try {
+      const response = await fetch(`${tokenHub.url}/approvals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pad: "x".repeat(17_000) }),
+      });
+      expect(response.status).toBe(413);
+      expect(((await response.json()) as ErrorBody).code).toBe("too-large");
     } finally {
       tokenHub.close();
     }
@@ -428,9 +672,11 @@ describe("human approvals", () => {
 
   test("no configured approver is a 503", async () => {
     hub = startHub();
+    await seedMirror(hub.url);
     const created = await createApproval(hub.url);
     const { id } = (await created.json()) as { id: string };
-    const response = await decide(hub.url, id, TOKEN);
+    const signed = await signDecision(id);
+    const response = await postDecision(hub.url, id, signed, TOKEN);
     expect(response.status).toBe(503);
     const body = (await response.json()) as ErrorBody;
     expect(body.code).toBe("no-approver");
@@ -439,6 +685,7 @@ describe("human approvals", () => {
   test("an approval older than fifteen minutes reads expired and cannot be decided", async () => {
     const tokenHub = startTokenHub(TOKEN);
     try {
+      await seedMirror(tokenHub.url);
       const created = await createApproval(tokenHub.url);
       const { id } = (await created.json()) as { id: string };
       tokenHub.setNow(NOW + 901);
@@ -448,12 +695,13 @@ describe("human approvals", () => {
       };
       expect(one.status).toBe("expired");
 
-      const pending = (await fetch(
+      const pending = (await authGet(
         `${tokenHub.url}/approvals?agent=${AGENT.address}&status=pending`,
       ).then((r) => r.json())) as { approvals: unknown[] };
       expect(pending.approvals).toEqual([]);
 
-      const response = await decide(tokenHub.url, id, TOKEN);
+      const signed = await signDecision(id, { decidedAt: NOW + 901 });
+      const response = await postDecision(tokenHub.url, id, signed, TOKEN);
       expect(response.status).toBe(409);
       const body = (await response.json()) as ErrorBody;
       expect(body.code).toBe("expired");
