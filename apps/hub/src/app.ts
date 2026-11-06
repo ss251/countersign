@@ -30,6 +30,8 @@ export interface HubDeps {
   publicUrl: string;
   jobTimeoutMs?: number;
   identity?: IdentityLookup;
+  /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
+  ratingsCacheSeconds?: number;
 }
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
@@ -38,7 +40,7 @@ export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const runners = new RunnerLink(deps.store);
-  const ratings = new Ratings(deps.store);
+  const ratings = new Ratings(deps.store, { now: deps.now, cacheSeconds: deps.ratingsCacheSeconds ?? 5 });
   const frontdoor = (): FrontdoorDeps => {
     const view: FrontdoorDeps = {
       store: deps.store,
