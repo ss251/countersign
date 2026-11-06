@@ -14,7 +14,7 @@ const rails = await railsFromEnv(process.env);
 const publicUrl = process.env.HUB_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const now = (): number => Math.floor(Date.now() / 1000);
 
-const { app, websocket } = createHub({ store, rails, now, publicUrl });
+const { app, websocket } = createHub({ store, rails, now, publicUrl, relayUrl: process.env.WC_RELAY_URL });
 
 const server = Bun.serve({ port, fetch: app.fetch, websocket });
 setInterval(() => {
