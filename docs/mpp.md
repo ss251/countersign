@@ -93,11 +93,19 @@ npx mppx@latest validate http://localhost:8798
 The challenge, discovery, and error-handling checks pass. The card payment step
 is skipped while no Stripe test key is configured.
 
-Before running it, take the `stripe` CLI off `PATH` and unset
-`MPPX_STRIPE_SECRET_KEY` and `MPPX_STRIPE_SPT_URL`. `validate` auto-discovers a
-Stripe key through the stripe CLI, and this machine must not expose one to it.
+Before running it:
 
-Never pass `--yes`. Never run `validate` against a Tempo endpoint: the validator
+- take the `stripe` CLI off `PATH`, for example by putting symlinks to `node`,
+  `npm` and `npx` in a temporary directory and using that directory in place of
+  the one that holds `stripe`;
+- unset every `MPPX_STRIPE_*` and `STRIPE_*` variable.
+
+`validate` auto-discovers a Stripe key through the stripe CLI, and this machine
+must not expose one to it. Nobody runs the `stripe` CLI or reads its config
+directory.
+
+Never pass `--yes`, and never point `validate` at anything but localhost. Never
+run it against a Tempo endpoint: the validator
 resolves a local payer wallet and reads the token balance over a live Tempo RPC,
 and with `--yes` it pays on chain. The Tempo side is exercised only by the
 offline tests: `verify` stops at `tempo_verification_requires_rpc`, and `settle`
