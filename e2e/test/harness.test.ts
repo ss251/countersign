@@ -311,7 +311,7 @@ describe("report", () => {
         { name: "arc-wrong-amount", title: "t", owner: "orch-cs", network: "arc", status: "FAIL", ms: 99, steps: [{ name: "chain refuses a moved price", ok: false, ms: 5, error: "boom" }], failedStep: "chain refuses a moved price", error: "boom", txs: [], notes: [] },
         { name: "web", title: "t", owner: "cs-ui", network: "none", status: "NOT RUN (browser rule)", ms: 0, steps: [], txs: [], notes: [] },
       ],
-      { runId: "r1", startedAt: new Date("2026-11-06T10:00:00Z"), ms: 5000, commit: "abc1234", branch: "cs/e2e", full: true, numbers: new Map([["arc-spine", "1"], ["arc-wrong-amount", "2"], ["web", "9"]]), budgetRequests: [] },
+      { runId: "r1", startedAt: new Date("2026-11-06T10:00:00Z"), ms: 5000, commit: "abc1234", branch: "cs/e2e", escrowVersion: 1, escrow: "0x19c27d770969291e6a0a305dc1be1a845e7c1b76", full: true, numbers: new Map([["arc-spine", "1"], ["arc-wrong-amount", "2"], ["web", "9"]]), budgetRequests: [] },
     );
     expect(text).toContain("| 1 | `arc-spine` | PASS |");
     expect(text).toContain("| 2 | `arc-wrong-amount` | FAIL |");
