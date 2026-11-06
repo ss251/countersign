@@ -105,20 +105,8 @@ export async function requestApproval(args: {
         decision: "countersign",
         decidedAt,
       });
-      let signer = await approvalDecisionSigner(expected, status.decisionSig);
-      if (signer === null || signer.toLowerCase() !== args.approver.toLowerCase()) {
-        const earlier = approvalDecisionBody({
-          approvalId: body.id,
-          agent: args.account.address,
-          offerHash: args.offerHash,
-          amount: args.amount,
-          rail: args.rail,
-          terms: args.terms,
-          decision: "countersign",
-          decidedAt,
-        });
-        signer = await approvalDecisionSigner(earlier, status.decisionSig);
-      }
+      // Only a version 2 decision counts: it is bound to this request's own hash (D10, amended).
+      const signer = await approvalDecisionSigner(expected, status.decisionSig);
       if (signer === null || signer.toLowerCase() !== args.approver.toLowerCase()) {
         return "unverified";
       }
