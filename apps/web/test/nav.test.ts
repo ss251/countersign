@@ -5,7 +5,7 @@ import * as router from "../src/app/router.tsx";
 
 const REPO = "https://github.com/ss251/countersign";
 const SENTENCE =
-  "countersign lets an AI agent pay for tools only inside limits you sign, and every payment leaves a slip anyone can check without us.";
+  "countersign lets an AI agent pay for tools only inside limits you sign, and every settled payment leaves a slip anyone can check without us.";
 
 // Bun cannot run Vite's import.meta.glob in routes.ts, so read the real view list from its source.
 const routesSource = await Bun.file(new URL("../src/app/routes.ts", import.meta.url)).text();
