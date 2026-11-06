@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NETWORK, USDT } from "../src/chain.ts";
+import { makeCountersignBody } from "./escrow-support.ts";
 import { createRelayApp } from "../src/server.ts";
 import type { VerifyRequest } from "../src/exact.ts";
 import {
@@ -36,7 +37,7 @@ async function bodyFor(relay: TestRelay): Promise<VerifyRequest> {
 }
 
 describe("relay server", () => {
-  test("/supported advertises exact eip3009 on chain 1874", async () => {
+  test("/supported advertises exact and countersign on chain 1874", async () => {
     const relay = createTestRelay();
     const response = await appFor(relay).request("/supported");
     expect(response.status).toBe(200);
@@ -47,6 +48,7 @@ describe("relay server", () => {
     };
     expect(body.kinds).toEqual([
       { x402Version: 2, scheme: "exact", network: NETWORK },
+      { x402Version: 2, scheme: "countersign", network: NETWORK },
     ]);
     expect(body.extensions).toEqual([]);
     expect(body.signers["eip155:*"]).toEqual([relay.relayer.address]);
@@ -129,5 +131,63 @@ describe("relay server", () => {
       "date_utc,payment_id,payer,merchant,amount_usdt",
     );
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("verify and settle dispatch countersign requirements", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const { body, jobId } = await makeCountersignBody(relay);
+    const post = (path: string, payload: unknown) =>
+      app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    expect(((await (await post("/verify", body)).json()) as { isValid: boolean }).isValid).toBe(true);
+    const settled = (await (await post("/settle", body)).json()) as { success: boolean; jobId: string };
+    expect(settled).toMatchObject({ success: true, jobId });
+    const view = (await (await app.request(`/escrow/jobs/${jobId}`)).json()) as { job: { status: string } };
+    expect(view.job.status).toBe("funded");
+    expect((await app.request(`/escrow/jobs/0x${"12".repeat(32)}`)).status).toBe(404);
+  });
+
+  test("escrow routes validate bodies and map outcomes", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const post = (path: string, payload: unknown) =>
+      app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    expect((await post("/escrow/refund", { jobId: "nope" })).status).toBe(400);
+    expect((await post("/escrow/release", { jobId: `0x${"12".repeat(32)}` })).status).toBe(400);
+    expect((await post("/escrow/refund", { jobId: `0x${"12".repeat(32)}` })).status).toBe(404);
+    const { body, jobId } = await makeCountersignBody(relay);
+    await post("/settle", body);
+    const res = await post("/escrow/refund", { jobId });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, status: "refunded" });
+  });
+
+  test("/orders merges payments and jobs; /orders/:id adds urls; /orders.csv is an attachment", async () => {
+    const relay = createTestRelay();
+    const app = appFor(relay);
+    const { body, jobId } = await makeCountersignBody(relay);
+    await app.request("/settle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const merchant = relay.merchant.address;
+    const list = (await (await app.request(`/orders?merchant=${merchant}`)).json()) as {
+      orders: { id: string; status: string; amount: string }[];
+    };
+    expect(list.orders.map((o) => [o.id, o.status, o.amount])).toEqual([[jobId, "held", "1500000"]]);
+    const one = (await (await app.request(`/orders/${jobId}`)).json()) as { settleTxUrl: string; refundTxUrls: string[] };
+    expect(one.settleTxUrl).toStartWith("https://explorer.testnet.whitechain.io/tx/");
+    expect(one.refundTxUrls).toEqual([]);
+    expect((await app.request("/orders/0xnope")).status).toBe(404);
+    const csv = await app.request(`/orders.csv?merchant=${merchant}`);
+    expect(csv.headers.get("content-disposition")).toContain("attachment");
+    expect((await app.request("/orders.csv")).status).toBe(400);
+  });
+
+  test("/status names the escrow, token and chain", async () => {
+    const body = (await (await appFor(createTestRelay()).request("/status")).json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      escrow: "0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4",
+      token: USDT.address,
+      network: NETWORK,
+      chainId: 1874,
+    });
   });
 });
