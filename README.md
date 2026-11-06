@@ -4,6 +4,14 @@ countersign lets a software agent pay for a call to another piece of software wi
 
 What is built, what is on a branch and what is only designed: [docs/status.md](docs/status.md).
 
+## Get started
+
+Testnet only. Every path runs from a clone of this repository today, and nothing is installable yet. The commands are in [docs/onboarding.md](docs/onboarding.md).
+
+- **Hire a tool from your agent.** The buyer CLI, or its OpenAI-compatible endpoint, pays in test USDC on Arc. The MCP server for Claude and Cursor is not built yet.
+- **List your tool.** One `serve` command sells a skill. The runner dials out, so you open no port. OpenAPI operations are on `main` but no production offer runs on one yet.
+- **Charge for your API in USDT.** One middleware on a route, on Whitechain testnet, with a relay of your own paying the gas.
+
 ## Rails
 
 One interface, one slip shape. Nothing above a rail knows which chain it is on ([docs/spec/rail.md](docs/spec/rail.md)).
@@ -235,6 +243,7 @@ The seller's runner dials out to the hub and publishes signed offers. The buyer 
 
 ## Guides
 
+- [Get started](docs/onboarding.md): hire a tool, list your tool, or charge for your API, each as commands to copy.
 - [Seller guide](docs/guides/seller.md): publish a skill, get paid, and what you agree to.
 - [Buyer guide](docs/guides/buyer.md): set an envelope, buy, verify, and recover a failed call.
 - [Interop](docs/interop.md): what x402 clients, the Circle CLI and other buyers can read and pay.
