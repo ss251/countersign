@@ -719,12 +719,6 @@ button.steps__button {
   white-space: nowrap;
 }
 
-.sale--link {
-  transition-property: background-color;
-  transition-duration: 150ms;
-  transition-timing-function: ease-out;
-}
-
 @media (hover: hover) and (pointer: fine) {
   .sale--link:hover .sale__title {
     text-decoration: underline;
