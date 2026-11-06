@@ -5,14 +5,13 @@ import { Link } from "../../app/router.tsx";
 import { api } from "../../lib/api.ts";
 import { explorerTemplate } from "../../lib/format.ts";
 import { canReadChain, parseSlip, verifySlip, type Verdict as VerdictData } from "../../lib/verify.ts";
-import * as fx from "../../fixtures/index.ts";
 import { Verdict } from "../../ui/Verdict.tsx";
 import { Button } from "../../ui/primitives.tsx";
 import "../../ui/page.css";
 import "./verify.css";
 
 /**
- * Paste a slip, open a file, or arrive with a hash. The check runs here, from the slip's
+ * Paste a slip, open a file, or arrive with a hash. The check runs here, from the slip’s
  * own bytes, which is why it still answers when the hub is down.
  */
 export default function VerifyPage({ params }: PageProps) {
@@ -73,7 +72,30 @@ export default function VerifyPage({ params }: PageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hash]);
 
-  const example = fx.slips.find((s) => s.slip.payment.accepted.scheme === "countersign")?.slip;
+  /*
+   * Something real to check when no slip is to hand: the newest slip this hub minted. Only under
+   * ?hub=off does it come from the fixtures, which load on demand and never ship in the default bundle.
+   */
+  const [example, setExample] = useState<{ slip: Slip; note: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const rows = await api.settlements(10).catch(() => null);
+      if (rows?.source === "fixtures") {
+        const fx = await import("../../fixtures/index.ts");
+        const slip = fx.slips.find((x) => x.slip.payment.accepted.scheme === "countersign")?.slip;
+        if (alive && slip) setExample({ slip, note: "A signed example from the fixtures." });
+        return;
+      }
+      const hash = rows?.data?.find((x) => x.slipHash)?.slipHash;
+      if (!hash) return;
+      const view = await api.slip(hash).catch(() => null);
+      if (alive && view?.data) setExample({ slip: view.data.slip, note: "The newest slip on this hub, checked here from its own bytes." });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="page">
@@ -161,15 +183,15 @@ export default function VerifyPage({ params }: PageProps) {
           {example ? (
             <p className="verify__examples">
               No slip to hand?{" "}
-              <button type="button" className="link-button" onClick={() => load(example, "A signed example from the fixtures.")}>
-                Load a signed example
+              <button type="button" className="link-button" onClick={() => load(example.slip, example.note)}>
+                Load the newest slip on this hub
               </button>{" "}
               or{" "}
               <button
                 type="button"
                 className="link-button"
                 onClick={() => {
-                  const tampered = structuredClone(example);
+                  const tampered = structuredClone(example.slip);
                   tampered.body.amount = (BigInt(tampered.body.amount) * 2n).toString();
                   load(tampered, "The same slip with its amount doubled after signing.");
                 }}
@@ -204,15 +226,15 @@ export default function VerifyPage({ params }: PageProps) {
               <ol className="verify__steps">
                 <li>The slip hash is the keccak-256 of its body in canonical JSON, so no field can change.</li>
                 <li>The seller signed Release over that hash. On escrow rails it is the same signature the contract checked.</li>
-                <li>The buyer's one countersignature binds this offer hash and this amount.</li>
+                <li>The buyer’s one countersignature binds this offer hash and this amount.</li>
                 <li>
-                  The settlement is not taken on trust. Press Check the chain to read the escrow's Released event for this
+                  The settlement is not taken on trust. Press Check the chain to read the escrow’s Released event for this
                   job and slip from a public RPC.
                 </li>
               </ol>
               <p className="section__note">
                 A slip from a call opens here too: follow <span className="mono">/verify/&lt;slip hash&gt;</span>, or
-                use <Link to="/buyer?tab=history">the buyer's history</Link>.
+                use <Link to="/buyer?tab=history">the buyer’s history</Link>.
               </p>
             </div>
           )}

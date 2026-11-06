@@ -2,10 +2,12 @@ import { Link } from "../../app/router.tsx";
 import type { Resource } from "../../lib/api.ts";
 import { formatAmount, formatDay, formatTime, RAIL_LABEL, symbolFor, usd } from "../../lib/format.ts";
 import type { Purchase } from "../../lib/types.ts";
+import { Absent } from "../../ui/Absent.tsx";
 import { Amount, cx, Empty, Status } from "../../ui/primitives.tsx";
 
 /** Every call the agent made, newest first. Refused and refunded calls cost nothing. */
-export function HistoryTab({ purchases }: { purchases: Resource<Purchase[]> }) {
+export function HistoryTab({ purchases }: { purchases: Resource<Purchase[] | null> }) {
+  if (purchases.source === "absent") return <Absent reason={purchases.reason ?? "This hub has no purchases to show."} onRetry={purchases.reload} />;
   if (!purchases.data) return <div className="skeleton" aria-busy="true" aria-label="Loading" />;
   if (purchases.data.length === 0) {
     return <Empty title="No purchases yet.">When your agent buys, each call shows here with its slip.</Empty>;
@@ -70,7 +72,7 @@ function Row({ p }: { p: Purchase }) {
   );
 }
 
-/** Today's releases, with the money they moved per asset, and the calls that cost nothing. */
+/** Today’s releases, with the money they moved per asset, and the calls that cost nothing. */
 function Summary({ items }: { items: Purchase[] }) {
   const released = items.filter((p) => p.status === "released");
   const totals = new Map<string, bigint>();

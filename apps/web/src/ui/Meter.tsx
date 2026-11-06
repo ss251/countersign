@@ -14,7 +14,7 @@ export function Meter({ value, max, label }: { value: bigint; max: bigint; label
       aria-valuenow={Math.round(pct)}
       aria-valuetext={`${Math.round(pct)} percent`}
     >
-      <span className="meter__fill" style={{ width: `${pct}%` }} />
+      <span className="meter__fill" style={{ transform: `scaleX(${pct / 100})` }} />
     </div>
   );
 }

@@ -1,0 +1,4 @@
+# bodies, logs, slips and hub databases of each run stay on the machine that ran it
+artifacts/
+# runs of selected flows during development; full runs are committed
+runs/partial/

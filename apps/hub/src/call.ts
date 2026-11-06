@@ -4,19 +4,26 @@ import {
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
   PAYMENT_SIGNATURE_HEADER,
+  slipCommitHash,
   toBase64Json,
+  type Offer,
   type PaymentPayload,
   type PaymentRequired,
   type PaymentRequirements,
   type SettleResult,
   type Slip,
+  type VerifyResult,
+  ZERO_HASH,
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
 import { keccak256, toBytes, type Hex } from "viem";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
+import { bazaarExtension, challengeOptions, firstLine, resourceFor } from "./discovery.ts";
 import type { RunnerLink } from "./runners.ts";
-import type { Store } from "./store.ts";
+import type { Fault, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
+
+const CHECK_FAILED = "Refused. The payment could not be checked.";
 
 export interface CallDeps {
   store: Store;
@@ -32,11 +39,6 @@ export interface CallOutcome {
   body: unknown;
   headers?: Record<string, string>;
   railId?: string;
-}
-
-interface Option {
-  entry: PaymentRequirements;
-  rail: Rail;
 }
 
 export async function paidCall(
@@ -70,16 +72,8 @@ export async function paidCall(
     return failure(503, "seller-offline", "The seller is offline. Nothing was charged.");
   }
 
-  const resource = `${deps.publicUrl}/offers/${stored.offerHash}/call`;
-  const configured = new Map<string, Rail>();
-  for (const rail of deps.rails) configured.set(rail.declaration.id, rail);
-
-  const options: Option[] = [];
-  for (const id of offer.rails) {
-    const rail = configured.get(id);
-    if (!rail) continue;
-    options.push({ entry: rail.challenge(offer, { resource, now }), rail });
-  }
+  const resource = resourceFor(deps.publicUrl, stored.offerHash);
+  const options = challengeOptions(deps.rails, offer, resource, now);
   if (options.length === 0) {
     return failure(503, "no-rail", "Refused. No settlement rail is configured for this offer.");
   }
@@ -87,7 +81,7 @@ export async function paidCall(
 
   const signatureHeader = headers.get(PAYMENT_SIGNATURE_HEADER);
   if (!signatureHeader) {
-    return paymentRequired(offer.title, resource, accepts);
+    return paymentRequired(offer, resource, accepts);
   }
 
   let payment: PaymentPayload;
@@ -106,12 +100,12 @@ export async function paidCall(
       option.entry.scheme === payment.accepted.scheme && option.entry.network === payment.accepted.network,
   );
   if (!match) {
-    return paymentRequired(offer.title, resource, accepts, "Refused. This offer does not take that rail.");
+    return paymentRequired(offer, resource, accepts, "Refused. This offer does not take that rail.");
   }
   const railId = match.rail.declaration.id;
   if (payment.accepted.amount !== match.entry.amount) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       "Refused. The price moved after you signed.",
@@ -120,7 +114,7 @@ export async function paidCall(
   }
   if (!sameText(payment.accepted.payTo, match.entry.payTo) || !sameText(payment.accepted.asset, match.entry.asset)) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       "Refused. The payment does not match this offer.",
@@ -128,10 +122,16 @@ export async function paidCall(
     );
   }
 
-  const verify = await match.rail.verify(payment, match.entry);
+  let verify: VerifyResult;
+  try {
+    verify = await match.rail.verify(payment, match.entry);
+  } catch (error) {
+    console.warn(`[hub] rail ${railId} verify failed: ${firstLine(error)}`);
+    return paymentRequired(offer, resource, accepts, CHECK_FAILED, railId);
+  }
   if (!verify.isValid) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       verify.invalidReason ?? "Refused. The payment is not valid.",
@@ -139,10 +139,21 @@ export async function paidCall(
     );
   }
 
-  const settle = await match.rail.settle(payment, match.entry);
+  const nonce = authorizationNonce(payment.payload);
+  if (nonce !== null && deps.store.getJob(nonce) !== null) {
+    return duplicatePayment(railId);
+  }
+
+  let settle: SettleResult;
+  try {
+    settle = await match.rail.settle(payment, match.entry);
+  } catch (error) {
+    console.warn(`[hub] rail ${railId} settle failed: ${firstLine(error)}`);
+    return paymentRequired(offer, resource, accepts, CHECK_FAILED, railId);
+  }
   if (!settle.success) {
     return paymentRequired(
-      offer.title,
+      offer,
       resource,
       accepts,
       settle.errorReason ?? "Refused. The payment could not be settled.",
@@ -150,12 +161,12 @@ export async function paidCall(
     );
   }
 
-  const jobId = authorizationNonce(payment.payload) ?? keccak256(toBytes(settle.transaction));
+  const jobId = nonce ?? keccak256(toBytes(settle.transaction));
   const deadline = termsDeadline(payment.payload) ?? now + offer.deadline;
   const buyer = settle.payer ?? verify.payer ?? "";
   const escrowRail = match.rail.escrow !== undefined;
 
-  deps.store.putJob({
+  const claimed = deps.store.claimJob({
     jobId,
     offerHash: stored.offerHash,
     rail: railId,
@@ -169,6 +180,7 @@ export async function paidCall(
     slipHash: null,
     createdAt: now,
   });
+  if (!claimed) return duplicatePayment(railId);
 
   const order = buildOrder({
     jobId,
@@ -182,24 +194,28 @@ export async function paidCall(
     lineage: hexList(call.lineage),
   });
 
-  const timeoutMs = Math.max(
-    0,
-    Math.min(deps.jobTimeoutMs ?? 120_000, (deadline - now - 5) * 1000),
-  );
+  const deadlineMs = (deadline - now - 5) * 1000;
+  const hubLimitMs = deps.jobTimeoutMs ?? 120_000;
+  const timeoutMs = Math.max(0, Math.min(hubLimitMs, deadlineMs));
   const delivered = await deps.runners.dispatch(order, timeoutMs);
   if ("fail" in delivered) {
-    return failedDelivery(deps, jobId, railId);
+    return failedDelivery(deps, jobId, railId, dispatchFault(delivered, hubLimitMs < deadlineMs));
   }
 
   if (!(await checksOut(offer.seller, offer.output, order, payment, settle, delivered))) {
-    return failedDelivery(deps, jobId, railId);
+    return failedDelivery(deps, jobId, railId, "seller");
   }
 
   let closeTx = settle.transaction;
   let closing: SettleResult = settle;
   const escrow = match.rail.escrow;
+  const slipHash = delivered.slip.hash;
   if (escrow) {
-    const release = await escrow.release(jobId, delivered.slip.hash, delivered.slip.sellerSig);
+    const commitsBody = slipHash.toLowerCase() === slipCommitHash(delivered.slip.body).toLowerCase();
+    if (!commitsBody || slipHash.toLowerCase() === ZERO_HASH) {
+      return failedDelivery(deps, jobId, railId, "seller");
+    }
+    const release = await escrow.release(jobId, slipHash, delivered.slip.sellerSig);
     if (!release.success) {
       return failure(502, "release-failed", "Refused. The escrow did not release.", railId);
     }
@@ -207,16 +223,19 @@ export async function paidCall(
     closing = release;
   }
 
+  const settlement: Slip["settlement"] = {
+    transaction: closeTx,
+    network: match.rail.declaration.network,
+  };
+  if (match.rail.declaration.explorerTx !== "") {
+    settlement.url = explorerUrl(match.rail.declaration, closeTx);
+  }
   const slip: Slip = {
     body: delivered.slip.body,
-    hash: delivered.slip.hash,
+    hash: slipHash,
     sellerSig: delivered.slip.sellerSig,
     payment,
-    settlement: {
-      transaction: closeTx,
-      network: match.rail.declaration.network,
-      url: explorerUrl(match.rail.declaration, closeTx),
-    },
+    settlement,
   };
   deps.store.putSlip(slip.hash, jobId, slip, now);
   deps.store.updateJob(jobId, {
@@ -233,8 +252,19 @@ export async function paidCall(
   };
 }
 
-function failedDelivery(deps: CallDeps, jobId: Hex, railId: string): CallOutcome {
-  deps.store.updateJob(jobId, { status: "failed" });
+/**
+ * Who a dispatch failure is on. The runner refusing the job, or running past the offer's own
+ * deadline, is the seller's. A missing runner, a dropped connection, or a cut-off the hub
+ * imposed before the offer's deadline is the hub's.
+ */
+function dispatchFault(result: { fail: string; byRunner?: true }, hubCutShort: boolean): Fault {
+  if (result.byRunner) return "seller";
+  if (result.fail === "timeout" && !hubCutShort) return "seller";
+  return "hub";
+}
+
+function failedDelivery(deps: CallDeps, jobId: Hex, railId: string, fault: Fault): CallOutcome {
+  deps.store.updateJob(jobId, { status: "failed", fault });
   return failure(
     502,
     "failed-delivery",
@@ -243,12 +273,16 @@ function failedDelivery(deps: CallDeps, jobId: Hex, railId: string): CallOutcome
   );
 }
 
+function duplicatePayment(railId: string): CallOutcome {
+  return failure(409, "duplicate-payment", "Refused. This payment was already used.", railId);
+}
+
 function failure(status: number, code: string, message: string, railId?: string): CallOutcome {
   return { status, body: { code, message }, railId };
 }
 
 function paymentRequired(
-  title: string,
+  offer: Offer,
   resource: string,
   accepts: PaymentRequirements[],
   error?: string,
@@ -256,8 +290,9 @@ function paymentRequired(
 ): CallOutcome {
   const body: PaymentRequired = {
     x402Version: 2,
-    resource: { url: resource, description: title, mimeType: "application/json" },
+    resource: { url: resource, description: offer.title, mimeType: "application/json" },
     accepts,
+    extensions: bazaarExtension(offer),
   };
   if (error !== undefined) body.error = error;
   return {

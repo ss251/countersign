@@ -1,0 +1,103 @@
+/**
+ * The whitechain rail: the escrow rail with Whitechain Sepolia's configuration (USDT, chain 1874).
+ * Challenge and status come from the wrapped escrow rail. Verify, settle, release, cancel and
+ * refund go to the relay over HTTP; the relay is the x402 facilitator and pays the gas.
+ * This module never imports the relay.
+ */
+
+import { getAddress, type Address, type Chain, type Hex, type PublicClient, type Transport } from "viem";
+import type { Network, PaymentPayload, PaymentRequirements, SettleResult, VerifyResult } from "@countersign/core";
+import type { EscrowOps, Rail } from "../rail.ts";
+import { escrowRail } from "../escrow/index.ts";
+
+export const WHITECHAIN_USDT: Address = getAddress("0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7");
+export const WHITECHAIN_ESCROW: Address = getAddress("0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4");
+export const WHITECHAIN_RPC_URL = "https://rpc.ankr.com/whitechain_testnet";
+const NETWORK: Network = "eip155:1874";
+
+export interface WhitechainRailOptions {
+  /** Base URL of the relay, without a trailing slash. */
+  relayUrl: string;
+  rpcUrl?: string;
+  escrow?: Address;
+  fetch?: typeof fetch;
+  publicClient?: PublicClient<Transport, Chain>;
+}
+
+export function whitechainRail(opts: WhitechainRailOptions): Rail {
+  const call = opts.fetch ?? globalThis.fetch;
+  const relayUrl = opts.relayUrl.replace(/\/+$/, "");
+  const base = escrowRail({
+    id: "whitechain",
+    chainId: 1874,
+    rpcUrl: opts.rpcUrl ?? WHITECHAIN_RPC_URL,
+    escrow: opts.escrow ?? WHITECHAIN_ESCROW,
+    token: WHITECHAIN_USDT,
+    tokenName: "Tether USD",
+    tokenVersion: "1",
+    symbol: "USDT",
+    decimals: 6,
+    explorerTx: "https://explorer.testnet.whitechain.io/tx/{tx}",
+    finality: "Final one Whitechain block, about a second, after release.",
+    gasPaidBy: "relayer",
+    ...(opts.publicClient ? { publicClient: opts.publicClient } : {}),
+  });
+
+  /** POST JSON to the relay. Null when the relay is unreachable or does not answer with JSON. */
+  async function post(path: string, body: unknown): Promise<Record<string, unknown> | null> {
+    try {
+      const res = await call(`${relayUrl}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json: unknown = await res.json();
+      return json && typeof json === "object" && !Array.isArray(json) ? (json as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const unreachable = (): SettleResult => ({
+    success: false,
+    errorReason: "relay_unreachable",
+    transaction: "",
+    network: NETWORK,
+  });
+
+  async function verify(paymentPayload: PaymentPayload, paymentRequirements: PaymentRequirements): Promise<VerifyResult> {
+    const out = await post("/verify", { x402Version: 2, paymentPayload, paymentRequirements });
+    if (!out || typeof out.isValid !== "boolean") return { isValid: false, invalidReason: "relay_unreachable" };
+    return out as unknown as VerifyResult;
+  }
+
+  async function settle(paymentPayload: PaymentPayload, paymentRequirements: PaymentRequirements): Promise<SettleResult> {
+    const out = await post("/settle", { x402Version: 2, paymentPayload, paymentRequirements });
+    if (!out || typeof out.success !== "boolean") return unreachable();
+    return out as unknown as SettleResult;
+  }
+
+  /** The relay answers { ok, transaction, url, status } or { ok: false, reason }. */
+  async function close(path: string, body: unknown): Promise<SettleResult> {
+    const out = await post(path, body);
+    if (!out) return unreachable();
+    if (out.ok === true && typeof out.transaction === "string") {
+      return { success: true, transaction: out.transaction, network: NETWORK };
+    }
+    return {
+      success: false,
+      errorReason: typeof out.reason === "string" ? out.reason : "relay_unreachable",
+      transaction: "",
+      network: NETWORK,
+    };
+  }
+
+  const escrow: EscrowOps = {
+    release: (jobId: Hex, slipHash: Hex, sellerSig: Hex) => close("/escrow/release", { jobId, slipHash, sellerSig }),
+    cancel: (jobId: Hex, sellerSig: Hex) => close("/escrow/cancel", { jobId, sellerSig }),
+    refund: (jobId: Hex) => close("/escrow/refund", { jobId }),
+    status: base.escrow!.status,
+  };
+
+  return { declaration: base.declaration, challenge: base.challenge, verify, settle, escrow };
+}

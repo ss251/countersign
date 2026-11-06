@@ -3,11 +3,13 @@ import {
   fromBase64Json,
   PAYMENT_REQUIRED_HEADER,
   PAYMENT_RESPONSE_HEADER,
+  slipCommitHash,
   type CallResult,
   type ErrorBody,
   type JobOrder,
   type PaymentRequired,
   type SettleResult,
+  ZERO_HASH,
 } from "../src/deps.ts";
 import { runJanitor } from "../src/janitor.ts";
 import {
@@ -122,6 +124,9 @@ describe("paid calls", () => {
       slipHash: result.slip.hash,
       sellerSig: result.slip.sellerSig,
     });
+    const releasedHash = hub.rail.releaseCalls[0]!.slipHash;
+    expect(releasedHash).toBe(slipCommitHash(result.slip.body));
+    expect(releasedHash.toLowerCase()).not.toBe(ZERO_HASH);
 
     const paymentHeader = response.headers.get(PAYMENT_RESPONSE_HEADER);
     expect(paymentHeader).not.toBeNull();
@@ -159,6 +164,99 @@ describe("paid calls", () => {
     expect(body.error).toBe("Refused. The price moved after you signed.");
     expect(hub.rail.verifyCalls).toHaveLength(0);
     expect(hub.rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a rail whose challenge throws is skipped and the rest are offered", async () => {
+    hub.close();
+    const broken = new FakeRail("escrow");
+    broken.failChallenge = true;
+    const healthy = new FakeRail("eip3009", "eip155:1874");
+    hub = startHub({ rails: [broken, healthy] });
+    const offer = makeOffer({ rails: ["escrow", "eip3009"] });
+    const hash = await publishOk(hub, offer);
+    runners.push(await connect(hub, hash));
+
+    const response = await call(hub, hash, { q: "hello" });
+    expect(response.status).toBe(402);
+
+    const body = (await response.json()) as PaymentRequired;
+    expect(body.accepts.map((entry) => entry.network)).toEqual(["eip155:1874"]);
+  });
+
+  test("a rail whose verify throws is a 402, never a 500", async () => {
+    hub.close();
+    const rail = new FakeRail();
+    rail.throwVerify = true;
+    hub = startHub({ rails: [rail] });
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash));
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const response = await call(hub, hash, { q: "hello" }, paymentFor(entry));
+
+    expect(response.status).toBe(402);
+    const body = (await response.json()) as PaymentRequired;
+    expect(body.error).toBe("Refused. The payment could not be checked.");
+    expect(rail.settleCalls).toHaveLength(0);
+  });
+
+  test("a rail whose settle throws is a 402, never a 500", async () => {
+    hub.close();
+    const rail = new FakeRail();
+    rail.throwSettle = true;
+    hub = startHub({ rails: [rail] });
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash));
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const response = await call(hub, hash, { q: "hello" }, paymentFor(entry));
+
+    expect(response.status).toBe(402);
+    const body = (await response.json()) as PaymentRequired;
+    expect(body.error).toBe("Refused. The payment could not be checked.");
+  });
+
+  test("replaying the same paid call is a duplicate and dispatches once", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    let dispatches = 0;
+    runners.push(
+      await connect(hub, hash, async () => {
+        dispatches += 1;
+        return { output: { q: "hello" } };
+      }),
+    );
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const payment = paymentFor(entry);
+
+    const first = await call(hub, hash, { q: "hello" }, payment);
+    expect(first.status).toBe(200);
+
+    const second = await call(hub, hash, { q: "hello" }, payment);
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as ErrorBody;
+    expect(body.code).toBe("duplicate-payment");
+    expect(body.message).toBe("Refused. This payment was already used.");
+    expect(dispatches).toBe(1);
+    expect(hub.rail.settleCalls).toHaveLength(1);
+  });
+
+  test("an empty explorerTx leaves the slip without a settlement url", async () => {
+    const hash = await publishOk(hub, makeOffer());
+    runners.push(await connect(hub, hash));
+    hub.rail.declaration.explorerTx = "";
+
+    const entry = (await requirementsFor(hub, hash)).accepts[0];
+    if (!entry) throw new Error("missing accepts entry");
+    const response = await call(hub, hash, { q: "hello" }, paymentFor(entry));
+    expect(response.status).toBe(200);
+
+    const result = (await response.json()) as CallResult;
+    expect(result.slip.settlement.transaction).toBe(hub.rail.releaseTx);
+    expect("url" in result.slip.settlement).toBe(false);
   });
 
   test("an output that fails the schema is a failed delivery, then the janitor refunds", async () => {

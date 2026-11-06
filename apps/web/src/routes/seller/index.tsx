@@ -1,9 +1,10 @@
 import type { PageProps } from "../../app/routes.ts";
+import "../../ui/page.css";
+import { SellerDashboard } from "./Dashboard.tsx";
+import { PublishWizard } from "./Wizard.tsx";
+import "./seller.css";
 
-export default function SellerPage(_props: PageProps) {
-  return (
-    <section style={{ maxWidth: "var(--content)", margin: "0 auto", padding: "var(--sp-10) var(--sp-6)" }}>
-      <h1>Seller</h1>
-    </section>
-  );
+export default function SellerPage({ params, query }: PageProps) {
+  if (params[0] === "publish") return <PublishWizard />;
+  return <SellerDashboard query={query} />;
 }

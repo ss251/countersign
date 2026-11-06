@@ -1,0 +1,658 @@
+/* Seller desk and publish flow. Desktop first at 1440, one column under 960. */
+
+.seller__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-8);
+}
+
+.seller__head-text {
+  display: grid;
+  gap: var(--sp-2);
+  max-width: 62ch;
+}
+
+.seller__head .page__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.seller__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+
+.seller__picker {
+  min-width: 240px;
+}
+
+.seller__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.seller__count,
+.seller__record,
+.seller__none {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* Totals: the money first, the failures counted right beside the successes. */
+.totals {
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-10);
+}
+
+.totals__money {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-5);
+}
+
+.totals__label {
+  color: var(--slate);
+  font-size: var(--t-15);
+}
+
+.totals__line {
+  color: var(--ink);
+  font-size: var(--t-15);
+}
+
+.spark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 0;
+}
+
+.spark svg {
+  display: block;
+  overflow: visible;
+}
+
+.spark__base {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.spark__line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.spark__caption {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* The offers table: numbers right-aligned and tabular so the columns read down. */
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-14);
+}
+
+.ledger-table th,
+.ledger-table td {
+  padding: var(--sp-3) var(--sp-3);
+  border-bottom: var(--hair) solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.ledger-table thead th {
+  padding-top: 0;
+  color: var(--slate);
+  font-size: var(--t-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ledger-table th:first-child,
+.ledger-table td:first-child {
+  padding-left: 0;
+}
+
+.ledger-table th:last-child,
+.ledger-table td:last-child {
+  padding-right: 0;
+}
+
+.ledger-table .is-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ledger-table__offer {
+  font-weight: 400;
+}
+
+.ledger-table__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-15);
+  font-weight: 600;
+}
+
+.ledger-table__title a {
+  text-decoration-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-table__title a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+.ledger-table__rails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+.ledger-table__none,
+.ledger-table__runner.is-off,
+.ledger-table tr.is-delisted .ledger-table__title,
+.ledger-table tr.is-delisted .ledger-table__runner {
+  color: var(--slate);
+}
+
+.ledger-table__runner {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* On a phone each offer becomes a block: the name, then labelled facts in two columns. */
+@media (max-width: 720px) {
+  .ledger-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .ledger-table,
+  .ledger-table tbody,
+  .ledger-table tr,
+  .ledger-table th,
+  .ledger-table td {
+    display: block;
+  }
+  .ledger-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2) var(--sp-4);
+    padding: var(--sp-4) 0;
+    border-bottom: var(--hair) solid var(--line);
+  }
+  .ledger-table th,
+  .ledger-table td {
+    padding: 0;
+    border: 0;
+  }
+  .ledger-table__offer {
+    grid-column: 1 / -1;
+  }
+  .ledger-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--slate);
+    font-size: var(--t-12);
+  }
+  .ledger-table .is-num {
+    text-align: left;
+  }
+}
+
+.seller__sales {
+  margin-top: var(--sp-10);
+  max-width: 560px;
+}
+
+.seller__quiet {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+/* The empty desk: one line, the real command, a way into the wizard. */
+.first-offer {
+  display: grid;
+  gap: var(--sp-3);
+  max-width: 720px;
+}
+
+.first-offer__title {
+  font-size: var(--t-20);
+}
+
+.first-offer__body {
+  color: var(--slate);
+}
+
+/* Publish wizard */
+.wizard {
+  max-width: var(--content);
+}
+
+/* The form on the left; on a wide screen the offer as buyers will see it, on the right. */
+.wizard__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-10);
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .wizard__grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  }
+  .wizard__preview {
+    position: sticky;
+    top: calc(var(--bar) + var(--sp-6));
+  }
+}
+
+@media (max-width: 1099px) {
+  .wizard__preview {
+    display: none;
+  }
+}
+
+.steps__count {
+  margin-bottom: var(--sp-2);
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.preview {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.preview__label {
+  color: var(--slate);
+  font-size: var(--t-12);
+  font-weight: 600;
+}
+
+.preview__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.preview__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.preview__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+
+.preview__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.preview__meta,
+.preview__muted {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.preview__card {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-4);
+  border-radius: var(--r-1);
+  background: none;
+  box-shadow: var(--elev-1);
+}
+
+.split-check__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.split-check__edits {
+  display: inline-flex;
+  gap: var(--sp-3);
+  font-size: var(--t-13);
+}
+
+.listed {
+  display: grid;
+  gap: 2px;
+}
+
+/* Listed is not settled, so it stays ink: green is for money that moved. */
+.listed__title {
+  color: var(--ink);
+  font-size: var(--t-20);
+  font-weight: 600;
+}
+
+.listed__waiting {
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-5);
+  margin-bottom: var(--sp-6);
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.steps__item {
+  color: var(--slate);
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.steps__item.is-current,
+.steps__item.is-done {
+  color: var(--ink);
+}
+
+/* State by colour and the filled number, never by weight: weight changes reflow the row. */
+
+.steps__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+button.steps__button {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 30%, transparent);
+  text-underline-offset: 0.22em;
+}
+
+.steps__n {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: var(--t-12);
+}
+
+.steps__item.is-current .steps__n {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--paper);
+}
+
+.wizard__panel {
+  display: grid;
+  gap: var(--sp-6);
+}
+
+.wizard__title {
+  font-size: var(--t-20);
+  outline: none;
+}
+
+.wizard__fields {
+  display: grid;
+  gap: var(--sp-6);
+}
+
+.wizard__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-5);
+}
+
+@media (max-width: 640px) {
+  .wizard__pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wizard__skill {
+  min-height: 300px;
+  padding: var(--sp-3);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+@media (pointer: fine) {
+  .wizard__skill {
+    font-size: 13px;
+  }
+}
+
+.wizard__parsed {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-1);
+  background: none;
+  box-shadow: var(--elev-1);
+}
+
+.wizard__parsed-label {
+  color: var(--slate);
+  font-size: var(--t-12);
+}
+
+.wizard__parsed-title {
+  font-size: var(--t-17);
+  font-weight: 600;
+}
+
+.wizard__parsed-summary {
+  color: var(--slate);
+  font-size: var(--t-14);
+  max-width: 62ch;
+}
+
+.wizard__nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: var(--hair) solid var(--line);
+}
+
+.wizard__note {
+  color: var(--slate);
+  font-size: var(--t-14);
+  max-width: 64ch;
+}
+
+.wizard__commands {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.input-suffix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-suffix .input {
+  padding-right: 72px;
+}
+
+.input-suffix__unit {
+  position: absolute;
+  right: var(--sp-3);
+  color: var(--slate);
+  font-size: var(--t-13);
+  pointer-events: none;
+}
+
+/* Rails: every row fully clickable, the ticked ones raised. */
+.rails-pick {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rails-pick__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: pointer;
+  transition: box-shadow var(--d-1) ease, background-color var(--d-1) ease;
+}
+
+/* A chosen rail: a darker rule, not a fill. */
+.rails-pick__row.is-on {
+  background: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--line), var(--ink) 55%);
+}
+
+.rails-pick__row input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--ink);
+}
+
+.rails-pick__text {
+  display: grid;
+  gap: 1px;
+}
+
+.rails-pick__name {
+  font-weight: 600;
+}
+
+.rails-pick__note {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+/* Check: the buyer's half and yours, either side of the seam. */
+.split-check {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: var(--r-1);
+  background: none;
+  box-shadow: var(--elev-1);
+}
+
+.split-check::before {
+  content: "";
+  position: absolute;
+  top: var(--sp-5);
+  bottom: var(--sp-5);
+  left: 50%;
+  border-left: var(--hair) solid var(--line);
+}
+
+.split-check__half {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-5);
+}
+
+.split-check__title {
+  color: var(--slate);
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.split-check__half--yours .split-check__title {
+  color: var(--seal);
+}
+
+.split-check__name {
+  font-size: var(--t-20);
+  font-weight: 600;
+}
+
+.split-check__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--slate);
+  font-size: var(--t-14);
+}
+
+.split-check__meta {
+  color: var(--slate);
+  font-size: var(--t-13);
+}
+
+.split-check__rails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.split-check__body {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  color: var(--slate);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .split-check {
+    grid-template-columns: 1fr;
+  }
+  .split-check::before {
+    display: none;
+  }
+  .split-check__half--yours {
+    border-top: var(--hair) solid var(--line);
+  }
+}
