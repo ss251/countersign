@@ -16,14 +16,13 @@ import {
   type PlaywrightWorkerArgs,
   type TestInfo,
 } from "@playwright/test";
+import { parseAbiItem, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { Address, Hex } from "viem";
 import { ARC, escrowEvents } from "../../lib/chains.ts";
 import { raiseIfFailed } from "../lib/failure.ts";
 import { approveIfPrompted, recordPrivyRequestFailure, recordPrivyResponse, signIn } from "../lib/privy.ts";
 import {
   afterFunding,
-  afterPurchase,
   arcClient,
   balanceOf,
   changeToReturn,
@@ -31,6 +30,7 @@ import {
   transfer,
 } from "../lib/fund.ts";
 import { Keyring } from "../lib/keys.ts";
+import { slipHashFromHref } from "../lib/slip.ts";
 import { installTestWallet, newTestAccount } from "../lib/wallet.ts";
 import {
   currentRunId,
@@ -41,7 +41,13 @@ import {
 } from "../lib/report.ts";
 
 const RPC = process.env.E2E_ARC_RPC || ARC.rpc;
-const MAX_PRICE = BigInt(process.env.E2E_HUMAN_MAX_PRICE || "50000");
+
+const FUNDED = parseAbiItem(
+  "event Funded(bytes32 indexed jobId, bytes32 indexed offerHash, address indexed buyer, address payee, uint256 amount, uint64 deadline)",
+);
+const RELEASED = parseAbiItem(
+  "event Released(bytes32 indexed jobId, bytes32 indexed slipHash, address indexed payee, uint256 paid, uint256 toll)",
+);
 
 class SkipRun extends Error {
   constructor(readonly reason: string) {
@@ -100,43 +106,34 @@ function testId(page: Page, testid: string): Locator {
   return page.locator(`[data-testid="${testid}"]`).first();
 }
 
-async function waitAttr(page: Page, testid: string, pattern: RegExp, timeoutMs: number, name = "data-value"): Promise<string> {
-  const locator = testId(page, testid);
-  await expect(locator).toHaveAttribute(name, pattern, { timeout: timeoutMs });
-  const value = await locator.getAttribute(name);
-  if (value === null) throw new Error(`${testid} has no ${name}`);
-  return value;
+function missingAttribute(testid: string, name: string): Error {
+  return new Error(`the console does not expose ${testid}[${name}] (cs-ui)`);
 }
 
-async function waitState(page: Page, testid: string, state: string, timeoutMs: number): Promise<void> {
-  await expect(testId(page, testid)).toHaveAttribute("data-state", state, { timeout: timeoutMs });
-}
-
-async function pollValue(
+async function waitAttr(
   page: Page,
   testid: string,
-  ok: (value: string) => boolean,
+  pattern: RegExp,
   timeoutMs: number,
-  what = testid,
+  name = "data-value",
 ): Promise<string> {
   const locator = testId(page, testid);
   const deadline = Date.now() + timeoutMs;
-  let last = "";
+  let last: string | null = null;
   while (Date.now() < deadline) {
-    if (await locator.isVisible().catch(() => false)) {
-      const value = await locator.getAttribute("data-value", { timeout: 1_000 }).catch(() => null);
-      if (value !== null) {
-        last = value;
-        if (ok(value)) return value;
-      }
+    const value = await locator.getAttribute(name, { timeout: 1_000 }).catch(() => null);
+    if (value !== null) {
+      last = value;
+      if (pattern.test(value)) return value;
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(250);
   }
-  throw new Error(`${what} still shows ${last || "nothing"} after ${Math.round(timeoutMs / 1000)} s`);
+  if (last === null) throw missingAttribute(testid, name);
+  throw new Error(`${testid}[${name}] is ${JSON.stringify(last)}, not ${pattern}`);
 }
 
 async function refusalText(page: Page): Promise<string | undefined> {
-  const locator = testId(page, "buy-refusal");
+  const locator = testId(page, "start-refusal");
   if (!(await locator.isVisible().catch(() => false))) return undefined;
   const text = (await locator.innerText().catch(() => "")).trim();
   return text || "the console refused the purchase";
@@ -147,18 +144,24 @@ async function assertNoRefusal(page: Page): Promise<void> {
   if (text) throw new Error(text);
 }
 
-async function waitStateOrRefusal(page: Page, testid: string, state: string, timeoutMs: number): Promise<void> {
-  const locator = testId(page, testid);
+async function waitResult(page: Page, timeoutMs: number): Promise<Hex> {
+  const locator = testId(page, "start-fund-result");
   const deadline = Date.now() + timeoutMs;
-  let current: string | null = null;
+  let saw = false;
+  let last = "";
   while (Date.now() < deadline) {
     const refusal = await refusalText(page);
     if (refusal) throw new Error(refusal);
-    current = await locator.getAttribute("data-state", { timeout: 1_000 }).catch(() => null);
-    if (current === state) return;
-    await page.waitForTimeout(300);
+    const value = await locator.getAttribute("data-value", { timeout: 1_000 }).catch(() => null);
+    if (value !== null) {
+      saw = true;
+      last = value;
+      if (/^0x[0-9a-fA-F]{64}$/.test(value)) return value as Hex;
+    }
+    await page.waitForTimeout(500);
   }
-  throw new Error(`${testid} is ${current ?? "missing"}, not ${state} after ${Math.round(timeoutMs / 1000)} s`);
+  if (!saw) throw missingAttribute("start-fund-result", "data-value");
+  throw new Error(`start-fund-result[data-value] is ${JSON.stringify(last)}, not a transaction hash`);
 }
 
 function watchPrivy(page: Page, failures: string[]): void {
@@ -170,31 +173,38 @@ function watchPrivy(page: Page, failures: string[]): void {
   });
 }
 
-interface Offer {
-  item: Locator;
-  hash: string;
-  price: bigint;
+interface SlipFields {
+  jobId: Hex;
+  offerHash: Hex;
+  amount: bigint;
+  buyer: Address;
 }
 
-async function pickOffer(page: Page, list: Locator): Promise<Offer> {
-  const items = list.locator('[data-testid="offer-item"]');
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    const count = await items.count();
-    for (let i = 0; i < count; i++) {
-      const item = items.nth(i);
-      if (!(await item.isVisible().catch(() => false))) continue;
-      const rail = (await item.getAttribute("data-rail")) ?? "";
-      const priceText = (await item.getAttribute("data-price")) ?? "";
-      const hash = (await item.getAttribute("data-offer-hash")) ?? "";
-      if (rail !== "escrow" || !/^[0-9]+$/.test(priceText) || !/^0x[0-9a-fA-F]{64}$/.test(hash)) continue;
-      const price = BigInt(priceText);
-      if (price > MAX_PRICE) continue;
-      return { item, hash, price };
-    }
-    await page.waitForTimeout(500);
+/** The hub wraps a slip in `{ body, hash, ... }`; a bare body is accepted too. */
+function slipFieldsOf(value: unknown): SlipFields {
+  if (typeof value !== "object" || value === null) throw new Error("the hub's slip is not an object");
+  const record = value as Record<string, unknown>;
+  const body =
+    typeof record.body === "object" && record.body !== null
+      ? (record.body as Record<string, unknown>)
+      : record;
+  const jobId = body.jobId;
+  const offerHash = body.offerHash;
+  const amount = body.amount;
+  const buyer = body.buyer;
+  if (typeof jobId !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(jobId)) {
+    throw new Error("the slip has no 0x job id");
   }
-  throw new Error("no live Arc escrow offer");
+  if (typeof offerHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(offerHash)) {
+    throw new Error("the slip has no 0x offer hash");
+  }
+  if (typeof amount !== "string" || !/^[0-9]+$/.test(amount)) {
+    throw new Error("the slip has no atomic amount");
+  }
+  if (typeof buyer !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(buyer)) {
+    throw new Error("the slip has no buyer address");
+  }
+  return { jobId: jobId as Hex, offerHash: offerHash as Hex, amount: BigInt(amount), buyer: buyer as Address };
 }
 
 const runHuman = async (
@@ -235,18 +245,18 @@ const runHuman = async (
   try {
     await step(rec, page, "00", "open", "open the console", async () => {
       await page.goto("/");
-      await expect(testId(page, "wallet-connect")).toBeVisible({ timeout: 30_000 });
+      await expect(testId(page, "wallet-menu")).toBeVisible({ timeout: 30_000 });
     });
 
     await step(rec, page, "01", "sign-in", "sign in", async () => {
-      await testId(page, "wallet-connect").click();
+      await testId(page, "wallet-menu").click();
       if (injected) {
-        await testId(page, "wallet-option-injected").click();
+        await testId(page, "wallet-connect-injected").click();
         await waitAttr(page, "wallet-address", /^0x[0-9a-fA-F]{40}$/, 60_000);
         return;
       }
 
-      const option = testId(page, "wallet-option-privy");
+      const option = testId(page, "wallet-signin");
       const offered = await option
         .waitFor({ state: "visible", timeout: 30_000 })
         .then(() => true)
@@ -273,13 +283,19 @@ const runHuman = async (
 
     const wallet = await step(rec, page, "02", "wallet", "the wallet on Arc", async () => {
       const address = await waitAttr(page, "wallet-address", /^0x[0-9a-fA-F]{40}$/, 30_000);
-      const chain = await waitAttr(page, "wallet-chain", /^[0-9]+$/, 30_000).catch(() => "");
-      if (chain !== String(ARC.chainId)) {
-        await testId(page, "wallet-switch-chain").click();
-        await waitAttr(page, "wallet-chain", new RegExp(`^${ARC.chainId}$`), 60_000);
+      const kind = await waitAttr(page, "wallet-address", /^(privy|injected)$/, 30_000, "data-kind");
+      const expectedKind = project === "privy" ? "privy" : "injected";
+      if (kind !== expectedKind) {
+        throw new Error(`wallet-address[data-kind] is ${kind}, not ${expectedKind}`);
       }
-      const kind = project === "privy" ? "privy-embedded" : "injected";
-      await expect(testId(page, "wallet-kind")).toHaveAttribute("data-state", kind, { timeout: 30_000 });
+      let chain = await waitAttr(page, "wallet-chain", /^[0-9]+$/, 30_000);
+      if (chain !== String(ARC.chainId)) {
+        await page.getByRole("button", { name: /switch to arc/i }).click();
+        chain = await waitAttr(page, "wallet-chain", new RegExp(`^${ARC.chainId}$`), 60_000);
+      }
+      if (chain !== String(ARC.chainId)) {
+        throw new Error(`wallet-chain[data-value] is ${chain}, not ${ARC.chainId}`);
+      }
       if (injected && address.toLowerCase() !== injected.address.toLowerCase()) {
         throw new Error(`the console shows ${address}, not the injected ${injected.address}`);
       }
@@ -294,105 +310,156 @@ const runHuman = async (
       const before = await balanceOf(client, wallet);
       const hash = await transfer(client, funder, wallet, FUND_AMOUNT, RPC);
       rec.tx("funding", hash);
-      return { before, funder };
+      const receipt = await client.getTransactionReceipt({ hash });
+      return { before, blockNumber: receipt.blockNumber };
     });
 
-    await step(rec, page, "04", "balance", "the balance moved by 1 USDC", async () => {
+    const fundedBalance = await step(rec, page, "04", "balance", "the balance moved by 1 USDC", async () => {
       const expected = afterFunding(funded.before);
       const after = await balanceOf(client, wallet);
       if (after !== expected) throw new Error(`the wallet holds ${after}, expected ${expected}`);
-      await pollValue(page, "wallet-usdc", (value) => /^[0-9]+$/.test(value) && BigInt(value) >= after, 60_000);
+      return after;
     });
 
-    const bought = await step(rec, page, "05", "buy", "buy the escrow offer", async () => {
+    const bought = await step(rec, page, "05", "buy", "buy the offer", async () => {
       await page.goto("/#/start");
-      const startBuy = testId(page, "start-role-buy");
-      const hasStart = await startBuy
-        .waitFor({ state: "visible", timeout: 5_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (hasStart) await startBuy.click();
-      else await page.goto("/");
+      await expect(testId(page, "start-buy")).toBeVisible({ timeout: 30_000 });
 
-      const list = testId(page, "offer-list");
-      await expect(list).toBeVisible({ timeout: 30_000 });
-      const offer = await pickOffer(page, list);
-      await offer.item.locator('[data-testid="offer-open"]').first().click();
-      await expect(testId(page, "offer-hash")).toHaveAttribute(
-        "data-value",
-        new RegExp(`^${offer.hash}$`, "i"),
-        { timeout: 30_000 },
-      );
+      const offer = testId(page, "start-offer");
+      await expect(offer).toBeVisible({ timeout: 30_000 });
+      rec.note(`offer: ${(await offer.innerText()).trim()}`);
 
-      await waitState(page, "buy-start", "ready", 30_000);
-      await testId(page, "buy-start").click();
-      await assertNoRefusal(page);
-
-      await testId(page, "buy-countersign").click();
+      const countersign = testId(page, "start-countersign");
+      await expect(countersign).toBeEnabled({ timeout: 60_000 });
+      await countersign.click();
       await approveIfPrompted(page);
-      await waitStateOrRefusal(page, "buy-countersigned", "signed", 120_000);
-      const jobId = await waitAttr(page, "buy-countersigned", /^0x[0-9a-fA-F]{64}$/, 30_000);
+      await approveIfPrompted(page);
+
+      const hash = await waitResult(page, 120_000);
       await assertNoRefusal(page);
 
-      await testId(page, "buy-fund").click();
-      await approveIfPrompted(page);
-      await waitStateOrRefusal(page, "buy-funded", "funded", 120_000);
-      const hash = await waitAttr(page, "buy-funded", /^0x[0-9a-fA-F]{64}$/, 30_000);
-      const receipt = await client.waitForTransactionReceipt({ hash: hash as Hex, timeout: 120_000 });
-      if (receipt.status !== "success") throw new Error(`the fund transaction ${hash} failed`);
-      const event = escrowEvents(ARC, receipt).funded.find((item) => item.jobId.toLowerCase() === jobId.toLowerCase());
-      if (!event) throw new Error(`the fund receipt has no Funded event for job ${jobId}`);
-      if (event.buyer.toLowerCase() !== wallet.toLowerCase()) {
-        throw new Error(`the Funded buyer is ${event.buyer}, not ${wallet}`);
+      await expect(testId(page, "start-slip")).toBeVisible({ timeout: 30_000 });
+      const href = await testId(page, "start-verify").getAttribute("href");
+      if (href === null) throw missingAttribute("start-verify", "href");
+      const slipHash = slipHashFromHref(href);
+      if (!slipHash) {
+        throw new Error(`start-verify[href] is ${JSON.stringify(href)}, not #/verify/<hash>`);
       }
-      if (event.amount !== offer.price) {
-        throw new Error(`the Funded amount is ${event.amount}, not the offer price ${offer.price}`);
-      }
-      const afterBuy = await balanceOf(client, wallet);
-      const expected = afterPurchase(afterFunding(funded.before), offer.price);
-      if (afterBuy !== expected) throw new Error(`the wallet holds ${afterBuy} after funding, expected ${expected}`);
-      rec.tx("escrow fund", hash);
-      await assertNoRefusal(page);
-      return { jobId, price: offer.price };
+      rec.slip = slipHash;
+      return { hash, slipHash };
     });
 
-    await step(rec, page, "06", "delivery", "the seller delivers and releases", async () => {
-      await waitStateOrRefusal(page, "buy-delivery", "delivered", 180_000);
-      const output = testId(page, "buy-output");
-      const text = (await output.innerText().catch(() => "")).trim();
-      const value = (await output.getAttribute("data-value").catch(() => null)) ?? "";
-      if (text === "" && value.trim() === "") throw new Error("buy-output is empty");
-      const hash = await waitAttr(page, "buy-released", /^0x[0-9a-fA-F]{64}$/, 60_000);
-      const receipt = await client.waitForTransactionReceipt({ hash: hash as Hex, timeout: 120_000 });
-      if (receipt.status !== "success") throw new Error(`the release transaction ${hash} failed`);
-      const released = escrowEvents(ARC, receipt).released.some(
-        (event) => event.jobId.toLowerCase() === bought.jobId.toLowerCase(),
-      );
-      if (!released) throw new Error(`the release receipt has no Released event for job ${bought.jobId}`);
-      rec.tx("release", hash);
+    const proof = await step(rec, page, "06", "prove", "prove the purchase on chain", async () => {
+      const hub = hubUrl().replace(/\/$/, "");
+      const response = await fetch(`${hub}/slips/${bought.slipHash}`);
+      if (response.status !== 200) throw new Error(`the hub answered ${response.status} for the slip`);
+      const text = await response.text();
+      const slipFile = rec.file("slip.json");
+      writeFileSync(slipFile, text);
+      rec.addArtifact(slipFile);
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("the hub's slip is not JSON");
+      }
+      const slip = slipFieldsOf(parsed);
+      if (slip.buyer.toLowerCase() !== wallet.toLowerCase()) {
+        throw new Error(`the slip buyer is ${slip.buyer}, not ${wallet}`);
+      }
+
+      const fundedLogs = await client.getLogs({
+        address: ARC.escrow,
+        event: FUNDED,
+        args: { jobId: slip.jobId },
+        fromBlock: funded.blockNumber,
+        toBlock: "latest",
+      });
+      if (fundedLogs.length !== 1) {
+        throw new Error(`expected one Funded log for job ${slip.jobId}, found ${fundedLogs.length}`);
+      }
+      const fundLog = fundedLogs[0];
+      if (!fundLog?.transactionHash) throw new Error(`the Funded log for job ${slip.jobId} has no transaction hash`);
+      const fundArgs = fundLog.args;
+      if (!fundArgs) throw new Error(`the Funded log for job ${slip.jobId} has no arguments`);
+      const fundBuyer = fundArgs.buyer;
+      const fundAmount = fundArgs.amount;
+      const fundOfferHash = fundArgs.offerHash;
+      if (fundBuyer === undefined || fundAmount === undefined || fundOfferHash === undefined) {
+        throw new Error(`the Funded log for job ${slip.jobId} has incomplete arguments`);
+      }
+      if (fundBuyer.toLowerCase() !== wallet.toLowerCase()) {
+        throw new Error(`the Funded buyer is ${fundBuyer}, not ${wallet}`);
+      }
+      if (fundAmount !== slip.amount) {
+        throw new Error(`the Funded amount is ${fundAmount}, not the slip amount ${slip.amount}`);
+      }
+      if (fundOfferHash.toLowerCase() !== slip.offerHash.toLowerCase()) {
+        throw new Error(`the Funded offer hash is ${fundOfferHash}, not the slip's ${slip.offerHash}`);
+      }
+      rec.tx("escrow fund", fundLog.transactionHash);
+
+      let releasedLogs = await client.getLogs({
+        address: ARC.escrow,
+        event: RELEASED,
+        args: { jobId: slip.jobId },
+        fromBlock: funded.blockNumber,
+        toBlock: "latest",
+      });
+      const releaseDeadline = Date.now() + 180_000;
+      while (releasedLogs.length === 0 && Date.now() < releaseDeadline) {
+        await page.waitForTimeout(2_000);
+        releasedLogs = await client.getLogs({
+          address: ARC.escrow,
+          event: RELEASED,
+          args: { jobId: slip.jobId },
+          fromBlock: funded.blockNumber,
+          toBlock: "latest",
+        });
+      }
+      if (releasedLogs.length !== 1) {
+        throw new Error(`expected one Released log for job ${slip.jobId}, found ${releasedLogs.length}`);
+      }
+      const releaseLog = releasedLogs[0];
+      if (!releaseLog?.transactionHash) throw new Error(`the Released log for job ${slip.jobId} has no transaction hash`);
+      const releaseArgs = releaseLog.args;
+      if (!releaseArgs) throw new Error(`the Released log for job ${slip.jobId} has no arguments`);
+      const releasedSlip = releaseArgs.slipHash;
+      if (releasedSlip === undefined) {
+        throw new Error(`the Released log for job ${slip.jobId} has no slip hash`);
+      }
+      if (releasedSlip.toLowerCase() !== bought.slipHash.toLowerCase()) {
+        throw new Error(`the Released slip hash is ${releasedSlip}, not ${bought.slipHash}`);
+      }
+      rec.tx("release", releaseLog.transactionHash);
+
+      const resultReceipt = await client.waitForTransactionReceipt({ hash: bought.hash, timeout: 120_000 });
+      if (resultReceipt.status !== "success") {
+        throw new Error(`the result transaction ${bought.hash} failed`);
+      }
+      const events = escrowEvents(ARC, resultReceipt);
+      const recorded =
+        events.funded.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase()) ||
+        events.released.some((event) => event.jobId.toLowerCase() === slip.jobId.toLowerCase());
+      if (!recorded) {
+        throw new Error(`the result transaction ${bought.hash} has no escrow event for job ${slip.jobId}`);
+      }
+
+      const after = await balanceOf(client, wallet);
+      const expected = fundedBalance - slip.amount;
+      if (after !== expected) {
+        throw new Error(`the wallet holds ${after} after the purchase, expected ${expected}`);
+      }
+      return { slipFile };
     });
 
     await step(rec, page, "07", "slip", "the slip verifies", async () => {
-      const slipHash = await waitAttr(page, "buy-slip-link", /^0x[0-9a-fA-F]{64}$/, 30_000);
-      rec.slip = slipHash;
-      await testId(page, "buy-slip-link").click();
-      await expect(testId(page, "slip-hash")).toHaveAttribute(
-        "data-value",
-        new RegExp(`^${slipHash}$`, "i"),
-        { timeout: 30_000 },
-      );
-      await testId(page, "slip-verify").click();
-      await waitState(page, "slip-verdict", "valid", 60_000);
+      await testId(page, "start-verify").click();
+      await expect(page).toHaveURL(new RegExp(`#/verify/${bought.slipHash}$`, "i"), { timeout: 30_000 });
+      await waitAttr(page, "verify-verdict", /^valid$/, 60_000, "data-state");
 
-      const hub = hubUrl().replace(/\/$/, "");
-      const response = await fetch(`${hub}/slips/${slipHash}`);
-      if (response.status !== 200) throw new Error(`the hub answered ${response.status} for the slip`);
-      const body = await response.text();
-      const slipFile = rec.file("slip.json");
-      writeFileSync(slipFile, body);
-      rec.addArtifact(slipFile);
-
-      const verifier = spawnSync("bun", ["packages/verify/src/cli.ts", slipFile, "--rpc", RPC], {
+      const verifier = spawnSync("bun", ["packages/verify/src/cli.ts", proof.slipFile, "--rpc", RPC], {
         cwd: REPO_ROOT,
         encoding: "utf8",
         timeout: 90_000,
