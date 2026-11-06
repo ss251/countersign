@@ -9,6 +9,7 @@ import {
   pending,
   type MainnetProfile,
 } from "../src/network.ts";
+import { RAIL_CONFIG_VARS, RAIL_SWITCHES } from "../src/rails.ts";
 
 const ESCROW = "0x5555555555555555555555555555555555555555";
 
@@ -49,6 +50,18 @@ describe("the guard knows every rail switch railsFromEnv reads (cs-w1 should-fix
     const problems = mainnetProblems({ EIP3009_RAIL: "1", ARC_RPC_URL: "https://rpc", CS_RELAYER_KEY: "0x01" });
     expect(problems).not.toEqual(["No rail is configured for mainnet."]);
     expect(problems.some((p) => p.startsWith("Rail eip3009 "))).toBe(true);
+  });
+
+  test("every variable rails.ts reads is a listed switch or listed config, so a new switch cannot slip past", async () => {
+    const source = await Bun.file(join(import.meta.dir, "..", "src", "rails.ts")).text();
+    const read = new Set([...source.matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1] as string));
+    const listed = new Set<string>([...RAIL_SWITCHES.flatMap((s) => s.vars), ...RAIL_CONFIG_VARS]);
+    expect([...read].filter((name) => !listed.has(name))).toEqual([]);
+    expect(read.size).toBeGreaterThan(5);
+  });
+
+  test("every rail switch has a mainnet profile entry", () => {
+    for (const { id } of RAIL_SWITCHES) expect(MAINNET[id]).toBeDefined();
   });
 });
 

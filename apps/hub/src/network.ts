@@ -12,6 +12,8 @@
  * not: it refuses rather than start with less than it was asked for. See docs/mainnet.md.
  */
 
+import { RAIL_SWITCHES, type SwitchedRail } from "./rails.ts";
+
 export type NetworkName = "testnet" | "mainnet";
 
 /** A value nobody has confirmed yet. Its reason says what has to happen first. */
@@ -44,8 +46,19 @@ export interface NoMainnet {
   none: string;
 }
 
-export interface MainnetProfile {
+export interface MainnetDirectUsdcProfile {
+  chainId: Setting<number>;
+  token: Setting<string>;
+  explorerTx: Setting<string>;
+}
+
+/**
+ * One entry per rail switch in rails.ts (RAIL_SWITCHES). The type requires it: a switch added
+ * there without a mainnet entry here does not compile.
+ */
+export interface MainnetProfile extends Record<SwitchedRail, object> {
   escrow: MainnetEscrowProfile;
+  eip3009: MainnetDirectUsdcProfile;
   gateway: MainnetGatewayProfile;
   whitechain: NoMainnet;
   hedera: NoMainnet;
@@ -60,6 +73,11 @@ export const MAINNET: MainnetProfile = {
     chainId: pending("Arc mainnet's chain id, confirmed from Circle's Arc network page."),
     escrow: pending("CountersignedEscrow is not deployed on Arc mainnet. Deploy it after review, then record the address."),
     token: pending("Arc mainnet USDC, confirmed from Circle's USDC contract addresses page."),
+    explorerTx: pending("Arc mainnet's explorer transaction URL, confirmed from Circle's Arc network page."),
+  },
+  eip3009: {
+    chainId: pending("Arc mainnet's chain id, confirmed from Circle's Arc network page."),
+    token: pending("Arc mainnet USDC, confirmed from Circle's USDC contract addresses page, with its EIP-712 name and version."),
     explorerTx: pending("Arc mainnet's explorer transaction URL, confirmed from Circle's Arc network page."),
   },
   gateway: {
@@ -85,14 +103,9 @@ export function networkFromEnv(env: Record<string, string | undefined>): Network
   throw new BootRefused([`CS_NETWORK must be testnet or mainnet, not ${JSON.stringify(value)}.`]);
 }
 
-/** The rails this environment asks for, using the same switches as railsFromEnv. */
-export function requestedRails(env: Record<string, string | undefined>): Array<keyof MainnetProfile> {
-  const rails: Array<keyof MainnetProfile> = [];
-  if (env.ARC_ESCROW || env.ARC_RPC_URL) rails.push("escrow");
-  if (env.WC_RELAY_URL) rails.push("whitechain");
-  if (env.GATEWAY_RAIL === "1") rails.push("gateway");
-  if (env.HEDERA_RAIL === "1") rails.push("hedera");
-  return rails;
+/** The rails this environment asks for, read from the same switch table as railsFromEnv. */
+export function requestedRails(env: Record<string, string | undefined>): SwitchedRail[] {
+  return RAIL_SWITCHES.filter((entry) => entry.requested(env)).map((entry) => entry.id);
 }
 
 /** Every reason a mainnet hub must not boot with this environment and profile. Empty means ready. */

@@ -39,9 +39,12 @@ The tests are in `apps/hub/test/network.test.ts`. Two of them start the real hub
 | escrow | `escrow` | `CountersignedEscrow` is deployed on Arc mainnet (step 2) and its address is recorded. |
 | escrow | `token` | Arc mainnet USDC is confirmed from Circle's USDC contract addresses page, and `name()` and `version()` return the EIP-712 domain the rail signs for. |
 | escrow | `explorerTx` | The explorer's transaction URL is confirmed from Circle's Arc network page. |
+| eip3009 | `chainId`, `token`, `explorerTx` | The same Arc mainnet facts as the escrow rail, confirmed the same way. The token's `name()` and `version()` must match the EIP-712 domain the buyer signs `TransferWithAuthorization` under. |
 | gateway | `network`, `facilitatorUrl` | Circle publishes a mainnet batch facilitator for Arc, and its `/supported` lists `exact` with the batched kind on that network. |
 | whitechain | (none) | No mainnet: the rail and its relay are built for Whitechain Sepolia only. |
 | hedera | (none) | No mainnet: network, token, mirror node and facilitators are testnet constants in `packages/rail/src/hedera/constants.ts`. |
+
+The guard reads its list of rails from `RAIL_SWITCHES` in `apps/hub/src/rails.ts`, the same table `railsFromEnv` reads. A rail switch added there without an entry in `MAINNET` does not compile. A variable `railsFromEnv` reads that is neither a listed switch nor in `RAIL_CONFIG_VARS` fails `network.test.ts`.
 
 Values in `examples/catalogue` are third-party skill content, not a source for this table. Confirm every value against the primary source named above, and record the source and the date in the commit that fills it.
 
@@ -59,4 +62,7 @@ Each step is its own pull request against `cs/int`, and none of them is done yet
 
 ## Rolling back
 
-Unset `CS_NETWORK`, or set it to `testnet`, and redeploy. Jobs already funded on a mainnet escrow keep their on-chain deadlines. After its deadline, anyone can call `refund(jobId)` on the escrow, with or without a hub running. Rolling back the hub never strands funds.
+Unset `CS_NETWORK`, or set it to `testnet`, and redeploy. Jobs already funded on a mainnet escrow keep their on-chain deadlines.
+
+- **On a v1 escrow,** anyone can call `refund(jobId)` after a job's deadline, with or without a hub running, so rolling back the hub never strands funds.
+- **On the v2 escrow** ([spec/escrow.md](spec/escrow.md), "Escrow v2"), a delivered job is not refunded at its deadline. It waits for the buyer's accept or dispute, or for anyone to call `releaseAfterWindow` once the review window ends. Rolling back strands nothing there either, but a delivered job closes by the window, not the deadline. Re-check this paragraph against the v2 contract when it lands (#98).
