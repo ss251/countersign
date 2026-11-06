@@ -1,5 +1,27 @@
 # hd-06-mpp-rail: Stripe MPP as the fourth rail, proven against a mock
 
+## Amendments (captain, 16:20 IST): these override the text below wherever they differ
+
+1. **Dependencies.** Add `"mppx": "0.17.1"` and `"stripe": "23.1.0"` to `packages/rail/package.json` `dependencies`, plus the `./mpp` export. Tests use the mock Stripe client only.
+   - Add `stripeClientFromKey(key)` in `packages/rail/src/mpp/client.ts`. It refuses, by throwing, any key that does not start with `sk_test_` or `rk_test_`, and it is never called by a test or by the mock server.
+   - You never read a key, an env file or a config directory.
+2. **Two floors.**
+   - **Stablecoin (Tempo method):** 0.01 USDC.
+   - **Card (Stripe method):** 0.50 USD, whole cents only.
+
+   `challenge` offers only the methods whose floor the price meets, and refuses outright any price under 0.01. A 0.05 USDC offer, the usual demo price, must get a stablecoin challenge, and a price of 0.50 or more gets both.
+   - **One rail:** `id: "mpp"`. The MPP header in `extra.mpp.wwwAuthenticate` carries every eligible method, and `extra.mpp.methods` lists them.
+   - **Network:** `requirements.network` is `"mpp:stripe"` when the card method is offered, otherwise `"mpp:tempo"`.
+   - **Declaration:** it describes the stablecoin method (network `mpp:tempo`, asset USDC). Say why in `docs/mpp.md`.
+3. **Stablecoin method.** Use mppx's Tempo method (`mppx/tempo`) if it can be exercised offline against a mock.
+   - If it needs a live Tempo RPC or the real deposit address, build its challenge and its floor (use a clearly fake placeholder recipient in tests), stop at `verify` for that method, and state exactly what is missing in the report.
+   - Never call a live RPC.
+4. **Same interface as the other rails:** declaration, challenge, verify, settle. Hub wiring is a follow-up packet; do not touch the hub.
+5. **The proof is `npx mppx@latest validate` against the local endpoint.** Run it against the card endpoint (0.50 USD) and, if the Tempo method works offline, also against the stablecoin endpoint.
+   - If validate cannot pass without live sandbox credentials or a real payment, stop and paste its full output in the report. The lane posts it on issue #5.
+   - Never fake a green, and never skip or weaken a test to get one.
+6. **Credentials** (a test secret key, a sandbox profile id, a Tempo deposit address) are still outstanding. Never use any Stripe key found on this machine.
+
 ## Goal
 
 Add the `mpp` rail (Stripe Machine Payments Protocol) and prove it against a mock Stripe client. Tracked by issue #5.
