@@ -11,7 +11,7 @@ import {ICountersignedEscrow, IERC3009} from "./ICountersignedEscrow.sol";
 
 /// @title CountersignedEscrow
 /// @notice Conditional escrow for software-to-software payments. No owner, no pause, no upgrade:
-///         the token, treasury and toll are fixed at deployment.
+///         the token, treasury, toll and arbiter are fixed at deployment.
 contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -29,39 +29,69 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     IERC20 public immutable token;
     address public immutable treasury;
     uint16 public immutable tollBps;
+    /// @notice The only address that may call failDelivery: the hub's relayer.
+    address public immutable arbiter;
 
     mapping(bytes32 jobId => Job) private _jobs;
+    mapping(address payee => uint256) public bondOf;
+    mapping(bytes32 jobId => uint256) private _jobBond;
 
-    constructor(address token_, address treasury_, uint16 tollBps_) EIP712("Countersign", "1") {
-        if (token_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
+    constructor(address token_, address treasury_, uint16 tollBps_, address arbiter_) EIP712("Countersign", "1") {
+        if (token_ == address(0) || treasury_ == address(0) || arbiter_ == address(0)) revert ZeroAddress();
         if (tollBps_ > MAX_TOLL_BPS) revert TollTooHigh(tollBps_);
         token = IERC20(token_);
         treasury = treasury_;
         tollBps = tollBps_;
+        arbiter = arbiter_;
     }
 
     /// @inheritdoc ICountersignedEscrow
     function fund(bytes32 offerHash, Countersignature calldata cs) external nonReentrant returns (bytes32 jobId) {
-        if (cs.amount == 0) revert ZeroAmount();
-        if (cs.buyer == address(0) || cs.payee == address(0)) revert ZeroAddress();
-        if (cs.deadline <= block.timestamp) revert DeadlineInPast(cs.deadline);
+        return _fund(offerHash, cs, 0);
+    }
 
-        jobId = jobIdFor(offerHash, cs.buyer, cs.payee, cs.amount, cs.deadline, cs.salt);
-        if (_jobs[jobId].status != Status.None) revert JobExists(jobId);
-        _checkCountersignature(cs, jobId);
+    /// @inheritdoc ICountersignedEscrow
+    function fundBonded(bytes32 offerHash, Countersignature calldata cs, uint256 bond)
+        external
+        nonReentrant
+        returns (bytes32 jobId)
+    {
+        return _fund(offerHash, cs, bond);
+    }
 
-        _jobs[jobId] = Job({
-            buyer: cs.buyer,
-            deadline: cs.deadline,
-            status: Status.Funded,
-            payee: cs.payee,
-            amount: cs.amount,
-            offerHash: offerHash,
-            slipHash: bytes32(0)
-        });
-        _pull(cs, jobId);
+    /// @inheritdoc ICountersignedEscrow
+    function depositBond(
+        address payee,
+        uint256 amount,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (payee == address(0)) revert ZeroAddress();
 
-        emit Funded(jobId, offerHash, cs.buyer, cs.payee, cs.amount, cs.deadline);
+        uint256 before = token.balanceOf(address(this));
+        IERC3009(address(token)).receiveWithAuthorization(
+            payee, address(this), amount, validAfter, validBefore, nonce, v, r, s
+        );
+        if (token.balanceOf(address(this)) - before != amount) revert TransferShortfall(bytes32(0));
+
+        bondOf[payee] += amount;
+        emit BondDeposited(payee, amount);
+    }
+
+    /// @inheritdoc ICountersignedEscrow
+    function withdrawBond(uint256 amount) external nonReentrant {
+        address payee = msg.sender;
+        uint256 available = bondOf[payee];
+        if (amount > available) revert BondMissing(payee, amount, available);
+
+        bondOf[payee] = available - amount;
+        token.safeTransfer(payee, amount);
+        emit BondWithdrawn(payee, amount);
     }
 
     /// @inheritdoc ICountersignedEscrow
@@ -77,6 +107,7 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         uint256 toll = tollOf(job.amount);
         uint256 paid = job.amount - toll;
         address payee = job.payee;
+        _returnJobBond(jobId, payee);
 
         token.safeTransfer(payee, paid);
         if (toll != 0) token.safeTransfer(treasury, toll);
@@ -103,6 +134,23 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     }
 
     /// @inheritdoc ICountersignedEscrow
+    function failDelivery(bytes32 jobId) external nonReentrant {
+        if (msg.sender != arbiter) revert NotArbiter();
+        Job storage job = _jobs[jobId];
+        if (job.status != Status.Funded) revert NotFunded(jobId);
+        if (block.timestamp > job.deadline) revert DeadlinePassed(jobId, job.deadline);
+
+        job.status = Status.Failed;
+        address buyer = job.buyer;
+        uint256 amount = job.amount;
+        uint256 bond = _jobBond[jobId];
+        if (bond != 0) _jobBond[jobId] = 0;
+
+        token.safeTransfer(buyer, amount + bond);
+        emit DeliveryFailed(jobId, buyer, amount, bond);
+    }
+
+    /// @inheritdoc ICountersignedEscrow
     function jobIdFor(bytes32 offerHash, address buyer, address payee, uint256 amount, uint64 deadline, uint256 salt)
         public
         view
@@ -121,6 +169,11 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     /// @inheritdoc ICountersignedEscrow
     function tollOf(uint256 amount) public view returns (uint256) {
         return (amount * tollBps) / 10_000;
+    }
+
+    /// @inheritdoc ICountersignedEscrow
+    function bondOfJob(bytes32 jobId) external view returns (uint256) {
+        return _jobBond[jobId];
     }
 
     /// @notice The EIP-712 domain separator for Countersign, Release and Cancel messages.
@@ -149,6 +202,40 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
         if (err != ECDSA.RecoverError.NoError || signer != cs.buyer) revert CountersignatureMismatch(jobId);
     }
 
+    function _fund(bytes32 offerHash, Countersignature calldata cs, uint256 bond)
+        private
+        returns (bytes32 jobId)
+    {
+        if (cs.amount == 0) revert ZeroAmount();
+        if (cs.buyer == address(0) || cs.payee == address(0)) revert ZeroAddress();
+        if (cs.deadline <= block.timestamp) revert DeadlineInPast(cs.deadline);
+
+        jobId = jobIdFor(offerHash, cs.buyer, cs.payee, cs.amount, cs.deadline, cs.salt);
+        if (_jobs[jobId].status != Status.None) revert JobExists(jobId);
+        _checkCountersignature(cs, jobId);
+
+        if (bond > 0) {
+            uint256 available = bondOf[cs.payee];
+            if (available < bond) revert BondMissing(cs.payee, bond, available);
+            bondOf[cs.payee] = available - bond;
+            _jobBond[jobId] = bond;
+            emit BondLocked(jobId, cs.payee, bond);
+        }
+
+        _jobs[jobId] = Job({
+            buyer: cs.buyer,
+            deadline: cs.deadline,
+            status: Status.Funded,
+            payee: cs.payee,
+            amount: cs.amount,
+            offerHash: offerHash,
+            slipHash: bytes32(0)
+        });
+        _pull(cs, jobId);
+
+        emit Funded(jobId, offerHash, cs.buyer, cs.payee, cs.amount, cs.deadline);
+    }
+
     /// @dev The token checks the same signature again and burns the nonce, so it can never be replayed.
     function _pull(Countersignature calldata cs, bytes32 jobId) private {
         uint256 before = token.balanceOf(address(this));
@@ -161,8 +248,18 @@ contract CountersignedEscrow is ICountersignedEscrow, EIP712, ReentrancyGuard {
     function _refund(bytes32 jobId, Job storage job, bool byPayee) private {
         job.status = Status.Refunded;
         address buyer = job.buyer;
+        address payee = job.payee;
         uint256 amount = job.amount;
+        _returnJobBond(jobId, payee);
         token.safeTransfer(buyer, amount);
         emit Refunded(jobId, buyer, amount, byPayee);
+    }
+
+    function _returnJobBond(bytes32 jobId, address payee) private {
+        uint256 bond = _jobBond[jobId];
+        if (bond == 0) return;
+        _jobBond[jobId] = 0;
+        bondOf[payee] += bond;
+        emit BondReturned(jobId, payee, bond);
     }
 }
