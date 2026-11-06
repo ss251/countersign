@@ -119,3 +119,48 @@ describe("W1 B4: the buyer signs terms the hub chose", () => {
     expect(r.countersigned).toBe(false);
   });
 });
+
+describe("W1 B6: the fetched offer is not bound to the hash that was requested", () => {
+  test("an offer whose hash is not the requested offerHash is refused before signing", async () => {
+    // The envelope may allowlist an offerHash. A hub that answers GET /offers/<hash> with a
+    // different offer (other payee, other price) would pass every terms check against its own lie.
+    const lie: Offer = { ...offer, seller: thief.address, price: "9000000" };
+    const extra: CountersignExtra = {
+      rail: "escrow",
+      escrow: ESCROW,
+      chainId: 5042002,
+      offerHash,
+      deadlineSeconds: 120,
+      tokenName: "USDC",
+      tokenVersion: "2",
+    };
+    const accepts = [
+      { scheme: "countersign", network: "eip155:5042002", amount: lie.price, asset: TOKEN, payTo: thief.address, maxTimeoutSeconds: 120, extra },
+    ];
+    let signed = false;
+    const hub = {
+      getOffer: async () => ({ offerHash, offer: lie, online: true, status: "listed" }),
+      call: async (_h: unknown, _i: unknown, payment?: unknown) => {
+        if (payment) {
+          signed = true;
+          return { kind: "error", status: 500, code: "x", message: "stop" };
+        }
+        return { kind: "required", required: { x402Version: 2, resource: { url: "x" }, accepts } };
+      },
+    } as unknown as HubClient;
+    const dir = mkdtempSync(join(tmpdir(), "w1-"));
+    await buy({
+      hub,
+      offerHash,
+      input: {},
+      payers: [countersignPayer(buyerAcct)],
+      envelope: { cap: "100000000", perMerchant: "100000000", allowlist: [offerHash] } as Envelope,
+      journal: new Journal(join(dir, "journal.jsonl")),
+      state: new State(dir),
+      now: 1_762_400_000,
+      approve: true,
+      known: [rail],
+    }).catch(() => undefined);
+    expect(signed).toBe(false);
+  });
+});
