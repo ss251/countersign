@@ -246,7 +246,7 @@ export function inspectScheduled(bodyBase64: string): InspectedTransfer {
 export class ScheduleRefusedError extends Error {
   override name = "ScheduleRefusedError";
   constructor(
-    readonly reason: ScheduleStatus | "not_found" | "mismatch",
+    readonly reason: ScheduleStatus | "not_found" | "mismatch" | "wait_for_expiry" | "payer_mismatch",
     message: string,
     readonly refusal?: ScheduledRefusal,
   ) {
@@ -279,12 +279,7 @@ async function waitForMirrorSchedule(scheduleId: string, opts: CountersignOption
   }
 }
 
-/**
- * Check the schedule and, only when it is still pending and exactly the expected transfer, add the
- * seller's signature. Returns the ScheduleSign transaction id. The body is read from the mirror
- * node only: the SDK's schedule query hands back an already-parsed transaction, so its raw bytes
- * cannot be checked.
- */
+/** A successful countersign is not payment: a seller delivers only after `waitForScheduledExecution` returns the executed transfer. */
 export async function countersignSchedule(
   sellerClient: Client,
   scheduleId: string,
@@ -295,6 +290,15 @@ export async function countersignSchedule(
   const record = await waitForMirrorSchedule(scheduleId, opts);
   const status = statusOf(record, now);
   if (status !== "pending") throw new ScheduleRefusedError(status, `Refused. The schedule is ${status}.`);
+  if (record.waitForExpiry === true) {
+    throw new ScheduleRefusedError(
+      "wait_for_expiry",
+      "Refused. The schedule waits for its expiry, so the seller's key would not pay now.",
+    );
+  }
+  if (record.payer !== expected.payer) {
+    throw new ScheduleRefusedError("payer_mismatch", "Refused. The schedule names a fee payer other than the buyer.");
+  }
   const inspected = inspectScheduled(record.transactionBody);
 
   const check = checkScheduledTransfer(inspected, expected);

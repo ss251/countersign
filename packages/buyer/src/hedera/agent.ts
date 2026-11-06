@@ -21,11 +21,11 @@ import {
 } from "@countersign/core";
 import {
   FACILITATORS,
+  getSchedule,
   getTransaction,
   HEDERA_TESTNET,
   httpFacilitator,
   netFor,
-  scheduleStatus,
   toSdkTxId,
   USDC_TESTNET,
   type MirrorOptions,
@@ -86,6 +86,9 @@ export type ScheduleOutcome =
 
 export type ReleaseOutcome = "pending" | "executed" | "released";
 
+/** Seconds past a schedule's expiration before a missing execution counts as a release. */
+export const RELEASE_MARGIN_SECONDS = 60;
+
 export type BuyOutcome =
   | {
       kind: "paid";
@@ -100,12 +103,14 @@ export type BuyOutcome =
 
 /**
  * What the agent has spent, rebuilt from its own HCS log. A schedule counts from the moment it is
- * created; an expired entry releases the amount its schedule entry added, once.
+ * created; an expired entry releases the amount its schedule entry added, once. A spend that lands
+ * after its release means the release was wrong, so it adds its amount back, once.
  */
 export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
   let spent: EnvelopeSpend = { total: "0", bySeller: {} };
   const scheduled = new Map<string, { seller: string; amount: string }>();
   const released = new Set<string>();
+  const restored = new Set<string>();
 
   const add = (seller: string, offerHash: string, amount: string) => {
     spent = recordSpend(spent, { seller, offerHash, amount });
@@ -129,6 +134,13 @@ export function spentFromLog(entries: LoggedEntry[]): EnvelopeSpend {
       released.add(entry.schedule);
       subtract(held.seller, held.amount);
     } else if (entry.kind === "spend") {
+      if (entry.schedule && released.has(entry.schedule)) {
+        // The release was wrong: the money moved, so put it back once.
+        if (restored.has(entry.schedule)) continue;
+        restored.add(entry.schedule);
+        add(entry.seller, entry.offerHash, entry.amount);
+        continue;
+      }
       // A spend that follows its schedule entry was already counted at create time.
       if (entry.schedule && scheduled.has(entry.schedule)) continue;
       add(entry.seller, entry.offerHash, entry.amount);
@@ -415,13 +427,18 @@ export function createHederaAgent(opts: HederaAgentOptions) {
     },
 
     /**
-     * Release a schedule the mirror now shows expired or deleted. A schedule that executed, or is
+     * Release a schedule that is deleted, or whose expiration passed by more than
+     * `RELEASE_MARGIN_SECONDS` with no execution on the mirror. A schedule that executed, or is
      * still pending, changes nothing. Releasing the same schedule twice logs once.
      */
     async releaseExpired(hold: ScheduleHold): Promise<ReleaseOutcome> {
-      const status = await scheduleStatus(hold.scheduleId, { ...opts.mirror, now });
-      if (status === "pending") return "pending";
-      if (status === "executed") return "executed";
+      const record = await getSchedule(hold.scheduleId, opts.mirror);
+      if (!record) return "pending";
+      if (record.executedTimestamp) return "executed";
+      const expirationSeconds = record.expirationTime === null ? null : Number(record.expirationTime.split(".")[0]);
+      const expired =
+        record.deleted || (expirationSeconds !== null && now() >= expirationSeconds + RELEASE_MARGIN_SECONDS);
+      if (!expired) return "pending";
       if (releasedSchedules.has(hold.scheduleId)) return "released";
       releasedSchedules.add(hold.scheduleId);
 
