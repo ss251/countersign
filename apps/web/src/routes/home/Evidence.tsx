@@ -150,7 +150,6 @@ function Claim({
             <Link to="/assistant" className="landing__go">
               Ask for a paid tool
             </Link>
-            <Link to="/get-started" className="landing__go">Get started</Link>
             <button type="button" className="landing__cue" onClick={down}>
               ↓ live desk
             </button>
