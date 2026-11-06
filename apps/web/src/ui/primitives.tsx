@@ -64,10 +64,13 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       onClick={() => {
         void navigator.clipboard?.writeText(value).then(() => {
           setCopied(true);
-          window.setTimeout(() => setCopied(false), 1400);
+          window.setTimeout(() => setCopied(false), 2000);
         });
       }}
     >
+      <span className="sr-only" aria-live="polite">
+        {copied ? `Copied ${label}` : ""}
+      </span>
       {copied ? (
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
           <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
