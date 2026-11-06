@@ -48,7 +48,7 @@ function Snippet({ title, path, code }: { title: string; path: string; code: str
   );
 }
 
-/** "Integrate this in twenty lines", rendered from the two files this desk's own checkout runs. */
+/** "Integrate this in twenty lines", rendered from the two files this console's own checkout runs, on the merchant desk and the seller page alike. */
 export function Integrate(): ReactNode {
   return (
     <section className="mx-integrate" aria-labelledby="mx-integrate-heading">
@@ -57,7 +57,7 @@ export function Integrate(): ReactNode {
           Integrate this in twenty lines
         </h2>
         <p className="mx-integrate__lead">
-          This desk&rsquo;s own checkout runs these two files, <span className="num">{SNIPPET_LINES}</span> lines in all. The
+          This console&rsquo;s own checkout runs these two files, <span className="num">{SNIPPET_LINES}</span> lines in all. The
           paywall goes on your server; your customer pays from their wallet and never holds WBT.
         </p>
       </div>
