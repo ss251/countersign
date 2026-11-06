@@ -2,7 +2,7 @@
 
 What countersign has built, what is still on a branch, and what is only a design. Every row was checked against the code, not against another page. If any other page in this repository disagrees with this one, the other page is wrong.
 
-Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `ee9bff8`. The two differ only in docs and one console fix, so every status holds for both.
+Checked on 06 Nov 2026 against `main` at `f2bb283` and `cs/int` at `ee9bff8`. The two differ only in docs and one console fix, so every status holds for both. The proof transactions linked from the README were read back from Arc, Whitechain and Hedera for this page: each one exists with the status the README gives it, and the moved-price transaction reverted.
 
 | Status | Meaning |
 |---|---|
@@ -26,7 +26,7 @@ A pull request that changes a row's status changes it here too.
 | After the deadline anyone can refund the buyer in full | `SHIPPED` | Arc [`0x1cd2…9e35`](https://explorer.testnet.arc.io/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35); e2e `arc-deadline-refund` | README, [proof.md](proof.md), [terms.md](terms.md) §4 |
 | The payee cancels a held job and the buyer gets the full amount back | `SHIPPED` | Whitechain [`0x1e99…c5d9`](https://explorer.testnet.whitechain.io/tx/0x1e99d1aceab0ddfcebc3f91e6c6650c0c9214f737552382ff68098704cfec5d9) | [whitechain.md](whitechain.md), D7 |
 | Seller bond: locked at funding, paid to the buyer when a delivery fails the hub's gate | `IN PROGRESS` | Built on `cs/cs-19` ([#93](https://github.com/ss251/countersign/issues/93)), not merged and not deployed. Every offer declares `bond`; no deployed contract collects it | `Offer.bond` in `packages/core/src/types.ts`, [spec/offer.md](spec/offer.md), [spec/escrow.md](spec/escrow.md) "Escrow v2", D11, README "Safety limits", [terms.md](terms.md) §6 |
-| Delivery review window: the buyer accepts, or disputes for a refund | `IN DESIGN` | [spec/escrow.md](spec/escrow.md) "Escrow v2" and D12. [#98](https://github.com/ss251/countersign/issues/98) and [#99](https://github.com/ss251/countersign/issues/99) hold the work. No code | [spec/escrow.md](spec/escrow.md), D12 |
+| Delivery review window: the buyer accepts, or disputes for a refund | `IN DESIGN` | [spec/escrow.md](spec/escrow.md) "Escrow v2" and D12. [#98](https://github.com/ss251/countersign/issues/98) holds the work. No code | [spec/escrow.md](spec/escrow.md), D12 |
 | `erc8183` escrow rail with a `JobHook` committing the slip | `NOT BUILT` | No contract and no rail ([#24](https://github.com/ss251/countersign/issues/24)) | `RAIL_IDS` comment in `packages/core/src/types.ts` |
 
 ## Rails
@@ -41,7 +41,7 @@ A pull request that changes a row's status changes it here too.
 | A USDT paywall and a paying `fetch` for any API (`whitechainPaywall`, `createPayFetch`) | `SHIPPED` | `packages/relay/examples/`, `packages/relay/test/dropin-e2e.test.ts`; [`0x1c36…5f07`](https://explorer.testnet.whitechain.io/tx/0x1c366946e8dc6e1256e16880c9345b2cb84613fd5cef920f2214ae840b475f07) | [whitechain.md](whitechain.md) |
 | Hedera rail: x402 v2 `exact` through a hosted facilitator, with no human approving | `SHIPPED` | [`0.0.9185802@1793962668.996163078`](https://hashscan.io/testnet/transaction/0.0.9185802@1793962668.996163078), and [`0.0.9185802@1793966332.720364516`](https://hashscan.io/testnet/transaction/0.0.9185802@1793966332.720364516) on the hosted hub; `packages/rail/src/hedera/test/` | README, [hedera.md](hedera.md) |
 | HCS spend log and its audit | `SHIPPED` | topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070); `packages/buyer/src/hedera/test/spendlog.test.ts`, `scripts/hedera/audit.ts` | README, [hedera.md](hedera.md) |
-| Hedera scheduled checkout | `IN PROGRESS` | `cs/hd-08b`, in review ([#41](https://github.com/ss251/countersign/issues/41)) | [e2e.md](e2e.md) flow 6 reads its log entries |
+| Hedera scheduled checkout | `IN PROGRESS` | PR [#105](https://github.com/ss251/countersign/pull/105) ([#41](https://github.com/ss251/countersign/issues/41)) | [e2e.md](e2e.md) flow 6 reads its log entries |
 | `eip3009` rail: direct USDC on Arc, no escrow | `IN PROGRESS` | `cs/cs-15`, in review ([#19](https://github.com/ss251/countersign/issues/19)) | `RAIL_IDS` comment in `packages/core/src/types.ts` |
 | MPP rail: pays on Tempo testnet; Stripe's card method sits behind a flag | `IN PROGRESS` | PR [#84](https://github.com/ss251/countersign/pull/84). A real payment from that branch: Tempo testnet [`0xd525…5c33`](https://explore.testnet.tempo.xyz/tx/0xd525b18b225c939c1ba9c819fb536e036fd0405f0090c2ded0aabaf519b35c33). Not on `main` and not on the hub | README "Rails", `docs/architecture.svg`, `RAIL_IDS` comment |
 | Rail router: the cheapest healthy rail, a fallback on failure, and a recorded reason | `IN PROGRESS` | `cs/cs-20`, in review ([#94](https://github.com/ss251/countersign/issues/94)) | D13 |
@@ -60,10 +60,10 @@ A pull request that changes a row's status changes it here too.
 | A held call cleared from the phone with the approver's signature | `IN PROGRESS` | `cs/cs-13` ([#21](https://github.com/ss251/countersign/issues/21)), in review. On `main` the agent holds the call, and the human clears it on the agent's machine with `buy --approve` | D10, [spec/envelope.md](spec/envelope.md), `docs/architecture.svg` |
 | ENS seller names and a payee lock | `IN PROGRESS` | PR [#91](https://github.com/ss251/countersign/pull/91) ([#28](https://github.com/ss251/countersign/issues/28)). Offers name the seller by address | [terms.md](terms.md) §7, true as written |
 | A mainnet configuration that refuses to boot while anything is pending | `IN PROGRESS` | PR [#97](https://github.com/ss251/countersign/pull/97) ([#29](https://github.com/ss251/countersign/issues/29)). There is no mainnet configuration | README "Safety limits", [terms.md](terms.md) §6, true as written |
-| OpenAI-compatible endpoint for the buyer agent | `IN PROGRESS` | `cs/cs-14` ([#53](https://github.com/ss251/countersign/issues/53)) | |
+| OpenAI-compatible endpoint for the buyer agent | `IN PROGRESS` | A first cut on `cs/cs-14`, not merged ([#53](https://github.com/ss251/countersign/issues/53)) | |
 | Delisting: a route, a canary, automatic delisting | `NOT BUILT` | [#26](https://github.com/ss251/countersign/issues/26). The store has a `delisted` state and no route sets it | [terms.md](terms.md) §1, true as written |
 | Refusing a purchase cycle before payment | `NOT BUILT` | [#27](https://github.com/ss251/countersign/issues/27). A call's `lineage` is carried and recorded (`apps/hub/src/call.ts`); nothing refuses a cycle | |
-| Receipt trees: `/trees/:root` and the tree view | `NOT BUILT` | [#18](https://github.com/ss251/countersign/issues/18). Slips carry a `children` list, and it is always empty today | [spec/README.md](spec/README.md), [spec/tree.md](spec/tree.md), [spec/slip.md](spec/slip.md), `SlipBody.children` comment |
+| Receipt trees: `/trees/:root` and the tree view | `NOT BUILT` | [#18](https://github.com/ss251/countersign/issues/18). There is no `/trees` route. Slips carry a `children` list, always empty today; the slip view draws a tree when a slip has children, which so far only the sample data has | [spec/README.md](spec/README.md), [spec/tree.md](spec/tree.md), [spec/slip.md](spec/slip.md), `SlipBody.children` comment |
 
 ## Seller's runner
 
@@ -71,8 +71,8 @@ A pull request that changes a row's status changes it here too.
 |---|---|---|---|
 | `skill` adapter: serves a real `SKILL.md` | `SHIPPED` | `packages/runner/test/skill.test.ts`; e2e `arc-spine` | README, [spec/offer.md](spec/offer.md) |
 | The runner dials out to the hub, and a restart republishes the same offer | `SHIPPED` | `packages/runner/test/daemon.test.ts`, `restart.test.ts`; e2e `runner-restart` | README, `docs/architecture.svg` |
-| `mcp` adapter | `IN PROGRESS` | `cs/hd-09` | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` in `packages/core/src/types.ts` |
-| Hedera Agent Kit MCP server as a metered listing | `NOT BUILT` | [#42](https://github.com/ss251/countersign/issues/42). It needs the `mcp` adapter | |
+| `mcp` adapter | `IN PROGRESS` | `cs/hd-09`, not on `main`. A runner built from that branch serves the production hub's MCP offer (next row) | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` in `packages/core/src/types.ts` |
+| Hedera Agent Kit MCP server as a metered listing, paid per call on Hedera | `IN PROGRESS` | [#42](https://github.com/ss251/countersign/issues/42). Live on the production hub as offer `0xa594…d04f`, served from `cs/hd-09`: paid with no human in [`0.0.9185802@1793969029.758994311`](https://hashscan.io/testnet/transaction/0.0.9185802@1793969029.758994311). The code is not on `main` | |
 | `openapi` adapter | `NOT BUILT` | No branch | [spec/offer.md](spec/offer.md), `docs/architecture.svg`, `AdapterKind` |
 | Phone runner: a phone serves location and photo jobs | `IN PROGRESS` | `cs/phone` ([#96](https://github.com/ss251/countersign/issues/96)), run on the bench only | |
 

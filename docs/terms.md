@@ -26,7 +26,7 @@ The buyer's agent signs only inside its envelope: not revoked, not expired, on t
 
 ## 4. Delivery, release and refunds
 
-As `contracts/src/CountersignedEscrow.sol` has them. Each job closes once: release, refund and cancel each require the job to be `Funded`.
+As the deployed escrows have them. All three deployments are v1 ([spec/escrow.md](spec/escrow.md)); the bond and review changes described there as Escrow v2 are not deployed. Each job closes once: release, refund and cancel each require the job to be `Funded`.
 
 | Action | Who | When | Money goes to |
 |---|---|---|---|
