@@ -9,7 +9,7 @@
  * price, with its deadline still ahead. The order's own terms are checked first, as a cheap gate.
  */
 
-import { createPublicClient, http, type Address, type Hex } from "viem";
+import { decodeFunctionResult, encodeFunctionData, type Address, type Hex } from "viem";
 import type { JobOrder, Offer } from "@countersign/core";
 
 export const ARC_TESTNET = 5042002;
@@ -133,18 +133,27 @@ const JOB_OF = [
   },
 ] as const;
 
-/** Reads ICountersignedEscrow.jobOf over the chain's public RPC. */
-export function rpcJobReader(rpc: Record<number, string> = RPC): JobReader {
-  const clients = new Map<number, ReturnType<typeof createPublicClient>>();
+/**
+ * Reads ICountersignedEscrow.jobOf with one eth_call over the chain's public RPC. A plain JSON-RPC
+ * call, not a viem client: the phone needs this one read, and the client would double the page.
+ */
+export function rpcJobReader(rpc: Record<number, string> = RPC, fetchImpl: typeof fetch = fetch): JobReader {
   return async (chainId, escrow, jobId) => {
     const url = rpc[chainId];
     if (!url) throw new Error(`No RPC for chain ${chainId}.`);
-    let client = clients.get(chainId);
-    if (!client) {
-      client = createPublicClient({ transport: http(url, { timeout: 8_000, retryCount: 1 }) });
-      clients.set(chainId, client);
+    const data = encodeFunctionData({ abi: JOB_OF, functionName: "jobOf", args: [jobId] });
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: escrow, data }, "latest"] }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error(`The RPC answered ${response.status}.`);
+    const body = (await response.json()) as { result?: unknown; error?: { message?: string } };
+    if (typeof body.result !== "string" || !body.result.startsWith("0x")) {
+      throw new Error(body.error?.message ?? "The RPC returned no result.");
     }
-    const job = await client.readContract({ address: escrow, abi: JOB_OF, functionName: "jobOf", args: [jobId] });
+    const job = decodeFunctionResult({ abi: JOB_OF, functionName: "jobOf", data: body.result as Hex });
     return { ...job, status: Number(job.status) };
   };
 }
