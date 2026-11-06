@@ -44,7 +44,7 @@ The runner prints each offer hash it published, then `runner ready`, then one li
 
 The offer hash covers every field, the price included. Changing the price, the deadline, the rails or a payee makes a new offer with a new hash, and the old one stays listed. Re-running `serve` with the same inputs publishes the same hash, because the runner keeps the original `issuedAt` in its state directory.
 
-There is no delist route. To stop selling, stop the runner. Your listings then show `online: false`, and calls answer "The seller is offline. Nothing was charged." before any payment is asked for.
+To take an offer off the hub, the seller signs `countersign delist <offerHash>` and posts the signature to `POST /offers/<offerHash>/delist`. Neither the runner nor the `countersign` command has a delist command yet. To stop selling, stop the runner. Your listings then show `online: false`, and calls answer "The seller is offline. Nothing was charged." before any payment is asked for.
 
 ## What a buyer's call does on your machine
 

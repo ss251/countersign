@@ -33,7 +33,7 @@ For this round only, the project lead assigned the five fixes to the fleet (STEE
 
 **The facts.**
 
-- **The token.** The approval token the Buyer screen asks for is, on production today, the operator's `HUMAN_APPROVAL_TOKEN`. A stranger cannot get it. [status.md](../status.md), the simulation ledger: "Production approvals use the operator's `HUMAN_APPROVAL_TOKEN` plus the approver's signature".
+- **The token, now.** A person signed in with Privy clicks "Create an envelope" on the Buyer page. That gets an envelope and an approval token scoped to it from `POST /envelopes/session`, with tight defaults: cap 1 USDC, 0.5 per seller, ask above 0.05, 24 h. It is live on production, proven by [`e2e/human` run `20261106-212520-210c`](../../e2e/human/runs/20261106-212520-210c.md). Before it, the only token was the operator's `HUMAN_APPROVAL_TOKEN`.
 - **The envelope** is the agent's spending limits, set by its owner:
   - a total cap;
   - a per-seller limit;
@@ -42,10 +42,8 @@ For this round only, the project lead assigned the five fixes to the fleet (STEE
   - an "ask above" amount, above which a payment waits for the owner's approval.
 
   The agent signs nothing outside it ([spec/envelope.md](../spec/envelope.md), [guides/buyer.md](../guides/buyer.md)).
-- **The only message today** is "Paste the token first." (`apps/web/src/routes/buyer/Approvals.tsx`, `TokenForm`, line 515).
-- **The fix this round.** The fleet adds `POST /envelopes/session`. It takes a Privy session and returns an envelope with tight defaults, plus a token scoped to that envelope. The Buyer screen gets a "Create an envelope" action, and "Paste a token" stays as the second option.
-
-**The copy, until that route is live.** Say in two sentences what an envelope is. Say that today an approval token comes from the hub's operator, so a first-time visitor cannot get one here. Link the shell path, which works for anyone: [docs/onboarding.md](../onboarding.md), "Hire a tool from your agent".
+- **The old message** was "Paste the token first." (`apps/web/src/routes/buyer/Approvals.tsx`, `TokenForm`). The Buyer screen now explains the envelope in two sentences and keeps "Paste a token" as the second option.
+**What is left for the copy.** The flow is fixed. A restyle can keep the two sentences and the primary "Create an envelope", with "Paste a token" second. For an agent run from a terminal, link [docs/onboarding.md](../onboarding.md), "Hire a tool from your agent".
 
 ## C3: the Studio demo reads as a live listing
 
