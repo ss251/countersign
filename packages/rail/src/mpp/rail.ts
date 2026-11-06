@@ -1,7 +1,7 @@
-// The mpp rail: Stripe Machine Payments Protocol. One rail id ("mpp") with two
-// methods: a card through Stripe and pathUSD on Tempo Moderato. The MPP
-// challenge travels in `extra.mpp.wwwAuthenticate`; credentials come back as
-// `payload.credential`.
+// The mpp rail: Machine Payments Protocol. One rail id ("mpp") with two
+// methods: pathUSD on Tempo Moderato (always offered) and a card through Stripe
+// (only when a client is configured). The MPP challenge travels in
+// `extra.mpp.wwwAuthenticate`; credentials come back as `payload.credential`.
 import {
   offerHash,
   type Offer,
@@ -13,6 +13,7 @@ import {
 import { Challenge, Credential, Receipt, Store } from "mppx";
 import { Mppx, stripe, tempo } from "mppx/server";
 import { Methods as StripeMethods } from "mppx/stripe";
+import { getAddress, type Address } from "viem";
 import type { ChallengeContext, Rail, RailDeclaration } from "../rail.ts";
 import {
   CARD_DECIMALS,
@@ -20,7 +21,6 @@ import {
   ATOMIC_PER_CENT,
   MPP_STRIPE,
   MPP_TEMPO,
-  PLACEHOLDER_TEMPO_RECIPIENT,
   STABLECOIN_FLOOR,
   TEMPO_ASSET,
   TEMPO_CHAIN_ID,
@@ -29,16 +29,7 @@ import {
 } from "./constants.ts";
 import type { StripeClientLike } from "./types.ts";
 
-/**
- * The Tempo method is Moderato-only. `testnet: true` pins the chain, pathUSD is
- * the only accepted currency, and there is no option for a mainnet currency or
- * chain id.
- */
-const TEMPO_CHARGE = tempo.charge({
-  testnet: true,
-  currencies: [TEMPO_CURRENCY],
-  store: Store.memory(),
-})[0]!;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export type MppRefusal =
   | "not_mpp"
@@ -52,8 +43,6 @@ export type MppRefusal =
   | "chain_mismatch"
   | "expired"
   | "replay"
-  | "tempo_verification_requires_rpc"
-  | "tempo_settlement_requires_rpc"
   | "payment_failed";
 
 /** Countersign wording for each refusal, for the hub to show the buyer. */
@@ -69,9 +58,7 @@ export const MPP_REFUSALS: Record<MppRefusal, string> = {
   chain_mismatch: "Refused. The payment is for a different Tempo chain.",
   expired: "Refused. The payment challenge expired before it was settled.",
   replay: "Refused. This payment was already used.",
-  tempo_verification_requires_rpc: "Not verified. Tempo payments need a live Tempo RPC.",
-  tempo_settlement_requires_rpc: "Not settled. Tempo payments need a live Tempo RPC.",
-  payment_failed: "Not settled. Stripe did not confirm the PaymentIntent.",
+  payment_failed: "Not settled. The payment was not confirmed.",
 };
 
 export interface SettledStore {
@@ -81,34 +68,48 @@ export interface SettledStore {
 }
 
 export interface MppRailOptions {
-  /** Stripe client. The mock implements the same duck-typed surface as the SDK. */
-  client: StripeClientLike;
-  /** Stripe business network profile id, used as the card payTo. */
-  networkId: string;
+  /** Tempo payee address. Required: the rail always offers Tempo. */
+  recipient: string;
   /** HMAC secret for challenge ids, at least 32 bytes. Not a Stripe key. */
   secretKey: string;
   /** Challenge realm, e.g. "hub.example.com". */
   realm: string;
+  /** Optional card method. Without it the rail offers Tempo only. */
+  stripe?: { client: StripeClientLike; networkId: string };
   /** How long a challenge may be paid. Defaults to 300 seconds. */
   maxTimeoutSeconds?: number;
-  /** Tempo payee. Defaults to a clear placeholder until a deposit address exists. */
-  tempoRecipient?: string;
   /** Challenge ids already settled. Defaults to an in-memory store. */
   seen?: SettledStore;
 }
 
-export const MPP_DECLARATION: RailDeclaration = {
+const DECLARED = {
   id: "mpp",
-  // The declaration describes the stablecoin method: it is the method that can
-  // be exercised without Stripe credentials, and the one whose asset is concrete.
   network: MPP_TEMPO,
   scheme: "exact",
   asset: TEMPO_ASSET,
   kind: "direct",
-  gasPaidBy: "facilitator",
-  finality: "Final when Stripe confirms the PaymentIntent.",
-  explorerTx: "https://dashboard.stripe.com/test/payments/{tx}",
-};
+  gasPaidBy: "buyer",
+  finality: "Final when the Tempo transaction is included on Moderato.",
+  explorerTx: "https://explore.testnet.tempo.xyz/tx/{tx}",
+} satisfies Omit<RailDeclaration, "gasPaidBy"> & { gasPaidBy: string };
+
+export const MPP_DECLARATION: RailDeclaration = DECLARED as RailDeclaration;
+
+/**
+ * Requires a checksummed or lowercase 20-byte hex address that is not zero.
+ * The original string is kept so the challenge echoes exactly what was
+ * configured, rather than a normalised form.
+ */
+export function assertTempoRecipient(value: unknown): asserts value is Address {
+  if (typeof value !== "string") throw new Error("mpp rail requires a Tempo recipient address");
+  let normalised: Address;
+  try {
+    normalised = getAddress(value);
+  } catch {
+    throw new Error("mpp rail recipient is not a valid 20-byte hex address");
+  }
+  if (normalised === ZERO_ADDRESS) throw new Error("mpp rail recipient is the zero address");
+}
 
 function memoryStore(): SettledStore {
   const ids = new Set<string>();
@@ -134,30 +135,162 @@ function toDecimal(value: bigint, decimals: number): string {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+function atomicAmount(value: unknown): bigint | null {
+  if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) return null;
+  return BigInt(value);
+}
+
+function tempoAmount(requirements: PaymentRequirements): bigint | null {
+  const amount = atomicAmount(requirements.amount);
+  if (amount === null) return null;
+  if (requirements.network === MPP_TEMPO) return amount;
+  if (requirements.network === MPP_STRIPE) return amount * ATOMIC_PER_CENT;
+  return null;
+}
+
 type MppChallenge = ReturnType<typeof Challenge.deserialize>;
 
-type Inspected =
+export interface MppInspectionOptions {
+  secretKey: string;
+  realm: string;
+  recipient: string;
+}
+
+export type MppInspection =
   | { ok: true; method: "stripe" | "tempo"; challenge: MppChallenge; credential: string }
   | { ok: false; reason: MppRefusal };
+
+/**
+ * Checks a credential against the requirements in front of it without trusting
+ * the challenge id. The hub re-issues requirements on the paid retry, so a
+ * freshly issued challenge has a different id; the credential's challenge is
+ * instead proved by its HMAC and checked field by field against the current
+ * requirements.
+ */
+export function inspectMppPayment(
+  payment: PaymentPayload,
+  requirements: PaymentRequirements,
+  options: MppInspectionOptions,
+): MppInspection {
+  if (requirements.scheme !== "exact") return { ok: false, reason: "not_mpp" };
+  if (requirements.network !== MPP_STRIPE && requirements.network !== MPP_TEMPO) {
+    return { ok: false, reason: "not_mpp" };
+  }
+  const extra = requirements.extra as
+    | { offerHash?: unknown; mpp?: { wwwAuthenticate?: unknown; methods?: unknown } }
+    | undefined;
+  const hash = extra?.offerHash;
+  const header = extra?.mpp?.wwwAuthenticate;
+  const methods = extra?.mpp?.methods;
+  if (typeof hash !== "string" || typeof header !== "string" || !Array.isArray(methods)) {
+    return { ok: false, reason: "malformed" };
+  }
+  if (!methods.every((method) => typeof method === "string")) {
+    return { ok: false, reason: "malformed" };
+  }
+  if (payment?.x402Version !== 2) return { ok: false, reason: "malformed" };
+  const raw = payment.payload?.credential;
+  if (typeof raw !== "string") return { ok: false, reason: "malformed" };
+
+  let credential: ReturnType<typeof Credential.deserialize>;
+  try {
+    credential = Credential.deserialize(raw);
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  const challenge = credential.challenge;
+  if (challenge.method !== "stripe" && challenge.method !== "tempo") {
+    return { ok: false, reason: "unsupported_method" };
+  }
+  if (challenge.intent !== "charge") return { ok: false, reason: "malformed" };
+  if (!Challenge.verify(challenge, { secretKey: options.secretKey })) {
+    return { ok: false, reason: "challenge_not_ours" };
+  }
+  if (challenge.realm !== options.realm) return { ok: false, reason: "challenge_not_ours" };
+  if (!methods.includes(challenge.method)) return { ok: false, reason: "method_not_offered" };
+  if (challenge.request.externalId !== hash) return { ok: false, reason: "offer_mismatch" };
+
+  if (challenge.method === "tempo") {
+    const expected = tempoAmount(requirements);
+    if (expected === null || challenge.request.amount !== expected.toString()) {
+      return { ok: false, reason: "amount_mismatch" };
+    }
+    if (requirements.network === MPP_TEMPO && requirements.asset !== TEMPO_CURRENCY) {
+      return { ok: false, reason: "currency_mismatch" };
+    }
+    if (requirements.network === MPP_STRIPE && requirements.asset !== "usd") {
+      return { ok: false, reason: "currency_mismatch" };
+    }
+    if (challenge.request.currency !== TEMPO_CURRENCY) {
+      return { ok: false, reason: "currency_mismatch" };
+    }
+    if (challenge.request.recipient !== options.recipient) {
+      return { ok: false, reason: "offer_mismatch" };
+    }
+    if (requirements.network === MPP_TEMPO && requirements.payTo !== options.recipient) {
+      return { ok: false, reason: "offer_mismatch" };
+    }
+    const details = challenge.request.methodDetails as { chainId?: unknown } | undefined;
+    if (details?.chainId !== TEMPO_CHAIN_ID) return { ok: false, reason: "chain_mismatch" };
+  } else {
+    if (requirements.asset !== "usd") return { ok: false, reason: "currency_mismatch" };
+    if (challenge.request.currency !== "usd") return { ok: false, reason: "currency_mismatch" };
+    if (requirements.amount !== challenge.request.amount) return { ok: false, reason: "amount_mismatch" };
+  }
+
+  const expires = challenge.expires;
+  if (!expires) return { ok: false, reason: "expired" };
+  const expiresAt = Date.parse(expires);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return { ok: false, reason: "expired" };
+
+  const payload = credential.payload;
+  if (!payload || typeof payload !== "object") return { ok: false, reason: "malformed" };
+  if (challenge.method === "stripe") {
+    const proof = payload as { spt?: unknown; externalId?: unknown };
+    if (typeof proof.spt !== "string" || proof.spt.length === 0) return { ok: false, reason: "malformed" };
+    if (proof.externalId !== undefined && proof.externalId !== hash) {
+      return { ok: false, reason: "offer_mismatch" };
+    }
+  } else {
+    const proof = payload as { type?: unknown; hash?: unknown; signature?: unknown };
+    const shaped =
+      (proof.type === "hash" && typeof proof.hash === "string") ||
+      ((proof.type === "transaction" || proof.type === "proof") && typeof proof.signature === "string");
+    if (!shaped) return { ok: false, reason: "malformed" };
+  }
+
+  return { ok: true, method: challenge.method, challenge, credential: raw };
+}
 
 export type MppRail = Rail;
 
 export function createMppRail(options: MppRailOptions): MppRail {
-  const { client, networkId, secretKey, realm } = options;
+  const recipient = options.recipient;
+  assertTempoRecipient(recipient);
+  const { secretKey, realm } = options;
   const maxTimeoutSeconds = options.maxTimeoutSeconds ?? 300;
-  const tempoRecipient = options.tempoRecipient ?? PLACEHOLDER_TEMPO_RECIPIENT;
+  const stripeOptions = options.stripe;
   const seen = options.seen ?? memoryStore();
 
-  const mppx = Mppx.create({
-    methods: [
-      stripe.charge({
-        client,
-        networkId,
+  const tempoCharge = tempo.charge({
+    testnet: true,
+    recipient,
+    currencies: [TEMPO_CURRENCY],
+    store: Store.memory(),
+  })[0]!;
+
+  const stripeCharge = stripeOptions
+    ? stripe.charge({
+        client: stripeOptions.client,
+        networkId: stripeOptions.networkId,
         currency: "usd",
         decimals: CARD_DECIMALS,
         paymentMethodTypes: ["card"],
-      }),
-    ],
+      })
+    : undefined;
+
+  const mppx = Mppx.create({
+    methods: stripeCharge ? [tempoCharge, stripeCharge] : [tempoCharge],
     secretKey,
     realm,
   });
@@ -170,7 +303,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
     method: "tempo" | "stripe",
   ): MppChallenge {
     if (method === "tempo") {
-      return Challenge.fromMethod(TEMPO_CHARGE, {
+      return Challenge.fromMethod(tempoCharge, {
         realm,
         secretKey,
         expires,
@@ -179,7 +312,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
           amount: toDecimal(price, TEMPO_DECIMALS),
           currency: TEMPO_CURRENCY,
           decimals: TEMPO_DECIMALS,
-          recipient: tempoRecipient,
+          recipient,
           externalId: hash,
           chainId: TEMPO_CHAIN_ID,
         },
@@ -194,99 +327,15 @@ export function createMppRail(options: MppRailOptions): MppRail {
         amount: toDecimal(price / ATOMIC_PER_CENT, CARD_DECIMALS),
         currency: "usd",
         decimals: CARD_DECIMALS,
-        networkId,
+        networkId: stripeOptions!.networkId,
         paymentMethodTypes: ["card"],
         externalId: hash,
       },
     });
   }
 
-  function inspect(payment: PaymentPayload, requirements: PaymentRequirements): Inspected {
-    if (requirements.scheme !== "exact") return { ok: false, reason: "not_mpp" };
-    if (requirements.network !== MPP_STRIPE && requirements.network !== MPP_TEMPO) {
-      return { ok: false, reason: "not_mpp" };
-    }
-    const extra = requirements.extra as
-      | { offerHash?: unknown; mpp?: { wwwAuthenticate?: unknown; methods?: unknown } }
-      | undefined;
-    const hash = extra?.offerHash;
-    const header = extra?.mpp?.wwwAuthenticate;
-    const methods = extra?.mpp?.methods;
-    if (typeof hash !== "string" || typeof header !== "string" || !Array.isArray(methods)) {
-      return { ok: false, reason: "malformed" };
-    }
-    if (payment?.x402Version !== 2) return { ok: false, reason: "malformed" };
-    const raw = payment.payload?.credential;
-    if (typeof raw !== "string") return { ok: false, reason: "malformed" };
-
-    let credential: ReturnType<typeof Credential.deserialize>;
-    try {
-      credential = Credential.deserialize(raw);
-    } catch {
-      return { ok: false, reason: "malformed" };
-    }
-    const challenge = credential.challenge;
-    if (challenge.method !== "stripe" && challenge.method !== "tempo") {
-      return { ok: false, reason: "unsupported_method" };
-    }
-    if (!methods.includes(challenge.method)) return { ok: false, reason: "method_not_offered" };
-    if (challenge.intent !== "charge") return { ok: false, reason: "malformed" };
-    if (!Challenge.verify(challenge, { secretKey })) return { ok: false, reason: "challenge_not_ours" };
-    if (challenge.realm !== realm) return { ok: false, reason: "challenge_not_ours" };
-
-    let issued: MppChallenge | undefined;
-    try {
-      issued = Challenge.deserializeList(header).find(
-        (candidate) => candidate.method === challenge.method && candidate.id === challenge.id,
-      );
-    } catch {
-      return { ok: false, reason: "malformed" };
-    }
-    if (!issued) return { ok: false, reason: "challenge_not_ours" };
-    if (challenge.request.externalId !== hash || issued.request.externalId !== hash) {
-      return { ok: false, reason: "offer_mismatch" };
-    }
-
-    const expires = challenge.expires;
-    if (!expires) return { ok: false, reason: "expired" };
-    const expiresAt = Date.parse(expires);
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return { ok: false, reason: "expired" };
-
-    // Every field that decides what the seller receives must match the challenge
-    // this rail issued, not just the HMAC-bound copy the buyer sent back.
-    if (challenge.request.amount !== issued.request.amount) return { ok: false, reason: "amount_mismatch" };
-    if (challenge.method === "stripe") {
-      if (requirements.asset !== "usd") return { ok: false, reason: "currency_mismatch" };
-      if (challenge.request.currency !== "usd") return { ok: false, reason: "currency_mismatch" };
-      if (requirements.amount !== challenge.request.amount) return { ok: false, reason: "amount_mismatch" };
-    } else {
-      if (requirements.asset !== TEMPO_CURRENCY) return { ok: false, reason: "currency_mismatch" };
-      if (challenge.request.currency !== TEMPO_CURRENCY) return { ok: false, reason: "currency_mismatch" };
-      const details = challenge.request.methodDetails as { chainId?: number } | undefined;
-      if (details?.chainId !== TEMPO_CHAIN_ID) return { ok: false, reason: "chain_mismatch" };
-      if (challenge.request.recipient !== tempoRecipient) return { ok: false, reason: "offer_mismatch" };
-      if (requirements.network === MPP_TEMPO && requirements.amount !== challenge.request.amount) {
-        return { ok: false, reason: "amount_mismatch" };
-      }
-    }
-
-    const payload = credential.payload;
-    if (!payload || typeof payload !== "object") return { ok: false, reason: "malformed" };
-    if (challenge.method === "stripe") {
-      const proof = payload as { spt?: unknown; externalId?: unknown };
-      if (typeof proof.spt !== "string" || proof.spt.length === 0) return { ok: false, reason: "malformed" };
-      if (proof.externalId !== undefined && proof.externalId !== hash) {
-        return { ok: false, reason: "offer_mismatch" };
-      }
-    } else {
-      const proof = payload as { type?: unknown; hash?: unknown; signature?: unknown };
-      const shaped =
-        (proof.type === "hash" && typeof proof.hash === "string") ||
-        ((proof.type === "transaction" || proof.type === "proof") && typeof proof.signature === "string");
-      if (!shaped) return { ok: false, reason: "malformed" };
-    }
-
-    return { ok: true, method: challenge.method, challenge, credential: raw };
+  function inspect(payment: PaymentPayload, requirements: PaymentRequirements): MppInspection {
+    return inspectMppPayment(payment, requirements, { secretKey, realm, recipient });
   }
 
   return {
@@ -299,9 +348,8 @@ export function createMppRail(options: MppRailOptions): MppRail {
           `offer price ${offer.price} is below the 0.01 pathUSD stablecoin floor (${STABLECOIN_FLOOR.toString()} atomic units)`,
         );
       }
-      // The card method needs a whole number of cents and at least 0.50 USD.
-      // Anything above the stablecoin floor still gets a Tempo challenge.
-      const card = price >= CARD_FLOOR && price % ATOMIC_PER_CENT === 0n;
+      const card =
+        stripeOptions !== undefined && price >= CARD_FLOOR && price % ATOMIC_PER_CENT === 0n;
       const hash = offerHash(offer);
       const expires = new Date((ctx.now + maxTimeoutSeconds) * 1000).toISOString();
       const methods: Array<"tempo" | "stripe"> = card ? ["tempo", "stripe"] : ["tempo"];
@@ -312,7 +360,7 @@ export function createMppRail(options: MppRailOptions): MppRail {
         network: card ? MPP_STRIPE : MPP_TEMPO,
         amount: card ? (price / ATOMIC_PER_CENT).toString() : price.toString(),
         asset: card ? "usd" : TEMPO_CURRENCY,
-        payTo: card ? networkId : tempoRecipient,
+        payTo: card ? stripeOptions!.networkId : recipient,
         maxTimeoutSeconds,
         extra: {
           offerHash: hash,
@@ -324,14 +372,15 @@ export function createMppRail(options: MppRailOptions): MppRail {
     async verify(payment: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResult> {
       const inspected = inspect(payment, requirements);
       if (!inspected.ok) return { isValid: false, invalidReason: inspected.reason };
-      if (inspected.method === "tempo") {
-        // mppx's Tempo verifier reads the chain for the transaction or its
-        // receipt. No live RPC is allowed in this lane, so stop after the
-        // structural checks above until one is configured.
-        return { isValid: false, invalidReason: "tempo_verification_requires_rpc" };
-      }
       if (await seen.has(inspected.challenge.id)) {
         return { isValid: false, invalidReason: "replay" };
+      }
+      if (inspected.method === "tempo") {
+        try {
+          await mppx.validateCredential(inspected.credential);
+        } catch {
+          return { isValid: false, invalidReason: "payment_failed" };
+        }
       }
       return { isValid: true };
     },
@@ -347,12 +396,20 @@ export function createMppRail(options: MppRailOptions): MppRail {
         };
       }
       if (inspected.method === "tempo") {
-        return {
-          success: false,
-          errorReason: "tempo_settlement_requires_rpc",
-          transaction: "",
-          network: MPP_TEMPO,
-        };
+        if (!(await seen.claim(inspected.challenge.id))) {
+          return { success: false, errorReason: "replay", transaction: "", network: MPP_TEMPO };
+        }
+        try {
+          const receipt = await mppx.broadcastCredential(inspected.credential);
+          return {
+            success: true,
+            transaction: receipt.reference,
+            network: MPP_TEMPO,
+            receipt: Receipt.serialize(receipt),
+          };
+        } catch {
+          return { success: false, errorReason: "payment_failed", transaction: "", network: MPP_TEMPO };
+        }
       }
       // A claim is never released: a failed payment is re-signed, not retried.
       if (!(await seen.claim(inspected.challenge.id))) {

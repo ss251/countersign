@@ -3,7 +3,7 @@ import { pathusd } from "viem/tokens";
 
 /** The card method's network id. */
 export const MPP_STRIPE: Network = "mpp:stripe";
-/** The stablecoin method's network id. */
+/** The Tempo method's network id. */
 export const MPP_TEMPO: Network = "mpp:tempo";
 
 /**
@@ -17,7 +17,7 @@ export const TEMPO_SYMBOL = "pathUSD";
 export const TEMPO_DECIMALS = pathusd.decimals;
 export const CARD_DECIMALS = 2;
 
-/** The stablecoin declaration: pathUSD on Tempo Moderato. */
+/** The Tempo declaration asset: pathUSD on Tempo Moderato. */
 export const TEMPO_ASSET: Asset = {
   network: MPP_TEMPO,
   address: TEMPO_CURRENCY,
@@ -31,9 +31,3 @@ export const STABLECOIN_FLOOR = 10_000n;
 export const CARD_FLOOR = 500_000n;
 /** Atomic 6-decimal units in one cent. Stripe charges whole cents. */
 export const ATOMIC_PER_CENT = 10n ** BigInt(TEMPO_DECIMALS - CARD_DECIMALS);
-
-/**
- * Placeholder Tempo recipient while no deposit address exists. A real Tempo
- * deposit address replaces this through `createMppRail({ tempoRecipient })`.
- */
-export const PLACEHOLDER_TEMPO_RECIPIENT = "0x0000000000000000000000000000000000000001";
