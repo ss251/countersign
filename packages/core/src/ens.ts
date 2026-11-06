@@ -85,7 +85,9 @@ export function sepoliaEnsResolver(options: SepoliaEnsOptions = {}): EnsResolve 
   const lookup =
     options.lookup ??
     (() => {
-      const client = createPublicClient({ chain: sepolia, transport: http(options.rpcUrl) });
+      // CCIP-Read off: a forward lookup of a seller name needs no offchain data, and following
+      // OffchainLookup would fetch a URL the name's owner chooses (cs-w1 B13). It fails closed instead.
+      const client = createPublicClient({ chain: sepolia, transport: http(options.rpcUrl), ccipRead: false });
       return async (name: string) => (await client.getEnsAddress({ name: normalize(name) })) ?? null;
     })();
   const cacheMs = options.cacheMs ?? 60_000;
