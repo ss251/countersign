@@ -339,3 +339,12 @@ cs-phone found this on the live canary. When iOS puts the phone page in the back
 - the job child is spawned through `node:child_process`, under the same time and output ceilings;
 - the child reads its request from stdin through Node's stream;
 - the child's entry is found beside the running file: `child-entry.js` in a bundle, `child-entry.ts` from source under Bun.
+
+## D22, amended — the job child keeps Bun.spawn under Bun and uses node:child_process elsewhere (07 Nov; refs #246)
+
+tr-09 stopped correctly at its stop condition. `packages/runner/test/children.test.ts` checks that the child's environment holds only `PATH`, `HOME` and `COUNTERSIGN_LINEAGE`, and it watches that through a wrapper around `Bun.spawn`. A child started through `node:child_process` passes the same environment, but the wrapper cannot see it. The test stays as it is.
+
+- `runInChild` has two spawners. Under Bun it keeps `Bun.spawn`, which the existing tests observe. Anywhere else, including a Node bundle, it spawns through `node:child_process`.
+- Both spawners enforce the same time and output ceilings, and both return the same result.
+- `packages/runner/test/child-node.test.ts` runs the Node spawner under Bun on the same three cases as `child.test.ts`.
+- The Node bundle never reaches `Bun.spawn`, so the shipped path holds no Bun-only call.
