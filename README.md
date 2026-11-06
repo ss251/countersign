@@ -46,7 +46,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
   - [`examples/whitechain/checkout-merchant.ts`](examples/whitechain/checkout-merchant.ts) puts a route behind `whitechainPaywall`;
   - [`examples/whitechain/checkout-customer.ts`](examples/whitechain/checkout-customer.ts) pays it with `createPayFetch`.
 
-  Both import the workspace package `@countersign/relay`, which resolves only inside a clone of this repository. Outside it, install `@countersign-hub/relay` from npm and import from `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
+  Both import the published package: `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. In your own app, run `npm i @countersign-hub/relay hono viem` and the two files work unchanged. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
   Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
@@ -65,7 +65,7 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 
 | Guard | Value |
 |---|---|
-| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrow `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`; it pays gas for nobody else |
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3d98C17Ba0878DC93fB1521c76c9a10778391`; it pays gas for nobody else |
 | Fee cap | 50 gwei per gas, with 20% headroom |
 | Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
 | Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
