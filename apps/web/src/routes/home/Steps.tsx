@@ -44,8 +44,8 @@ export function ClearSteps({
           <p className="clear__n mono">02</p>
           <h3 className="clear__name">Countersignature</h3>
           <p className="clear__body">
-            Above that amount, you countersign the exact offer hash and price. A settlement at any other amount is refused by
-            the chain.
+            Above that amount, your agent waits for you to approve the exact offer and price. A settlement at any other amount
+            is refused: by the escrow contract on Arc, by the rail’s own check on Hedera and Gateway.
           </p>
           <CountersignArtifact listing={featured} />
         </li>
@@ -53,8 +53,8 @@ export function ClearSteps({
           <p className="clear__n mono">03</p>
           <h3 className="clear__name">Release</h3>
           <p className="clear__body">
-            Output that matches the schema releases the escrow and mints a slip anyone can verify without the hub. Miss the
-            deadline and anyone can refund.
+            On the escrow rails, output that matches the schema releases the escrow and mints a slip anyone can verify without
+            the hub, and a missed deadline lets anyone refund. Hedera and Gateway settle before delivery.
           </p>
           <ReleaseArtifact s={newest} live={settled} />
         </li>
@@ -176,6 +176,9 @@ function CountersignArtifact({ listing }: { listing: Listing | undefined }) {
   const [round, setRound] = useState(0);
   if (!listing) return <div className="artifact artifact--skeleton" aria-hidden="true" />;
   const { offer } = listing;
+  // The payee on the rail this card prices: payTo when the offer names one (a Hedera account), else the seller's key.
+  const rail = offer.rails[0];
+  const payee = (rail && offer.payTo?.[rail]) || offer.seller;
   return (
     <figure className="artifact">
       <figcaption className="artifact__head">
@@ -190,9 +193,9 @@ function CountersignArtifact({ listing }: { listing: Listing | undefined }) {
       </p>
       <dl className="fields">
         <div className="fields__wide">
-          <dt className="label">Payee, locked</dt>
+          <dt className="label">Payee</dt>
           <dd>
-            <Hash value={offer.seller} label="payee address" copy={false} />
+            <Hash value={payee} label="payee" copy={false} />
           </dd>
         </div>
         <div className="fields__wide">
@@ -267,7 +270,7 @@ function ReleaseArtifact({ s, live }: { s: Settlement | undefined; live: boolean
         ) : null}
       </dl>
       {s.slipHash ? (
-        <Link to={`/slip/${s.slipHash}`} className="artifact__go">
+        <Link to={`/verify/${s.slipHash}`} className="artifact__go">
           Check the slip without the hub
         </Link>
       ) : null}
