@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import type { Page } from "@playwright/test";
 import { REAL_ROOT } from "../../lib/paths.ts";
 import { Secrets } from "../../lib/secrets.ts";
 import {
   finalizeReport,
   finalizeRun,
   HumanReporter,
+  Recorder,
   renderReport,
   REPO_ROOT,
   statePath,
@@ -116,6 +118,31 @@ describe("the run report", () => {
     expect(readFileSync(join(runsDir, "LATEST.md"), "utf8").split("\n")[0]).toContain(`${RUN_ID}.md`);
   });
 
+  test("deletes a leaking Playwright test-results file and exits non-zero", () => {
+    const root = tempDir();
+    const artifactsDir = join(root, "artifacts");
+    const runsDir = join(root, "runs");
+    const testResultsDir = join(root, "test-results");
+    const email = "buyer@example.test";
+    const planted = join(testResultsDir, "buy-retry", "error-context.md");
+    mkdirSync(dirname(planted), { recursive: true });
+    writeFileSync(planted, `# page snapshot\n\nemail ${email}\n`);
+
+    const result = finalizeReport({
+      meta: meta(),
+      projects: [project({})],
+      secrets: Secrets.fromEntries({ PRIVY_TEST_EMAIL: email }),
+      artifactsDir,
+      runsDir,
+      testResultsDir,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.leaks).toEqual([planted]);
+    expect(existsSync(planted)).toBe(false);
+    expect(result.text).not.toContain(email);
+  });
+
   test("the report and LATEST rewrite the repository and home paths", () => {
     const root = tempDir();
     const artifactsDir = join(root, "artifacts");
@@ -216,5 +243,63 @@ describe("the run report", () => {
     reporter.onEnd();
 
     expect(existsSync(runsDir)).toBe(false);
+  });
+});
+
+interface ShotCall {
+  path: string;
+  mask: unknown[];
+}
+
+/** A fake page whose body text is `text` and whose screenshot only records its options. */
+function fakeShotPage(text: string): { page: Page; calls: ShotCall[] } {
+  const calls: ShotCall[] = [];
+  const page = {
+    locator: (selector: string) => (selector === "body" ? { innerText: async () => text } : { selector }),
+    screenshot: async (options: ShotCall) => {
+      calls.push(options);
+    },
+  };
+  return { page: page as unknown as Page, calls };
+}
+
+const LEAKY_SHOT = "01-signed-in: screenshot withheld, the page showed a secret";
+
+describe("the screenshot guard", () => {
+  test("withholds the shot and records a note when the page leaks", async () => {
+    const { page, calls } = fakeShotPage("email buyer@example.test");
+    const rec = new Recorder(RUN_ID, "privy", tempDir());
+    rec.guardWith({ leaks: (text) => text.includes("buyer@example.test") });
+
+    await rec.screenshot(page, "01", "signed-in");
+
+    expect(calls).toHaveLength(0);
+    expect(rec.artifacts).toEqual([]);
+    expect(rec.notes).toEqual([LEAKY_SHOT]);
+    expect(rec.notes.join(" ")).not.toContain("buyer@example.test");
+  });
+
+  test("masks Privy's modal content when the page holds no secret", async () => {
+    const { page, calls } = fakeShotPage("the console is ready");
+    const rec = new Recorder(RUN_ID, "privy", tempDir());
+    rec.guardWith({ leaks: () => false });
+
+    await rec.screenshot(page, "01", "signed-in");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.mask).toHaveLength(1);
+    expect(calls[0]?.mask[0]).toEqual({ selector: "#privy-modal-content" });
+    expect(rec.notes).toEqual([]);
+  });
+
+  test("shows Privy's empty modal when the shot asks for it", async () => {
+    const { page, calls } = fakeShotPage("log in or sign up");
+    const rec = new Recorder(RUN_ID, "privy", tempDir());
+    rec.guardWith({ leaks: () => false });
+
+    await rec.screenshot(page, "01", "privy-modal", { showPrivy: true });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.mask).toEqual([]);
   });
 });

@@ -22,7 +22,7 @@ import {
   ZERO_HASH,
 } from "./deps.ts";
 import { explorerUrl, type Rail } from "./deps.ts";
-import { keccak256, toBytes, type Hex } from "viem";
+import { keccak256, toBytes, type Address, type Hex } from "viem";
 import { failOnGate } from "./bond.ts";
 import { authorizationNonce, buildOrder, checksOut, termsDeadline } from "./delivery.ts";
 import { bazaarExtension, firstLine, resourceFor } from "./discovery.ts";
@@ -243,10 +243,39 @@ export async function paidCall(
     return failure(403, "envelope-revoked", REVOKED, railId);
   }
 
+  let lockSig: Hex | undefined;
+  const bond = bondOfTerms(payment);
+  if (bond !== null && match.rail.escrow !== undefined && match.rail.declaration.escrow !== undefined && nonce !== null) {
+    if (match.rail.funder === undefined) {
+      return failure(
+        503,
+        "rail-unavailable",
+        "Refused. This rail cannot fund a bonded job right now. Nothing was charged.",
+        railId,
+      );
+    }
+    const chainId = eip155ChainId(match.rail.declaration.network);
+    const lock = chainId === null ? { refused: "unknown chain" } : await deps.runners.lock(
+      {
+        jobId: nonce,
+        offerHash: stored.offerHash,
+        escrow: match.rail.declaration.escrow as Address,
+        chainId,
+        bond,
+        funder: match.rail.funder,
+      },
+      10_000,
+    );
+    if ("refused" in lock) {
+      return failure(409, "seller-declined", "Refused. The seller did not accept this job, so nothing was charged.", railId);
+    }
+    lockSig = lock.sig;
+  }
+
   const payer = verify.payer ?? "";
   let settle: SettleResult;
   try {
-    settle = await match.rail.settle(payment, match.entry);
+    settle = await match.rail.settle(payment, match.entry, lockSig ? { lockSig } : undefined);
   } catch (error) {
     console.warn(`[hub] rail ${railId} settle failed: ${firstLine(error)}`);
     deps.router.recordFailure(stored.offerHash, railId, now);
@@ -302,6 +331,7 @@ export async function paidCall(
     slipHash: null,
     createdAt: now,
     reviewWindow: termsReviewWindow(payment),
+    parentJobId: parentOf(deps.store, lineage),
   });
   if (!claimed) return duplicatePayment(railId);
 
@@ -421,6 +451,17 @@ export async function paidCall(
   };
 }
 
+/** The parent job: the last lineage entry that names a job this hub recorded, or null. Offer-hash entries are skipped. */
+export function parentOf(store: Store, lineage: Hex[]): Hex | null {
+  for (let index = lineage.length - 1; index >= 0; index -= 1) {
+    const entry = lineage[index];
+    if (entry === undefined) continue;
+    const job = store.getJob(entry);
+    if (job !== null) return job.jobId;
+  }
+  return null;
+}
+
 /** D17: true when an ancestor purchase this hub knows bought the target offer, or an offer from its seller. */
 export function lineageCycle(store: Store, target: StoredOffer, lineage: Hex[]): boolean {
   for (const jobId of lineage) {
@@ -464,6 +505,26 @@ function termsReviewWindow(payment: PaymentPayload): number | null {
   const signed = terms as CountersignTerms;
   if (!isV2Terms(signed)) return null;
   return signed.reviewWindow ?? 0;
+}
+
+/** The bond a v2 countersignature locks, as a decimal string, or null when it locks none. */
+function bondOfTerms(payment: PaymentPayload): string | null {
+  const terms = (payment.payload as { terms?: unknown }).terms;
+  if (typeof terms !== "object" || terms === null) return null;
+  const signed = terms as CountersignTerms;
+  if (!isV2Terms(signed)) return null;
+  try {
+    const bond = BigInt(signed.bond ?? "0");
+    return bond > 0n ? bond.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The chain id in an eip155 network, or null when the network is not EVM. */
+function eip155ChainId(network: string): number | null {
+  const match = /^eip155:(\d+)$/.exec(network);
+  return match === null ? null : Number(match[1]);
 }
 
 /**

@@ -7,7 +7,8 @@
  *     [--base-url <url>] --price <atomic> ...
  *   bun packages/runner/src/cli.ts serve --hub <url> --skill <path> [--skill <path> ...]
  *     [--openapi <spec.json> --operation <id> [--base-url <url>] ...]
- *     [--known-escrow <chainId>=<address> ...] [--rpc <chainId>=<url> ...] ...
+ *     [--known-escrow <chainId>=<address> ...] [--rpc <chainId>=<url> ...]
+ *     [--child-buyer <address> ...]
  *   bun packages/runner/src/cli.ts bond deposit|withdraw|show ... --escrow <address>
  *   bun packages/runner/src/cli.ts bond terms --offer <hash> --price <atomic> --bond <atomic>
  *     --review-window <seconds> --min-duration <seconds> --escrow <address>
@@ -17,12 +18,12 @@
  * over Arc's default RPC, ARC_RPC_URL or WC_RPC_URL, plus any --rpc overrides.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
 import { isEnsName, parseAtomic, RAIL_IDS, type Offer, type RailId } from "@countersign/core";
 import { KNOWN_ESCROWS } from "@countersign/verify";
 import { isAddress } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex, RunnerAccount } from "./account.ts";
 import { bondFromEnv } from "./bond.ts";
 import { startRunner, type ServedOffer } from "./daemon.ts";
@@ -71,6 +72,8 @@ export interface Options {
   rpcs?: RpcEndpoint[];
   /** The seller's ENS name on Sepolia. */
   ens?: string;
+  /** Extra buyer addresses whose child purchases this runner may attest. Repeatable --child-buyer. */
+  buyerAddresses?: string[];
 }
 
 export interface FundingEnv {
@@ -98,8 +101,9 @@ export function fundingFor(options: Options, env: FundingEnv = process.env): Fun
   };
 }
 
-async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+/** Run the seller CLI with these arguments (by default, this process's own). `countersign sell` calls it. */
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const [command, ...args] = argv;
   if (command === "publish") {
     await publishCommand(parseOptions(args));
     return;
@@ -208,7 +212,7 @@ function prepareOpenApi(
     now: Math.floor(Date.now() / 1000),
   });
   const bytes = readFileSync(entry.specPath);
-  const sha256 = new Bun.CryptoHasher("sha256")
+  const sha256 = createHash("sha256")
     .update(bytes)
     .update("\n")
     .update(entry.operationId)
@@ -234,6 +238,7 @@ async function serveCommand(options: Options): Promise<void> {
     account,
     served,
     funding: fundingFor(options),
+    ...(options.buyerAddresses !== undefined ? { buyerAddresses: options.buyerAddresses } : {}),
     onJob: (event) => {
       const jobId = event.jobId.length > 10 ? `${event.jobId.slice(0, 10)}…` : event.jobId;
       console.log(`${jobId} ${event.title} ${event.ok ? "ok" : event.reason ?? "refused"}`);
@@ -273,24 +278,12 @@ function makeOffer(seller: Address, skill: Skill, options: Options): Offer {
   });
 }
 
-interface AccountsModule {
-  privateKeyToAccount(key: Hex): RunnerAccount;
-}
-
 async function sellerAccount(): Promise<RunnerAccount> {
   const key = process.env.CS_SELLER_KEY;
   if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
     throw new Error("CS_SELLER_KEY must hold a 0x-prefixed 32-byte hex key.");
   }
-  const module = await loadAccounts();
-  return module.privateKeyToAccount(key as Hex);
-}
-
-/** Resolve viem through @countersign/core, which declares it as a dependency. */
-async function loadAccounts(): Promise<AccountsModule> {
-  const require = createRequire(import.meta.resolve("@countersign/core"));
-  const path = require.resolve("viem/accounts");
-  return (await import(pathToFileURL(path).href)) as AccountsModule;
+  return privateKeyToAccount(key as Hex);
 }
 
 export function parseOptions(args: string[]): Options {
@@ -308,6 +301,7 @@ export function parseOptions(args: string[]): Options {
   const payTo: Partial<Record<RailId, string>> = {};
   const knownEscrows: PinnedEscrow[] = [];
   const rpcs: RpcEndpoint[] = [];
+  const buyerAddresses: string[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
     const flag = args[i] ?? "";
@@ -427,6 +421,12 @@ export function parseOptions(args: string[]): Options {
         ens = value();
         if (!isEnsName(ens)) throw new Error("--ens must be an ENS name in normal form, e.g. alice.eth.");
         break;
+      case "--child-buyer": {
+        const address = value();
+        if (address.length === 0) throw new Error("--child-buyer needs an address.");
+        buyerAddresses.push(address);
+        break;
+      }
       default:
         throw new Error(`Unknown argument ${flag}.`);
     }
@@ -468,6 +468,7 @@ export function parseOptions(args: string[]): Options {
   }
   if (knownEscrows.length > 0) options.knownEscrows = knownEscrows;
   if (rpcs.length > 0) options.rpcs = rpcs;
+  if (buyerAddresses.length > 0) options.buyerAddresses = buyerAddresses;
   return options;
 }
 

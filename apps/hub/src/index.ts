@@ -60,6 +60,10 @@ const identity =
         rpcUrl: arcRpcUrl,
         registry: (process.env.ERC8004_IDENTITY?.trim() || ARC_ERC8004_IDENTITY) as Address,
         fromBlock: BigInt(erc8004From),
+        persist: {
+          get: (seller) => store.getIdentity(seller),
+          put: (seller, value) => store.putIdentity(seller, value, now()),
+        },
       })
     : undefined;
 

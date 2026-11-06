@@ -1,0 +1,17 @@
+{
+  "name": "@countersign/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@countersign/buyer": "workspace:*",
+    "@countersign/core": "workspace:*",
+    "@countersign/verify": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "viem": "^2.57.16",
+    "zod": "4.6.7"
+  }
+}

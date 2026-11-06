@@ -56,6 +56,8 @@ async function handleReview(c: Context, deps: ReviewDeps, action: Action): Promi
   const signature = await readSignature(c);
   if (signature === null) return badSignature();
 
+  const disputeStatus = job.status === "delivered" ? 5 : 1;
+
   try {
     const address = getAddress(escrowAddress);
     const signer =
@@ -64,7 +66,10 @@ async function handleReview(c: Context, deps: ReviewDeps, action: Action): Promi
             ...acceptTypedData(chainId, address, job.jobId, job.slipHash as Hex),
             signature,
           })
-        : await recoverTypedDataAddress({ ...disputeTypedData(chainId, address, job.jobId), signature });
+        : await recoverTypedDataAddress({
+            ...disputeTypedData(chainId, address, job.jobId, disputeStatus),
+            signature,
+          });
     if (signer.toLowerCase() !== job.buyer.toLowerCase()) return badSignature();
   } catch {
     return badSignature();
@@ -72,7 +77,10 @@ async function handleReview(c: Context, deps: ReviewDeps, action: Action): Promi
 
   let result: SettleResult;
   try {
-    result = await submitting.call(escrow, job.jobId, signature);
+    result =
+      action === "accept"
+        ? await escrow.accept!(job.jobId, signature)
+        : await escrow.dispute!(job.jobId, disputeStatus, signature);
   } catch {
     return reviewFailed();
   }

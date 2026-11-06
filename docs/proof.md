@@ -42,6 +42,14 @@ First deployment, made with `forge script` and verified on the explorer. The sam
 
 See [whitechain.md](whitechain.md) for the full list.
 
+Escrow v2, deployed from `52b7c7c` on 07 Nov and verified on Blockscout. Production does not use it yet: the `whitechain` rail still settles through v1, `0x9279…7eb4`.
+
+| | |
+|---|---|
+| `CountersignedEscrow` v2 | [`0x55b3d98C17Ba0878DC93fB1521c76c9a10778391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391), deploy tx [`0xf15e1c98…9ae1`](https://explorer.testnet.whitechain.io/tx/0xf15e1c98547b7b475feae83319b71e176518580c244dff39fe32d1408c249ae1) |
+| `FeeSplit` | [`0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c`](https://explorer.testnet.whitechain.io/address/0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c), deploy tx [`0x8612c6d7…9432`](https://explorer.testnet.whitechain.io/tx/0x8612c6d77bdfd1e316c99cbf10e77fa0872df2143a3e091e752c07c8ef639432) |
+| Read on chain | `arbiter()` the relay key `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006`, `token()` USDT `0xcedf…55a7`, `treasury()` the FeeSplit above, `tollBps()` 100 |
+
 ## Hedera testnet
 
 See [hedera.md](hedera.md) for the full list.

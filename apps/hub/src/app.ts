@@ -13,6 +13,7 @@ import {
   type ErrorBody,
   type Offer,
   type PublishRequest,
+  type Slip,
 } from "./deps.ts";
 import { recoverMessageAddress, type Hex } from "viem";
 import type { Rail } from "./deps.ts";
@@ -215,6 +216,25 @@ export function createHub(deps: HubDeps) {
     return json(slip);
   });
 
+  app.get("/jobs/:jobId/children", (c) => {
+    const jobId = c.req.param("jobId");
+    const children = deps.store.childJobs(jobId).map((job) => ({
+      jobId: job.jobId,
+      offerHash: job.offerHash,
+      status: job.status,
+      slipHash: job.slipHash,
+    }));
+    return json({ jobId, children });
+  });
+
+  app.get("/trees/:root", (c) => {
+    const root = c.req.param("root");
+    if (deps.store.getSlip(root) === null) {
+      return fail(404, "unknown-slip", "Refused. That slip is not known.");
+    }
+    return json(receiptTree(deps.store, root));
+  });
+
   app.get("/ratings", async () => json({ ratings: await ratings.all() }));
 
   app.get("/ratings/:seller", async (c) => {
@@ -257,7 +277,9 @@ export function createHub(deps: HubDeps) {
     } catch {
       return fail(500, "internal", "Refused. The hub could not complete the call.");
     }
-    console.log(`[hub] call ${hash} rail=${outcome.railId ?? "none"} status=${outcome.status}`);
+    console.log(
+      `[hub] call ${hash} rail=${outcome.railId ?? "none"} status=${outcome.status}${reasonSuffix(outcome)}`,
+    );
     return json(outcome.body, outcome.status, outcome.headers);
   });
 
@@ -280,6 +302,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The refusal's one-line reason, at most 200 characters. Never a header, payment, input or output. */
+function reasonSuffix(outcome: { status: number; body: unknown }): string {
+  if (outcome.status === 200 || !isRecord(outcome.body)) return "";
+  let reason: string | undefined;
+  if (outcome.status === 402) {
+    if (typeof outcome.body.error === "string") reason = outcome.body.error;
+  } else if (typeof outcome.body.code === "string" && typeof outcome.body.message === "string") {
+    reason = `${outcome.body.code}: ${outcome.body.message}`;
+  }
+  if (reason === undefined) return "";
+  const oneLine = reason.replace(/[\r\n]+/g, " ").trim();
+  return oneLine === "" ? "" : ` reason=${oneLine.slice(0, 200)}`;
+}
+
 function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
   const merged = new Headers(headers);
   merged.set("content-type", "application/json");
@@ -289,4 +325,91 @@ function json(body: unknown, status = 200, headers?: Record<string, string>): Re
 function fail(status: number, code: string, message: string): Response {
   const body: ErrorBody = { code, message };
   return json(body, status);
+}
+
+const TREE_MAX_DEPTH = 8;
+const TREE_MAX_NODES = 256;
+const TREE_MAX_MISSING = 256;
+
+interface TreeNode {
+  slip: Slip;
+  title: string;
+  sellerName: string;
+  observed: Hex[];
+}
+
+function short(value: string): string {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function titleFor(store: Store, offerHash: Hex): string {
+  const stored = store.getOffer(offerHash);
+  if (stored === null) return `offer ${short(offerHash)}`;
+  return stored.offer.title;
+}
+
+function observedFor(store: Store, jobId: Hex): Hex[] {
+  const hashes: Hex[] = [];
+  for (const job of store.childJobs(jobId)) {
+    if (job.slipHash !== null) hashes.push(job.slipHash);
+  }
+  return hashes;
+}
+
+/**
+ * Breadth-first receipt tree. Each slip hash is visited once. The root is depth 0;
+ * nothing below depth 8 is walked, and the walk stops at 256 nodes. The queue never
+ * holds more hashes than that walk could still visit, and `missing` stops at 256.
+ * A child hash this hub does not hold is listed in `missing` instead of `nodes`.
+ * `truncated` is true when a child was dropped for the queue, node, missing, or depth limit.
+ */
+function receiptTree(
+  store: Store,
+  root: string,
+): { root: string; nodes: Record<string, TreeNode>; missing: string[]; truncated: boolean } {
+  const nodes: Record<string, TreeNode> = {};
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  const queue: Array<{ hash: string; depth: number }> = [{ hash: root, depth: 0 }];
+  let truncated = false;
+
+  while (queue.length > 0 && Object.keys(nodes).length < TREE_MAX_NODES) {
+    const item = queue.shift();
+    if (item === undefined) break;
+    const key = item.hash.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const slip = store.getSlip(item.hash);
+    if (slip === null) {
+      if (missing.length < TREE_MAX_MISSING) missing.push(item.hash);
+      else truncated = true;
+      continue;
+    }
+
+    nodes[slip.hash] = {
+      slip,
+      title: titleFor(store, slip.body.offerHash),
+      sellerName: short(slip.body.seller),
+      observed: observedFor(store, slip.body.jobId),
+    };
+
+    if (item.depth >= TREE_MAX_DEPTH) {
+      if (slip.body.children.length > 0) truncated = true;
+      continue;
+    }
+    if (Object.keys(nodes).length >= TREE_MAX_NODES) {
+      if (slip.body.children.length > 0) truncated = true;
+      continue;
+    }
+    for (const child of slip.body.children) {
+      if (queue.length + Object.keys(nodes).length >= TREE_MAX_NODES) {
+        truncated = true;
+        break;
+      }
+      queue.push({ hash: child, depth: item.depth + 1 });
+    }
+  }
+
+  return { root, nodes, missing, truncated };
 }

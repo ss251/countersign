@@ -144,6 +144,7 @@ describe("a held release links its execution", () => {
     );
     expect(released.success).toBe(true);
     expect(released.explorerRef).toBe(CONSENSUS);
+    expect({ ...released }.explorerRef).toBe(CONSENSUS);
     expect(released.transaction).toBe(CREATE_TX);
   });
 });

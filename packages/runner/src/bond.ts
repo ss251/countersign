@@ -4,12 +4,12 @@
  *   bond deposit <atomic> --escrow <address> [--rpc <url>]
  *   bond withdraw <atomic> --escrow <address> [--rpc <url>]
  *   bond show --escrow <address> [--rpc <url>]
- *   bond terms --offer <bytes32> --price <atomic> --bond <atomic> --review-window <seconds>
- *     --min-duration <seconds> --escrow <address> [--rpc <url>]
+ *   bond terms --offer <bytes32> --price <atomic> --bond <atomic> --review-window <seconds, at least 60>
+ *     --min-duration <seconds, at least 60> --escrow <address> [--rpc <url>]
  *     --min-duration is the least time a funded bonded job may have before its deadline. At least 60:
  *     shorter lets a buyer fund a job the seller cannot meet and take the bond on the default. At most
  *     the offer's deadline minus about 300 s, or honest purchases revert (cs-w1, review of 9240aec).
- *   A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.
+ *   A bond needs --review-window of at least 60 seconds: a bond protects a buyer who can refuse a delivery.
  *   bond terms --show --offer <bytes32> --escrow <address> [--rpc <url>]
  *
  * deposit signs an EIP-3009 ReceiveWithAuthorization from the seller to the escrow, good for ten
@@ -294,7 +294,7 @@ function parseTermsArgs(args: string[]): BondTermsCommand | BondTermsShowCommand
     }
     if (parsed !== undefined && parsed > 0n) {
       throw new Error(
-        "Refused. A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.",
+        "Refused. A bond needs --review-window of at least 60 seconds: a bond protects a buyer who can refuse a delivery.",
       );
     }
   }
@@ -332,9 +332,9 @@ function wholeSeconds(raw: string, flag: string): number {
 
 /** The escrow's own setTerms guards, checked here before anything is sent. */
 function assertTerms(price: bigint, bond: bigint, reviewWindow: number): void {
-  if (bond > 0n && reviewWindow === 0) {
+  if (bond > 0n && reviewWindow < 60) {
     throw new Error(
-      "Refused. A bond needs --review-window above 0: a bond protects a buyer who can refuse a delivery.",
+      "Refused. A bond needs --review-window of at least 60 seconds: a bond protects a buyer who can refuse a delivery.",
     );
   }
   if (bond > price) throw new Error("The bond cannot be more than the price.");
