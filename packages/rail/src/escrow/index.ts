@@ -65,7 +65,7 @@ const erc3009ReadAbi = [
 ] as const;
 
 export interface EscrowRailConfig {
-  id: "escrow" | "whitechain";
+  id: "escrow" | "whitechain" | "erc8183";
   chainId: number;
   rpcUrl: string;
   escrow: Address;
