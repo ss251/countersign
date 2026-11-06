@@ -9,6 +9,6 @@ Nothing here is compiled. `foundry.toml` builds only `contracts/src`, `contracts
   - the `Delivered` and `Disputed` statuses, and the v2 events and errors.
 
   It moves into `contracts/test` in the same commit as the contract change. That waits until the seller bond (#93, `cs/cs-19`) merges into `cs/int`, because the contract has one editor at a time.
-- `review-window-prototype.patch` is a throwaway implementation on top of `cs/cs-19` (22df20a). It was used only to check that the tests pass against a contract that follows the spec, and that they fail when the contract breaks the spec. It is a starting point, not the reviewed change. Delete it before the pull request.
+- The tests were checked against a throwaway implementation on top of `cs/cs-19` (22df20a). All 15 pass against it, and each fails when that implementation breaks the spec. The implementation is not in the repository, because the contract has one editor at a time.
 
 This directory is removed when the contract lands.
