@@ -116,7 +116,8 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(dir, { recursive: true });
-  const dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".") !== "unknown";
+  // The run's own outputs do not make it dirty; any other tracked change does.
+  const dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)e2e/runs") !== "unknown";
   const commit = `${git("rev-parse", "--short", "HEAD")}${dirty ? " with local changes" : ""}`;
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   log(`e2e run ${runId} · ${branch} ${commit} · ${selected.map((f) => f.name).join(", ")}`);
