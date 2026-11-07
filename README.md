@@ -48,7 +48,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
 
   Both import the published package: `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. In your own app, run `npm i @countersign-hub/relay hono viem` and the two files run unchanged under Bun, tsx or Node. The package ships no type declarations yet, so a strict TypeScript build reports TS7016 on those imports. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
-  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
+  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://counter-sign.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
 - **The customer's view.** The customer holds USDT only and signs one EIP-3009 authorisation. The buyer above, `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298`, holds 0 WBT.
 - **The refund.** One function, `refundOrder`, refunds every order:
@@ -56,7 +56,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
   - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
 
   Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
-- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://web-production-a58de.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
+- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://counter-sign.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
   - the live list of the hub's escrow orders, with a one-click refund on each paid one;
   - the CSV export;
   - the gas relayer's panel, read from the relay's live `/status`;
@@ -92,7 +92,7 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
-- Console: [web-production-a58de.up.railway.app](https://web-production-a58de.up.railway.app)
+- Console: [counter-sign.up.railway.app](https://counter-sign.up.railway.app)
 - Hub: [hub-production-e85e.up.railway.app](https://hub-production-e85e.up.railway.app/healthz). A purchase through it [released on Arc](https://explorer.testnet.arc.io/tx/0x0a0118e9e81c21517eaf0f387e7801e1fafef947cfccd1c05ff989201433ed69), slip `0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85`.
 - Arc Studio: the project's [share page](https://studio.arc.io/share/countersign-automated-software-marketplace-9tfb9kfte9) and the [app Studio built](https://arc-studio-16e0b317ec5f406a8d7d24bf.vercel.app), both open logged out. The Studio app reads the same escrow addresses as the rest of the project.
 - Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
