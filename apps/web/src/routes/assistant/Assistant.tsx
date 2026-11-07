@@ -6,9 +6,10 @@ import { api, useResource, type Resource } from "../../lib/api.ts";
 import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { envelopeChecklist } from "../../lib/checklist.ts";
 import { formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
-import { hubBase } from "../../lib/hub.ts";
+import { hubBase, isOwnHub } from "../../lib/hub.ts";
 import {
   HASHPACK_ENABLED,
+  paymentOnce,
   payWithHashPack,
   useHashPack,
   type HashPackPayment,
@@ -469,9 +470,9 @@ export function HashPackPay({ listing, base }: { listing: Listing; base: string 
   const [steps, setSteps] = useState<PayStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState<HashPackPayment | null>(null);
+  const inFlight = useRef(false);
 
-  const run = async () => {
-    if (busy) return;
+  const run = paymentOnce(inFlight, async () => {
     setBusy(true);
     setSteps([]);
     setError(null);
@@ -490,7 +491,7 @@ export function HashPackPay({ listing, base }: { listing: Listing; base: string 
     } finally {
       setBusy(false);
     }
-  };
+  });
 
   return (
     <div className="pcard__next">
@@ -530,9 +531,9 @@ export function HashPackPay({ listing, base }: { listing: Listing; base: string 
   );
 }
 
-/** The HashPack button belongs to hedera offers only, and only while the wallet is connected. */
-export function hashpackCanPay(a: { enabled: boolean; connected: boolean; rails: RailId[] }): boolean {
-  return a.enabled && a.connected && a.rails.includes("hedera");
+/** The HashPack button belongs to this console's own hub, hedera offers only, and only while connected. */
+export function hashpackCanPay(a: { enabled: boolean; ownHub: boolean; connected: boolean; rails: RailId[] }): boolean {
+  return a.enabled && a.ownHub && a.connected && a.rails.includes("hedera");
 }
 
 /** The purchase card: exactly what the agent signs, your envelope's checklist, the hold, then the call it makes. */
@@ -555,6 +556,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const why = mode.wallet ? null : mode.why;
   const hashpackPays = hashpackCanPay({
     enabled: HASHPACK_ENABLED,
+    ownHub: isOwnHub(),
     connected: hashpack.status === "connected" && hashpack.accountId !== null,
     rails: offer.rails,
   });

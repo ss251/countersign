@@ -246,9 +246,12 @@ export function hashpackSigner(accountId: string, opts: { request?: WalletReques
   };
 }
 
-/** The fee payers the hosted facilitators publish right now, read without the rail's server modules. */
+/** The hosted facilitators' published Hedera testnet fee payers, pinned (x402.org's /supported sends no CORS header). */
+export const PINNED_FEE_PAYERS: readonly string[] = ["0.0.9185802"];
+
+/** The fee payers this page trusts: the pinned set plus whatever the CORS-readable facilitators publish. */
 export async function trustedHashPackFeePayers(fetchImpl: typeof fetch = fetch): Promise<Set<string>> {
-  const found = new Set<string>();
+  const found = new Set<string>(PINNED_FEE_PAYERS);
   await Promise.all(
     FACILITATORS.map(async ({ url }) => {
       try {
@@ -317,6 +320,22 @@ async function hubMessage(response: Response, fallback: string): Promise<string>
 }
 
 /**
+ * One payment at a time: the flag is set before the first await, so a second activation in the same
+ * tick is ignored even though React has not re-rendered the disabled button yet.
+ */
+export function paymentOnce(flag: { current: boolean }, pay: () => Promise<void>): () => Promise<void> {
+  return async () => {
+    if (flag.current) return;
+    flag.current = true;
+    try {
+      await pay();
+    } finally {
+      flag.current = false;
+    }
+  };
+}
+
+/**
  * Read the hub's 402 exactly as the buyer agent does, take its hedera exact entry, sign the same
  * transfer in HashPack, and send the same payment header. Settling and the slip are the hub's.
  */
@@ -331,6 +350,10 @@ export async function payWithHashPack(
   const base = input.hub.replace(/\/+$/, "");
   const url = `${base}/offers/${input.listing.hash}/call`;
   const body = JSON.stringify({ input: input.input });
+
+  if (!input.listing.offer.rails.includes("hedera")) {
+    throw new Error("Refused. This offer does not take the hedera rail.");
+  }
 
   let first: Response;
   try {
@@ -349,6 +372,9 @@ export async function payWithHashPack(
   if (!required) throw new Error("The hub's 402 carried no payment terms.");
   const req = required.accepts.find((entry) => entry.network === HEDERA_TESTNET && entry.scheme === "exact");
   if (!req) throw new Error("Refused. The hub offered no hedera payment for this offer.");
+  if (req.scheme !== "exact" || req.network !== HEDERA_TESTNET) {
+    throw new Error("Refused. The hub offered no hedera payment for this offer.");
+  }
   if (req.asset !== USDC_TESTNET) throw new Error("Refused. The hub asked for a token this page will not sign.");
   const feePayer = req.extra?.feePayer;
   const trusted = deps.trustedFeePayers ?? (() => trustedHashPackFeePayers(fetchImpl));

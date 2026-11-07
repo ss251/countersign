@@ -11,7 +11,10 @@ import { proto } from "@hiero-ledger/proto";
 import { AccountId, PrivateKey, TokenId, Transaction, TransferTransaction } from "@hiero-ledger/sdk";
 import {
   hashpackSigner,
+  paymentOnce,
   payWithHashPack,
+  PINNED_FEE_PAYERS,
+  trustedHashPackFeePayers,
   type WalletRequest,
 } from "../src/lib/hashpack.ts";
 import { hederaPayment } from "../../../packages/buyer/src/hedera/signer.ts";
@@ -142,11 +145,26 @@ function hubStub(
 }
 
 function required(): Response {
-  const body = { x402Version: 2, resource: { url: `${HUB}/offers/${OFFER_HASH}/call` }, accepts: [req] };
+  return requiredFor();
+}
+
+function requiredFor(over: Partial<PaymentRequirements> = {}): Response {
+  const body = { x402Version: 2, resource: { url: `${HUB}/offers/${OFFER_HASH}/call` }, accepts: [{ ...req, ...over }] };
   return Response.json(body, {
     status: 402,
     headers: { "content-type": "application/json", [PAYMENT_REQUIRED_HEADER]: toBase64Json(body) },
   });
+}
+
+/** The browser's fetch, with the facilitators' /supported left unreachable as x402.org's CORS-less one is. */
+function consoleFetch(hub: typeof fetch): typeof fetch {
+  return Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (String(input).endsWith("/supported")) throw new TypeError("Failed to fetch");
+      return hub(input, init);
+    },
+    { preconnect: () => undefined },
+  ) as unknown as typeof fetch;
 }
 
 function paid(payment: PaymentPayload): Response {
@@ -251,5 +269,138 @@ describe("paying with HashPack sends the agent's payment", () => {
       },
     ).catch((e: Error) => e);
     expect((error as Error).message).toBe(message);
+  });
+});
+
+describe("the fee payers this page trusts", () => {
+  test("pins x402.org's fee payer even when no facilitator can be read", async () => {
+    const unreachable = (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as unknown as typeof fetch;
+    const trusted = await trustedHashPackFeePayers(unreachable);
+    expect([...trusted]).toEqual([...PINNED_FEE_PAYERS]);
+    expect(trusted.has(FEE_PAYER)).toBe(true);
+  });
+
+  test("adds the fee payer a CORS-readable facilitator publishes", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      if (String(input).startsWith("https://x402.org/")) throw new TypeError("Failed to fetch");
+      return Response.json({
+        kinds: [{ x402Version: 2, scheme: "exact", network: "hedera:testnet", extra: { feePayer: "0.0.777" } }],
+      });
+    }) as unknown as typeof fetch;
+    const trusted = await trustedHashPackFeePayers(fetchImpl);
+    expect([...trusted].sort()).toEqual(["0.0.777", ...PINNED_FEE_PAYERS].sort());
+  });
+});
+
+describe("paying when the facilitators send no CORS header", () => {
+  test("a 402 naming the pinned fee payer is trusted", async () => {
+    const key = PrivateKey.generateECDSA();
+    const hub = hubStub(required, paid);
+    const result = await payWithHashPack(
+      { hub: HUB, listing: listing(), input: {} },
+      {
+        accountId: ACCOUNT,
+        signer: hashpackSigner(ACCOUNT, { request: walletStub(key) }),
+        fetch: consoleFetch(hub.fetch),
+        nodeAccountId: NODE,
+      },
+    );
+    expect(result.transactionId).toBeTruthy();
+    expect(hub.calls).toHaveLength(2);
+  });
+
+  test("a 402 naming any other fee payer is refused before the wallet signs", async () => {
+    const key = PrivateKey.generateECDSA();
+    const seen: string[] = [];
+    const hub = hubStub(() => requiredFor({ extra: { feePayer: "0.0.123", offerHash: OFFER_HASH } }), paid);
+    const error = await payWithHashPack(
+      { hub: HUB, listing: listing(), input: {} },
+      {
+        accountId: ACCOUNT,
+        signer: hashpackSigner(ACCOUNT, { request: walletStub(key, seen) }),
+        fetch: consoleFetch(hub.fetch),
+        nodeAccountId: NODE,
+      },
+    ).catch((e: Error) => e);
+    expect((error as Error).message).toBe("Refused. The hub named a fee payer this page does not trust.");
+    expect(seen).toHaveLength(0);
+    expect(hub.calls).toHaveLength(1);
+  });
+});
+
+describe("the 402's terms must match the offer", () => {
+  const cases: Array<{
+    name: string;
+    terms?: Partial<PaymentRequirements>;
+    rails?: Listing["offer"]["rails"];
+    message: string;
+  }> = [
+    {
+      name: "another asset",
+      terms: { asset: "0.0.999999" },
+      message: "Refused. The hub asked for a token this page will not sign.",
+    },
+    {
+      name: "another network",
+      terms: { network: "eip155:84532" as PaymentRequirements["network"] },
+      message: "Refused. The hub offered no hedera payment for this offer.",
+    },
+    {
+      name: "another scheme",
+      terms: { scheme: "countersign" },
+      message: "Refused. The hub offered no hedera payment for this offer.",
+    },
+    {
+      name: "an offer without hedera in its rails",
+      rails: ["escrow"],
+      message: "Refused. This offer does not take the hedera rail.",
+    },
+  ];
+
+  for (const c of cases) {
+    test(`${c.name} is refused before the wallet signs`, async () => {
+      const key = PrivateKey.generateECDSA();
+      const seen: string[] = [];
+      const hub = hubStub(() => requiredFor(c.terms), paid);
+      const error = await payWithHashPack(
+        { hub: HUB, listing: listing({ rails: c.rails }), input: {} },
+        {
+          accountId: ACCOUNT,
+          signer: hashpackSigner(ACCOUNT, { request: walletStub(key, seen) }),
+          fetch: hub.fetch,
+          trustedFeePayers: async () => new Set([FEE_PAYER]),
+          nodeAccountId: NODE,
+        },
+      ).catch((e: Error) => e);
+      expect((error as Error).message).toBe(c.message);
+      expect(seen).toHaveLength(0);
+      expect(hub.calls.filter((call) => call.payment !== null)).toHaveLength(0);
+    });
+  }
+});
+
+describe("one payment at a time", () => {
+  test("two rapid pay calls sign exactly one hedera transaction", async () => {
+    const key = PrivateKey.generateECDSA();
+    const seen: string[] = [];
+    const hub = hubStub(required, paid);
+    const flag = { current: false };
+    const pay = paymentOnce(flag, async () => {
+      await payWithHashPack(
+        { hub: HUB, listing: listing(), input: {} },
+        {
+          accountId: ACCOUNT,
+          signer: hashpackSigner(ACCOUNT, { request: walletStub(key, seen) }),
+          fetch: hub.fetch,
+          trustedFeePayers: async () => new Set([FEE_PAYER]),
+          nodeAccountId: NODE,
+        },
+      );
+    });
+    await Promise.all([pay(), pay()]);
+    expect(seen).toHaveLength(1);
+    expect(hub.calls).toHaveLength(2);
   });
 });

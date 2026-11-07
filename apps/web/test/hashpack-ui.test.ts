@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { hashpackEnabled } from "../src/lib/hashpack.ts";
+import { isOwnHub } from "../src/lib/hub.ts";
 import { HashPackControls } from "../src/ui/WalletButton.tsx";
 import type { Listing } from "../src/lib/types.ts";
 
@@ -88,11 +89,37 @@ describe("the HashPack switch", () => {
 });
 
 describe("the card's HashPack button", () => {
-  test("only a hedera offer, with HashPack connected and the flag on", () => {
-    expect(hashpackCanPay({ enabled: true, connected: true, rails: ["hedera"] })).toBe(true);
-    expect(hashpackCanPay({ enabled: false, connected: true, rails: ["hedera"] })).toBe(false);
-    expect(hashpackCanPay({ enabled: true, connected: false, rails: ["hedera"] })).toBe(false);
-    expect(hashpackCanPay({ enabled: true, connected: true, rails: ["escrow"] })).toBe(false);
+  test("only on this console's own hub, a hedera offer, with HashPack connected and the flag on", () => {
+    expect(hashpackCanPay({ enabled: true, ownHub: true, connected: true, rails: ["hedera"] })).toBe(true);
+    expect(hashpackCanPay({ enabled: true, ownHub: false, connected: true, rails: ["hedera"] })).toBe(false);
+    expect(hashpackCanPay({ enabled: false, ownHub: true, connected: true, rails: ["hedera"] })).toBe(false);
+    expect(hashpackCanPay({ enabled: true, ownHub: true, connected: false, rails: ["hedera"] })).toBe(false);
+    expect(hashpackCanPay({ enabled: true, ownHub: true, connected: true, rails: ["escrow"] })).toBe(false);
+  });
+
+  test("a link to another hub gets no Pay with HashPack button", () => {
+    const saved = process.env.VITE_HUB_URL;
+    process.env.VITE_HUB_URL = "https://hub.test";
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: { hash: "#/assistant?hub=https://evil.example", search: "" },
+        localStorage: {
+          getItem: (key: string) => values.get(key) ?? null,
+          setItem: (key: string, value: string) => void values.set(key, value),
+          removeItem: (key: string) => void values.delete(key),
+        },
+      },
+    });
+    try {
+      expect(isOwnHub()).toBe(false);
+      expect(hashpackCanPay({ enabled: true, ownHub: isOwnHub(), connected: true, rails: ["hedera"] })).toBe(false);
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+      if (saved === undefined) delete process.env.VITE_HUB_URL;
+      else process.env.VITE_HUB_URL = saved;
+    }
   });
 
   test("the button itself says Pay with HashPack", () => {
