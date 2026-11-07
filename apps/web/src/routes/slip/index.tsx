@@ -1,3 +1,4 @@
+import { NetworkName, RailName } from "../../ui/NetworkMark.tsx";
 import { useEffect, useState } from "react";
 import type { CountersignPayload, Slip } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
@@ -98,7 +99,7 @@ export default function SlipPage({ params }: PageProps) {
                 Released
               </h1>
               <p className="slip__what">
-                <span className="slip__offer">{title}</span> · {sellerName} was paid on {RAIL_LABEL[body.rail]}
+                <span className="slip__offer">{title}</span> · {sellerName} was paid on <RailName rail={body.rail} />
               </p>
               <p className="slip__when num">Completed on {formatCompleted(body.deliveredAt)}</p>
             </div>
@@ -210,7 +211,7 @@ export default function SlipPage({ params }: PageProps) {
           <p className="section__note">
             Anyone can repeat this with the slip alone: the hash, the seller’s signature and the buyer’s countersignature
             are all inside it. The chain answers the rest: whether {formatMoney(money)} was released on{" "}
-            {networkName(body.network)}.
+            <NetworkName name={networkName(body.network)} />.
           </p>
         </aside>
       </div>

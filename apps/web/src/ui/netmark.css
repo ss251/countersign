@@ -1,0 +1,39 @@
+/*
+ * The networks' own marks (STEER-0713b): the brand's colour version on light surfaces and its white one on dark,
+ * switched with the console's theme. The mark sits on the text's middle, and its box is fixed by width and height.
+ */
+.netname {
+  white-space: nowrap;
+}
+
+.netmark {
+  display: inline-block;
+  margin-inline-end: 0.35em;
+  line-height: 0;
+  vertical-align: -0.2em;
+}
+
+.netmark__light {
+  display: inline-block;
+}
+
+.netmark__dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .netmark__light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .netmark__dark {
+    display: inline-block;
+  }
+}
+
+:root[data-theme="dark"] .netmark__light {
+  display: none;
+}
+
+:root[data-theme="dark"] .netmark__dark {
+  display: inline-block;
+}

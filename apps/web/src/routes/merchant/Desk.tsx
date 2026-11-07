@@ -1,3 +1,4 @@
+import { NetworkNames } from "../../ui/NetworkMark.tsx";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { navigate } from "../../app/router.tsx";
 import type { Equation, Order, OrderFilter, ReceiptOrder, RefundReason, RefundRecord, Refusal, RelayStatus } from "./model.ts";
@@ -835,7 +836,13 @@ export function Desk({ offline, merchantQuery }: DeskProps) {
         <div className="mx-head__id">
           <h1 className="mx-title">Merchant</h1>
           <p className="mx-sub">
-            {networks.length > 0 ? `${networks.join(", ")} · ${active}` : "Merchant ledger"}
+            {networks.length > 0 ? (
+              <>
+                <NetworkNames names={networks} /> · {active}
+              </>
+            ) : (
+              "Merchant ledger"
+            )}
             {merchant ? (
               <>
                 <span aria-hidden="true"> · </span>

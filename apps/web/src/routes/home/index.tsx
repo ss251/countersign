@@ -9,6 +9,7 @@ import { Hero } from "./Hero.tsx";
 import { JourneyStage } from "./Journey.tsx";
 import { useNarrow, useReducedMotion } from "./stage.ts";
 import { Stream } from "./Stream.tsx";
+import { SettlesOn } from "./SettlesOn.tsx";
 import "./landing.css";
 
 /** The landing draws full bleed under the shared bar. */
@@ -69,6 +70,8 @@ export default function Landing(_props: PageProps) {
           narrow={narrow}
         />
       </div>
+
+      <SettlesOn rails={hubDown ? undefined : hubRails} />
 
       <Stream rows={rows} loaded={settlements.source !== undefined} rails={hubRails} hubDown={hubDown} />
 

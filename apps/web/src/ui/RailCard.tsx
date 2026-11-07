@@ -1,3 +1,4 @@
+import { NetworkName, RailName } from "./NetworkMark.tsx";
 import { networkName, RAIL_LABEL } from "../lib/format.ts";
 import { termsKind, type TermsKind } from "../lib/terms.ts";
 import type { RailDeclaration } from "../lib/types.ts";
@@ -26,12 +27,12 @@ export function RailCard({ declaration: d, tx, link = true }: { declaration: Rai
     <KV
       className="rail-card"
       rows={[
-        ["Rail", <strong>{RAIL_LABEL[d.id]}</strong>],
+        ["Rail", <strong><RailName rail={d.id} /></strong>],
         ["How", KIND[termsKind(d)]],
         [
           "Network",
           <>
-            {networkName(d.network)} <span className="mono rail-card__id">{d.network}</span>
+            <NetworkName name={networkName(d.network)} /> <span className="mono rail-card__id">{d.network}</span>
           </>,
         ],
         [

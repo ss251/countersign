@@ -1,3 +1,4 @@
+import { RailName } from "../../ui/NetworkMark.tsx";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { checkEnvelope } from "@countersign/core";
 import { useAccount, useSwitchChain } from "wagmi";
@@ -505,7 +506,9 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
         </div>
         <div>
           <dt className="label">Rail</dt>
-          <dd>{RAIL_LABEL[rail]}</dd>
+          <dd>
+            <RailName rail={rail} />
+          </dd>
         </div>
         <div>
           <dt className="label">Deadline</dt>
