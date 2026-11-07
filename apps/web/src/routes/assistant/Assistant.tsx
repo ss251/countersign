@@ -7,6 +7,13 @@ import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { envelopeChecklist } from "../../lib/checklist.ts";
 import { formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
 import { hubBase } from "../../lib/hub.ts";
+import {
+  HASHPACK_ENABLED,
+  payWithHashPack,
+  useHashPack,
+  type HashPackPayment,
+  type PayStep,
+} from "../../lib/hashpack.ts";
 import { usePurchase } from "../../lib/purchase.ts";
 import { deadlineWords, termsKind } from "../../lib/terms.ts";
 import type { EnvelopeView, Listing, RailId } from "../../lib/types.ts";
@@ -445,6 +452,89 @@ function Row({
   );
 }
 
+const STEP_WORDS: Record<PayStep, string> = {
+  signed: "Signed in HashPack",
+  working: "Seller working",
+  checked: "Output checked",
+  settled: "Settled on Hedera",
+  minted: "Slip minted",
+};
+
+/**
+ * Pay an offer on the hedera rail from the person's own HashPack. The button is the only way in:
+ * the wallet opens on the click, the steps are the hub's real work, and any refusal is its own words.
+ */
+export function HashPackPay({ listing, base }: { listing: Listing; base: string }) {
+  const [busy, setBusy] = useState(false);
+  const [steps, setSteps] = useState<PayStep[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [paid, setPaid] = useState<HashPackPayment | null>(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setSteps([]);
+    setError(null);
+    setPaid(null);
+    try {
+      const result = await payWithHashPack(
+        { hub: base, listing, input: exampleInput(listing.offer.input) },
+        {
+          onStep: (step) => setSteps((seen) => (seen.includes(step) ? seen : [...seen, step])),
+        },
+      );
+      setPaid(result);
+      setSteps(["signed", "working", "checked", "settled", "minted"]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pcard__next">
+      <Button
+        data-testid="pcard-hashpack-pay"
+        variant="primary"
+        disabled={busy}
+        onClick={() => void run()}
+      >
+        {busy ? "Paying with HashPack" : "Pay with HashPack"}
+      </Button>
+      {steps.length ? (
+        <ol className="pcard__next-body" data-testid="pcard-hashpack-steps">
+          {steps.map((step) => (
+            <li key={step}>
+              {step === "settled" && paid?.settlementUrl ? (
+                <a href={paid.settlementUrl} target="_blank" rel="noreferrer" data-testid="pcard-hashpack-settlement">
+                  {STEP_WORDS[step]}
+                </a>
+              ) : step === "minted" && paid?.slip?.hash ? (
+                <Link to={`/verify/${paid.slip.hash}`} data-testid="pcard-hashpack-verify">
+                  {STEP_WORDS[step]}
+                </Link>
+              ) : (
+                STEP_WORDS[step]
+              )}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {error ? (
+        <p className="purchase__message" role="alert" data-testid="pcard-hashpack-error">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The HashPack button belongs to hedera offers only, and only while the wallet is connected. */
+export function hashpackCanPay(a: { enabled: boolean; connected: boolean; rails: RailId[] }): boolean {
+  return a.enabled && a.connected && a.rails.includes("hedera");
+}
+
 /** The purchase card: exactly what the agent signs, your envelope's checklist, the hold, then the call it makes. */
 function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView | null }) {
   const [signed, setSigned] = useState(false);
@@ -453,6 +543,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const account = useAccount();
   const { switchChain } = useSwitchChain();
   const purchase = usePurchase();
+  const hashpack = useHashPack();
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
   const hub = hubBase();
@@ -462,6 +553,11 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const mode = cardMode({ connected: account.status === "connected", chainId: account.chainId, rails: offer.rails });
   const wallet = mode.wallet;
   const why = mode.wallet ? null : mode.why;
+  const hashpackPays = hashpackCanPay({
+    enabled: HASHPACK_ENABLED,
+    connected: hashpack.status === "connected" && hashpack.accountId !== null,
+    rails: offer.rails,
+  });
   // A connected wallet whose only obstacle is the chain gets the switch button.
   const chainOnly = why !== null && offer.rails.includes("escrow");
   const declared = (id: RailId) => rails.data?.find((d) => d.id === id);
@@ -526,7 +622,9 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
           <p className="pcard__unchecked">Your envelope is not on this hub, so this purchase is not checked here. Your agent checks it before it pays.</p>
         )}
       </div>
-      {wallet ? (
+      {hashpackPays ? (
+        <HashPackPay listing={listing} base={base} />
+      ) : wallet ? (
         <>
           {/* The wallet never opens from here: this asks the hub for its terms, and the review below opens it. */}
           <Button

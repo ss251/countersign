@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { retryPrivy, useWalletMode, watchdogReason } from "../app/Providers.tsx";
+import {
+  connectHashPack,
+  disconnectHashPack,
+  HASHPACK_ENABLED,
+  useHashPack,
+  type HashPackStatus,
+} from "../lib/hashpack.ts";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
 
 function hasInjectedProvider(): boolean {
@@ -60,6 +67,59 @@ export function menuOptions(a: {
   return options;
 }
 
+/**
+ * HashPack beside the other wallets: the same words and quiet buttons, shown only when the console
+ * was built with VITE_HASHPACK=1. Connecting opens the HashPack extension or the pairing modal.
+ */
+export function HashPackControls({
+  enabled,
+  status,
+  accountId,
+  error,
+  onConnect,
+  onDisconnect,
+}: {
+  enabled: boolean;
+  status: HashPackStatus;
+  accountId: string | null;
+  error: string | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  if (!enabled) return null;
+  if (status === "connected" && accountId) {
+    return (
+      <span className="wallet__hashpack" data-testid="hashpack-connected">
+        <span aria-hidden="true"> · </span>
+        <span className="wallet__who mono">HashPack · {accountId}</span>
+        <span aria-hidden="true"> · </span>
+        <button type="button" className="wallet__quiet" data-testid="hashpack-disconnect" onClick={onDisconnect}>
+          Disconnect
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="wallet__hashpack" data-testid="hashpack-menu">
+      <span aria-hidden="true"> · </span>
+      <button
+        type="button"
+        className="wallet__quiet"
+        data-testid="hashpack-connect"
+        disabled={status === "connecting"}
+        onClick={onConnect}
+      >
+        {status === "connecting" ? "Connecting HashPack…" : "Connect HashPack"}
+      </button>
+      {status === "error" && error ? (
+        <span className="wallet__error" role="status" data-testid="hashpack-error">
+          {error}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 type WalletBodyProps = {
   signIn?: () => void | Promise<void>;
   connectBrowser: () => void;
@@ -90,6 +150,7 @@ function WalletBody({
   const disconnect = useDisconnect();
   const { switchChain, reset: resetSwitch, error: switchError } = useSwitchChain();
   const [open, setOpen] = useState(false);
+  const hashpack = useHashPack();
   const root = useRef<HTMLDivElement>(null);
   const error = connect.error ?? switchError;
   const connecting = account.status === "connecting" || account.status === "reconnecting" || connect.isPending;
@@ -229,6 +290,18 @@ function WalletBody({
           {`The wallet did not connect: ${messageOf(error)}`}
         </p>
       ) : null}
+      <HashPackControls
+        enabled={HASHPACK_ENABLED}
+        status={hashpack.status}
+        accountId={hashpack.accountId}
+        error={hashpack.error}
+        onConnect={() => {
+          void connectHashPack().catch(() => undefined);
+        }}
+        onDisconnect={() => {
+          void disconnectHashPack().catch(() => undefined);
+        }}
+      />
     </div>
   );
 }
