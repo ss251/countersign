@@ -72,7 +72,7 @@ function absence<T>(e: unknown, what: string, missing: string): Loaded<T | null>
   return absent(`The hub could not give ${what} right now.`);
 }
 
-/** The approval token, for the reads the hub keeps behind it. Sent only to this hub. */
+/** The approval token, for the reads the hub keeps behind it. Sent only to the hub it was saved on (approvalToken). */
 function tokenHeader(): Record<string, string> {
   const token = approvalToken();
   return token ? { authorization: `Bearer ${token}` } : {};
