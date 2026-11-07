@@ -63,10 +63,7 @@ export interface HubDeps {
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
 
 /** The origins the console serves from, whatever CONSOLE_URL names today. */
-const CONSOLE_ORIGINS = [
-  "https://counter-sign.up.railway.app",
-  "https://web-production-a58de.up.railway.app",
-] as const;
+const CONSOLE_ORIGINS = ["https://counter-sign.up.railway.app"] as const;
 
 function consoleOrigins(consoleUrl: string, extra: string | undefined): readonly string[] {
   const origins = new Set<string>();
