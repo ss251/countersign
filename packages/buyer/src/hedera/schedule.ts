@@ -10,7 +10,7 @@ import {
   TransferTransaction,
 } from "@hiero-ledger/sdk";
 import { offerMemo } from "@countersign/rail/hedera";
-import type { HederaPayer } from "./signer.ts";
+import { isRemoteHederaSigner, type HederaPayer } from "./signer.ts";
 
 const ACCOUNT_ID = /^0\.0\.\d+$/;
 
@@ -56,6 +56,9 @@ export async function createScheduledPayment(
     .setExpirationTime(Timestamp.fromDate(new Date(Date.now() + req.expiresInSeconds * 1000)))
     .setWaitForExpiry(false);
 
+  if (isRemoteHederaSigner(payer.key)) {
+    throw new Error("The scheduled hedera rail signs with a local key only.");
+  }
   await create.freezeWith(agentClient);
   await create.sign(payer.key);
   const response = await create.execute(agentClient);

@@ -71,6 +71,10 @@ export const RAIL_CONFIG_VARS = [
   "WC_RELAY_TOKEN",
   "WC_RELAY_FUNDER",
   "HEDERA_HELD_HUB_KEY",
+  "HEDERA_PRIVY",
+  "HEDERA_PRIVY_OPERATOR_ID",
+  "HEDERA_PRIVY_OPERATOR_KEY",
+  "HEDERA_PRIVY_HOURLY_CAP",
 ] as const;
 
 /** Whether the environment asks for this rail. */

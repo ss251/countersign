@@ -17,6 +17,7 @@ import {
   type PaymentRequirements,
   type RailId,
 } from "@countersign/core";
+import { HEDERA_TESTNET } from "@countersign/rail/hedera";
 import type { HubClient } from "./hub-client.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { requestApproval, type ApprovalOutcome } from "./approvals.ts";
@@ -24,7 +25,7 @@ import { KNOWN_DIRECTS, KNOWN_RAILS, knownDirectFor, type KnownRail } from "./kn
 import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { Payer } from "./payer.ts";
 import type { State } from "./state.ts";
-import { checkDirectTerms, checkGatewayTerms, checkTerms } from "./terms.ts";
+import { checkDirectTerms, checkGatewayTerms, checkHederaTerms, checkTerms } from "./terms.ts";
 
 export class BuyError extends Error {
   constructor(message: string) {
@@ -59,7 +60,11 @@ export interface BuyArgs {
   mirrorTimeoutMs?: number;
 }
 
-type Chosen = { kind: "countersign"; rail: KnownRail } | { kind: "gateway" } | { kind: "eip3009" };
+type Chosen =
+  | { kind: "countersign"; rail: KnownRail }
+  | { kind: "gateway" }
+  | { kind: "eip3009" }
+  | { kind: "hedera" };
 
 export async function buy(a: BuyArgs): Promise<CallResult> {
   const { hub, offerHash, input, journal, envelope } = a;
@@ -145,6 +150,19 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
           break;
         }
 
+        if (req.network === HEDERA_TESTNET) {
+          const terms = checkHederaTerms(offer, offerHash, req);
+          if (!terms.ok) {
+            refusal ??= terms.message;
+            refusedAmount ??= req.amount;
+            continue;
+          }
+          entry = req;
+          payer = candidate;
+          chosen = { kind: "hedera" };
+          break;
+        }
+
         const terms = checkDirectTerms(offer, req, KNOWN_DIRECTS);
         if (!terms.ok) {
           refusal ??= terms.message;
@@ -187,7 +205,9 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
         ? ("gateway" as const)
         : chosen.kind === "eip3009"
           ? ("eip3009" as const)
-          : railIdFor(entry);
+          : chosen.kind === "hedera"
+            ? ("hedera" as const)
+            : railIdFor(entry);
     const base = {
       at: a.now,
       offerHash,
@@ -364,6 +384,7 @@ function railIdFor(req: PaymentRequirements): RailId | undefined {
     if (typeof extra?.rail !== "string") return undefined;
     return RAIL_IDS.includes(extra.rail as RailId) ? (extra.rail as RailId) : undefined;
   }
+  if (req.scheme === "exact" && req.network === HEDERA_TESTNET) return "hedera";
   const name = req.extra?.name;
   if (req.scheme === "exact" && typeof name === "string" && name.toLowerCase() === "gatewaywalletbatched") {
     return "gateway";

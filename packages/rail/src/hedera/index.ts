@@ -5,6 +5,8 @@ export * from "./held.ts";
 export * from "./inspect.ts";
 export * from "./memo.ts";
 export * from "./mirror.ts";
+export * from "./privy-signer.ts";
+export * from "./provision.ts";
 export * from "./rail.ts";
 export * from "./schedule.ts";
 export * from "./txid.ts";
