@@ -107,7 +107,7 @@ const cliAuth =
         wallets: privyWalletApi(privyAppId, privySecret, {
           policyId: process.env.PRIVY_WALLET_POLICY_ID,
         }),
-        consoleUrl: process.env.CONSOLE_URL ?? "https://web-production-a58de.up.railway.app",
+        consoleUrl: process.env.CONSOLE_URL ?? "https://counter-sign.up.railway.app",
         ...(hederaPrivyOn && hederaTerms
           ? {
               hedera: {
