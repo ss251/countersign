@@ -80,7 +80,7 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 
 | Guard | Value |
 |---|---|
-| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchants `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and `0xEF7AA9dfD4206a5a84C483a613e7402159ED1379` (a demo merchant for live refunds, since 07 Nov 01:26Z), and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3…0391`; it pays gas for nobody else |
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchants `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c`, `0xcDeC16369a62890f3E1F5a9a3A20391bef639B44` and `0x90Df63D400a7242A7026cb894E1dC1dA012572fE` (the last two are demo merchants for live refunds in the browser, since 07 Nov 02:12Z), and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3…0391`; it pays gas for nobody else |
 | Fee cap | 50 gwei per gas, with 20% headroom |
 | Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
 | Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
