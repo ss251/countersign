@@ -480,7 +480,7 @@ describe("POST /me/hedera/buy", () => {
     }
   });
 
-  test("accepts the new and old console origins", async () => {
+  test("accepts the current console origins", async () => {
     const hub = startHub();
     const hash = await publishOffer(hub);
     await me(hub);
@@ -488,7 +488,6 @@ describe("POST /me/hedera/buy", () => {
 
     for (const origin of [
       "https://counter-sign.up.railway.app",
-      "https://web-production-a58de.up.railway.app",
       "https://console.test",
     ]) {
       const response = await buy(
@@ -499,6 +498,22 @@ describe("POST /me/hedera/buy", () => {
       );
       expect(response.status).toBe(200);
     }
+  });
+
+  test("refuses the freed old console origin", async () => {
+    const hub = startHub();
+    const hash = await publishOffer(hub);
+    await me(hub);
+    await connect(hub, hash);
+
+    const response = await buy(
+      hub,
+      { offerHash: hash, input: { q: "hello" } },
+      "alice",
+      { origin: "https://web-production-a58de.up.railway.app" },
+    );
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as ErrorBody).code).toBe("bad-origin");
   });
 
   test("CONSOLE_ORIGINS extends the allowlist with https origins only", async () => {
