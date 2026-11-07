@@ -21,6 +21,7 @@ import { paidCall } from "./call.ts";
 import { registerBuyerPlumbing } from "./buyerplumbing.ts";
 import { registerCliAuth, type CliAuthDeps } from "./cli-auth/routes.ts";
 import type { KnownEscrow } from "./cli-auth/policy.ts";
+import { registerMeHedera, type MeHederaMirror } from "./me-hedera.ts";
 import { agentCard, listResources, skillsIndex } from "./discovery.ts";
 import { listSellers, listSettlements, searchOffers, type FrontdoorDeps } from "./frontdoor.ts";
 import type { IdentityLookup } from "./identity.ts";
@@ -49,6 +50,8 @@ export interface HubDeps {
   privy?: PrivyVerifier;
   /** CLI device login, sessions and signing, when Privy server wallets are configured. */
   cliAuth?: Omit<CliAuthDeps, "privy" | "hubStore" | "now" | "escrows">;
+  /** The console's Hedera routes read this mirror. Unset, they read the live testnet mirror. */
+  meHedera?: { mirror?: MeHederaMirror; sleep?: (ms: number) => Promise<void> };
   /** Base URL of the Whitechain relay, for refunds and fees the hub cannot see. */
   relayUrl?: string;
   /** How long /ratings, /ratings/:seller and /stats reuse one computed snapshot. Default 5 seconds. */
@@ -88,6 +91,25 @@ export function createHub(deps: HubDeps) {
       hubStore: deps.store,
       now: deps.now,
       escrows: () => escrowRails(deps.rails),
+    });
+  }
+  if (deps.cliAuth?.hedera) {
+    registerMeHedera(app, {
+      cliStore: deps.cliAuth.store,
+      hubStore: deps.store,
+      wallets: deps.cliAuth.wallets,
+      privy: deps.privy,
+      consoleUrl: deps.cliAuth.consoleUrl,
+      now: deps.now,
+      hedera: deps.cliAuth.hedera,
+      rails: deps.rails,
+      runners,
+      router,
+      publicUrl: deps.publicUrl,
+      ...(deps.jobTimeoutMs !== undefined ? { jobTimeoutMs: deps.jobTimeoutMs } : {}),
+      ...(deps.ens !== undefined ? { ens: deps.ens } : {}),
+      ...(deps.meHedera?.mirror !== undefined ? { mirror: deps.meHedera.mirror } : {}),
+      ...(deps.meHedera?.sleep !== undefined ? { sleep: deps.meHedera.sleep } : {}),
     });
   }
 
