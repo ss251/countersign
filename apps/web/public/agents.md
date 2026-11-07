@@ -10,7 +10,7 @@ This is the "Use it from your agent" part of the console's Developers page, as m
 npx -y @countersign-hub/cli login
 ```
 
-It opens a page on this console. Sign in with Privy, check that the code matches your terminal, then click "Connect this CLI".
+It opens a page on this console. Sign in with Privy, check that the code matches your terminal, then click "Connect this CLI". Never approve a code you did not start yourself.
 
 Then set your agent's limits. The hub signs nothing for it outside them.
 

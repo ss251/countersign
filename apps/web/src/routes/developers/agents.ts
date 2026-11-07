@@ -176,7 +176,7 @@ export const CLIENTS: AgentClient[] = [
 ];
 
 export const LOGIN_NOTE =
-  'It opens a page on this console. Sign in with Privy, check that the code matches your terminal, then click "Connect this CLI".';
+  'It opens a page on this console. Sign in with Privy, check that the code matches your terminal, then click "Connect this CLI". Never approve a code you did not start yourself.';
 
 export const LIMITS_NOTE = "Then set your agent's limits. The hub signs nothing for it outside them.";
 
