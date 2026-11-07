@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { retryPrivy, useWalletMode, watchdogReason } from "../app/Providers.tsx";
+import { getHederaAccount, HEDERA_BUY_EVENT, type HederaAccount } from "../lib/hedera.ts";
+import { hubBase } from "../lib/hub.ts";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
+import { CopyButton } from "./primitives.tsx";
+
+const HEDERA_FAUCET = "https://faucet.circle.com";
 
 function hasInjectedProvider(): boolean {
   return typeof window !== "undefined" && "ethereum" in window;
@@ -73,6 +78,8 @@ type WalletBodyProps = {
   kindOf?: (address: string | undefined) => "privy" | "injected";
   /** Privy has not reported ready yet, so its options wait. */
   starting?: boolean;
+  /** The signed-in person's Hedera account, when the hub has the feature on. */
+  hedera?: HederaAccount | null;
 };
 
 function WalletBody({
@@ -84,6 +91,7 @@ function WalletBody({
   cta,
   kindOf = () => "injected",
   starting = false,
+  hedera = null,
 }: WalletBodyProps) {
   const account = useAccount();
   const connect = useConnect();
@@ -149,6 +157,7 @@ function WalletBody({
           <span data-testid="wallet-chain" data-value={account.chainId}>
             {chainName(account.chainId)}
           </span>
+          <HederaAccountLine account={hedera} />
           {account.chainId !== arcTestnet.id && account.chainId !== whitechainTestnet.id ? (
             <button type="button" className="wallet__go" onClick={startSwitch}>
               Switch to Arc testnet
@@ -233,9 +242,61 @@ function WalletBody({
   );
 }
 
+/** One line in the signed-in menu: the Hedera account, a copy button, and the Testnet faucet. */
+export function HederaAccountLine({ account }: { account: HederaAccount | null }) {
+  if (!account) return null;
+  return (
+    <span className="wallet__why" data-testid="wallet-hedera" data-account-id={account.accountId}>
+      Hedera account <span className="mono">{account.accountId}</span> · {account.usdc} USDC
+      <CopyButton value={account.accountId} label="Hedera account" />
+      <a data-testid="wallet-hedera-faucet" href={HEDERA_FAUCET} target="_blank" rel="noopener noreferrer">
+        Fund on faucet.circle.com (Hedera Testnet)
+      </a>
+    </span>
+  );
+}
+
+/** Read the Hedera account once signed in, and again whenever a purchase on the card settles. */
+function useHederaAccount(ready: boolean, authenticated: boolean, getAccessToken: () => Promise<string | null>): HederaAccount | null {
+  const [account, setAccount] = useState<HederaAccount | null>(null);
+  const tokenOf = useRef(getAccessToken);
+  tokenOf.current = getAccessToken;
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      setAccount(null);
+      return;
+    }
+    let alive = true;
+    const load = async () => {
+      const hub = hubBase();
+      if (!hub) return;
+      const token = await tokenOf.current();
+      if (!token) return;
+      try {
+        const found = await getHederaAccount(hub, token);
+        if (alive) setAccount(found);
+      } catch {
+        // The line simply does not show: the hub is off, starting, or unreachable.
+        if (alive) setAccount(null);
+      }
+    };
+    void load();
+    const onBuy = () => void load();
+    window.addEventListener(HEDERA_BUY_EVENT, onBuy);
+    return () => {
+      alive = false;
+      window.removeEventListener(HEDERA_BUY_EVENT, onBuy);
+    };
+  }, [ready, authenticated]);
+
+  return account;
+}
+
 function PrivyWalletButton() {
-  const { ready, login, connectWallet, logout } = usePrivy();
+  const { ready, login, connectWallet, logout, authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const hedera = useHederaAccount(ready, authenticated, getAccessToken);
   // Privy's embedded wallet reports walletClientType "privy"; anything else came from the browser.
   const kindOf = (address: string | undefined) =>
     wallets.find((w) => w.address.toLowerCase() === address?.toLowerCase())?.walletClientType === "privy" ? "privy" : "injected";
@@ -249,6 +310,7 @@ function PrivyWalletButton() {
       cta="Sign in"
       kindOf={kindOf}
       starting={!ready}
+      hedera={hedera}
     />
   );
 }

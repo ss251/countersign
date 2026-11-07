@@ -1,11 +1,21 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import { checkEnvelope } from "@countersign/core";
 import { useAccount, useSwitchChain } from "wagmi";
-import { Link } from "../../app/router.tsx";
+import { useWalletMode } from "../../app/Providers.tsx";
+import { href, Link } from "../../app/router.tsx";
 import { api, useResource, type Resource } from "../../lib/api.ts";
 import { ARC_CHAIN_ID } from "../../lib/arc-pin.ts";
 import { envelopeChecklist } from "../../lib/checklist.ts";
-import { formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
+import { formatClock, formatMoney, nowUnix, RAIL_LABEL, shortHex, usd } from "../../lib/format.ts";
+import {
+  announceHederaBuy,
+  buyOnHedera,
+  getHederaAccount,
+  HederaError,
+  type HederaAccount,
+  type HederaPurchase,
+} from "../../lib/hedera.ts";
 import { hubBase } from "../../lib/hub.ts";
 import { usePurchase } from "../../lib/purchase.ts";
 import { deadlineWords, termsKind } from "../../lib/terms.ts";
@@ -453,6 +463,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
   const account = useAccount();
   const { switchChain } = useSwitchChain();
   const purchase = usePurchase();
+  const walletMode = useWalletMode();
   const ref = useRef<HTMLElement>(null);
   const { offer } = listing;
   const hub = hubBase();
@@ -616,6 +627,169 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
           ) : null}
         </>
       )}
+      {walletMode.privy && hub && offer.rails.includes("hedera") ? <HederaPay listing={listing} input={input} hub={hub} /> : null}
     </section>
   );
+}
+
+/** The hub signs with the account it holds; this card only holds a button and shows what the hub answers. */
+export type HederaBuyState =
+  | { kind: "idle" }
+  | { kind: "paying" }
+  | { kind: "paid"; purchase: HederaPurchase }
+  | { kind: "failed"; message: string };
+
+/** The Hedera action belongs to offers on the hedera rail, once the person has a Hedera account. */
+export function hederaActionShown(rails: RailId[], account: HederaAccount | null): boolean {
+  return account !== null && rails.includes("hedera");
+}
+
+/** The card's Hedera section at each point in the purchase. Renderable without Privy, for tests. */
+export function HederaAction({
+  listing,
+  account,
+  state,
+  onPay,
+}: {
+  listing: Listing;
+  account: HederaAccount | null;
+  state: HederaBuyState;
+  onPay: () => void;
+}) {
+  if (!hederaActionShown(listing.offer.rails, account)) return null;
+  const money = usd(listing.offer.price, "hedera");
+  const busy = state.kind === "paying";
+  const paid = state.kind === "paid";
+  return (
+    <div className="pcard__next" data-testid="hedera-action">
+      <p className="label">Hedera</p>
+      <HoldToSign
+        key={state.kind}
+        ariaLabel={`Hold to pay ${formatMoney(money)} for ${listing.offer.title} on Hedera`}
+        left={listing.seller.name}
+        right="you"
+        label="Hold to pay on Hedera"
+        holdingLabel="Keep holding"
+        doneLabel="Paid on Hedera"
+        disabled={busy || paid}
+        signed={paid}
+        onSigned={onPay}
+      />
+      {busy ? (
+        <p className="pcard__phase" role="status" data-testid="hedera-paying">
+          Paying on Hedera. The seller is working; this takes a few seconds on testnet.
+        </p>
+      ) : null}
+      {state.kind === "failed" ? (
+        <p className="purchase__message" role="alert" data-testid="hedera-error">
+          {state.message}
+        </p>
+      ) : null}
+      {state.kind === "paid" ? (
+        <>
+          <HederaSteps purchase={state.purchase} />
+          <HederaOutput output={state.purchase.output} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** The hub's steps in its own order, each with its local time and its link when it has one. */
+export function HederaSteps({ purchase }: { purchase: HederaPurchase }) {
+  return (
+    <ol className="pcard__next" aria-label="Payment steps" data-testid="hedera-steps">
+      {purchase.steps.map((step, index) => (
+        <li key={`${index}-${step.label}`} className="purchase__slip">
+          <span>{step.label}</span>
+          <span className="num">{stepClock(step.at)}</span>
+          {step.url ? <HederaStepLink url={step.url} /> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function HederaOutput({ output }: { output: unknown }) {
+  if (output === undefined) return null;
+  const text = JSON.stringify(output, null, 2);
+  if (text === undefined) return null;
+  return (
+    <div className="command">
+      <div className="command__head">
+        <p className="label">Output</p>
+      </div>
+      <pre className="command__body mono" data-testid="hedera-output">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+function stepClock(at: string): string {
+  const ms = Date.parse(at);
+  return Number.isFinite(ms) ? formatClock(Math.floor(ms / 1000)) : at;
+}
+
+function HederaStepLink({ url }: { url: string }) {
+  const external = /^https?:\/\//i.test(url);
+  return external ? (
+    <a className="purchase__faucet" href={url} target="_blank" rel="noopener noreferrer" data-testid="hedera-step-link">
+      HashScan
+    </a>
+  ) : (
+    <a className="purchase__faucet" href={href(url)} data-testid="hedera-step-link">
+      Verify the slip
+    </a>
+  );
+}
+
+/** Signed in and with an account, the card asks the hub for its account; the hub does the rest. */
+function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; hub: string }) {
+  const { ready, authenticated, getAccessToken } = usePrivy();
+  const [account, setAccount] = useState<HederaAccount | null>(null);
+  const [state, setState] = useState<HederaBuyState>({ kind: "idle" });
+  const tokenOf = useRef(getAccessToken);
+  tokenOf.current = getAccessToken;
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      setAccount(null);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      const token = await tokenOf.current();
+      if (!token) return;
+      try {
+        const found = await getHederaAccount(hub, token);
+        if (alive) setAccount(found);
+      } catch {
+        // No account line: the feature may be off, provisioning, or the hub unreachable.
+        if (alive) setAccount(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [ready, authenticated, hub]);
+
+  const pay = async () => {
+    if (state.kind === "paying") return;
+    setState({ kind: "paying" });
+    try {
+      const token = await tokenOf.current();
+      if (!token) {
+        setState({ kind: "failed", message: "Sign in again to pay on Hedera." });
+        return;
+      }
+      const purchase = await buyOnHedera(hub, token, listing.hash, input);
+      setState({ kind: "paid", purchase });
+      announceHederaBuy();
+    } catch (error) {
+      setState({ kind: "failed", message: error instanceof HederaError ? error.message : "The hub did not answer." });
+    }
+  };
+
+  return <HederaAction listing={listing} account={account} state={state} onPay={() => void pay()} />;
 }
