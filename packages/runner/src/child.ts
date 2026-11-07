@@ -47,12 +47,6 @@ export function scrubbedEnv(
     HOME: mkdtempSync(join(tmpdir(), "countersign-runner-")),
   };
   if (lineage !== undefined) env.COUNTERSIGN_LINEAGE = lineage;
-  // A skill job may answer through the seller's own model account. These three are
-  // the only extra variables a child sees, and they are never logged.
-  for (const key of ["SKILL_MODEL_API_KEY", "SKILL_MODEL_BASE_URL", "SKILL_MODEL"]) {
-    const value = parent[key];
-    if (value !== undefined && value !== "") env[key] = value;
-  }
   return env;
 }
 
