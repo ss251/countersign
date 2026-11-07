@@ -13,9 +13,10 @@ import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
 import { startOpenAIServer } from "./openai/server.ts";
-import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
+import { hubHederaAccount, hubHederaSigner } from "./hedera/hub-signer.ts";
+import { countersignPayer, eip3009Payer, gatewayPayer, hederaPayer } from "./payer.ts";
 import { priceLabel } from "./price-label.ts";
-import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv } from "./remote-signer.ts";
+import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv, type RemoteSession } from "./remote-signer.ts";
 import { resume } from "./resume.ts";
 import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
@@ -48,18 +49,34 @@ function parse(argv: string[]): Parsed {
 }
 
 let cachedAccount: Promise<LocalAccount> | undefined;
+let cachedSession: Promise<RemoteSession | undefined> | undefined;
 
 export async function agentAccount(): Promise<LocalAccount> {
   cachedAccount ??= resolveAccount();
   return await cachedAccount;
 }
 
+function resolveSession(): Promise<RemoteSession | undefined> {
+  cachedSession ??= sessionFromEnv(process.env);
+  return cachedSession;
+}
+
 async function resolveAccount(): Promise<LocalAccount> {
   const key = process.env.CS_BUYER_KEY;
   if (key) return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
-  const session = await sessionFromEnv(process.env);
+  const session = await resolveSession();
   if (session !== undefined) return remoteAccount(session);
   throw new Error(NOT_SIGNED_IN);
+}
+
+/** The hedera payer for a session-backed agent, when its hub has an account to pay from. */
+async function sessionHederaPayer() {
+  if (process.env.CS_BUYER_KEY) return undefined;
+  const session = await resolveSession();
+  if (session === undefined) return undefined;
+  const account = await hubHederaAccount(session);
+  if (account === null) return undefined;
+  return hederaPayer({ accountId: account.accountId, key: hubHederaSigner(session) });
 }
 
 const usd = (atomic: string) => formatUnits(BigInt(atomic), 6);
@@ -109,15 +126,18 @@ async function main(): Promise<void> {
     if (fromUrl) hub = new HubClient(fromUrl.hub);
     const hash = (fromUrl?.offerHash ?? pos[1]) as Hex | undefined;
     const raw = one("input");
-    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>] [--approvals hub]");
+    if (!hash || raw === undefined) throw new Error("Usage: buy <offerHash|callUrl> --input '<json>' [--approve] [--rail <id>|hedera] [--approvals hub]");
     const rail = parseRail(one("rail"));
     const approvals = parseApprovals(one("approvals"));
     const account = await agentAccount();
+    const payers = [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)];
+    const hedera = await sessionHederaPayer();
+    if (hedera !== undefined) payers.push(hedera);
     const result = await buy({
       hub,
       offerHash: hash,
       input: JSON.parse(raw),
-      payers: [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)],
+      payers,
       envelope: state.loadEnvelope(),
       journal,
       state,
