@@ -8,6 +8,8 @@ import { offerMemo } from "./memo.ts";
 
 const MAX_VALID_DURATION = 180;
 const MAX_CLOCK_SKEW = 30;
+const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+const HALF_ORDER = SECP256K1_ORDER / 2n;
 
 /** What the hub's own 402 asks for on the live hedera rail, plus the buyer's account and cap. */
 export interface PrivyTransferTerms {
@@ -249,7 +251,18 @@ export async function signPrivyTransfer(
   await tx.signWith(key, async (bodyBytes) => {
     const signature = await signer.sign(bodyBytes);
     if (signature.length !== 64) throw new Error("the signer returned an unexpected signature length");
-    return signature;
+    const rs = lowS(signature);
+    if (!key.verify(bodyBytes, rs)) throw new Error("the signature does not verify against the account key");
+    return rs;
   });
   return tx;
+}
+
+/** Canonical low-s: when s is above half the curve order, return r||(n - s); otherwise unchanged. */
+function lowS(signature: Uint8Array): Uint8Array {
+  const s = BigInt(`0x${Buffer.from(signature.subarray(32)).toString("hex")}`);
+  if (s <= HALF_ORDER) return signature;
+  const rs = new Uint8Array(signature);
+  rs.set(Buffer.from((SECP256K1_ORDER - s).toString(16).padStart(64, "0"), "hex"), 32);
+  return rs;
 }

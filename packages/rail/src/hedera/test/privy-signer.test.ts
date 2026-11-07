@@ -32,6 +32,34 @@ const OFFER_HASH = `0x${"ab".repeat(32)}`;
 const NODE = AccountId.fromString("0.0.3");
 const NODE_TWO = AccountId.fromString("0.0.4");
 const AMOUNT = 10_000n;
+const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+const HALF_ORDER = SECP256K1_ORDER / 2n;
+
+const sOf = (signature: Uint8Array): bigint =>
+  BigInt(`0x${Buffer.from(signature.subarray(32)).toString("hex")}`);
+
+/** The counterpart signature: same r, s replaced by n - s, which is always high-s here. */
+function flipS(signature: Uint8Array): Uint8Array {
+  const rs = new Uint8Array(signature);
+  rs.set(Buffer.from((SECP256K1_ORDER - sOf(signature)).toString(16).padStart(64, "0"), "hex"), 32);
+  return rs;
+}
+
+interface SignedEntry {
+  bodyBytes: Uint8Array;
+  signature: Uint8Array;
+}
+
+/** The bodies and ECDSA signatures the SDK actually wrote into the transaction. */
+function signedEntries(tx: Transaction): SignedEntry[] {
+  const list = (tx as unknown as { _signedTransactions: { list: proto.SignedTransaction[] } })
+    ._signedTransactions.list;
+  return list.map((entry) => {
+    const pair = entry.sigMap?.sigPair?.[0];
+    if (!entry.bodyBytes || !pair?.ECDSASecp256k1) throw new Error("the transaction is missing a body or signature");
+    return { bodyBytes: entry.bodyBytes, signature: pair.ECDSASecp256k1 };
+  });
+}
 
 function terms(over: Partial<PrivyTransferTerms> = {}): PrivyTransferTerms {
   return {
@@ -224,5 +252,70 @@ describe("signPrivyTransfer", () => {
       expect(key.publicKey.verify(seen[index]!, signature)).toBe(true);
       expect(keccak256(seen[index]!)).toMatch(/^0x[0-9a-f]{64}$/);
     }
+  });
+
+  test("normalises a high-s signature to low-s and verifies it", async () => {
+    const key = PrivateKey.generateECDSA();
+    const check = validatePrivyTransfer(build(), terms(), NOW);
+    if (!check.ok) throw new Error(check.reason);
+    const returned: Uint8Array[] = [];
+    const signed = await signPrivyTransfer(check.tx, {
+      publicKey: key.publicKey.toStringRaw(),
+      sign: async (bodyBytes) => {
+        const high = flipS(key.sign(bodyBytes));
+        returned.push(high);
+        return high;
+      },
+    });
+    const entries = signedEntries(signed);
+    expect(entries).toHaveLength(1);
+    expect(sOf(returned[0]!)).toBeGreaterThan(HALF_ORDER);
+    expect(sOf(entries[0]!.signature)).toBeLessThanOrEqual(HALF_ORDER);
+    expect(key.publicKey.verify(entries[0]!.bodyBytes, entries[0]!.signature)).toBe(true);
+  });
+
+  test("leaves a low-s signature unchanged and verifies it", async () => {
+    const key = PrivateKey.generateECDSA();
+    const check = validatePrivyTransfer(build(), terms(), NOW);
+    if (!check.ok) throw new Error(check.reason);
+    const returned: Uint8Array[] = [];
+    const signed = await signPrivyTransfer(check.tx, {
+      publicKey: key.publicKey.toStringRaw(),
+      sign: async (bodyBytes) => {
+        const signature = key.sign(bodyBytes);
+        returned.push(signature);
+        return signature;
+      },
+    });
+    const entries = signedEntries(signed);
+    expect(entries).toHaveLength(1);
+    expect(sOf(returned[0]!)).toBeLessThanOrEqual(HALF_ORDER);
+    expect(Buffer.from(entries[0]!.signature)).toEqual(Buffer.from(returned[0]!));
+    expect(key.publicKey.verify(entries[0]!.bodyBytes, entries[0]!.signature)).toBe(true);
+  });
+
+  test("refuses 64 random bytes that do not verify", async () => {
+    const key = PrivateKey.generateECDSA();
+    const check = validatePrivyTransfer(build(), terms(), NOW);
+    if (!check.ok) throw new Error(check.reason);
+    await expect(
+      signPrivyTransfer(check.tx, {
+        publicKey: key.publicKey.toStringRaw(),
+        sign: async () => crypto.getRandomValues(new Uint8Array(64)),
+      }),
+    ).rejects.toThrow("the signature does not verify against the account key");
+  });
+
+  test("refuses a valid signature made by a different key", async () => {
+    const account = PrivateKey.generateECDSA();
+    const other = PrivateKey.generateECDSA();
+    const check = validatePrivyTransfer(build(), terms(), NOW);
+    if (!check.ok) throw new Error(check.reason);
+    await expect(
+      signPrivyTransfer(check.tx, {
+        publicKey: account.publicKey.toStringRaw(),
+        sign: async (bodyBytes) => other.sign(bodyBytes),
+      }),
+    ).rejects.toThrow("the signature does not verify against the account key");
   });
 });
