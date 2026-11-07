@@ -13,8 +13,8 @@ describe("runInChild through node:child_process", () => {
       undefined,
       "node",
     );
-    expect(output).toMatchObject({ name: "test-skill" });
-    expect(typeof (output as { text?: unknown }).text).toBe("string");
+    expect(output).toMatchObject({ skill: "test-skill" });
+    expect(typeof (output as { answer?: unknown }).answer).toBe("string");
   });
 
   test("rejects when the time ceiling is passed", async () => {
