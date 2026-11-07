@@ -142,7 +142,7 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
       deps.backend.write(session);
       deps.write(`Signed in. Your agent wallet: ${poll.address}\n`);
       deps.write(`Fund it: send testnet USDC to ${poll.address} (Circle faucet: https://faucet.circle.com).\n`);
-      deps.write(`For Whitechain, get test WBT for gas at https://faucet.testnet.whitechain.io.\n`);
+      deps.write(`On Whitechain you need test USDT only: the relay pays the gas.\n`);
       deps.write(`The session lasts 7 days; countersign logout ends it.\n`);
       return;
     }

@@ -250,7 +250,9 @@ describe("login", () => {
     expect(text).toContain(`The page will show this code: ABCD-1234`);
     expect(text).toContain(ADDRESS);
     expect(text).toContain("https://faucet.circle.com");
-    expect(text).toContain("faucet.testnet.whitechain.io");
+    expect(text).toContain("On Whitechain you need test USDT only: the relay pays the gas.");
+    expect(text).not.toContain("faucet.testnet.whitechain.io");
+    expect(text).not.toContain("WBT");
     expect(text).not.toContain(TOKEN);
     expect(stderr.join("")).not.toContain(TOKEN);
     expect(process.exitCode ?? 0).toBe(0);
@@ -652,7 +654,7 @@ describe("DX", () => {
     expect(calls).toEqual([]);
   });
 
-  test("VERSION is 0.1.2", () => {
-    expect(VERSION).toBe("0.1.2");
+  test("VERSION is 0.1.3", () => {
+    expect(VERSION).toBe("0.1.3");
   });
 });
