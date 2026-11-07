@@ -26,12 +26,13 @@ type LoginPoll =
   | { status: "approved"; sessionToken: string; address: string; expiresAt: number };
 
 const EXPIRED = "The login expired. Run countersign login again.\n";
-const CONSOLE_ORIGIN = "https://web-production-a58de.up.railway.app";
+/** The consoles whose approval page login opens by itself. Any other link is printed, never opened. */
+export const CONSOLE_ORIGINS: readonly string[] = ["https://counter-sign.up.railway.app"];
 const UNSAFE_URL_CHARACTERS = /[&|^<>"%`;\s]/;
 const HUB_REFUSED = "Refused: the countersign hub must be https.";
 
 /** The link to the console, or null when the hub answered with anything else. */
-export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): string | null {
+export function safeConsoleUrl(url: string, consoleOrigins: string | readonly string[] = CONSOLE_ORIGINS): string | null {
   if (UNSAFE_URL_CHARACTERS.test(url)) return null;
   let parsed: URL;
   try {
@@ -40,7 +41,8 @@ export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): str
     return null;
   }
   if (parsed.protocol !== "https:") return null;
-  if (parsed.origin !== consoleOrigin) return null;
+  const allowed = typeof consoleOrigins === "string" ? [consoleOrigins] : consoleOrigins;
+  if (!allowed.includes(parsed.origin)) return null;
   return url;
 }
 
@@ -142,7 +144,7 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
       deps.backend.write(session);
       deps.write(`Signed in. Your agent wallet: ${poll.address}\n`);
       deps.write(`Fund it: send testnet USDC to ${poll.address} (Circle faucet: https://faucet.circle.com).\n`);
-      deps.write(`For Whitechain, get test WBT for gas at https://faucet.testnet.whitechain.io.\n`);
+      deps.write(`On Whitechain you need test USDT only: the relay pays the gas.\n`);
       deps.write(`The session lasts 7 days; countersign logout ends it.\n`);
       return;
     }

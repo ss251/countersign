@@ -10,6 +10,7 @@ export interface RemoteSession {
   address: Address;
 }
 
+const REMOTE_ACCOUNTS = new WeakSet<object>();
 const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
@@ -142,7 +143,14 @@ export function remoteAccount(session: RemoteSession, opts: RemoteOptions = {}):
     signTransaction: unsupported,
     signTypedData,
   };
-  return toAccount(source);
+  const account = toAccount(source);
+  REMOTE_ACCOUNTS.add(account);
+  return account;
+}
+
+/** True for an account that signs only through the hub's typed-data route (a signed-in CLI session). */
+export function isRemoteAccount(account: object): boolean {
+  return REMOTE_ACCOUNTS.has(account);
 }
 
 export async function sessionFromEnv(

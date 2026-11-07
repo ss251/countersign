@@ -24,7 +24,7 @@ import {
 const TOKEN = "session-token-7f3a9c";
 const ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
 const HUB = "https://hub.test";
-const CONSOLE = "https://web-production-a58de.up.railway.app";
+const CONSOLE = "https://counter-sign.up.railway.app";
 const VERIFY_URL = `${CONSOLE}/#/cli-login?code=ABCD-1234`;
 const NOW = 1_700_000_000;
 const FRESH = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
@@ -250,7 +250,9 @@ describe("login", () => {
     expect(text).toContain(`The page will show this code: ABCD-1234`);
     expect(text).toContain(ADDRESS);
     expect(text).toContain("https://faucet.circle.com");
-    expect(text).toContain("faucet.testnet.whitechain.io");
+    expect(text).toContain("On Whitechain you need test USDT only: the relay pays the gas.");
+    expect(text).not.toContain("faucet.testnet.whitechain.io");
+    expect(text).not.toContain("WBT");
     expect(text).not.toContain(TOKEN);
     expect(stderr.join("")).not.toContain(TOKEN);
     expect(process.exitCode ?? 0).toBe(0);
