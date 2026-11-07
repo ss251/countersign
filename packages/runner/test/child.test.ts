@@ -22,6 +22,42 @@ describe("scrubbedEnv", () => {
     expect(text).not.toContain("GH_TOKEN");
     expect(text).not.toContain("DB_PASS");
   });
+
+  test("keeps the seller's model variables for a skill child", () => {
+    const env = scrubbedEnv(
+      {
+        PATH: "/bin",
+        SKILL_MODEL_API_KEY: "sk-seller",
+        SKILL_MODEL_BASE_URL: "https://models.example",
+        SKILL_MODEL: "seller-model",
+      },
+      "0xlineage",
+      "skill",
+    );
+    expect(env.SKILL_MODEL_API_KEY).toBe("sk-seller");
+    expect(env.SKILL_MODEL_BASE_URL).toBe("https://models.example");
+    expect(env.SKILL_MODEL).toBe("seller-model");
+    expect(env.COUNTERSIGN_LINEAGE).toBe("0xlineage");
+  });
+
+  test("withholds the seller's model variables from every other adapter", () => {
+    const parent = {
+      PATH: "/bin",
+      SKILL_MODEL_API_KEY: "sk-seller",
+      SKILL_MODEL_BASE_URL: "https://models.example",
+      SKILL_MODEL: "seller-model",
+    };
+    for (const adapter of ["mcp", "openapi", undefined] as Array<string | undefined>) {
+      const env = scrubbedEnv(parent, "0xlineage", adapter);
+      expect(env).not.toHaveProperty("SKILL_MODEL_API_KEY");
+      expect(env).not.toHaveProperty("SKILL_MODEL_BASE_URL");
+      expect(env).not.toHaveProperty("SKILL_MODEL");
+      expect(JSON.stringify(env)).not.toContain("sk-seller");
+      expect(env.PATH).toBe("/bin");
+      expect(env.HOME?.length).toBeGreaterThan(0);
+      expect(env.COUNTERSIGN_LINEAGE).toBe("0xlineage");
+    }
+  });
 });
 
 describe("runInChild", () => {

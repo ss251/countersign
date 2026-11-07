@@ -35,11 +35,14 @@ server.registerTool(
   }),
 );
 
-server.registerTool("env", { description: "Return one planted environment variable." }, async () => ({
+server.registerTool("env", { description: "Return the planted and skill model environment variables." }, async () => ({
   content: [
     {
       type: "text" as const,
-      text: JSON.stringify({ planted: process.env.CS_PLANTED_SECRET ?? null }),
+      text: JSON.stringify({
+        planted: process.env.CS_PLANTED_SECRET ?? null,
+        model: process.env.SKILL_MODEL_API_KEY ?? null,
+      }),
     },
   ],
 }));
