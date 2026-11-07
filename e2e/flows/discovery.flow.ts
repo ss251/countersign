@@ -25,6 +25,28 @@ interface Listing {
 
 const trim = (u: string) => u.replace(/\/+$/, "");
 
+/** The properties an offer's input schema requires; an empty list means the empty input is valid. */
+export function requiredInput(offer: Offer): string[] {
+  const required = (offer.input as { required?: unknown } | undefined)?.required;
+  return Array.isArray(required) ? required.filter((k): k is string => typeof k === "string") : [];
+}
+
+/** The smallest input an offer's own schema accepts: one placeholder per required property. */
+export function minimalInput(offer: Offer): Record<string, unknown> {
+  const props = (offer.input as { properties?: Record<string, { type?: unknown }> } | undefined)?.properties ?? {};
+  const input: Record<string, unknown> = {};
+  for (const key of requiredInput(offer)) {
+    const type = props[key]?.type;
+    input[key] =
+      type === "number" || type === "integer" ? 1
+      : type === "boolean" ? true
+      : type === "array" ? []
+      : type === "object" ? {}
+      : "What does this tool do?";
+  }
+  return input;
+}
+
 async function getOk(ctx: FlowCtx, label: string, url: string): Promise<unknown> {
   const res = await ctx.http(label, url);
   equal(res.status, 200, `${label} status`);
@@ -128,10 +150,13 @@ async function checkTarget(ctx: FlowCtx, name: string, base: string, expectOffer
     }
   });
 
-  // A skill offer takes the empty input; other adapters (an MCP tool) need their own arguments.
+  // Skill offers listed before #372 take the empty input; newer ones require input.question (run 303f,
+  // 7 Nov 03:09Z). Prefer an offer the empty input satisfies, else send the smallest input its own schema
+  // accepts, so this step checks payment, not input. Other adapters (an MCP tool) need their own arguments.
+  const skills = listed.filter((l) => l.online && l.offer.adapter === "skill");
   const online = expectOffer
     ? listed.find((l) => l.offerHash.toLowerCase() === expectOffer.toLowerCase())
-    : listed.find((l) => l.online && l.offer.adapter === "skill");
+    : (skills.find((l) => requiredInput(l.offer).length === 0) ?? skills[0]);
   if (!online) {
     ctx.note(`${name} hub has no online skill offer, so the unpaid-call check did not run there`);
     return;
@@ -140,7 +165,7 @@ async function checkTarget(ctx: FlowCtx, name: string, base: string, expectOffer
     const res = await ctx.http(`${name} unpaid call`, at(`/offers/${online.offerHash}/call`), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ input: {} }),
+      body: JSON.stringify({ input: minimalInput(online.offer) }),
     });
     equal(res.status, 402, "unpaid call status");
     const header = res.headers.get(PAYMENT_REQUIRED_HEADER);
@@ -150,6 +175,23 @@ async function checkTarget(ctx: FlowCtx, name: string, base: string, expectOffer
     equal(required.x402Version, 2, "x402 version");
     check(required.accepts.length > 0, "the 402 accepts at least one rail");
     check(required.extensions && "bazaar" in required.extensions, "the 402 carries the bazaar extension");
+  });
+
+  // Input that fails the offer's own schema is refused before any payment is asked for.
+  const strict = skills.find((l) => requiredInput(l.offer).length > 0);
+  if (!strict) {
+    ctx.note(`${name} hub has no online skill offer that requires input, so the bad-input check did not run there`);
+    return;
+  }
+  await ctx.step(`${name} · input that fails the schema answers 422 before payment`, async () => {
+    const res = await ctx.http(`${name} bad input`, at(`/offers/${strict.offerHash}/call`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: {} }),
+    });
+    equal(res.status, 422, "bad-input status");
+    equal((res.json as { code?: unknown } | undefined)?.code, "bad-input", "bad-input code");
+    check(!res.headers.get(PAYMENT_REQUIRED_HEADER), "no payment is asked for input that fails the schema");
   });
 }
 

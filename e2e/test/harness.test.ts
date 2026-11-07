@@ -296,10 +296,15 @@ describe("retired flows", () => {
     expect(listed.exitCode).toBe(0);
     const lines = listed.stdout.toString().split("\n");
     const status = (name: string) => lines.find((line) => line.trim().split(/\s+/)[1] === name);
-    for (const name of ["arc-gateway", "public-gateway", "hedera", "public-hedera", "hedera-mcp"]) {
+    for (const name of ["arc-gateway", "public-gateway"]) {
       expect(status(name)).toContain("NOT RUN (retired:");
     }
-    expect(status("hedera-mcp")).toContain("Its Agent Kit offer is paid held in flow 21");
+    for (const name of ["hedera", "public-hedera"]) {
+      expect(status(name)).toContain("NOT RUN (on demand: covered hourly by flow 17; HBAR budget)");
+    }
+    expect(status("hedera-mcp")).toBeDefined();
+    expect(status("hedera-mcp")).not.toContain("NOT RUN (retired");
+    expect(status("hedera-mcp")).not.toContain("NOT RUN (paused");
   });
 });
 

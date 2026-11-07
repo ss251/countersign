@@ -14,11 +14,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { check, equal, NotRun, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { ROOT } from "../lib/paths.ts";
+import { railOrderProblem, RETURN_MONEY_RAILS, undeclaredRails } from "../lib/rails.ts";
 
-const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
-
-/** The rails that return money: production keeps exactly these. */
-const RETURN_MONEY_RAILS = ["escrow", "hedera-scheduled", "whitechain"];
+const DEFAULT_CONSOLE = "https://counter-sign.up.railway.app";
 
 function consoleUrl(): string {
   return (process.env.E2E_PUBLIC_WEB ?? DEFAULT_CONSOLE).replace(/\/+$/, "");
@@ -154,15 +152,18 @@ export const productionHub: Flow = {
       };
     });
 
-    await ctx.step("production declares exactly the rails that return money", async () => {
+    await ctx.step("production declares only the rails that return money, hedera-scheduled before hedera", async () => {
       const want = (process.env.E2E_PUBLIC_RAILS ?? "escrow,hedera-scheduled,whitechain").split(",").map((x) => x.trim()).filter(Boolean);
       const res = await ctx.http("rails", `${hub}/rails`);
       equal(res.status, 200, "rails status");
       const ids = ((res.json as { rails?: Array<{ id: string }> }).rails ?? []).map((r) => r.id);
       const missing = want.filter((id) => !ids.includes(id));
       check(missing.length === 0, `production does not declare ${missing.join(", ")} (it declares ${ids.join(", ") || "none"})`);
-      const extra = ids.filter((id) => !RETURN_MONEY_RAILS.includes(id));
-      check(extra.length === 0, `production declares ${extra.join(", ")} beyond the rails that return money (${RETURN_MONEY_RAILS.join(", ")})`);
+      const extra = undeclaredRails(ids);
+      check(extra.length === 0, `production declares ${extra.join(", ")} beyond the rails that return money (${Object.keys(RETURN_MONEY_RAILS).join(", ")})`);
+      const order = railOrderProblem(ids);
+      check(order === null, order ?? "");
+      if (ids.includes("hedera")) ctx.note(`hedera: ${RETURN_MONEY_RAILS.hedera} (evidence: #321 on main c6f3a21)`);
     });
 
     await ctx.step("every endpoint a screen calls answers 200, open to the console", async () => {

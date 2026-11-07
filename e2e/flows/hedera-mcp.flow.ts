@@ -21,6 +21,7 @@ import { mirrorTransaction, mirrorTxId, netToken, topicMessage } from "../lib/he
 
 /** The seller identity that serves the Agent Kit offer on production (cs-hd, #42). */
 export const MCP_SELLER = (process.env.E2E_MCP_SELLER ?? "0xE4eBF122a912BeF5FeC9C56e003FD4Af2CBDB5fE").toLowerCase();
+export const MCP_OFFER = (process.env.E2E_MCP_OFFER ?? "0xc0ceb0a067fdb0cfbb169c3ac6b9c4d91b681726f9abe66ad63556b0aeb4443a").toLowerCase();
 export const MAX_PRICE = 50_000n;
 const PACKAGE = { package: "@hashgraph/hedera-agent-kit-mcp", version: "1.2.0" };
 const TOOL = "transfer_hbar_tool";
@@ -39,7 +40,6 @@ export const hederaMcp: Flow = {
   title: "Hedera Agent Kit MCP call paid through the public hub",
   owner: "cs-hd",
   network: "hedera",
-  notRun: () => "retired: plain x402 Hedera was removed from production by flag (project lead, 23:40 IST): it debits before the seller runs and cannot be reversed. Its Agent Kit offer is paid held in flow 21",
   spends(env) {
     const w = wallets(env.secrets);
     return [
@@ -60,8 +60,8 @@ export const hederaMcp: Flow = {
       const res = await ctx.http("public offers", `${base}/offers`);
       equal(res.status, 200, "offers status");
       const offers = (res.json as { offers?: { offerHash: string; offer: Offer; online: boolean; status: string }[] }).offers ?? [];
-      const l = offers.find((x) => x.online && x.status === "listed" && x.offer.adapter === "mcp" && x.offer.seller.toLowerCase() === MCP_SELLER && x.offer.rails.includes("hedera"));
-      check(l, `the public hub has no online MCP offer from ${MCP_SELLER} on Hedera (it lists ${offers.length})`);
+      const l = offers.find((x) => x.online && x.status === "listed" && x.offer.adapter === "mcp" && x.offer.seller.toLowerCase() === MCP_SELLER && x.offer.rails.includes("hedera") && x.offerHash.toLowerCase() === MCP_OFFER);
+      check(l, `the public hub does not list the pinned Agent Kit offer ${MCP_OFFER.slice(0, 10)} online from ${MCP_SELLER} on Hedera (it lists ${offers.length})`);
       check(BigInt(l.offer.price) <= MAX_PRICE, `the MCP offer costs ${l.offer.price}, above the suite's 0.05 USDC`);
       sameHex(canonicalHash(l.offer), l.offerHash, "the offer hashes to its offerHash");
       ctx.note(`paid MCP offer ${l.offerHash.slice(0, 10)} (${l.offer.title}) to ${l.offer.payTo?.hedera}`);
@@ -134,6 +134,15 @@ export const hederaMcp: Flow = {
       const v = await verifyCli(ctx, "mcp", path, ARC.rpc);
       equal(v.verdict, "VALID", `verdict (${v.lines.join(" | ")})`);
       return { slip, path };
+    });
+
+    await ctx.step("the payment settled only after delivery (#321)", async () => {
+      const t = await mirrorTransaction(paid.tx);
+      const consensus = Number(t.consensusTimestamp);
+      const delivered = Number(record.slip.body.deliveredAt);
+      check(Number.isFinite(consensus) && Number.isFinite(delivered), `consensus ${t.consensusTimestamp}, deliveredAt ${record.slip.body.deliveredAt}`);
+      check(consensus > delivered, `the payment reached consensus at ${t.consensusTimestamp}, not after the slip's deliveredAt ${delivered}`);
+      ctx.note(`settled after delivery: consensus ${t.consensusTimestamp} > deliveredAt ${delivered}`);
     });
 
     await ctx.step("the tool's record matches the slip", async () => {

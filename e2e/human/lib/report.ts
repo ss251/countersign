@@ -23,7 +23,7 @@ export const ARTIFACTS_DIR = join(HUMAN_DIR, "artifacts");
 export const RUNS_DIR = join(HUMAN_DIR, "runs");
 export const TEST_RESULTS_DIR = join(HUMAN_DIR, "test-results");
 
-export const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
+export const DEFAULT_CONSOLE = "https://counter-sign.up.railway.app";
 export const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
 
 export function consoleUrl(): string {
