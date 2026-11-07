@@ -1,3 +1,4 @@
+import { NetworkName } from "./NetworkMark.tsx";
 import { formatDuration, formatMoney, networkName, shortHex, usd } from "../lib/format.ts";
 import type { PendingPurchase } from "../lib/purchase.ts";
 import { Amount, Button, Hash } from "./primitives.tsx";
@@ -50,7 +51,7 @@ export function SignReview({
         <div>
           <dt>Chain</dt>
           <dd>
-            {networkName(`eip155:${a.chainId}`)} <span className="mono">(chain {a.chainId})</span>
+            <NetworkName name={networkName(`eip155:${a.chainId}`)} /> <span className="mono">(chain {a.chainId})</span>
           </dd>
         </div>
         <div>
