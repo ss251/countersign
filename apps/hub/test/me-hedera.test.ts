@@ -462,6 +462,78 @@ describe("POST /me/hedera/buy", () => {
     expect(((await response.json()) as ErrorBody).code).toBe("bad-origin");
   });
 
+  test("refuses an origin that only resembles an allowed one", async () => {
+    const hub = startHub();
+    for (const origin of [
+      "https://counter-sign.up.railway.app.evil.example",
+      "https://evil.example",
+      "http://counter-sign.up.railway.app",
+    ]) {
+      const response = await buy(
+        hub,
+        { offerHash: OFFER_HASH, input: { q: "hello" } },
+        "alice",
+        { origin },
+      );
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as ErrorBody).code).toBe("bad-origin");
+    }
+  });
+
+  test("accepts the new and old console origins", async () => {
+    const hub = startHub();
+    const hash = await publishOffer(hub);
+    await me(hub);
+    await connect(hub, hash);
+
+    for (const origin of [
+      "https://counter-sign.up.railway.app",
+      "https://web-production-a58de.up.railway.app",
+      "https://console.test",
+    ]) {
+      const response = await buy(
+        hub,
+        { offerHash: hash, input: { q: "hello" } },
+        "alice",
+        { origin },
+      );
+      expect(response.status).toBe(200);
+    }
+  });
+
+  test("CONSOLE_ORIGINS extends the allowlist with https origins only", async () => {
+    const previous = process.env.CONSOLE_ORIGINS;
+    process.env.CONSOLE_ORIGINS = "https://extra.test, http://plain.test, not-a-url";
+    try {
+      const hub = startHub();
+      const hash = await publishOffer(hub);
+      await me(hub);
+      await connect(hub, hash);
+
+      const accepted = await buy(
+        hub,
+        { offerHash: hash, input: { q: "hello" } },
+        "alice",
+        { origin: "https://extra.test" },
+      );
+      expect(accepted.status).toBe(200);
+
+      for (const origin of ["http://plain.test", "not-a-url"]) {
+        const refused = await buy(
+          hub,
+          { offerHash: hash, input: { q: "hello" } },
+          "alice",
+          { origin },
+        );
+        expect(refused.status).toBe(403);
+        expect(((await refused.json()) as ErrorBody).code).toBe("bad-origin");
+      }
+    } finally {
+      if (previous === undefined) delete process.env.CONSOLE_ORIGINS;
+      else process.env.CONSOLE_ORIGINS = previous;
+    }
+  });
+
   test("builds, validates, signs, delivers and settles the purchase", async () => {
     const hub = startHub();
     const hash = await publishOffer(hub);
@@ -474,7 +546,7 @@ describe("POST /me/hedera/buy", () => {
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
-      steps: Array<{ title: string; at: string; url?: string }>;
+      steps: Array<{ label: string; at: string; url?: string }>;
       slipHash: Hex;
       hashscanUrl: string;
       output: unknown;
@@ -485,15 +557,23 @@ describe("POST /me/hedera/buy", () => {
     expect(body.hashscanUrl).toBe(url);
     expect(body.output).toEqual({ q: "hello" });
     expect(body.steps).toEqual([
-      { title: "Payment signed by your Hedera wallet", at: iso(hub.now()) },
-      { title: "Seller delivered", at: iso(slip!.body.deliveredAt) },
+      { label: "Payment signed by your Hedera wallet", at: iso(hub.now()) },
+      { label: "Seller delivered", at: iso(slip!.body.deliveredAt) },
       {
-        title: "Output checked before any money moved",
+        label: "Output checked before any money moved",
         at: iso(slip!.body.deliveredAt),
       },
-      { title: "Settled on Hedera", at: iso(Number(CONSENSUS.split(".")[0])), url },
-      { title: "Slip minted", at: iso(hub.now()), url: `/verify?slip=${body.slipHash}` },
+      { label: "Settled on Hedera", at: iso(Number(CONSENSUS.split(".")[0])), url },
+      { label: "Slip minted", at: iso(hub.now()), url: `/verify?slip=${body.slipHash}` },
     ]);
+    expect(body.steps.map((step) => step.label)).toEqual([
+      "Payment signed by your Hedera wallet",
+      "Seller delivered",
+      "Output checked before any money moved",
+      "Settled on Hedera",
+      "Slip minted",
+    ]);
+    for (const step of body.steps) expect("title" in step).toBe(false);
 
     expect(hub.rail.settleCalls).toHaveLength(1);
     const payment = hub.rail.settleCalls[0]!.payment;
