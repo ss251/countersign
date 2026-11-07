@@ -27,10 +27,7 @@ type LoginPoll =
 
 const EXPIRED = "The login expired. Run countersign login again.\n";
 /** The consoles whose approval page login opens by itself. Any other link is printed, never opened. */
-export const CONSOLE_ORIGINS: readonly string[] = [
-  "https://counter-sign.up.railway.app",
-  "https://web-production-a58de.up.railway.app",
-];
+export const CONSOLE_ORIGINS: readonly string[] = ["https://counter-sign.up.railway.app"];
 const UNSAFE_URL_CHARACTERS = /[&|^<>"%`;\s]/;
 const HUB_REFUSED = "Refused: the countersign hub must be https.";
 
