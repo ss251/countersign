@@ -81,7 +81,7 @@ bun run web:build     # when apps/web changes
   ```
 
 - Use a fresh testnet wallet per chain for this project only.
-- Never put a private key in argv or a log. The CLIs read keys from the environment (`CS_BUYER_KEY`, `CS_SELLER_KEY`, `CS_RELAYER_KEY`) and print only addresses and transaction ids.
+- Never put a key in argv or a log. The CLIs print only addresses and transaction ids.
 
 ## Where things live
 

@@ -4,11 +4,13 @@ How to let an agent pay for calls through a countersign hub, inside limits you s
 
 ## What you need
 
-- [bun](https://bun.sh) 1.3 and a clone of this repository, with `bun install --frozen-lockfile` run.
-- An agent key, as `CS_BUYER_KEY`. It signs payments and never leaves your machine. Fund it with testnet USDC for the rail you will use:
+- Node 20 or later, and the published CLI, run with `npx -y @countersign-hub/cli`.
+- A signed-in agent wallet. `npx -y @countersign-hub/cli login` gives your agent a Privy server wallet that the countersign app controls, so no key is on your machine ([onboarding.md](../onboarding.md)). Fund the address it prints with testnet USDC for the rail you will use:
   - Arc: [faucet.circle.com](https://faucet.circle.com);
-  - Hedera: [hedera.md](../hedera.md#setup).
-- The URL of a hub. Every command takes `--hub <url>`; the default is `http://127.0.0.1:8787`.
+  - Whitechain: test USDT only, since the relayer pays the gas ([whitechain.md](../whitechain.md#getting-test-funds)).
+
+  The login wallet is an EVM wallet. A Hedera wallet under the same login is not built yet; the Hedera agent in [hedera.md](../hedera.md#setup) runs from a clone.
+- The URL of a hub. Every command takes `--hub <url>`; the default is the production hub, `https://hub-production-e85e.up.railway.app`.
 
 The agent keeps its state in `~/.countersign`, or in `--state <dir>`:
 
@@ -22,9 +24,8 @@ The agent keeps its state in `~/.countersign`, or in `--state <dir>`:
 The agent signs nothing without an envelope. Amounts are in USDC.
 
 ```sh
-export CS_BUYER_KEY=<a testnet key>
-bun packages/buyer/src/cli.ts envelope set --cap 1 --per-merchant 0.5 --ask-above 0.1
-bun packages/buyer/src/cli.ts envelope show
+npx -y @countersign-hub/cli envelope set --cap 1 --per-merchant 0.5 --ask-above 0.1
+npx -y @countersign-hub/cli envelope show
 ```
 
 | Flag | Effect |
@@ -49,9 +50,9 @@ It then reserves the spend in the journal under a file lock, so two calls at onc
 ## 2. Find an offer
 
 ```sh
-bun packages/buyer/src/cli.ts discover --hub <hub>
-bun packages/buyer/src/cli.ts discover --catalogue <hub>/discovery/resources
-bun packages/buyer/src/cli.ts discover --catalogue circle "web search" --limit 20
+npx -y @countersign-hub/cli discover --hub <hub>
+npx -y @countersign-hub/cli discover --catalogue <hub>/discovery/resources
+npx -y @countersign-hub/cli discover --catalogue circle "web search" --limit 20
 ```
 
 `discover` lists the hub's offers: the first ten characters of the hash, title, price, rails and whether the seller is online. `buy` needs the full hash, from `GET <hub>/offers` or the offer's call URL. `--catalogue` reads any x402 Bazaar list, Circle's included, and marks only the items this agent would pay: those whose escrow or Gateway is pinned. A listing never adds a rail. See [interop.md](../interop.md).
@@ -59,8 +60,8 @@ bun packages/buyer/src/cli.ts discover --catalogue circle "web search" --limit 2
 ## 3. Buy
 
 ```sh
-bun packages/buyer/src/cli.ts buy <offerHash> --input '{"section":"Network details"}' --hub <hub>
-bun packages/buyer/src/cli.ts buy <hub>/offers/<offerHash>/call --input '{}'
+npx -y @countersign-hub/cli buy <offerHash> --input '{"section":"Network details"}' --hub <hub>
+npx -y @countersign-hub/cli buy <hub>/offers/<offerHash>/call --input '{}'
 ```
 
 `--rail <id>` limits the choice to one rail. `--approve` clears an ask-above hold for this call.
@@ -91,8 +92,7 @@ On success it prints the output, the slip hash and the close transaction, and sa
 ## 4. After the call
 
 ```sh
-bun packages/buyer/src/cli.ts journal   # every entry, one JSON line each
-bun packages/buyer/src/cli.ts resume    # close out jobs left open
+npx -y @countersign-hub/cli journal   # every entry, one JSON line each
 ```
 
 `resume` asks the hub about each open job. For a job the hub says was refunded, the spend comes back to your budget only after the escrow's `jobOf` on chain says refunded. The hub's word is not enough.
@@ -100,7 +100,7 @@ bun packages/buyer/src/cli.ts resume    # close out jobs left open
 Verify any slip yourself, without the hub:
 
 ```sh
-bun packages/verify/src/cli.ts ~/.countersign/slips/<slipHash>.json --rpc https://rpc.testnet.arc.network
+npx -y @countersign-hub/cli verify ~/.countersign/slips/<slipHash>.json --rpc https://rpc.testnet.arc.network
 ```
 
 Without `--rpc` it proves who signed what, and prints `skip` for the chain check. With it, it also requires the escrow's `Released` event to carry the slip's hash.
@@ -126,8 +126,8 @@ Only pin an escrow whose deployment you have checked. A pinned rail is a promise
 
 ## What to keep safe
 
-- **The agent key** can spend up to your envelope's limits. The envelope is enforced by the agent's own code, so keep the cap small, and `envelope set --revoke` stops it.
-- **The journal and slips** are your record of what was spent and received. Back them up with the key.
+- **The agent's wallet** can spend up to your envelope's limits. The envelope is enforced by the agent's own code, so keep the cap small, and `envelope set --revoke` stops it.
+- **The journal and slips** are your record of what was spent and received. Back them up.
 
 ## Limits to know
 
