@@ -916,3 +916,51 @@
     filter: none;
   }
 }
+
+/*
+ * "Settles on" (STEER-0713b): one quiet row after the journey, each network's own mark and name linking to
+ * its site. Rajdeep's tokens only; the marks keep their brand colours (netmark.css switches them by theme).
+ */
+.settles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--gutter) 0;
+}
+
+.settles__title {
+  margin: 0;
+}
+
+.settles__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settles__link {
+  color: var(--ink);
+  font-size: var(--t-15);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settles__link:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+}
+
+.settles__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--slate);
+  font-size: var(--t-12);
+}

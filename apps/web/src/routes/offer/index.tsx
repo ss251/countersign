@@ -1,3 +1,4 @@
+import { RailNames } from "../../ui/NetworkMark.tsx";
 import { useState } from "react";
 import type { JsonSchema } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
@@ -96,7 +97,9 @@ export default function OfferPage({ params }: PageProps) {
           <Amount money={usd(offer.price, offer.rails[0])} size="xl" />
           <p className="offer__per">per call</p>
         </div>
-        <p className="offer__rails">Settles on {offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+        <p className="offer__rails">
+          Settles on <RailNames rails={offer.rails} />
+        </p>
         <p className={cx("page__lede offer__summary", !more && offer.summary.length > 220 && "is-clamped")}>{offer.summary}</p>
         {offer.summary.length > 220 ? (
           <button type="button" className="link-button offer__more" aria-expanded={more} onClick={() => setMore((m) => !m)}>
