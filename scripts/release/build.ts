@@ -33,6 +33,7 @@ import {
   type PackageManifest,
 } from "./manifest.ts";
 import { tarballPrefix } from "./published.ts";
+import { scrubBuildPaths } from "./scrub.ts";
 import { withNodeShebang } from "./shebang.ts";
 import {
   completePeerDependencies,
@@ -350,6 +351,15 @@ async function buildPackage(short: string, outRoot: string): Promise<Packed> {
     stageDir,
     entries: bundle,
   });
+
+  for (const file of emitted) {
+    const text = readFileSync(file.path, "utf8");
+    const scrubbed = scrubBuildPaths(text, ROOT);
+    if (scrubbed.count > 0) {
+      writeFileSync(file.path, scrubbed.source);
+      console.log(`${short}: ${file.file}: ${scrubbed.count} bundled build-path constant(s) rewritten`);
+    }
+  }
 
   const imported: ImportedPackage[] = [];
   for (const file of emitted) {
