@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { CLI_DEFAULT_HUB, buyCommand } from "../src/routes/offer/index.tsx";
+import { CLI_DEFAULT_HUB, buyCommand, curlCommand } from "../src/routes/offer/index.tsx";
 
 /**
  * Firstmate 02:06:42Z (the captain found it): the offer page's Copy gave the raw-key dev tool,
@@ -55,4 +55,35 @@ describe("the offer page's buy command (firstmate 02:06:42Z)", () => {
       expect({ file, hits: text.includes("packages/buyer/src/cli.ts buy") }).toEqual({ file, hits: false });
     }
   });
+
+  /** The words bash would see for a pasted command, with the program swapped for printf so nothing runs. */
+  function wordsOf(command: string, program: RegExp): string[] {
+    const args = command.replace(program, "");
+    const out = Bun.spawnSync(["bash", "-c", `printf '%s\\n' ${args}`]);
+    return out.stdout.toString().split("\n").filter((line) => line !== "");
+  }
+
+  test("a hub or hash a link chose cannot become shell syntax in either copied command (cs-audit 02:12:43Z)", () => {
+    for (const evil of ["https://evil.example$(echo PWNED)", "https://evil.example; echo PWNED", "https://evil.example`echo PWNED`"]) {
+      const buy = buyCommand(HASH, SCHEMA, evil);
+      const buyWords = wordsOf(buy, /^npx -y @countersign-hub\/cli /);
+      expect(buyWords).toContain(evil);
+      expect(buyWords).not.toContain("PWNED");
+      const curl = curlCommand(HASH, SCHEMA, evil);
+      const curlWords = wordsOf(curl, /^curl /);
+      expect(curlWords).toContain(`${evil}/offers/${HASH}/call`);
+      expect(curlWords).not.toContain("PWNED");
+    }
+    const badHash = "0xab; echo PWNED";
+    const words = wordsOf(buyCommand(badHash, SCHEMA, CLI_DEFAULT_HUB), /^npx -y @countersign-hub\/cli /);
+    expect(words).toContain(badHash);
+    expect(words).not.toContain("PWNED");
+  });
+
+  test("a plain hub and hash stay bare and readable", () => {
+    expect(buyCommand(HASH, SCHEMA, "http://localhost:8787")).toContain(`buy ${HASH} --input`);
+    expect(buyCommand(HASH, SCHEMA, "http://localhost:8787")).toContain("--hub http://localhost:8787");
+    expect(curlCommand(HASH, SCHEMA, CLI_DEFAULT_HUB)).toContain(`curl -i -X POST ${CLI_DEFAULT_HUB}/offers/${HASH}/call `);
+  });
 });
+

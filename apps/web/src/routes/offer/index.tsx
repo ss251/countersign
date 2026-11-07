@@ -303,13 +303,27 @@ export const CLI_DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
  * The buy command a person copies: the published CLI from npm, signed in with Privy, so no key is on the machine
  * (firstmate 02:06:42Z). --hub only when this console talks to a hub other than the CLI's default.
  */
+/** One shell word that does nothing whatever it holds: single-quoted, each ' closed, escaped and reopened. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * A value as one shell word (cs-audit 02:12:43Z): bare when it is plain URL characters, quoted otherwise. The hub
+ * comes from hubBase(), which a ?hub= link can set, and the hash from the route, so neither may reach a pasted
+ * command as shell syntax.
+ */
+function word(value: string): string {
+  return /^[A-Za-z0-9._:/-]+$/.test(value) ? value : shellQuote(value);
+}
+
 export function buyCommand(offerHash: string, input: JsonSchema, hub: string): string {
   const json = JSON.stringify(exampleInput(input)).replace(/'/g, "'\\''");
   const defaultHub = hub.replace(/\/+$/, "") === CLI_DEFAULT_HUB;
-  return `npx -y @countersign-hub/cli buy ${offerHash} --input '${json}'${defaultHub ? "" : ` --hub ${hub}`}`;
+  return `npx -y @countersign-hub/cli buy ${word(offerHash)} --input '${json}'${defaultHub ? "" : ` --hub ${word(hub)}`}`;
 }
 
 export function curlCommand(offerHash: string, input: JsonSchema, hub: string): string {
   const json = JSON.stringify({ input: exampleInput(input) }).replace(/'/g, "'\\''");
-  return `curl -i -X POST ${hub}/offers/${offerHash}/call -H 'content-type: application/json' -d '${json}'`;
+  return `curl -i -X POST ${word(`${hub}/offers/${offerHash}/call`)} -H 'content-type: application/json' -d '${json}'`;
 }
