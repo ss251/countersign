@@ -16,7 +16,7 @@ import { check, equal, NotRun, type Flow, type FlowCtx } from "../lib/flow.ts";
 import { ROOT } from "../lib/paths.ts";
 import { railOrderProblem, RETURN_MONEY_RAILS, undeclaredRails } from "../lib/rails.ts";
 
-const DEFAULT_CONSOLE = "https://web-production-a58de.up.railway.app";
+const DEFAULT_CONSOLE = "https://counter-sign.up.railway.app";
 
 function consoleUrl(): string {
   return (process.env.E2E_PUBLIC_WEB ?? DEFAULT_CONSOLE).replace(/\/+$/, "");
