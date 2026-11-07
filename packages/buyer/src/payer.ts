@@ -1,4 +1,4 @@
-import type { Hex } from "viem";
+import { keccak256, toBytes, type Hex } from "viem";
 import type { LocalAccount } from "viem/accounts";
 import {
   authorizationTypedData,
@@ -12,7 +12,10 @@ import {
   type PaymentRequirements,
 } from "@countersign/core";
 import { gatewayPayment, TRANSFER_WITH_AUTHORIZATION_TYPES } from "@countersign/rail";
+import { HEDERA_TESTNET, USDC_TESTNET } from "@countersign/rail/hedera";
 import { type Address, getAddress } from "viem";
+import { hederaPayment, type HederaPayer } from "./hedera/signer.ts";
+import { trustedHederaFeePayers } from "./hedera/trust.ts";
 import {
   KNOWN_DIRECTS,
   KNOWN_GATEWAYS,
@@ -168,6 +171,31 @@ export function eip3009Payer(account: LocalAccount, known: KnownDirect[] = KNOWN
     },
   };
 }
+
+/** Pays an x402 `exact` requirement on Hedera testnet, but only from a hedera wallet this agent holds. */
+export function hederaPayer(
+  payer: HederaPayer,
+  opts: { trusted?: () => Promise<Set<string>> } = {},
+): Payer {
+  const trusted = opts.trusted ?? trustedHederaFeePayers;
+  return {
+    canPay(req) {
+      return req.scheme === "exact" && req.network === HEDERA_TESTNET && req.asset === USDC_TESTNET;
+    },
+    async pay(req, ctx) {
+      const feePayer = req.extra?.feePayer;
+      if (typeof feePayer !== "string" || !(await trusted()).has(feePayer)) {
+        throw new Error("Refused. The hub named a fee payer this agent does not trust.");
+      }
+      const { payment, transactionId } = await hederaPayment(payer, req, ctx.resource?.url);
+      // The hub keys a Hedera job by the transfer's transaction id.
+      return { payment, jobId: keccak256(toBytes(transactionId)) };
+    },
+  };
+}
+
+export { hubHederaAccount, hubHederaSigner } from "./hedera/hub-signer.ts";
+export type { HederaAccount, HubSession } from "./hedera/hub-signer.ts";
 
 function randomNonce(): Hex {
   const bytes = crypto.getRandomValues(new Uint8Array(32));

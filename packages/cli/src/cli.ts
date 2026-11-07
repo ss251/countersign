@@ -6,7 +6,7 @@ import { main as runnerMain } from "../../runner/src/cli.ts";
 import { assertHubUrl, runLogin, runLogout, runWhoami } from "./login.ts";
 import { defaultSessionBackend, loadSession, NOT_SIGNED_IN } from "./session.ts";
 
-export const VERSION = "0.1.2";
+export const VERSION = "0.1.3";
 
 export const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
 
