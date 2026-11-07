@@ -62,6 +62,30 @@ export interface HubDeps {
 
 const PAYMENT_HEADERS = ["PAYMENT-REQUIRED", "PAYMENT-SIGNATURE", "PAYMENT-RESPONSE"];
 
+/** The origins the console serves from, whatever CONSOLE_URL names today. */
+const CONSOLE_ORIGINS = [
+  "https://counter-sign.up.railway.app",
+  "https://web-production-a58de.up.railway.app",
+] as const;
+
+function consoleOrigins(consoleUrl: string, extra: string | undefined): readonly string[] {
+  const origins = new Set<string>();
+  const add = (value: string): void => {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:") origins.add(url.origin);
+    } catch {
+      // Not a URL, so not an origin any browser sends.
+    }
+  };
+  add(consoleUrl);
+  for (const origin of CONSOLE_ORIGINS) add(origin);
+  for (const entry of (extra ?? "").split(",")) {
+    if (entry.trim() !== "") add(entry.trim());
+  }
+  return [...origins];
+}
+
 export function createHub(deps: HubDeps) {
   const app = new Hono();
   const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -99,7 +123,7 @@ export function createHub(deps: HubDeps) {
       hubStore: deps.store,
       wallets: deps.cliAuth.wallets,
       privy: deps.privy,
-      consoleUrl: deps.cliAuth.consoleUrl,
+      consoleOrigins: consoleOrigins(deps.cliAuth.consoleUrl, process.env.CONSOLE_ORIGINS),
       now: deps.now,
       hedera: deps.cliAuth.hedera,
       rails: deps.rails,

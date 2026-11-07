@@ -43,7 +43,7 @@ export interface MeHederaDeps {
   hubStore: Store;
   wallets: WalletApi;
   privy?: PrivyVerifier;
-  consoleUrl: string;
+  consoleOrigins: readonly string[];
   now: () => number;
   hedera: CliHederaDeps;
   rails: Rail[];
@@ -87,7 +87,7 @@ async function buy(c: Context, deps: MeHederaDeps, running: Set<string>): Promis
   if (person instanceof Response) return person;
 
   const origin = c.req.header("origin");
-  if (origin !== undefined && origin !== deps.consoleUrl) {
+  if (origin !== undefined && !deps.consoleOrigins.includes(origin)) {
     return fail(403, "bad-origin", "Refused. This request came from another origin.");
   }
 
@@ -193,11 +193,11 @@ async function buyLocked(
   const url = slip.settlement.url ?? "";
   return json({
     steps: [
-      { title: "Payment signed by your Hedera wallet", at: iso(signedAt) },
-      { title: "Seller delivered", at: iso(slip.body.deliveredAt) },
-      { title: "Output checked before any money moved", at: iso(slip.body.deliveredAt) },
-      { title: "Settled on Hedera", at: settledAt, url },
-      { title: "Slip minted", at: iso(returnedAt), url: `/verify?slip=${slip.hash}` },
+      { label: "Payment signed by your Hedera wallet", at: iso(signedAt) },
+      { label: "Seller delivered", at: iso(slip.body.deliveredAt) },
+      { label: "Output checked before any money moved", at: iso(slip.body.deliveredAt) },
+      { label: "Settled on Hedera", at: settledAt, url },
+      { label: "Slip minted", at: iso(returnedAt), url: `/verify?slip=${slip.hash}` },
     ],
     slipHash: slip.hash,
     hashscanUrl: url,
