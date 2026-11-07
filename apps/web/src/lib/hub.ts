@@ -172,19 +172,40 @@ export function forgetChoices(): void {
   }
 }
 
-/** The human's approval token, kept on this device only and sent only to this hub. */
+/**
+ * The human's approval token, kept on this device only, with the hub it was saved on (cs-audit 01:14:58Z).
+ * It is handed out only while this page talks to that hub, so a link that chose another hub (?hub=) never
+ * carries it there: not on a read, and not with a decision. A token saved before the hub was recorded
+ * belongs to the hub this console was built for.
+ */
 const TOKEN_KEY = "countersign.approval-token";
+const TOKEN_HUB_KEY = "countersign.approval-token-hub";
+
+function sameHub(a: string | null | undefined, b: string | null): boolean {
+  if (typeof a !== "string" || a.length === 0 || b === null) return false;
+  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+}
+
 export function approvalToken(): string | null {
   try {
-    return window.localStorage.getItem(TOKEN_KEY);
+    const token = window.localStorage.getItem(TOKEN_KEY);
+    if (token === null) return null;
+    const savedOn = window.localStorage.getItem(TOKEN_HUB_KEY) ?? import.meta.env.VITE_HUB_URL;
+    return sameHub(savedOn, hubBase()) ? token : null;
   } catch {
     return null;
   }
 }
 export function rememberApprovalToken(token: string | null): void {
   try {
-    if (token) window.localStorage.setItem(TOKEN_KEY, token);
-    else window.localStorage.removeItem(TOKEN_KEY);
+    const base = hubBase();
+    if (token && base) {
+      window.localStorage.setItem(TOKEN_KEY, token);
+      window.localStorage.setItem(TOKEN_HUB_KEY, base);
+    } else {
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem(TOKEN_HUB_KEY);
+    }
   } catch {
     // Private mode: the token lives for this page only.
   }
