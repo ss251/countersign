@@ -2,7 +2,14 @@
 // itself, refuses anything that is not exactly the hub's own challenge, and only then signs every
 // node body through a callback that receives body bytes, never a client-supplied hash.
 import { proto } from "@hiero-ledger/proto";
-import { PublicKey, Transaction, TransferTransaction } from "@hiero-ledger/sdk";
+import {
+  AccountId,
+  PublicKey,
+  TokenId,
+  Transaction,
+  TransactionId,
+  TransferTransaction,
+} from "@hiero-ledger/sdk";
 import { USDC_DECIMALS } from "./constants.ts";
 import { offerMemo } from "./memo.ts";
 
@@ -231,6 +238,35 @@ export function validatePrivyTransfer(
   if (expected.amount > expected.cap) return refuse("over-cap");
 
   return { ok: true, tx: tx as TransferTransaction };
+}
+
+export interface ExactTransfer {
+  /** The buyer's Hedera account: the only account allowed to be debited. */
+  from: string;
+  payTo: string;
+  asset: string;
+  amount: bigint;
+  /** The facilitator account that pays the network fee and names the transaction id. */
+  feePayer: string;
+  offerHash: string;
+  validSeconds: number;
+  /** One node account, 0.0.3 to 0.0.7. */
+  node: string;
+}
+
+/** Build the unsigned `exact` transfer the hub validates and signs. Base64, as the payment carries it. */
+export function buildExactTransfer(transfer: ExactTransfer): string {
+  const token = TokenId.fromString(transfer.asset);
+  const amount = transfer.amount;
+  const tx = new TransferTransaction()
+    .addTokenTransfer(token, AccountId.fromString(transfer.from), -amount)
+    .addTokenTransfer(token, AccountId.fromString(transfer.payTo), amount)
+    .setTransactionMemo(offerMemo(transfer.offerHash))
+    .setTransactionId(TransactionId.generate(AccountId.fromString(transfer.feePayer)))
+    .setTransactionValidDuration(transfer.validSeconds)
+    .setNodeAccountIds([AccountId.fromString(transfer.node)]);
+  tx.freeze();
+  return Buffer.from(tx.toBytes()).toString("base64");
 }
 
 export interface PrivyTransferSigner {
