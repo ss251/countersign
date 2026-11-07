@@ -28,7 +28,7 @@ npx -y @countersign-hub/cli login
 - The CLI prints your agent wallet's address. `whoami` prints it again, and `logout` ends the session. A session lasts at most 7 days.
 - Fund that address with test USDC: at https://faucet.circle.com choose Arc Testnet and USDC, or send some from your own wallet. On Arc the hub pays the gas, so USDC is all the agent needs.
 
-Set the agent's limits. The hub signs nothing for your agent outside them:
+Set the agent's limits. The CLI and the MCP server check them before they ask the hub to sign, and the hub itself caps each payment at 1 USDC (1 USDT on Whitechain):
 
 ```sh
 npx -y @countersign-hub/cli envelope set --cap 0.5 --per-merchant 0.1 --ask-above 0.05
