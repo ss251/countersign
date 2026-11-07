@@ -1,3 +1,4 @@
+import { stepSheet } from "./sheet-step.ts";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { Link } from "../../app/router.tsx";
 import type { Order, ReceiptOrder, Refusal, RefundReason } from "./model.ts";
@@ -554,6 +555,9 @@ export function Sheet({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [closing, setClosing] = useState(false);
+  // Not modal while locked, so a wallet prompt outside the sheet takes clicks (cs-e2e 02:21:26Z).
+  const [stepped, setStepped] = useState(false);
+  const [swapped, setSwapped] = useState(false);
   const closedRef = useRef(false);
   const fallbackRef = useRef<number | undefined>(undefined);
 
@@ -570,6 +574,15 @@ export function Sheet({
       if (dialog.open) dialog.close();
     };
   }, []);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    const did = stepSheet(dialog, locked);
+    if (did === null) return;
+    setStepped(did === "non-modal");
+    setSwapped(true);
+  }, [locked]);
 
   const finish = () => {
     if (closedRef.current) return;
@@ -590,10 +603,14 @@ export function Sheet({
   };
 
   return (
+    <>
+      {stepped ? <div className="mx-sheet__veil" aria-hidden="true" data-testid="mx-sheet-veil" /> : null}
     <dialog
       ref={ref}
       className="mx-sheet"
       data-closing={closing ? "" : undefined}
+      data-stepped={stepped ? "" : undefined}
+      data-swapped={swapped ? "" : undefined}
       aria-label={label}
       onCancel={(event) => {
         event.preventDefault();
@@ -609,5 +626,6 @@ export function Sheet({
     >
       <div className="mx-sheet__body">{children}</div>
     </dialog>
+    </>
   );
 }
