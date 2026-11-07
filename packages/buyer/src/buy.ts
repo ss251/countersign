@@ -23,6 +23,7 @@ import { requestApproval, type ApprovalOutcome } from "./approvals.ts";
 import { KNOWN_DIRECTS, KNOWN_RAILS, knownDirectFor, type KnownRail } from "./known-rails.ts";
 import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { Payer } from "./payer.ts";
+import { isRemoteAccount } from "./remote-signer.ts";
 import type { State } from "./state.ts";
 import { checkDirectTerms, checkGatewayTerms, checkTerms } from "./terms.ts";
 
@@ -61,12 +62,22 @@ export interface BuyArgs {
 
 type Chosen = { kind: "countersign"; rail: KnownRail } | { kind: "gateway" } | { kind: "eip3009" };
 
+/**
+ * Whether to publish the envelope mirror after a buy. A session account cannot personal_sign, so an ordinary
+ * mirror is skipped for it; a forced mirror (one the flow depends on) still runs and refuses loudly.
+ */
+export function shouldMirror(opts: { mirror?: boolean; force?: boolean; agent?: object }): boolean {
+  if (!opts.agent) return false;
+  if (opts.force === true) return true;
+  return opts.mirror === true && !isRemoteAccount(opts.agent);
+}
+
 export async function buy(a: BuyArgs): Promise<CallResult> {
   const { hub, offerHash, input, journal, envelope } = a;
   const agent: SigningAccount | undefined =
     a.account ?? a.payers.find((payer) => payer.account !== undefined)?.account;
   const publishMirror = async (force = false): Promise<void> => {
-    if ((!a.mirror && !force) || !agent) return;
+    if (!agent || !shouldMirror({ mirror: a.mirror, force, agent })) return;
     await publishEnvelope({
       hub,
       account: agent,

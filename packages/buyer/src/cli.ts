@@ -15,7 +15,7 @@ import { publishEnvelope } from "./mirror.ts";
 import { startOpenAIServer } from "./openai/server.ts";
 import { countersignPayer, eip3009Payer, gatewayPayer } from "./payer.ts";
 import { priceLabel } from "./price-label.ts";
-import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv } from "./remote-signer.ts";
+import { isRemoteAccount, NOT_SIGNED_IN, remoteAccount, sessionFromEnv } from "./remote-signer.ts";
 import { resume } from "./resume.ts";
 import { acceptJob, disputeJob } from "./review.ts";
 import { State } from "./state.ts";
@@ -207,9 +207,11 @@ async function main(): Promise<void> {
     console.log(`${server.url}/v1`);
     console.log(tokenPath);
   } else if (cmd === "resume") {
-    const mirror = flags.has("hub")
-      ? { account: await agentAccount(), envelope: state.loadEnvelope() }
-      : undefined;
+    const mirrorAccount = flags.has("hub") ? await agentAccount() : undefined;
+    const mirror =
+      mirrorAccount !== undefined && !isRemoteAccount(mirrorAccount)
+        ? { account: mirrorAccount, envelope: state.loadEnvelope() }
+        : undefined;
     const rows = await resume({
       hub,
       journal,
