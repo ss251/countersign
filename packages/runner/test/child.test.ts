@@ -31,8 +31,8 @@ describe("runInChild", () => {
       { question: "hello" },
       { timeMs: 5000, maxOutputBytes: 100_000 },
     );
-    expect(output).toMatchObject({ skill: "test-skill" });
-    expect(typeof (output as { answer?: unknown }).answer).toBe("string");
+    expect(output).toMatchObject({ name: "test-skill" });
+    expect(typeof (output as { text?: unknown }).text).toBe("string");
   });
 
   test("rejects when the time ceiling is passed", async () => {
