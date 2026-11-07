@@ -78,20 +78,20 @@ export function AgentSetup({ initial = "claude" }: { initial?: ClientId }): JSX.
           <ol className="agents__steps">
             <li className="agents__step">
               <h3 className="agents__step-title">Sign in once</h3>
-              <Block snippet={{ where: "Terminal", lang: "sh", text: LOGIN }} copy={`${client.name} login`} />
+              <Block snippet={{ where: "Terminal", lang: "sh", text: LOGIN }} copy="the login command" />
               <p className="agents__note">{LOGIN_NOTE}</p>
               <p className="agents__note">{LIMITS_NOTE}</p>
-              <Block snippet={{ where: "Terminal", lang: "sh", text: LIMITS }} copy={`${client.name} limits`} />
+              <Block snippet={{ where: "Terminal", lang: "sh", text: LIMITS }} copy="the limits command" />
             </li>
             <li className="agents__step">
               <h3 className="agents__step-title">Add the MCP server</h3>
               {client.mcp.map((snippet) => (
-                <Block key={snippet.where} snippet={snippet} copy={`${client.name} ${snippet.where}`} />
+                <Block key={snippet.where} snippet={snippet} copy={copyLabel(snippet)} />
               ))}
             </li>
             <li className="agents__step">
               <h3 className="agents__step-title">Give your agent the rules</h3>
-              <Block snippet={client.rules} copy={`${client.name} ${client.rules.where}`} />
+              <Block snippet={client.rules} copy={copyLabel(client.rules)} />
             </li>
           </ol>
         </div>
@@ -102,6 +102,11 @@ export function AgentSetup({ initial = "claude" }: { initial?: ClientId }): JSX.
       </p>
     </section>
   );
+}
+
+/** "Copy the Claude Code command", "Copy .cursor/mcp.json": only the open panel is in the accessibility tree. */
+function copyLabel(snippet: Snippet): string {
+  return snippet.lang === "sh" ? `the ${snippet.where} command` : snippet.where;
 }
 
 function Block({ snippet, copy }: { snippet: Snippet; copy: string }) {

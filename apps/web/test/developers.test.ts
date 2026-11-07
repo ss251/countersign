@@ -277,6 +277,9 @@ describe("Use it from your agent (STEER-0625)", () => {
       for (const s of [...client.mcp, client.rules]) expect(plain(part)).toContain(s.where);
     }
     expect(CLIENTS.map((c) => c.rules.where)).toEqual(["CLAUDE.md", ".cursor/rules/countersign.mdc", "AGENTS.md"]);
+    for (const label of ["the login command", "the Claude Code command", "Claude Desktop: claude_desktop_config.json", ".cursor/mcp.json", "the Codex CLI command", "~/.codex/config.toml", "AGENTS.md"]) {
+      expect(html).toContain(`aria-label="Copy ${label}"`);
+    }
   });
 
   test("every config starts the published server exactly as the guide's own MCP config does", async () => {

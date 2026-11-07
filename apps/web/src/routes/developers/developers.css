@@ -124,8 +124,15 @@
 }
 
 .agents__where {
+  min-width: 0;
   color: var(--slate);
   font-size: var(--t-12);
+  overflow-wrap: anywhere;
+}
+
+/* The rules are prose for an agent, so they wrap to the box; commands and configs still scroll, never break. */
+.agents .command[data-lang="md"] .command__body {
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
