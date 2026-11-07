@@ -24,7 +24,7 @@ Sign in once:
 npx -y @countersign-hub/cli login
 ```
 
-- It opens a page on the console. Sign in with Privy, by email or a passkey. Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
+- It prints a link to a page on the console, and opens it in your browser when it can. Open the link if it does not open. Sign in with Privy, by email or a passkey. Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
 - The CLI prints your agent wallet's address. `whoami` prints it again, and `logout` ends the session. A session lasts at most 7 days.
 - Fund that address with test USDC: at https://faucet.circle.com choose Arc Testnet and USDC, or send some from your own wallet. On Arc the hub pays the gas, so USDC is all the agent needs.
 
