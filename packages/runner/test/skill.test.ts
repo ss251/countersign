@@ -54,17 +54,47 @@ describe("readSkill", () => {
 describe("runSkill", () => {
   test("returns only the requested section", async () => {
     const skill = await readSkill(FIXTURE);
-    const output = runSkill(skill, { section: "greeting" });
+    const output = await runSkill(skill, { section: "greeting" });
     expect(output.name).toBe("test-skill");
-    expect(output.sha256).toBe(skill.sha256);
     expect(output.text).toContain("## Greeting");
     expect(output.text).toContain("### Detail");
     expect(output.text).not.toContain("## Farewell");
+    expect(output.sha256).toBe(skill.sha256);
+  });
+
+  test("answers a question with the matching sections, never the whole file", async () => {
+    const skill = await readSkill(FIXTURE);
+    const output = await runSkill(skill, { question: "how do I say hello to someone" });
+    expect(output.text.length).toBeGreaterThan(0);
+    expect(output.text.length).toBeLessThan(skill.body.length);
+    expect(output.text.toLowerCase()).toContain("hello");
+    expect(output.text).not.toContain("## Farewell");
+  });
+
+  test("with no question and no section, returns the description and a table of contents", async () => {
+    const skill = await readSkill(FIXTURE);
+    const output = await runSkill(skill, {});
+    expect(output.text).toBe(skill.description);
+  });
+
+  test("a question with a model credential is answered by the model, not by the file", async () => {
+    const skill = await readSkill(FIXTURE);
+    let seen: { url: string; body: any } | undefined;
+    const fetchImpl = (async (url: any, init: any) => {
+      seen = { url: String(url), body: JSON.parse(String(init.body)) };
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Hello there." } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const output = await runSkill(skill, { question: "how do I greet someone" }, {
+      apiKey: "test", baseUrl: "https://example.test", model: "test-model", fetchImpl,
+    });
+    expect(output.text).toBe("Hello there.");
+    expect(seen?.url).toBe("https://example.test/chat/completions");
+    expect(seen?.body.messages[0].content).toContain("Test Skill");
   });
 
   test("throws for an unknown section", async () => {
     const skill = await readSkill(FIXTURE);
-    expect(() => runSkill(skill, { section: "nope" })).toThrow();
+    await expect(runSkill(skill, { section: "nope" })).rejects.toThrow();
   });
 });
 

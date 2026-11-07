@@ -7,7 +7,7 @@
 import type { ChildSpec, SkillSpec } from "./child.ts";
 import { runMcp, type McpSpec, type McpServerRef } from "./mcp.ts";
 import { runOpenApi, type OpenApiSpec } from "./openapi.ts";
-import { readSkill, runSkill, type SkillInput } from "./skill.ts";
+import { readSkill, runSkill, type SkillInput, type SkillModel } from "./skill.ts";
 
 interface ChildRequest {
   spec: ChildSpec;
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const spec = request.spec;
   const output =
     spec.adapter === "skill"
-      ? runSkill(await readSkill(spec.skillPath), asSkillInput(request.input))
+      ? await runSkill(await readSkill(spec.skillPath), asSkillInput(request.input), skillModelFromEnv())
       : spec.adapter === "mcp"
         ? await runMcp(spec, request.input)
         : await runOpenApi(spec, request.input);
@@ -99,6 +99,17 @@ function parseServer(value: unknown): McpServerRef | undefined {
     throw new Error("The child request is malformed.");
   }
   return { package: value.package, version: value.version };
+}
+
+/** The seller's own model credential, passed only for skill jobs; absent means retrieval only. */
+function skillModelFromEnv(): SkillModel | undefined {
+  const apiKey = process.env.SKILL_MODEL_API_KEY;
+  if (apiKey === undefined || apiKey === "") return undefined;
+  return {
+    apiKey,
+    baseUrl: process.env.SKILL_MODEL_BASE_URL ?? "https://api.deepseek.com",
+    model: process.env.SKILL_MODEL ?? "deepseek-chat",
+  };
 }
 
 function asSkillInput(value: unknown): SkillInput {
