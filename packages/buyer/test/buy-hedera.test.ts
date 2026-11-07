@@ -9,10 +9,13 @@ import type { Hex } from "viem";
 import {
   PAYMENT_SIGNATURE_HEADER,
   canonicalHash,
+  checkCountersign,
   fromBase64Json,
   slipBodyFor,
   slipHash,
   slipTypedData,
+  type CountersignExtra,
+  type CountersignPayload,
   type Envelope,
   type Offer,
   type PaymentPayload,
@@ -21,8 +24,9 @@ import {
 import { HEDERA_TESTNET, USDC_TESTNET } from "@countersign/rail/hedera";
 import { HubClient } from "../src/hub-client.ts";
 import { Journal } from "../src/journal.ts";
-import { hubHederaSigner } from "../src/hedera/hub-signer.ts";
-import { hederaPayer } from "../src/payer.ts";
+import { hubHederaAccountReadOnly, hubHederaSigner } from "../src/hedera/hub-signer.ts";
+import { countersignPayer, hederaPayer } from "../src/payer.ts";
+import type { KnownRail } from "../src/known-rails.ts";
 import { State } from "../src/state.ts";
 import { buy } from "../src/buy.ts";
 
@@ -73,12 +77,124 @@ const scheduled: PaymentRequirements = {
   extra: { name: "hedera-scheduled", offerHash, holdSeconds: 300 },
 };
 
+const ARC_TOKEN = "0x3600000000000000000000000000000000000000";
+const ARC_ESCROW = "0x4444444444444444444444444444444444444444";
+const ARC_RAIL: KnownRail = {
+  network: "eip155:5042002",
+  scheme: "countersign",
+  chainId: 5042002,
+  escrow: ARC_ESCROW,
+  token: ARC_TOKEN,
+  tokenName: "USDC",
+  tokenVersion: "2",
+  rpcUrl: "https://rpc.testnet.arc.network",
+};
+
+const arcOffer: Offer = {
+  v: 1,
+  seller: seller.address,
+  title: "Echo on Arc",
+  summary: "echoes",
+  adapter: "skill",
+  input: { type: "object", required: ["q"], properties: { q: { type: "string" } } },
+  output: { type: "object", required: ["a"], properties: { a: { type: "string" } } },
+  price: PRICE,
+  deadline: 120,
+  bond: "0",
+  rails: ["escrow"],
+  issuedAt: 1,
+};
+const arcOfferHash = canonicalHash(arcOffer);
+const arcExtra: CountersignExtra = {
+  rail: "escrow",
+  escrow: ARC_ESCROW,
+  chainId: 5042002,
+  offerHash: arcOfferHash,
+  deadlineSeconds: 120,
+  tokenName: "USDC",
+  tokenVersion: "2",
+};
+const arcEntry: PaymentRequirements = {
+  scheme: "countersign",
+  network: "eip155:5042002",
+  amount: PRICE,
+  asset: ARC_TOKEN,
+  payTo: seller.address,
+  maxTimeoutSeconds: 120,
+  extra: { ...arcExtra },
+};
+
 const counts = { sign: 0, paid: 0 };
+const paths: string[] = [];
+let sessionAccount: string | null = null;
 
 const server = Bun.serve({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
+    paths.push(`${request.method} ${url.pathname}`);
+    if (request.method === "GET" && url.pathname === "/cli/session") {
+      return Response.json({
+        address: seller.address,
+        expiresAt: 4_000_000_000,
+        hedera: sessionAccount === null ? null : { accountId: sessionAccount },
+      });
+    }
+    if (request.method === "POST" && url.pathname === "/cli/hedera/account") {
+      return Response.json({ accountId: ACCOUNT });
+    }
+    if (request.method === "GET" && url.pathname === `/offers/${arcOfferHash}`) {
+      return Response.json({ offerHash: arcOfferHash, offer: arcOffer, online: true, status: "listed" });
+    }
+    if (request.method === "POST" && url.pathname === `/offers/${arcOfferHash}/call`) {
+      const body = (await request.json()) as { input: { q: string } };
+      const header = request.headers.get(PAYMENT_SIGNATURE_HEADER);
+      if (!header) {
+        return Response.json({ x402Version: 2, resource: { url: request.url }, accepts: [arcEntry] }, { status: 402 });
+      }
+      counts.paid += 1;
+      const payment = fromBase64Json<PaymentPayload>(header);
+      const payload = payment.payload as unknown as CountersignPayload;
+      const chk = await checkCountersign(payload, {
+        chainId: 5042002,
+        escrow: ARC_ESCROW,
+        token: ARC_TOKEN,
+        tokenName: "USDC",
+        tokenVersion: "2",
+        now: Math.floor(Date.now() / 1000),
+      });
+      if (!chk.ok) return Response.json({ code: "bad-payment", message: chk.message }, { status: 400 });
+      const output = { a: body.input.q };
+      const slipBody = slipBodyFor(
+        {
+          jobId: payload.authorization.nonce,
+          offerHash: arcOfferHash as Hex,
+          input: body.input,
+          rail: "escrow",
+          network: "eip155:5042002",
+          buyer: payload.terms.buyer,
+          payTo: seller.address,
+          asset: ARC_TOKEN,
+          amount: PRICE,
+          deadline: payload.terms.deadline,
+          escrow: ARC_ESCROW,
+          chainId: 5042002,
+          lineage: [],
+        },
+        seller.address,
+        canonicalHash(body.input),
+        canonicalHash(output),
+        Math.floor(Date.now() / 1000),
+      );
+      const slip = {
+        body: slipBody,
+        hash: slipHash(slipBody),
+        sellerSig: await seller.signTypedData(slipTypedData(slipBody)),
+        payment,
+        settlement: { transaction: `0x${"ab".repeat(32)}`, network: "eip155:5042002" },
+      };
+      return Response.json({ output, slip });
+    }
     if (request.method === "GET" && url.pathname === `/offers/${offerHash}`) {
       return Response.json({ offerHash, offer, online: true, status: "listed" });
     }
@@ -196,5 +312,101 @@ describe("buy --rail hedera", () => {
     expect(counts.paid).toBe(1);
     expect(journal.entries().map((entry) => entry.kind)).toEqual(["countersigned", "signed", "settled"]);
     expect(journal.entries()[1]?.rail).toBe("hedera");
+  });
+});
+
+describe("the hedera account is looked up only when a hedera entry pays", () => {
+  const session = { hub: HUB, token: TOKEN };
+  const lazyPayer = () =>
+    hederaPayer(
+      { accountId: () => hubHederaAccountReadOnly(session), key: hubHederaSigner(session) },
+      { trusted: async () => new Set([FEE_PAYER]) },
+    );
+
+  test("an Arc buy with a session never reads or provisions a hedera account", async () => {
+    sessionAccount = ACCOUNT;
+    paths.length = 0;
+    const state = new State(mkdtempSync(join(tmpdir(), "cs-buyer-arc-")));
+    const journal = new Journal(state.journalPath);
+    const account = privateKeyToAccount(generatePrivateKey());
+
+    const result = await buy({
+      hub: new HubClient(HUB),
+      offerHash: arcOfferHash as Hex,
+      input: { q: "hi" },
+      payers: [countersignPayer(account), lazyPayer()],
+      envelope: envelope(),
+      journal,
+      state,
+      now: Math.floor(Date.now() / 1000),
+      approve: false,
+      known: [ARC_RAIL],
+      rail: "escrow",
+    });
+
+    expect(result.output).toEqual({ a: "hi" });
+    expect(paths).not.toContain("GET /cli/session");
+    expect(paths).not.toContain("POST /cli/hedera/account");
+  });
+
+  test("a hedera buy with no account in the session fails before anything is signed", async () => {
+    sessionAccount = null;
+    paths.length = 0;
+    counts.sign = 0;
+    counts.paid = 0;
+    const state = new State(mkdtempSync(join(tmpdir(), "cs-buyer-hedera-none-")));
+    const journal = new Journal(state.journalPath);
+
+    let error: unknown;
+    try {
+      await buy({
+        hub: new HubClient(HUB),
+        offerHash: offerHash as Hex,
+        input: { q: "hi" },
+        payers: [lazyPayer()],
+        envelope: envelope(),
+        journal,
+        state,
+        now: NOW,
+        approve: false,
+        known: [],
+        rail: "hedera",
+      });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(String(error)).toContain("No Hedera account yet. Run: countersign whoami");
+    expect(counts).toEqual({ sign: 0, paid: 0 });
+    expect(paths).toContain("GET /cli/session");
+    expect(paths).not.toContain("POST /cli/hedera/account");
+  });
+
+  test("a hedera buy reads the session account and never provisions one", async () => {
+    sessionAccount = ACCOUNT;
+    paths.length = 0;
+    counts.sign = 0;
+    counts.paid = 0;
+    const state = new State(mkdtempSync(join(tmpdir(), "cs-buyer-hedera-read-")));
+    const journal = new Journal(state.journalPath);
+
+    const result = await buy({
+      hub: new HubClient(HUB),
+      offerHash: offerHash as Hex,
+      input: { q: "hi" },
+      payers: [lazyPayer()],
+      envelope: envelope(),
+      journal,
+      state,
+      now: NOW,
+      approve: false,
+      known: [],
+      rail: "hedera",
+    });
+
+    expect(result.output).toEqual({ a: "hi" });
+    expect(counts).toEqual({ sign: 1, paid: 1 });
+    expect(paths).toContain("GET /cli/session");
+    expect(paths).not.toContain("POST /cli/hedera/account");
   });
 });

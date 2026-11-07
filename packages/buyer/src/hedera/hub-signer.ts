@@ -85,6 +85,31 @@ export function hubHederaSigner(session: HubSession, opts: HubSignerOptions = {}
   };
 }
 
+/**
+ * The session's Hedera account id, read only. It never posts /cli/hedera/account:
+ * provisioning stays with `whoami`. A session with no account reads as null.
+ */
+export async function hubHederaAccountReadOnly(
+  session: HubSession,
+  opts: HubSignerOptions = {},
+): Promise<string | null> {
+  const base = baseOf(session);
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  const read = await request(fetchImpl, timeoutMs, `${base}/cli/session`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${session.token}` },
+  });
+  if (read.status === 401) throw new Error(NOT_SIGNED_IN);
+  if (read.status !== 200) throw new Error(`Could not read the countersign session (${read.status}).`);
+  const hedera = (read.body as { hedera?: { accountId?: unknown } | null } | undefined)?.hedera;
+  if (hedera !== null && typeof hedera === "object" && typeof hedera.accountId === "string") {
+    return hedera.accountId;
+  }
+  return null;
+}
+
 /** The user's Hedera account id, provisioning one when the session has none yet. */
 export async function hubHederaAccount(
   session: HubSession,
