@@ -1,8 +1,11 @@
 /**
  * The console's Hedera account and payments. Both calls carry the person's Privy access token, and the
  * hub signs with the Hedera key it holds server-side: this console never sees a Hedera key and opens no
- * wallet. The hub provisions the account on first use.
+ * wallet. The hub provisions the account on first use. Both calls go through lib/hub's guarded helpers,
+ * so the token reaches only the hub this console was built for, never one a ?hub= link chose.
  */
+
+import { HubError, hubGet, hubPost } from "./hub.ts";
 
 export interface HederaAccount {
   accountId: string;
@@ -39,8 +42,6 @@ export class HederaError extends Error {
 const PROVISIONING_RETRIES = 5;
 const PROVISIONING_DELAY_MS = 3000;
 const ACCOUNT_TIMEOUT_MS = 10_000;
-const BUY_TIMEOUT_MS = 30_000;
-const NO_ANSWER = "The hub did not answer.";
 
 export interface HederaOptions {
   /** Milliseconds between 409 answers; tests pass 0 rather than wait. */
@@ -49,38 +50,8 @@ export interface HederaOptions {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function hubBaseOf(hub: string): string {
-  return hub.replace(/\/+$/, "");
-}
-
-async function jsonOf(res: Response): Promise<unknown> {
-  return await res.json().catch(() => null);
-}
-
-function recordOf(body: unknown): { code?: string; message?: string } {
-  if (body === null || typeof body !== "object") return {};
-  const b = body as Record<string, unknown>;
-  return {
-    ...(typeof b.code === "string" ? { code: b.code } : {}),
-    ...(typeof b.message === "string" ? { message: b.message } : {}),
-  };
-}
-
-function errorOf(res: Response, body: unknown): HederaError {
-  const { code, message } = recordOf(body);
-  return new HederaError(res.status, message ?? `The hub answered ${res.status}.`, code);
-}
-
-async function request(hub: string, path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(`${hubBaseOf(hub)}${path}`, { ...init, signal: controller.signal });
-  } catch {
-    throw new HederaError(0, NO_ANSWER);
-  } finally {
-    clearTimeout(timer);
-  }
+function hederaErrorOf(error: HubError): HederaError {
+  return new HederaError(error.status, error.message, error.code);
 }
 
 function accountOf(body: unknown): HederaAccount {
@@ -109,47 +80,36 @@ function purchaseOf(body: unknown): HederaPurchase {
 }
 
 /** The signed-in person's Hedera account, or null when this hub has the feature off. */
-export async function getHederaAccount(hub: string, token: string, options: HederaOptions = {}): Promise<HederaAccount | null> {
+export async function getHederaAccount(token: string, options: HederaOptions = {}): Promise<HederaAccount | null> {
   const delay = options.retryDelayMs ?? PROVISIONING_DELAY_MS;
   for (let attempt = 0; ; attempt += 1) {
-    const res = await request(
-      hub,
-      "/me/hedera",
-      { headers: { accept: "application/json", "x-privy-token": token } },
-      ACCOUNT_TIMEOUT_MS,
-    );
-    const body = await jsonOf(res);
-    if (res.ok) return accountOf(body);
-    // Off on this hub: the console shows nothing new at all.
-    if (res.status === 404) return null;
-    // The hub is making the account now; it asks for about three seconds.
-    if (res.status === 409 && attempt < PROVISIONING_RETRIES) {
-      await sleep(delay);
-      continue;
+    let body: unknown;
+    try {
+      body = await hubGet<unknown>("/me/hedera", ACCOUNT_TIMEOUT_MS, { "x-privy-token": token });
+    } catch (error) {
+      if (!(error instanceof HubError)) throw error;
+      // Off on this hub: the console shows nothing new at all.
+      if (error.status === 404) return null;
+      // The hub is making the account now; it asks for about three seconds.
+      if (error.status === 409 && attempt < PROVISIONING_RETRIES) {
+        await sleep(delay);
+        continue;
+      }
+      throw hederaErrorOf(error);
     }
-    throw errorOf(res, body);
+    return accountOf(body);
   }
 }
 
 /** Pay an offer from the signed-in person's Hedera account, with the hub signing server-side. */
-export async function buyOnHedera(
-  hub: string,
-  token: string,
-  offerHash: string,
-  input: unknown,
-): Promise<HederaPurchase> {
-  const res = await request(
-    hub,
-    "/me/hedera/buy",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json", "x-privy-token": token },
-      body: JSON.stringify({ offerHash, input }),
-    },
-    BUY_TIMEOUT_MS,
-  );
-  const body = await jsonOf(res);
-  if (!res.ok) throw errorOf(res, body);
+export async function buyOnHedera(token: string, offerHash: string, input: unknown): Promise<HederaPurchase> {
+  let body: unknown;
+  try {
+    body = await hubPost<unknown>("/me/hedera/buy", { offerHash, input }, { "x-privy-token": token });
+  } catch (error) {
+    if (error instanceof HubError) throw hederaErrorOf(error);
+    throw error;
+  }
   return purchaseOf(body);
 }
 

@@ -3,7 +3,7 @@ import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { retryPrivy, useWalletMode, watchdogReason } from "../app/Providers.tsx";
 import { getHederaAccount, HEDERA_BUY_EVENT, type HederaAccount } from "../lib/hedera.ts";
-import { hubBase } from "../lib/hub.ts";
+import { isOwnHub } from "../lib/hub.ts";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
 import { CopyButton } from "./primitives.tsx";
 
@@ -256,6 +256,22 @@ export function HederaAccountLine({ account }: { account: HederaAccount | null }
   );
 }
 
+/**
+ * The page-load read. Only this console's own hub may see the person's Privy token, so a ?hub= link
+ * never turns the sign-in menu into a request to another host.
+ */
+export async function loadHederaAccount(getAccessToken: () => Promise<string | null>): Promise<HederaAccount | null> {
+  if (!isOwnHub()) return null;
+  const token = await getAccessToken();
+  if (!token) return null;
+  return getHederaAccount(token);
+}
+
+/** The wallet line shows only on this console's own hub, whatever a page already read. */
+export function ownHubHederaAccount(account: HederaAccount | null): HederaAccount | null {
+  return isOwnHub() ? account : null;
+}
+
 /** Read the Hedera account once signed in, and again whenever a purchase on the card settles. */
 function useHederaAccount(ready: boolean, authenticated: boolean, getAccessToken: () => Promise<string | null>): HederaAccount | null {
   const [account, setAccount] = useState<HederaAccount | null>(null);
@@ -269,12 +285,8 @@ function useHederaAccount(ready: boolean, authenticated: boolean, getAccessToken
     }
     let alive = true;
     const load = async () => {
-      const hub = hubBase();
-      if (!hub) return;
-      const token = await tokenOf.current();
-      if (!token) return;
       try {
-        const found = await getHederaAccount(hub, token);
+        const found = await loadHederaAccount(tokenOf.current);
         if (alive) setAccount(found);
       } catch {
         // The line simply does not show: the hub is off, starting, or unreachable.
@@ -310,7 +322,7 @@ function PrivyWalletButton() {
       cta="Sign in"
       kindOf={kindOf}
       starting={!ready}
-      hedera={hedera}
+      hedera={ownHubHederaAccount(hedera)}
     />
   );
 }

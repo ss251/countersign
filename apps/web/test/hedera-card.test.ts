@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { listingByTitle } from "../src/fixtures/index.ts";
@@ -9,6 +9,37 @@ import type { HederaBuyState } from "../src/routes/assistant/Assistant.tsx";
 // The card imports NeedsSignature, which asks the router what it has; the test is not the app.
 mock.module(new URL("../src/app/routes.ts", import.meta.url).pathname, () => ({ hasRoute: () => false, VIEWS: [] }));
 const { HederaAction, hederaActionShown } = await import("../src/routes/assistant/Assistant.tsx");
+
+const HUB = "https://hub.test";
+const EVIL = "https://evil.example";
+const realWindow = (globalThis as { window?: unknown }).window;
+const realHub = process.env.VITE_HUB_URL;
+
+/** A console built for HUB, opened at `hash`, with the window state hub.ts reads. */
+function pageAt(hash: string): void {
+  const store = new Map<string, string>();
+  (globalThis as { window?: unknown }).window = {
+    location: { hash, search: "", origin: "https://web-production-a58de.up.railway.app" },
+    localStorage: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    },
+    setTimeout,
+    clearTimeout,
+  };
+}
+
+beforeEach(() => {
+  process.env.VITE_HUB_URL = HUB;
+  pageAt("");
+});
+
+afterEach(() => {
+  (globalThis as { window?: unknown }).window = realWindow;
+  if (realHub === undefined) delete process.env.VITE_HUB_URL;
+  else process.env.VITE_HUB_URL = realHub;
+});
 
 const account = { accountId: "0.0.9185802", usdc: "0.50" };
 
@@ -51,6 +82,14 @@ describe("the purchase card's Hedera action", () => {
 
   test("no account, no action: the console waits until the hub names one", () => {
     expect(card({ kind: "idle" }, withHedera(), null)).toBe("");
+  });
+
+  test("on a hub a link chose, an account changes nothing: no Hold to pay on Hedera", () => {
+    pageAt(`#/?hub=${encodeURIComponent(EVIL)}`);
+    expect(hederaActionShown(withHedera().offer.rails, account)).toBe(false);
+    const html = card({ kind: "idle" });
+    expect(html).toBe("");
+    expect(html).not.toContain("Hold to pay on Hedera");
   });
 
   test("while the buy runs, one plain line says so and the hold waits", () => {

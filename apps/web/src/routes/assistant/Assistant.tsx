@@ -16,7 +16,7 @@ import {
   type HederaAccount,
   type HederaPurchase,
 } from "../../lib/hedera.ts";
-import { hubBase } from "../../lib/hub.ts";
+import { hubBase, isOwnHub } from "../../lib/hub.ts";
 import { usePurchase } from "../../lib/purchase.ts";
 import { deadlineWords, termsKind } from "../../lib/terms.ts";
 import type { EnvelopeView, Listing, RailId } from "../../lib/types.ts";
@@ -627,7 +627,7 @@ function PurchaseCard({ listing, view }: { listing: Listing; view: EnvelopeView 
           ) : null}
         </>
       )}
-      {walletMode.privy && hub && offer.rails.includes("hedera") ? <HederaPay listing={listing} input={input} hub={hub} /> : null}
+      {walletMode.privy && hub && isOwnHub() && offer.rails.includes("hedera") ? <HederaPay listing={listing} input={input} /> : null}
     </section>
   );
 }
@@ -639,9 +639,9 @@ export type HederaBuyState =
   | { kind: "paid"; purchase: HederaPurchase }
   | { kind: "failed"; message: string };
 
-/** The Hedera action belongs to offers on the hedera rail, once the person has a Hedera account. */
+/** The Hedera action belongs to offers on the hedera rail, once the person has an account on this console's own hub. */
 export function hederaActionShown(rails: RailId[], account: HederaAccount | null): boolean {
-  return account !== null && rails.includes("hedera");
+  return isOwnHub() && account !== null && rails.includes("hedera");
 }
 
 /** The card's Hedera section at each point in the purchase. Renderable without Privy, for tests. */
@@ -745,7 +745,7 @@ function HederaStepLink({ url }: { url: string }) {
 }
 
 /** Signed in and with an account, the card asks the hub for its account; the hub does the rest. */
-function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; hub: string }) {
+function HederaPay({ listing, input }: { listing: Listing; input: unknown }) {
   const { ready, authenticated, getAccessToken } = usePrivy();
   const [account, setAccount] = useState<HederaAccount | null>(null);
   const [state, setState] = useState<HederaBuyState>({ kind: "idle" });
@@ -753,7 +753,7 @@ function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; 
   tokenOf.current = getAccessToken;
 
   useEffect(() => {
-    if (!ready || !authenticated) {
+    if (!ready || !authenticated || !isOwnHub()) {
       setAccount(null);
       return;
     }
@@ -762,7 +762,7 @@ function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; 
       const token = await tokenOf.current();
       if (!token) return;
       try {
-        const found = await getHederaAccount(hub, token);
+        const found = await getHederaAccount(token);
         if (alive) setAccount(found);
       } catch {
         // No account line: the feature may be off, provisioning, or the hub unreachable.
@@ -772,7 +772,7 @@ function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; 
     return () => {
       alive = false;
     };
-  }, [ready, authenticated, hub]);
+  }, [ready, authenticated]);
 
   const pay = async () => {
     if (state.kind === "paying") return;
@@ -783,7 +783,7 @@ function HederaPay({ listing, input, hub }: { listing: Listing; input: unknown; 
         setState({ kind: "failed", message: "Sign in again to pay on Hedera." });
         return;
       }
-      const purchase = await buyOnHedera(hub, token, listing.hash, input);
+      const purchase = await buyOnHedera(token, listing.hash, input);
       setState({ kind: "paid", purchase });
       announceHederaBuy();
     } catch (error) {
