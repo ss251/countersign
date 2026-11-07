@@ -6,8 +6,9 @@ const relay = process.env.RELAY_URL ?? "http://127.0.0.1:8402";
 const merchantApi = process.env.MERCHANT_URL ?? "http://127.0.0.1:8403";
 
 // The console's own origin, for the absolute link-preview URLs in index.html (%VITE_PUBLIC_ORIGIN%). A deploy
-// to the custom domain sets it; without one it is the Railway host that serves production today.
-process.env.VITE_PUBLIC_ORIGIN ??= "https://web-production-a58de.up.railway.app";
+// to a custom domain sets it; without one it is the Railway host that serves production today, which the
+// captain renamed to counter-sign on 07 Nov (firstmate 01:35:48Z).
+process.env.VITE_PUBLIC_ORIGIN ??= "https://counter-sign.up.railway.app";
 
 const strip = (prefix: string) => (path: string) => path.replace(new RegExp(`^${prefix}`), "");
 

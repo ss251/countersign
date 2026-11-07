@@ -9,7 +9,10 @@ describe("the console's link previews", () => {
   test("the preview image's origin is a build value with today's host as the default", () => {
     expect(html).toContain('<meta property="og:image" content="%VITE_PUBLIC_ORIGIN%/og.png" />');
     expect(html).not.toMatch(/up\.railway\.app/);
-    expect(config).toContain('process.env.VITE_PUBLIC_ORIGIN ??= "https://web-production-a58de.up.railway.app"');
+    // Evidence line: the captain renamed the console's Railway host on 07 Nov (firstmate 01:35:48Z); the old
+    // web-production-a58de host answers 404 "Application not found", so today's host is counter-sign.
+    expect(config).toContain('process.env.VITE_PUBLIC_ORIGIN ??= "https://counter-sign.up.railway.app"');
+    expect(config).not.toContain("web-production-a58de");
   });
 
   test("the descriptions promise no escrow on rails that have none, and a slip only for a settled call", () => {
