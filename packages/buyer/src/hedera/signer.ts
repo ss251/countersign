@@ -2,8 +2,15 @@
 // amount and payee come from the requirements and whose memo names the offer. The facilitator's
 // fee-payer signature is still missing when this returns; only the facilitator can complete it.
 import type { PaymentPayload, PaymentRequirements } from "@countersign/core";
-import { AccountId, Client, PrivateKey, TokenId, Transaction, TransactionId, TransferTransaction } from "@hiero-ledger/sdk";
-import { HEDERA_TESTNET, offerMemo, USDC_TESTNET } from "@countersign/rail/hedera";
+import { PrivateKey, Transaction, TransferTransaction, type TransactionId } from "@hiero-ledger/sdk";
+import {
+  base64ToBytes,
+  buildHederaTransfer,
+  bytesToBase64,
+  HEDERA_TESTNET,
+  nodeAccountIdFor,
+  USDC_TESTNET,
+} from "./build.ts";
 
 const ACCOUNT_ID = /^0\.0\.\d+$/;
 
@@ -37,6 +44,8 @@ export interface SignOptions {
   maxAmount?: bigint;
   /** Node account ids to freeze with. Omitted, the transfer resolves testnet nodes. */
   nodeAccountIds?: string[];
+  /** Test seam: freeze under a fixed transaction id, so the browser builder and the agent build the same bytes. */
+  transactionId?: TransactionId;
 }
 
 function refuse(msg: string): never {
@@ -58,14 +67,6 @@ export function assertSignable(payer: HederaPayer, req: PaymentRequirements, opt
   return amount;
 }
 
-/** One node, picked the way a local freeze would: the caller's first, else random from the testnet set. */
-function nodeAccountIdFor(nodeAccountIds: string[] | undefined): string {
-  const first = nodeAccountIds?.[0];
-  if (first !== undefined) return first;
-  const bytes = crypto.getRandomValues(new Uint8Array(1));
-  return `0.0.${3 + ((bytes[0] ?? 0) % 5)}`;
-}
-
 /** The token and hbar legs of a transfer, in a stable order, as text. */
 function transferLegs(tx: TransferTransaction): string {
   const legs: string[] = [];
@@ -84,7 +85,7 @@ function transferLegs(tx: TransferTransaction): string {
 function transferOf(encoded: string): TransferTransaction {
   let decoded: Transaction | undefined;
   try {
-    decoded = Transaction.fromBytes(Buffer.from(encoded, "base64"));
+    decoded = Transaction.fromBytes(base64ToBytes(encoded));
   } catch {
     decoded = undefined;
   }
@@ -112,43 +113,22 @@ export async function signHederaTransfer(
   req: PaymentRequirements,
   opts: SignOptions = {},
 ): Promise<{ transaction: string; transactionId: string; validUntil: number }> {
-  const amount = assertSignable(payer, req, opts);
+  assertSignable(payer, req, opts);
   const key = payer.key;
   const remote = isRemoteHederaSigner(key);
-  const token = TokenId.fromString(req.asset);
-  const tx = new TransferTransaction()
-    .addTokenTransfer(token, AccountId.fromString(payer.accountId), -amount)
-    .addTokenTransfer(token, AccountId.fromString(req.payTo), amount)
-    .setTransactionId(TransactionId.generate(AccountId.fromString(req.extra!.feePayer as string)))
-    .setTransactionMemo(offerMemo(req.extra!.offerHash as string))
-    .setTransactionValidDuration(Math.min(req.maxTimeoutSeconds, 180));
-  const nodeAccountIds = opts.nodeAccountIds;
+  const nodeAccountIds = remote ? [nodeAccountIdFor(opts.nodeAccountIds)] : opts.nodeAccountIds;
+  const { transaction: tx, transactionId: id, validUntil } = buildHederaTransfer(payer.accountId, req, {
+    ...(nodeAccountIds?.length ? { nodeAccountIds } : {}),
+    ...(opts.transactionId ? { transactionId: opts.transactionId } : {}),
+  });
   if (remote) {
-    tx.setNodeAccountIds([AccountId.fromString(nodeAccountIdFor(nodeAccountIds))]);
-    tx.freeze();
-  } else {
-    const client = nodeAccountIds?.length ? undefined : Client.forTestnet();
-    try {
-      if (nodeAccountIds?.length) {
-        tx.setNodeAccountIds(nodeAccountIds.map((id) => AccountId.fromString(id)));
-        tx.freeze();
-      } else {
-        tx.freezeWith(client!);
-      }
-    } finally {
-      client?.close();
-    }
-  }
-  const id = tx.transactionId!.toString();
-  const validUntil = Number(tx.transactionId!.validStart!.seconds.toString()) + tx.transactionValidDuration;
-  if (remote) {
-    const frozen = Buffer.from(tx.toBytes()).toString("base64");
+    const frozen = bytesToBase64(tx.toBytes());
     const signed = await key.signTransfer(frozen, req.extra!.offerHash as string);
     if (!sameBody(transferOf(frozen), transferOf(signed))) refuse("The hub returned a different transfer.");
     return { transaction: signed, transactionId: id, validUntil };
   }
   await tx.sign(key);
-  return { transaction: Buffer.from(tx.toBytes()).toString("base64"), transactionId: id, validUntil };
+  return { transaction: bytesToBase64(tx.toBytes()), transactionId: id, validUntil };
 }
 
 /** The x402 v2 payment the buyer sends back in PAYMENT-SIGNATURE. */
