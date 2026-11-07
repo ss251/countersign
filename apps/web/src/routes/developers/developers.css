@@ -70,3 +70,75 @@
 .gs__list code {
   overflow-wrap: anywhere;
 }
+
+/*
+ * "Use it from your agent" (STEER-0625): the offer page's toggles as the client tabs, each mark in its tab's
+ * ink (currentColor), and three numbered steps per client. Code blocks scroll inside their own box (ui.css).
+ */
+.agents__tabs .toggle {
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.agents__mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.agents__panel {
+  min-width: 0;
+}
+
+.agents__panel[hidden] {
+  display: none;
+}
+
+.agents__steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: agent-step;
+}
+
+.agents__step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  min-width: 0;
+  counter-increment: agent-step;
+}
+
+.agents__step-title {
+  font-size: var(--t-15);
+  font-weight: 500;
+}
+
+.agents__step-title::before {
+  content: counter(agent-step) ". ";
+  color: var(--slate);
+  font-family: var(--mono);
+}
+
+.agents__where {
+  min-width: 0;
+  color: var(--slate);
+  font-size: var(--t-12);
+  overflow-wrap: anywhere;
+}
+
+/* The rules are prose for an agent, so they wrap to the box; commands and configs still scroll, never break. */
+.agents .command[data-lang="md"] .command__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agents__note {
+  color: var(--slate);
+  font-size: var(--t-13);
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
