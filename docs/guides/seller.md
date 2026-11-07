@@ -43,7 +43,7 @@ To take an offer off the hub, the seller signs `countersign delist <offerHash>` 
 
 1. The runner dials out to the hub over a WebSocket and opens no port. It proves it is your seller wallet by signing the hub's fresh nonce.
 2. Before it works on an escrow job, it reads the job on chain and refuses one it cannot confirm. The escrow must be pinned, and the job must be Funded, pay you, cover at least the price, name this offer, and have a live deadline. So a hub cannot get free work out of you with a job that was never paid.
-3. For each paid job, it runs the skill in a child process. The child gets only `PATH` and a fresh, empty `HOME`, so your other environment variables and your session never reach it. A job has 30 seconds and 1 MB of output.
+3. For each paid job, it runs the skill in a child process. The child gets only `PATH` and a fresh, empty `HOME`, so your other environment variables do not reach it. It still runs as your user, so it could read your saved session from the system keychain or `~/.countersign`. Sell only skills you trust. A job has 30 seconds and 1 MB of output.
 4. The skill's input is `{question?, section?}`. With `section`, the runner returns that section of the skill. Without it, the runner returns the whole body.
 5. The runner checks the output against the offer's output schema and signs a slip over the job, the hashes of the input and the output, and the delivery time.
 
@@ -80,7 +80,7 @@ Your wallet signs offers, runner logins and every slip. A slip is what releases 
 - release your funded jobs;
 - publish offers in your name.
 
-Under a login, only the countersign app can sign as it, through the hub and only for your signed-in session. `logout` ends that session, not the app's control of the wallet. The child processes that run your skills never see your session.
+Under a login, only the countersign app can sign as it, through the hub and only for your signed-in session. `logout` ends that session, not the app's control of the wallet. Anything that runs as your user while you are signed in, a skill's child process included, could read the saved session and ask the hub to sign as your wallet, so sell only skills you trust, and run `logout` when you stop selling.
 
 ## See also
 
