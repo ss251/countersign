@@ -540,7 +540,7 @@ describe("whoami", () => {
       balances: async () => "unavailable",
     });
 
-    expect(calls.map((call) => call.url)).toEqual([`${HUB}/cli/session`]);
+    expect(calls.map((call) => call.url)).toEqual([`${HUB}/cli/session`, `${HUB}/cli/hedera/account`]);
     expect(calls.some((call) => call.url.includes("evil.example"))).toBe(false);
     expect(out.join("")).toContain(`Signed in as ${ADDRESS}`);
   });

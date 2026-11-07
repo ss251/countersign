@@ -1,3 +1,4 @@
+import { RailNames } from "../../ui/NetworkMark.tsx";
 import { useId, useMemo, useState } from "react";
 import type { AdapterKind, RailId } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
@@ -377,7 +378,9 @@ export function SellerCard({
                   {l.offer.summary}
                 </p>
               </div>
-              <p className="orow__rails">{l.offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+              <p className="orow__rails">
+                <RailNames rails={l.offer.rails} />
+              </p>
               <p className="orow__state num">
                 {l.status === "delisted" ? (
                   <span className="orow__delisted">Delisted{l.reason ? `: ${l.reason}` : ""}</span>

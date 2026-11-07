@@ -1,3 +1,4 @@
+import { RailNames } from "../../ui/NetworkMark.tsx";
 import { useState } from "react";
 import type { JsonSchema } from "@countersign/core";
 import type { PageProps } from "../../app/routes.ts";
@@ -96,7 +97,9 @@ export default function OfferPage({ params }: PageProps) {
           <Amount money={usd(offer.price, offer.rails[0])} size="xl" />
           <p className="offer__per">per call</p>
         </div>
-        <p className="offer__rails">Settles on {offer.rails.map((r) => RAIL_LABEL[r]).join(", ")}</p>
+        <p className="offer__rails">
+          Settles on <RailNames rails={offer.rails} />
+        </p>
         <p className={cx("page__lede offer__summary", !more && offer.summary.length > 220 && "is-clamped")}>{offer.summary}</p>
         {offer.summary.length > 220 ? (
           <button type="button" className="link-button offer__more" aria-expanded={more} onClick={() => setMore((m) => !m)}>
@@ -163,7 +166,7 @@ export default function OfferPage({ params }: PageProps) {
           </div>
           <pre className="command__body mono">{via === "cli" ? cli : curl}</pre>
         </div>
-        <p className="section__note">The agent’s key comes from CS_BUYER_KEY and never appears in a command.</p>
+        <p className="section__note">Sign in once with npx -y @countersign-hub/cli login. The agent’s wallet is a Privy server wallet our app controls, so no key is on your machine.</p>
       </section>
 
       <div className="offer__cols">
@@ -293,12 +296,34 @@ export function exampleInput(schema: JsonSchema): Record<string, unknown> {
   );
 }
 
+/** The hub the published CLI uses when no --hub is given (packages/cli/src/cli.ts DEFAULT_HUB). */
+export const CLI_DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
+
+/**
+ * The buy command a person copies: the published CLI from npm, signed in with Privy, so no key is on the machine
+ * (firstmate 02:06:42Z). --hub only when this console talks to a hub other than the CLI's default.
+ */
+/** One shell word that does nothing whatever it holds: single-quoted, each ' closed, escaped and reopened. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * A value as one shell word (cs-audit 02:12:43Z): bare when it is plain URL characters, quoted otherwise. The hub
+ * comes from hubBase(), which a ?hub= link can set, and the hash from the route, so neither may reach a pasted
+ * command as shell syntax.
+ */
+function word(value: string): string {
+  return /^[A-Za-z0-9._:/-]+$/.test(value) ? value : shellQuote(value);
+}
+
 export function buyCommand(offerHash: string, input: JsonSchema, hub: string): string {
   const json = JSON.stringify(exampleInput(input)).replace(/'/g, "'\\''");
-  return `bun packages/buyer/src/cli.ts buy ${offerHash} --input '${json}' --hub ${hub}`;
+  const defaultHub = hub.replace(/\/+$/, "") === CLI_DEFAULT_HUB;
+  return `npx -y @countersign-hub/cli buy ${word(offerHash)} --input '${json}'${defaultHub ? "" : ` --hub ${word(hub)}`}`;
 }
 
 export function curlCommand(offerHash: string, input: JsonSchema, hub: string): string {
   const json = JSON.stringify({ input: exampleInput(input) }).replace(/'/g, "'\\''");
-  return `curl -i -X POST ${hub}/offers/${offerHash}/call -H 'content-type: application/json' -d '${json}'`;
+  return `curl -i -X POST ${word(`${hub}/offers/${offerHash}/call`)} -H 'content-type: application/json' -d '${json}'`;
 }

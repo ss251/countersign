@@ -19,8 +19,13 @@ import {
   countersignPayer,
   eip3009Payer,
   gatewayPayer,
+  hederaPayer,
+  hubHederaAccountReadOnly,
+  hubHederaSigner,
   type HubClient,
   type Journal,
+  type Payer,
+  type RemoteSession,
   type State,
 } from "@countersign/buyer";
 import { verifySlip } from "@countersign/verify";
@@ -30,6 +35,8 @@ export interface McpDeps {
   state: State;
   journal: Journal;
   account?: LocalAccount;
+  /** The session the account came from, when it is session-backed. */
+  session?: RemoteSession;
   problem?: string;
   /** Unix seconds. Defaults to the wall clock. */
   now?: () => number;
@@ -75,7 +82,7 @@ function searchText(offer: Offer): string {
 }
 
 export function createCountersignMcpServer(deps: McpDeps): McpServer {
-  const server = new McpServer({ name: "countersign", version: "0.1.1" });
+  const server = new McpServer({ name: "countersign", version: "0.1.3" });
   const clock = deps.now ?? (() => Math.floor(Date.now() / 1000));
   const verify = deps.verify ?? verifySlip;
 
@@ -187,11 +194,21 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       }
       try {
         assertHash(offerHash, "offerHash");
+        const payers: Payer[] = [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)];
+        const session = deps.session;
+        if (session !== undefined) {
+          payers.push(
+            hederaPayer({
+              accountId: () => hubHederaAccountReadOnly(session),
+              key: hubHederaSigner(session),
+            }),
+          );
+        }
         const result = await buy({
           hub: deps.hub,
           offerHash: offerHash as Hex,
           input,
-          payers: [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)],
+          payers,
           envelope: deps.state.loadEnvelope(),
           journal: deps.journal,
           state: deps.state,

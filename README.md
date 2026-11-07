@@ -1,4 +1,13 @@
-<p><img src="marks/countersign-wordmark.svg" alt="countersign" height="40"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="marks/countersign-logo-512-dark.png">
+    <img src="marks/countersign-logo-512-light.png" alt="countersign logo" width="112">
+  </picture>
+</p>
+
+<h1 align="center">countersign</h1>
+
+<p align="center"><b>Payments that only move when the work lands.</b></p>
 
 countersign lets a software agent pay for a call to another piece of software with one signature that binds the offer, the payee and the amount, and hands it back a receipt that proves itself without the hub.
 
@@ -40,6 +49,22 @@ A merchant sells to software buyers for USDT on Whitechain testnet (chain 1874).
 
 A card network cannot bind a payment to an offer hash, or release it on a signed delivery receipt. The relayer pays the gas, so neither the customer nor the merchant ever holds WBT.
 
+```mermaid
+sequenceDiagram
+    participant C as Customer (USDT only)
+    participant M as Merchant route<br/>whitechainPaywall
+    participant R as Relay (holds WBT)
+    participant W as Whitechain 1874
+    C->>M: GET /checkout/...
+    M-->>C: 402, x402 exact, 0.01 USDT
+    C->>M: One EIP-3009 authorisation
+    M->>R: Settle
+    R->>W: Simulate, then submit and pay gas
+    W-->>R: Settled
+    M-->>C: 200 + the item
+    Note over M,R: Refund: merchant signs once,<br/>the relay submits and pays the gas
+```
+
 ### Operate: the checkout, the refund and the export
 
 - **The drop-in.** It is two files:
@@ -48,7 +73,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
 
   Both import the published package: `@countersign-hub/relay/paywall` and `@countersign-hub/relay/browser`. In your own app, run `npm i @countersign-hub/relay hono viem` and the two files run unchanged under Bun, tsx or Node. The package ships no type declarations yet, so a strict TypeScript build reports TS7016 on those imports. Never install `@countersign/relay`: the `@countersign` scope on npm belongs to another project.
 
-  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
+  Together they are 13 non-empty lines, and `apps/web/test/checkout.test.ts` fails if they pass twenty. They are not a separate app: the console's own server imports the merchant half to serve its checkout (`apps/web/server.ts`), live at [`/checkout/sticker-pack`](https://counter-sign.up.railway.app/checkout/sticker-pack), which answers 402 with an x402 `exact` request for 0.01 USDT on chain 1874. Both import `@countersign/relay`, a package in this repository that is not published yet.
 - **It runs against the production relay.** `examples/whitechain/checkout.live.test.ts` bought and refunded for real: [purchase](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b) and [refund](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f), both submitted by the relayer.
 - **The customer's view.** The customer holds USDT only and signs one EIP-3009 authorisation. The buyer above, `0xcb39cEfBF97d1FE8b0606f25721F6F9E32924298`, holds 0 WBT.
 - **The refund.** One function, `refundOrder`, refunds every order:
@@ -56,7 +81,7 @@ A card network cannot bind a payment to an offer hash, or release it on a signed
   - a paid order is refunded in full or in part, by a transfer the merchant signs and the relayer submits.
 
   Each refund signature names its payment and the amount already refunded, so a repeated click refunds once. A settled purchase whose buyer did not get the item was refunded in full: [purchase](https://explorer.testnet.whitechain.io/tx/0x087656364e52a112591a2e740d88c8faf69655f8c4187ef772d2041032c7ac82), [refund](https://explorer.testnet.whitechain.io/tx/0x2707a2d7e4f7a42b95f930bbcf41efa849a49c6ea12f4549361cd5829657e13e).
-- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://web-production-a58de.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
+- **The merchant's view.** It is live on the production console at [`/#/merchant?merchant=0xd588…C71c`](https://counter-sign.up.railway.app/#/merchant?merchant=0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c) (a bare `/#/merchant` shows no merchant; the screen takes the merchant's address in the URL). It has:
   - the live list of the hub's escrow orders, with a one-click refund on each paid one;
   - the CSV export;
   - the gas relayer's panel, read from the relay's live `/status`;
@@ -80,7 +105,7 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 
 | Guard | Value |
 |---|---|
-| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchant `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c` and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3…0391`; it pays gas for nobody else |
+| Allowlist | USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`, the merchants `0xd5882dBC7D41fBcf8ae0B05E9eAc1cbe93d6C71c`, `0xcDeC16369a62890f3E1F5a9a3A20391bef639B44` and `0x90Df63D400a7242A7026cb894E1dC1dA012572fE` (the last two are demo merchants for live refunds in the browser, since 07 Nov 02:12Z), and the escrows, v1 `0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4` and v2 `0x55b3…0391`; it pays gas for nobody else |
 | Fee cap | 50 gwei per gas, with 20% headroom |
 | Hourly ceiling | 0.05 WBT and at most 200 transactions per hour |
 | Balance floor | 0.02 WBT; below it the relay refuses new work, rather than running dry mid-payment |
@@ -92,13 +117,28 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 ## Live links
 
 - Repository: https://github.com/ss251/countersign
-- Console: [web-production-a58de.up.railway.app](https://web-production-a58de.up.railway.app)
+- Console: [counter-sign.up.railway.app](https://counter-sign.up.railway.app)
 - Hub: [hub-production-e85e.up.railway.app](https://hub-production-e85e.up.railway.app/healthz). A purchase through it [released on Arc](https://explorer.testnet.arc.io/tx/0x0a0118e9e81c21517eaf0f387e7801e1fafef947cfccd1c05ff989201433ed69), slip `0x3204ff870ffad20b38d9504622e5889508d889a10f3f1efef05d16046ab2fe85`.
 - Arc Studio: the project's [share page](https://studio.arc.io/share/countersign-automated-software-marketplace-9tfb9kfte9) and the [app Studio built](https://arc-studio-16e0b317ec5f406a8d7d24bf.vercel.app), both open logged out. The Studio app reads the same escrow addresses as the rest of the project.
-- Arc escrow, deployed through Arc Studio: [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76)
-- Whitechain escrow: [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4)
+- Contracts: every deployment is in the [Contracts](#contracts) table below.
 - Hedera spend log: HCS topic [`0.0.11337070`](https://hashscan.io/testnet/topic/0.0.11337070)
 - More proofs with explorer links: [docs/proof.md](docs/proof.md) for Arc and Gateway, [docs/whitechain.md](docs/whitechain.md) for Whitechain, [docs/hedera.md](docs/hedera.md) for Hedera.
+
+## Contracts
+
+All on testnets, all `CountersignedEscrow` with a 1% toll (`tollBps` 100) to a `FeeSplit`. Production's escrow rails run on **escrow v2** on both chains, for unbonded jobs only ([docs/status.md](docs/status.md)). v1 deployments stay listed because their slips still verify (`packages/verify/src/known-escrows.ts`). The records are in [`contracts/deployments/`](contracts/deployments/).
+
+| Chain | Contract | Address | Notes |
+|---|---|---|---|
+| Arc testnet `5042002` | Escrow v2 | [`0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE`](https://explorer.testnet.arc.io/address/0x10A3c07cc6A519C0106e315D2C42010eCbEFF3CE) | **Production.** Deploy [`0x650b…1207`](https://explorer.testnet.arc.io/tx/0x650b6fd9eaab6c4c4988a773412e063cef230610104f975df7b433ff594c1207), source `52b7c7c`, arbiter `0xE37F64A73225f5eA06BABcb1cc5440F01446C267`, treasury `0xBF9DE410d4A17781dF0D9D3DD160018Aceb3FE87` |
+| Arc testnet `5042002` | Escrow v1 (Arc Studio) | [`0x19c27d770969291e6a0a305dc1be1a845e7c1b76`](https://explorer.testnet.arc.io/address/0x19c27d770969291e6a0a305dc1be1a845e7c1b76) | Deployed through Arc Studio, deploy [`0x0663…6c5a`](https://explorer.testnet.arc.io/tx/0x06638eb4cfa8db52b5e097778160fbc913561e88f56aa8fc2ec195cb6d596c5a) |
+| Arc testnet `5042002` | FeeSplit (Studio) | [`0xbf9de410d4a17781df0d9d3dd160018aceb3fe87`](https://explorer.testnet.arc.io/address/0xbf9de410d4a17781df0d9d3dd160018aceb3fe87) | Treasury for the Studio escrow and escrow v2 |
+| Arc testnet `5042002` | Escrow v1 (forge) | [`0x44d11b8909485e3f575F6628b689383E4420f54a`](https://explorer.testnet.arc.io/address/0x44d11b8909485e3f575F6628b689383E4420f54a) | FeeSplit [`0x6983…81b1`](https://explorer.testnet.arc.io/address/0x69831d0AAD960e88b62983F3568A1E67d40581b1) |
+| Whitechain Sepolia `1874` | Escrow v2 | [`0x55b3d98C17Ba0878DC93fB1521c76c9a10778391`](https://explorer.testnet.whitechain.io/address/0x55b3d98C17Ba0878DC93fB1521c76c9a10778391) | **Production.** Deploy [`0xf15e…9ae1`](https://explorer.testnet.whitechain.io/tx/0xf15e1c98547b7b475feae83319b71e176518580c244dff39fe32d1408c249ae1), arbiter the relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` |
+| Whitechain Sepolia `1874` | FeeSplit v2 | [`0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c`](https://explorer.testnet.whitechain.io/address/0xB4930a8D096AE69dfA8DC305dA0427BE5B889b6c) | Deploy [`0x8612…9432`](https://explorer.testnet.whitechain.io/tx/0x8612c6d77bdfd1e316c99cbf10e77fa0872df2143a3e091e752c07c8ef639432) |
+| Whitechain Sepolia `1874` | Escrow v1 | [`0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4`](https://explorer.testnet.whitechain.io/address/0x9279D3edeef4c3738a0b200D762e2985Ff3B7eb4) | FeeSplit [`0xeaDf…725F`](https://explorer.testnet.whitechain.io/address/0xeaDfF48cdF0b44FbF22e512b7ece1830E473725F) |
+
+Tokens: USDC `0x3600000000000000000000000000000000000000` on Arc, USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` on Whitechain, HTS USDC `0.0.429274` on Hedera.
 
 ## How it works
 
@@ -106,6 +146,42 @@ The relayer `0xa2EEfc657138eE5367291F8e2Ac45BAC28486006` submits every transacti
 2. **The envelope.** The human sets the agent's limits: a total budget cap, a per-merchant limit, an allowlist, an ask-above threshold, and revoke. The agent checks them, then reserves the spend in its journal, before it signs anything ([envelope.md](docs/spec/envelope.md)). A refusal reads, for example, "Refused. This would spend 5.000001 of a 5 budget."
 3. **The countersignature.** The buyer signs one message. On escrow rails it is the token's EIP-3009 `ReceiveWithAuthorization`, whose nonce is the `jobId` derived from the offer hash, buyer, payee, amount, deadline and salt under the escrow's EIP-712 domain. Change any of them and the signature no longer matches ([countersignature.md](docs/spec/countersignature.md)).
 4. **The escrow.** `CountersignedEscrow` pulls the amount on `fund`, pays the seller on `release` with the seller's signature over the slip hash, and returns the full amount to the buyer on `refund` after the deadline or on the seller's `cancel`. It has no owner, no pause and no proxy ([escrow.md](docs/spec/escrow.md)).
+
+One paid call on an escrow rail, end to end:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Seller runner
+    participant H as Hub
+    participant B as Buyer agent
+    participant E as CountersignedEscrow
+    S->>H: Publish signed offer (offerHash)
+    B->>H: GET /offers
+    H-->>B: 402 with payment requirements
+    Note over B: Check envelope: budget, per-merchant limit,<br/>allowlist, ask-above. Reserve spend in journal.
+    B->>H: Countersignature (EIP-3009, nonce = jobId)
+    H->>E: fund(jobId) pulls the amount
+    H->>S: Job input
+    S-->>H: Output + seller signature over slip hash
+    Note over H: Check output against the offer's schema
+    H->>E: release(jobId, slipHash)
+    E-->>S: Paid, minus the 1% toll
+    H-->>B: Slip {body, hash, sellerSig, payment, settlement}
+    Note over B,E: Anyone can verify the slip against the Released event
+```
+
+The escrow job's lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Funded: fund (buyer's countersignature)
+    Funded --> Released: release with the seller's signature over the slip hash
+    Funded --> Refunded: refund once the deadline has passed
+    Funded --> Refunded: seller cancels
+    Released --> [*]: seller paid
+    Refunded --> [*]: buyer gets the full amount back
+```
 
 A moved price reverts on chain: [Arc, price moved](https://explorer.testnet.arc.io/tx/0xca61627848d1ea952c5953ac58df7b8bd780777563e24ebccf5bb90315d20e76). A missed deadline refunds the buyer in full: [fund](https://explorer.testnet.arc.io/tx/0x6a103973020747af341e008ec5b317cc97ac0ffef059c381fb19d9cdf9ca2eb7), [refund](https://explorer.testnet.arc.io/tx/0x1cd2a5a624a6c166d6b85e99dfaffcbd03c1c65c17fe7010109610872c499e35).
 
@@ -236,6 +312,23 @@ Hub environment: `PORT`, `HUB_DB` (SQLite path), `HUB_PUBLIC_URL`, `ARC_ESCROW`,
 ## Architecture
 
 The seller's runner dials out to the hub and publishes signed offers. The buyer agent finds an offer, checks it against its envelope and its pinned rail table, and countersigns. The hub verifies and settles through the rail named in the payment, sends the call to the runner, checks the output against the offer's schema, and on an escrow rail releases with the seller's signature over the slip hash. The buyer keeps the slip, and anyone can verify it against the chain.
+
+```mermaid
+flowchart LR
+    Human(["Human"]) -- "sets the envelope" --> Buyer["Buyer agent<br/>CLI / MCP"]
+    Seller["Seller runner<br/>dials out"] -- "signed offers, deliveries" --> Hub
+    Buyer -- "countersignature" --> Hub["Hub<br/>offers, 402s, jobs, slips"]
+    Hub -- "jobs" --> Seller
+    Hub --> Router{"Rail router"}
+    Router --> Arc["escrow<br/>Arc USDC"]
+    Router --> WC["whitechain<br/>USDT, via relay"]
+    Router --> HS["hedera-scheduled<br/>HTS USDC, held"]
+    WC --> Relay["Relay<br/>pays the gas"]
+    Hub -- "slip" --> Buyer
+    Buyer -- "slip" --> Verify["Verifier<br/>no hub import"]
+    Verify -. "reads Released event" .-> Arc
+    Verify -. "reads Released event" .-> WC
+```
 
 ![countersign architecture](docs/architecture.svg)
 

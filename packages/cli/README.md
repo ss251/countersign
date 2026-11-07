@@ -18,7 +18,7 @@ It runs on Node 20 or later.
 npx -y @countersign-hub/cli login
 ```
 
-- **The page.** `login` opens a page on the countersign console. Sign in with Privy, by email or a passkey.
+- **The page.** `login` prints a link to a page on the countersign console, and opens it in your browser when it can. Open the link if it does not open. Sign in with Privy, by email or a passkey.
 - **The code.** Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
 - **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store its key, and the CLI keeps only a session token.
 - **The session.** `whoami` prints the address, and `logout` ends the session. A session lasts at most 7 days.
@@ -41,6 +41,8 @@ npx -y @countersign-hub/cli discover
 npx -y @countersign-hub/cli buy <offer hash> --input '{"question":"what is arc?"}'
 npx -y @countersign-hub/cli verify ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
 ```
+
+If that RPC answers "rate limit exceeded", which can happen on a shared network, any Arc testnet RPC works the same, for example `https://5042002.rpc.thirdweb.com`.
 
 `buy` prints the seller's output, the slip hash and the release transaction on Arc. `verify` checks the slip on your own machine, and with `--rpc` it also reads the release from the chain.
 

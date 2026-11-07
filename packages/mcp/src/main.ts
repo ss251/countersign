@@ -2,7 +2,7 @@ import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem/accounts";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { HubClient, Journal, remoteAccount, sessionFromEnv, State } from "@countersign/buyer";
+import { HubClient, Journal, remoteAccount, sessionFromEnv, State, type RemoteSession } from "@countersign/buyer";
 import { createCountersignMcpServer } from "./server.ts";
 
 const DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
@@ -67,6 +67,8 @@ export interface MainOptions {
 
 export interface ResolvedAccount {
   account?: LocalAccount;
+  /** Present when the account signs through the hub's session. */
+  session?: RemoteSession;
   problem?: string;
 }
 
@@ -106,7 +108,7 @@ export async function resolveAccount(
   } catch (error) {
     return sessionProblem(error);
   }
-  if (session !== undefined) return { account: remoteAccount(session) };
+  if (session !== undefined) return { account: remoteAccount(session), session };
   return ciAccount(env);
 }
 
@@ -126,7 +128,7 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<v
   const state = new State(config.state);
   const journal = new Journal(state.journalPath);
   const hub = new HubClient(config.hub);
-  const { account, problem } = await resolveAccount(options, process.env);
+  const { account, session, problem } = await resolveAccount(options, process.env);
 
   console.error(`countersign mcp: hub ${hub.url}`);
   console.error(`countersign mcp: state ${state.dir}`);
@@ -144,6 +146,7 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<v
     hubUrl: config.hub,
     now: () => Math.floor(Date.now() / 1000),
     ...(account !== undefined ? { account } : {}),
+    ...(session !== undefined ? { session } : {}),
     ...(problem !== undefined ? { problem } : {}),
     ...(config.rpcUrl !== undefined ? { rpcUrl: config.rpcUrl } : {}),
   });

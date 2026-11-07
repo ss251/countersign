@@ -1,3 +1,4 @@
+import { RailName } from "./NetworkMark.tsx";
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { formatAmount, RAIL_LABEL, shortHex } from "../lib/format.ts";
 import type { JobStatus, Money, RailId } from "../lib/types.ts";
@@ -120,7 +121,11 @@ export function RailState({ state, children }: { state: "live" | "degraded" | "o
 }
 
 export function RailTag({ rail }: { rail: RailId }) {
-  return <span className="rail-tag">{RAIL_LABEL[rail]}</span>;
+  return (
+    <span className="rail-tag">
+      <RailName rail={rail} />
+    </span>
+  );
 }
 
 export function Tag({ children }: { children: ReactNode }) {

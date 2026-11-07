@@ -1,3 +1,4 @@
+import { RailName } from "../../ui/NetworkMark.tsx";
 import { RAIL_LABEL } from "../../lib/format.ts";
 import { railTermLines } from "../../lib/terms.ts";
 import type { RailDeclaration, RailId } from "../../lib/types.ts";
@@ -18,7 +19,9 @@ export function OfferTerms({
         const declaration = declarations?.find((d) => d.id === id);
         return (
           <div key={id} className="terms__rail" data-testid={`terms-${id}`}>
-            <h3 className="terms__rail-title">{RAIL_LABEL[id]}</h3>
+            <h3 className="terms__rail-title">
+              <RailName rail={id} />
+            </h3>
             <dl className="terms">
               {railTermLines(declaration, deadline).map(([term, sentence]) => (
                 <div key={term}>
