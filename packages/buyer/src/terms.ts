@@ -20,6 +20,7 @@ export type DirectTermsCheck = { ok: true; direct: KnownDirect } | { ok: false; 
 const UNKNOWN_RAIL = "Refused. This rail is not one this agent knows.";
 const WRONG_PAYEE = "Refused. The payment terms pay someone other than the offer's seller.";
 const WRONG_AMOUNT = "Refused. The payment terms ask a different amount than the offer's price.";
+const WRONG_OFFER = "Refused. The payment terms name a different offer.";
 const WRONG_VERSION = "Refused. The escrow version is not the one this agent pinned.";
 const WRONG_BOND_WINDOW = "Refused. The bond or review window in the payment terms is not the offer's.";
 
@@ -97,6 +98,28 @@ export function checkDirectTerms(
     return { ok: false, message: "Refused. The payment window is longer than this agent allows." };
   }
   return { ok: true, direct };
+}
+
+/**
+ * The hedera counterpart: the payee, the price and the offer hash must all come
+ * from the fetched offer, because the hub's 402 is not signed by the seller.
+ */
+export function checkHederaTerms(
+  offer: Offer,
+  offerHash: Hex,
+  entry: PaymentRequirements,
+): { ok: true } | { ok: false; message: string } {
+  if (!offer.rails.includes("hedera")) return { ok: false, message: UNKNOWN_RAIL };
+  const expectedPayTo = offer.payTo?.hedera;
+  if (typeof expectedPayTo !== "string" || entry.payTo !== expectedPayTo) {
+    return { ok: false, message: WRONG_PAYEE };
+  }
+  if (entry.amount !== offer.price) return { ok: false, message: WRONG_AMOUNT };
+  const named = entry.extra?.offerHash;
+  if (typeof named !== "string" || named.toLowerCase() !== offerHash.toLowerCase()) {
+    return { ok: false, message: WRONG_OFFER };
+  }
+  return { ok: true };
 }
 
 /**

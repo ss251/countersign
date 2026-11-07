@@ -20,7 +20,7 @@ import {
   eip3009Payer,
   gatewayPayer,
   hederaPayer,
-  hubHederaAccount,
+  hubHederaAccountReadOnly,
   hubHederaSigner,
   type HubClient,
   type Journal,
@@ -195,11 +195,14 @@ export function createCountersignMcpServer(deps: McpDeps): McpServer {
       try {
         assertHash(offerHash, "offerHash");
         const payers: Payer[] = [countersignPayer(account), gatewayPayer(account), eip3009Payer(account)];
-        if (deps.session !== undefined) {
-          const hederaAccount = await hubHederaAccount(deps.session);
-          if (hederaAccount !== null) {
-            payers.push(hederaPayer({ accountId: hederaAccount.accountId, key: hubHederaSigner(deps.session) }));
-          }
+        const session = deps.session;
+        if (session !== undefined) {
+          payers.push(
+            hederaPayer({
+              accountId: () => hubHederaAccountReadOnly(session),
+              key: hubHederaSigner(session),
+            }),
+          );
         }
         const result = await buy({
           hub: deps.hub,

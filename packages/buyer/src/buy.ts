@@ -25,7 +25,7 @@ import { KNOWN_DIRECTS, KNOWN_RAILS, knownDirectFor, type KnownRail } from "./kn
 import { publishEnvelope, type SigningAccount } from "./mirror.ts";
 import type { Payer } from "./payer.ts";
 import type { State } from "./state.ts";
-import { checkDirectTerms, checkGatewayTerms, checkTerms } from "./terms.ts";
+import { checkDirectTerms, checkGatewayTerms, checkHederaTerms, checkTerms } from "./terms.ts";
 
 export class BuyError extends Error {
   constructor(message: string) {
@@ -151,6 +151,12 @@ export async function buy(a: BuyArgs): Promise<CallResult> {
         }
 
         if (req.network === HEDERA_TESTNET) {
+          const terms = checkHederaTerms(offer, offerHash, req);
+          if (!terms.ok) {
+            refusal ??= terms.message;
+            refusedAmount ??= req.amount;
+            continue;
+          }
           entry = req;
           payer = candidate;
           chosen = { kind: "hedera" };
