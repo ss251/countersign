@@ -24,11 +24,12 @@ export interface SkillInput {
 }
 
 export interface SkillOutput {
-  name: string;
-  /** The answer. A model's answer when a credential is present, else the matching sections. Never the skill file. */
-  text: string;
-  /** The file's digest, so a buyer can cite the exact version they paid against. */
-  sha256: string;
+  /** The answer to the caller's question. Never the skill file. */
+  answer: string;
+  /** The service that answered, as listed. */
+  skill: string;
+  /** The version the answer was produced against, for citation. */
+  version: string;
 }
 
 export interface SkillModel {
@@ -57,6 +58,7 @@ export const SKILL_INPUT_SCHEMA: JsonSchema = {
     question: { type: "string", maxLength: 2000 },
     section: { type: "string", maxLength: 200 },
   },
+  required: ["question"],
   additionalProperties: false,
 };
 
@@ -64,10 +66,11 @@ export const SKILL_OUTPUT_SCHEMA: JsonSchema = {
   type: "object",
   properties: {
     name: { type: "string" },
-    text: { type: "string" },
-    sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    answer: { type: "string" },
+    skill: { type: "string" },
+    version: { type: "string" },
   },
-  required: ["name", "text", "sha256"],
+  required: ["answer", "skill", "version"],
   additionalProperties: false,
 };
 
@@ -174,14 +177,14 @@ export async function runSkill(
     const body = (await fetched.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = body.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error("The skill model returned no answer.");
-    return { name: skill.name, text: content, sha256: skill.sha256 };
+    return { answer: content, skill: skill.name, version: skill.sha256.slice(0, 12) };
   }
 
   if (input.section !== undefined) {
     const text = findSection(skill.body, input.section);
     if (text === undefined) throw new Error(`The skill has no section named ${input.section}.`);
     const named = sections.find((s) => s.heading.toLowerCase() === input.section!.toLowerCase());
-    return { name: skill.name, text, sha256: skill.sha256 };
+    return { answer: text, skill: skill.name, version: skill.sha256.slice(0, 12) };
   }
 
   const wanted = terms(input.question ?? "");
@@ -200,11 +203,11 @@ export async function runSkill(
         .filter((r) => r.score > 0 && (headingHit(r) || r.score >= best * 0.75))
         .slice(0, 2);
       const answer = keep.map((r) => r.section.text).join("\n\n");
-      return { name: skill.name, text: answer, sha256: skill.sha256 };
+      return { answer, skill: skill.name, version: skill.sha256.slice(0, 12) };
     }
   }
 
-  return { name: skill.name, text: skill.description, sha256: skill.sha256 };
+  return { answer: skill.description, skill: skill.name, version: skill.sha256.slice(0, 12) };
 }
 
 /** Build the offer a seller publishes for a skill. */
