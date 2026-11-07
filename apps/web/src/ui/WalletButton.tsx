@@ -1,3 +1,4 @@
+import { WalletAddressCopy } from "./WalletCopy.tsx";
 import { useEffect, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
@@ -145,6 +146,7 @@ function WalletBody({
           >
             {shortAddress(account.address)}
           </span>
+          <WalletAddressCopy address={account.address} />
           <span aria-hidden="true"> · </span>
           <span data-testid="wallet-chain" data-value={account.chainId}>
             {chainName(account.chainId)}
