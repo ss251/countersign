@@ -12,7 +12,7 @@ Run it through the `countersign` command, which carries this server. Sign in onc
 npx -y @countersign-hub/cli login
 ```
 
-- **The page.** `login` opens a page on the countersign console. Sign in with Privy, by email or a passkey.
+- **The page.** `login` prints a link to a page on the countersign console, and opens it in your browser when it can. Open the link if it does not open. Sign in with Privy, by email or a passkey.
 - **The code.** Check that the code matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself.
 - **The wallet.** The CLI prints your agent wallet's address. The wallet is a Privy server wallet: you never see, paste or store its key.
 - **Funding.** Send test USDC to that address: from https://faucet.circle.com (choose Arc Testnet), or from your own wallet.

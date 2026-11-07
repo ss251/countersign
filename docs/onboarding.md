@@ -24,7 +24,7 @@ Sign in once:
 npx -y @countersign-hub/cli login
 ```
 
-- It opens a page on the console. Sign in with Privy, by email or a passkey. Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
+- It prints a link to a page on the console, and opens it in your browser when it can. Open the link if it does not open. Sign in with Privy, by email or a passkey. Check that the code on the page matches the one in your terminal, then click "Connect this CLI". Never approve a code you did not start yourself: whoever started it gets your agent wallet's session.
 - The CLI prints your agent wallet's address. `whoami` prints it again, and `logout` ends the session. A session lasts at most 7 days.
 - Fund that address with test USDC: at https://faucet.circle.com choose Arc Testnet and USDC, or send some from your own wallet. On Arc the hub pays the gas, so USDC is all the agent needs.
 
@@ -172,4 +172,4 @@ Run a relay of your own alongside it, from a clone. It pays the gas, and it pays
 - Test USDT has no faucet. Swapping test WBT on the testnet pool is described at https://github.com/ss251/countersign/blob/main/docs/whitechain.md#getting-test-funds
 <!-- /get-started:charge -->
 
-That `shop.mjs`, installed from npm in a scratch directory on Node 25, answered the `402` on 07 Nov. The same paywall runs live as the console's checkout: [`/checkout/sticker-pack`](https://web-production-a58de.up.railway.app/checkout/sticker-pack) answers `402`. A purchase through it, [`0x59eb…c12b`](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b), was refunded in full by [`0x3efd…bd6f`](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f). [whitechain.md](whitechain.md) covers refunds, the CSV export and the relay's guards.
+That `shop.mjs`, installed from npm in a scratch directory on Node 25, answered the `402` on 07 Nov. The same paywall runs live as the console's checkout: [`/checkout/sticker-pack`](https://counter-sign.up.railway.app/checkout/sticker-pack) answers `402`. A purchase through it, [`0x59eb…c12b`](https://explorer.testnet.whitechain.io/tx/0x59eb27e66c4a71bf48656e4c0bc00f717e89f43edb23f6abe9282fc7b939c12b), was refunded in full by [`0x3efd…bd6f`](https://explorer.testnet.whitechain.io/tx/0x3efd65a06cdf38a269a008ee12fdbeae2ceff2210f210bae887da327baa7bd6f). [whitechain.md](whitechain.md) covers refunds, the CSV export and the relay's guards.
