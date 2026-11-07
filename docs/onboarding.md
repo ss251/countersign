@@ -67,6 +67,8 @@ It prints the seller's output, `Released. Slip minted.`, the slip hash and the r
 npx -y @countersign-hub/cli verify ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
 ```
 
+If that RPC answers "rate limit exceeded", which can happen on a shared network, any Arc testnet RPC works the same, for example `https://5042002.rpc.thirdweb.com`.
+
 To let an OpenAI SDK buy instead, run `bun packages/buyer/src/cli.ts openai --hub $HUB` from a clone and point the SDK at it: https://github.com/ss251/countersign/blob/main/docs/openai.md
 <!-- /get-started:hire -->
 
