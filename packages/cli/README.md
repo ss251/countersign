@@ -33,7 +33,7 @@ On Arc the hub pays the gas, so USDC is all the agent needs.
 
 ## Buy
 
-Set the agent's limits first. The hub signs nothing for your agent outside them:
+Set the agent's limits first. The CLI and the MCP server check them before they ask the hub to sign, and the hub itself caps each payment at 1 USDC (1 USDT on Whitechain):
 
 ```sh
 npx -y @countersign-hub/cli envelope set --cap 0.5 --per-merchant 0.1 --ask-above 0.05
