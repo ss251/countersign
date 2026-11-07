@@ -26,12 +26,16 @@ type LoginPoll =
   | { status: "approved"; sessionToken: string; address: string; expiresAt: number };
 
 const EXPIRED = "The login expired. Run countersign login again.\n";
-const CONSOLE_ORIGIN = "https://web-production-a58de.up.railway.app";
+/** The consoles whose approval page login opens by itself. Any other link is printed, never opened. */
+export const CONSOLE_ORIGINS: readonly string[] = [
+  "https://counter-sign.up.railway.app",
+  "https://web-production-a58de.up.railway.app",
+];
 const UNSAFE_URL_CHARACTERS = /[&|^<>"%`;\s]/;
 const HUB_REFUSED = "Refused: the countersign hub must be https.";
 
 /** The link to the console, or null when the hub answered with anything else. */
-export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): string | null {
+export function safeConsoleUrl(url: string, consoleOrigins: string | readonly string[] = CONSOLE_ORIGINS): string | null {
   if (UNSAFE_URL_CHARACTERS.test(url)) return null;
   let parsed: URL;
   try {
@@ -40,7 +44,8 @@ export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): str
     return null;
   }
   if (parsed.protocol !== "https:") return null;
-  if (parsed.origin !== consoleOrigin) return null;
+  const allowed = typeof consoleOrigins === "string" ? [consoleOrigins] : consoleOrigins;
+  if (!allowed.includes(parsed.origin)) return null;
   return url;
 }
 
