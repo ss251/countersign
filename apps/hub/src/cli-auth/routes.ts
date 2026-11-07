@@ -9,6 +9,7 @@ import {
   type PrivyTransferTerms,
 } from "@countersign/rail/hedera";
 import type { PaymentRequirements } from "../deps.ts";
+import { REVOKED } from "../call.ts";
 import { personFrom, type PrivyVerifier } from "../privy.ts";
 import type { Store } from "../store.ts";
 import {
@@ -406,6 +407,9 @@ async function signHedera(c: Context, deps: CliAuthDeps): Promise<Response> {
   if (!hedera) return notFound();
   const session = activeSession(c, deps);
   if (session === null) return notSignedIn();
+  if (deps.hubStore.getRevocation(session.address.toLowerCase()) !== null) {
+    return fail(403, "envelope-revoked", REVOKED);
+  }
 
   const parsed = await readJsonLimited(c);
   if (parsed.kind === "too-large") return tooLarge();

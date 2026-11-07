@@ -52,6 +52,7 @@ const verifier: PrivyVerifier = {
   async verify(token: string): Promise<Person> {
     if (token === "alice") return { userId: "did:privy:alice", wallets: [] };
     if (token === "bob") return { userId: "did:privy:bob", wallets: [] };
+    if (token === "carol") return { userId: "did:privy:carol", wallets: [WALLET_ONE_ADDRESS] };
     throw new PrivySessionError("nope");
   },
 };
@@ -612,6 +613,22 @@ describe("POST /me/hedera/buy", () => {
     expect(PublicKey.fromString(storedKey).verify(signed.bodyBytes!, pairs[0]!.ECDSASecp256k1!)).toBe(
       true,
     );
+  });
+
+  test("refuses a purchase when one of the person's wallets is revoked", async () => {
+    const hub = startHub();
+    const hash = await publishOffer(hub);
+    hub.store.putRevocation({
+      agent: WALLET_ONE_ADDRESS,
+      revokedAt: hub.now(),
+      sig: "0x",
+      recordedAt: hub.now(),
+    });
+
+    const response = await buy(hub, { offerHash: hash, input: { q: "hello" } }, "carol");
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as ErrorBody).code).toBe("envelope-revoked");
+    expect(hub.wallets.calls.raw).toHaveLength(0);
   });
 
   test("refuses an amount over HARD_CAP before signing anything", async () => {

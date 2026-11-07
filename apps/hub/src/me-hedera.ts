@@ -6,7 +6,7 @@ import {
   tokenBalance,
   validatePrivyTransfer,
 } from "@countersign/rail/hedera";
-import { paidCall, type CallDeps } from "./call.ts";
+import { paidCall, REVOKED, type CallDeps } from "./call.ts";
 import {
   capFor,
   expectedHederaTransfer,
@@ -121,6 +121,12 @@ async function buyLocked(
   offerHash: string,
   input: unknown,
 ): Promise<Response> {
+  for (const wallet of person.wallets) {
+    if (deps.hubStore.getRevocation(wallet.toLowerCase()) !== null) {
+      return fail(403, "envelope-revoked", REVOKED);
+    }
+  }
+
   const row = deps.cliStore.getHedera(person.userId);
   if (
     row?.state !== "ready" ||

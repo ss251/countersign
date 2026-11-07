@@ -553,6 +553,33 @@ describe("POST /cli/sign/hedera", () => {
     expect(refusalReason(await small.json())).toBe("over-cap");
   });
 
+  test("refuses a revoked session address before signing", async () => {
+    const hub = startHub();
+    const token = await login(hub);
+    hub.cliStore.claimHedera("did:privy:alice", NOW);
+    hub.cliStore.readyHedera("did:privy:alice", {
+      walletId: "privy-wallet-hedera",
+      evmAddress: WALLET_TWO_ADDRESS,
+      publicKey: compress(WALLET_TWO.publicKey),
+      accountId: BUYER,
+    });
+    const hash = await publishOffer(hub);
+    hub.store.putRevocation({
+      agent: WALLET_ONE_ADDRESS,
+      revokedAt: NOW,
+      sig: "0x",
+      recordedAt: NOW,
+    });
+
+    const response = await signRequest(hub, token, {
+      offerHash: hash,
+      transactionBytes: build({ hash }),
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as ErrorBody).code).toBe("envelope-revoked");
+    expect(hub.wallets.calls.raw).toHaveLength(0);
+  });
+
   test("refuses an unknown offer, an offer without the hedera rail, and a login with no account", async () => {
     const hub = startHub();
     const token = await login(hub);
