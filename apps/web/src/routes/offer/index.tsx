@@ -166,7 +166,7 @@ export default function OfferPage({ params }: PageProps) {
           </div>
           <pre className="command__body mono">{via === "cli" ? cli : curl}</pre>
         </div>
-        <p className="section__note">The agent’s key comes from CS_BUYER_KEY and never appears in a command.</p>
+        <p className="section__note">Sign in once with npx -y @countersign-hub/cli login. The agent’s wallet is a Privy server wallet our app controls, so no key is on your machine.</p>
       </section>
 
       <div className="offer__cols">
@@ -296,9 +296,17 @@ export function exampleInput(schema: JsonSchema): Record<string, unknown> {
   );
 }
 
+/** The hub the published CLI uses when no --hub is given (packages/cli/src/cli.ts DEFAULT_HUB). */
+export const CLI_DEFAULT_HUB = "https://hub-production-e85e.up.railway.app";
+
+/**
+ * The buy command a person copies: the published CLI from npm, signed in with Privy, so no key is on the machine
+ * (firstmate 02:06:42Z). --hub only when this console talks to a hub other than the CLI's default.
+ */
 export function buyCommand(offerHash: string, input: JsonSchema, hub: string): string {
   const json = JSON.stringify(exampleInput(input)).replace(/'/g, "'\\''");
-  return `bun packages/buyer/src/cli.ts buy ${offerHash} --input '${json}' --hub ${hub}`;
+  const defaultHub = hub.replace(/\/+$/, "") === CLI_DEFAULT_HUB;
+  return `npx -y @countersign-hub/cli buy ${offerHash} --input '${json}'${defaultHub ? "" : ` --hub ${hub}`}`;
 }
 
 export function curlCommand(offerHash: string, input: JsonSchema, hub: string): string {
