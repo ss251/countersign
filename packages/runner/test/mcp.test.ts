@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { canonicalHash } from "@countersign/core";
 import { runInChild, type ChildSpec } from "../src/child.ts";
-import { substituteBuyer, type McpSpec } from "../src/mcp.ts";
+import { substituteBuyer, childEnvironment, type McpSpec } from "../src/mcp.ts";
 
 const FIXTURE = join(import.meta.dir, "mcp-fixture-server.ts");
 const LIMITS = { timeMs: 20_000, maxOutputBytes: 200_000 };
@@ -58,10 +58,22 @@ describe("runMcp", () => {
     process.env.CS_PLANTED_SECRET = "planted";
     try {
       const output = (await runInChild(mcpSpec({ tool: "env" }), {}, LIMITS)) as McpOutput;
-      expect(output.result).toEqual({ planted: null });
+      expect(output.result).toEqual({ planted: null, model: null });
     } finally {
       if (previous === undefined) delete process.env.CS_PLANTED_SECRET;
       else process.env.CS_PLANTED_SECRET = previous;
+    }
+  });
+
+  test("an mcp server never sees the seller's model credential", async () => {
+    const previous = process.env.SKILL_MODEL_API_KEY;
+    process.env.SKILL_MODEL_API_KEY = "sk-seller";
+    try {
+      const output = (await runInChild(mcpSpec({ tool: "env" }), {}, LIMITS)) as McpOutput;
+      expect(output.result).toEqual({ planted: null, model: null });
+    } finally {
+      if (previous === undefined) delete process.env.SKILL_MODEL_API_KEY;
+      else process.env.SKILL_MODEL_API_KEY = previous;
     }
   });
 
@@ -104,5 +116,20 @@ describe("substituteBuyer", () => {
   test("leaves any other spec unchanged", () => {
     const spec: ChildSpec = { adapter: "skill", skillPath: "/tmp/SKILL.md" };
     expect(substituteBuyer(spec, "0.0.1234")).toBe(spec);
+  });
+});
+
+describe("childEnvironment", () => {
+  test("drops every SKILL_MODEL variable, whichever name it has", () => {
+    const env = childEnvironment({
+      PATH: "/bin",
+      HOME: "/tmp/home",
+      COUNTERSIGN_LINEAGE: "0xlineage",
+      SKILL_MODEL_API_KEY: "sk-seller",
+      SKILL_MODEL_BASE_URL: "https://models.example",
+      SKILL_MODEL: "seller-model",
+      SKILL_MODEL_EXTRA: "extra",
+    });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/tmp/home", COUNTERSIGN_LINEAGE: "0xlineage" });
   });
 });

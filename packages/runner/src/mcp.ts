@@ -105,10 +105,12 @@ function textOf(result: CallToolResult): string {
 }
 
 /** The child's own environment, which the runner already scrubbed to PATH and HOME. */
-function childEnvironment(): Record<string, string> {
+export function childEnvironment(
+  parent: Record<string, string | undefined> = process.env,
+): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[name] = value;
+  for (const [name, value] of Object.entries(parent)) {
+    if (value !== undefined && !name.startsWith("SKILL_MODEL")) env[name] = value;
   }
   return env;
 }

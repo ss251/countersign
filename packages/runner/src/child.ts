@@ -41,17 +41,21 @@ export function childEntryPath(): string {
 export function scrubbedEnv(
   parent: Record<string, string | undefined>,
   lineage?: string,
+  adapter?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {
     PATH: parent.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     HOME: mkdtempSync(join(tmpdir(), "countersign-runner-")),
   };
   if (lineage !== undefined) env.COUNTERSIGN_LINEAGE = lineage;
-  // A skill job may answer through the seller's own model account. These three are
-  // the only extra variables a child sees, and they are never logged.
-  for (const key of ["SKILL_MODEL_API_KEY", "SKILL_MODEL_BASE_URL", "SKILL_MODEL"]) {
-    const value = parent[key];
-    if (value !== undefined && value !== "") env[key] = value;
+  // Only a skill job may answer through the seller's own model account. These three
+  // are the only extra variables it sees, and they are never logged. Every other
+  // adapter, and a missing one, gets none of them.
+  if (adapter === "skill") {
+    for (const key of ["SKILL_MODEL_API_KEY", "SKILL_MODEL_BASE_URL", "SKILL_MODEL"]) {
+      const value = parent[key];
+      if (value !== undefined && value !== "") env[key] = value;
+    }
   }
   return env;
 }
@@ -79,7 +83,7 @@ export async function runInChild(
   lineage?: string,
   spawner: ChildSpawner = defaultSpawner(),
 ): Promise<unknown> {
-  const env = scrubbedEnv(process.env, lineage);
+  const env = scrubbedEnv(process.env, lineage, spec.adapter);
   const request = JSON.stringify({ spec, input });
   const run =
     spawner === "bun" ? await runWithBun(env, request, limits) : await runWithNode(env, request, limits);
