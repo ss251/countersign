@@ -1,8 +1,10 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Address } from "viem";
+import { createEcdsaAccount } from "@countersign/rail/hedera";
 import { createHub } from "./app.ts";
 import { runCanary } from "./canary.ts";
+import type { HederaSignTerms } from "./cli-auth/routes.ts";
 import { CliAuthStore } from "./cli-auth/store.ts";
 import { rpcUrlsFrom, sepoliaEnsResolver } from "./deps.ts";
 import { erc8004IdentityLookup } from "./identity.ts";
@@ -50,6 +52,51 @@ const privySecret = process.env.PRIVY_APP_SECRET?.trim() ?? "";
 const privy = privyAppId !== "" && privySecret !== "" ? createPrivyVerifier(privyAppId, privySecret) : undefined;
 
 // The CLI signs through the hub's Privy server wallets when the same app credentials are set.
+const hederaOperatorId = process.env.HEDERA_PRIVY_OPERATOR_ID?.trim() ?? "";
+const hederaOperatorKey = process.env.HEDERA_PRIVY_OPERATOR_KEY?.trim() ?? "";
+const hederaRail = rails.find((rail) => rail.declaration.id === "hedera");
+const hederaOffReason =
+  hederaOperatorId === "" || hederaOperatorKey === ""
+    ? "HEDERA_PRIVY_OPERATOR_ID and HEDERA_PRIVY_OPERATOR_KEY are required"
+    : hederaRail === undefined
+      ? "the hedera rail is not live"
+      : null;
+const hederaPrivyOn = process.env.HEDERA_PRIVY === "1" && hederaOffReason === null;
+if (process.env.HEDERA_PRIVY === "1" && !hederaPrivyOn) {
+  console.log(`[hub] hedera privy wallet is off: ${hederaOffReason ?? "unknown"}`);
+}
+const hederaHourlyCap = ((): number => {
+  const raw = process.env.HEDERA_PRIVY_HOURLY_CAP?.trim() ?? "";
+  if (raw === "") return 20;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : 20;
+})();
+const hederaTerms = hederaPrivyOn && hederaRail
+  ? (offerHash: string): HederaSignTerms | null => {
+      const stored = store.getOffer(offerHash);
+      if (stored === null || stored.delistedAt !== null) return null;
+      const offer = stored.offer;
+      if (!Array.isArray(offer.rails) || !offer.rails.includes("hedera")) return null;
+      try {
+        const requirements = hederaRail.challenge(offer, {
+          resource: `${publicUrl}/offers/${offerHash}/call`,
+          now: now(),
+        });
+        const feePayer = requirements.extra?.feePayer;
+        if (typeof feePayer !== "string") return null;
+        return {
+          offerHash,
+          asset: requirements.asset,
+          amount: BigInt(requirements.amount),
+          payTo: requirements.payTo,
+          feePayer,
+        };
+      } catch {
+        return null;
+      }
+    }
+  : undefined;
+
 const cliAuth =
   privyAppId !== "" && privySecret !== ""
     ? {
@@ -60,7 +107,20 @@ const cliAuth =
         wallets: privyWalletApi(privyAppId, privySecret, {
           policyId: process.env.PRIVY_WALLET_POLICY_ID,
         }),
-        consoleUrl: process.env.CONSOLE_URL ?? "https://web-production-a58de.up.railway.app",
+        consoleUrl: process.env.CONSOLE_URL ?? "https://counter-sign.up.railway.app",
+        ...(hederaPrivyOn && hederaTerms
+          ? {
+              hedera: {
+                terms: hederaTerms,
+                createAccount: (compressedPublicKey: string) =>
+                  createEcdsaAccount(
+                    { id: hederaOperatorId, key: hederaOperatorKey },
+                    compressedPublicKey,
+                  ),
+                hourlyCap: hederaHourlyCap,
+              },
+            }
+          : {}),
       }
     : undefined;
 

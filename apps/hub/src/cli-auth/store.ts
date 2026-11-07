@@ -26,6 +26,18 @@ export interface CliSessionRecord {
   revokedAt: number | null;
 }
 
+export type CliHederaState = "claimed" | "ready" | "failed";
+
+export interface CliHederaRecord {
+  userId: string;
+  state: CliHederaState;
+  walletId: string | null;
+  evmAddress: string | null;
+  publicKey: string | null;
+  accountId: string | null;
+  createdAt: number;
+}
+
 interface CliWalletRow {
   user_id: string;
   wallet_id: string;
@@ -52,6 +64,16 @@ interface CliSessionRow {
   revoked_at: number | null;
 }
 
+interface CliHederaRow {
+  user_id: string;
+  state: string;
+  wallet_id: string | null;
+  evm_address: string | null;
+  public_key: string | null;
+  account_id: string | null;
+  created_at: number;
+}
+
 export class CliAuthStore {
   private readonly db: Database;
 
@@ -65,6 +87,9 @@ export class CliAuthStore {
     );
     this.db.run(
       "CREATE TABLE IF NOT EXISTS cli_sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, wallet_id TEXT NOT NULL, address TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER)",
+    );
+    this.db.run(
+      "CREATE TABLE IF NOT EXISTS cli_hedera (user_id TEXT PRIMARY KEY, state TEXT NOT NULL, wallet_id TEXT, evm_address TEXT, public_key TEXT, account_id TEXT, created_at INTEGER NOT NULL)",
     );
   }
 
@@ -161,6 +186,57 @@ export class CliAuthStore {
 
   revokeSession(tokenHash: string, at: number): void {
     this.db.query("UPDATE cli_sessions SET revoked_at = ? WHERE token_hash = ?").run(at, tokenHash);
+  }
+
+  /** True only for the caller that claimed the row, or that reclaimed a failed row older than 10 minutes. */
+  claimHedera(userId: string, at: number): boolean {
+    const result = this.db
+      .query(
+        "INSERT INTO cli_hedera (user_id, state, wallet_id, evm_address, public_key, account_id, created_at) VALUES (?, 'claimed', NULL, NULL, NULL, NULL, ?) ON CONFLICT(user_id) DO UPDATE SET state = 'claimed', created_at = excluded.created_at WHERE cli_hedera.state = 'failed' AND cli_hedera.created_at <= excluded.created_at - 600",
+      )
+      .run(userId, at);
+    return result.changes === 1;
+  }
+
+  getHedera(userId: string): CliHederaRecord | null {
+    const row = this.db
+      .query<CliHederaRow, [string]>("SELECT * FROM cli_hedera WHERE user_id = ?")
+      .get(userId);
+    if (row === null) return null;
+    return {
+      userId: row.user_id,
+      state: row.state as CliHederaState,
+      walletId: row.wallet_id,
+      evmAddress: row.evm_address,
+      publicKey: row.public_key,
+      accountId: row.account_id,
+      createdAt: row.created_at,
+    };
+  }
+
+  readyHedera(
+    userId: string,
+    record: { walletId: string; evmAddress: string; publicKey: string; accountId: string },
+  ): void {
+    this.db
+      .query(
+        "UPDATE cli_hedera SET state = 'ready', wallet_id = ?, evm_address = ?, public_key = ?, account_id = ? WHERE user_id = ?",
+      )
+      .run(record.walletId, record.evmAddress, record.publicKey, record.accountId, userId);
+  }
+
+  failHedera(userId: string): void {
+    this.db
+      .query("UPDATE cli_hedera SET state = 'failed' WHERE user_id = ? AND state <> 'ready'")
+      .run(userId);
+  }
+
+  /** Claims (and so account creations) started at or after `since`, the hub's global hourly cap. */
+  hederaCreatedSince(since: number): number {
+    const row = this.db
+      .query<{ n: number }, [number]>("SELECT COUNT(*) AS n FROM cli_hedera WHERE created_at >= ?")
+      .get(since);
+    return row?.n ?? 0;
   }
 }
 

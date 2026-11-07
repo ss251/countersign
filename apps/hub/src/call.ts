@@ -34,7 +34,7 @@ import type { Fault, StoredOffer, Store } from "./store.ts";
 import { hexList, isRecord, sameText } from "./util.ts";
 
 const CHECK_FAILED = "Refused. The payment could not be checked.";
-const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
+export const REVOKED = "Refused. This agent's envelope was revoked by its approver. Nothing was charged.";
 
 /** How much of its validity window a payment that settles after delivery must keep past the deadline. */
 export const SETTLE_MARGIN_SECONDS = 30;

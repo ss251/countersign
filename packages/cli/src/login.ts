@@ -26,12 +26,13 @@ type LoginPoll =
   | { status: "approved"; sessionToken: string; address: string; expiresAt: number };
 
 const EXPIRED = "The login expired. Run countersign login again.\n";
-const CONSOLE_ORIGIN = "https://web-production-a58de.up.railway.app";
+/** The consoles whose approval page login opens by itself. Any other link is printed, never opened. */
+export const CONSOLE_ORIGINS: readonly string[] = ["https://counter-sign.up.railway.app"];
 const UNSAFE_URL_CHARACTERS = /[&|^<>"%`;\s]/;
 const HUB_REFUSED = "Refused: the countersign hub must be https.";
 
 /** The link to the console, or null when the hub answered with anything else. */
-export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): string | null {
+export function safeConsoleUrl(url: string, consoleOrigins: string | readonly string[] = CONSOLE_ORIGINS): string | null {
   if (UNSAFE_URL_CHARACTERS.test(url)) return null;
   let parsed: URL;
   try {
@@ -40,7 +41,8 @@ export function safeConsoleUrl(url: string, consoleOrigin = CONSOLE_ORIGIN): str
     return null;
   }
   if (parsed.protocol !== "https:") return null;
-  if (parsed.origin !== consoleOrigin) return null;
+  const allowed = typeof consoleOrigins === "string" ? [consoleOrigins] : consoleOrigins;
+  if (!allowed.includes(parsed.origin)) return null;
   return url;
 }
 
@@ -142,7 +144,7 @@ export async function runLogin(_args: string[], deps: LoginDeps): Promise<void> 
       deps.backend.write(session);
       deps.write(`Signed in. Your agent wallet: ${poll.address}\n`);
       deps.write(`Fund it: send testnet USDC to ${poll.address} (Circle faucet: https://faucet.circle.com).\n`);
-      deps.write(`For Whitechain, get test WBT for gas at https://faucet.testnet.whitechain.io.\n`);
+      deps.write(`On Whitechain you need test USDT only: the relay pays the gas.\n`);
       deps.write(`The session lasts 7 days; countersign logout ends it.\n`);
       return;
     }
@@ -219,9 +221,56 @@ export async function runWhoami(_args: string[], deps: LoginDeps): Promise<void>
     return;
   }
 
-  const body = (await response.json()) as { address: string; expiresAt: number };
+  const body = (await response.json()) as {
+    address: string;
+    expiresAt: number;
+    hedera?: { accountId?: unknown } | null;
+  };
   deps.write(`Signed in as ${body.address} until ${new Date(body.expiresAt * 1000).toISOString()}\n`);
   deps.write(`${await readBalances(body.address)}\n`);
+
+  const hederaAccount = await hederaAccountId(session, body.hedera, fetchImpl);
+  if (hederaAccount.kind === "unavailable") {
+    deps.write("Hedera account: not available right now.\n");
+  } else if (hederaAccount.kind === "account") {
+    deps.write(`Hedera account: ${hederaAccount.accountId}\n`);
+    deps.write(
+      "Fund it with testnet USDC at https://faucet.circle.com (network: Hedera Testnet). No HBAR is needed: the facilitator pays the fee.\n",
+    );
+  }
+}
+
+type HederaAccountLookup =
+  | { kind: "account"; accountId: string }
+  | { kind: "none" }
+  | { kind: "unavailable" };
+
+/**
+ * The session's Hedera account, provisioning one when it has none. "none" means the hub has the
+ * feature off; anything else that fails is "unavailable", and whoami still exits 0.
+ */
+async function hederaAccountId(
+  session: Session,
+  hedera: { accountId?: unknown } | null | undefined,
+  fetchImpl: typeof fetch,
+): Promise<HederaAccountLookup> {
+  if (hedera !== null && typeof hedera === "object" && typeof hedera.accountId === "string") {
+    return { kind: "account", accountId: hedera.accountId };
+  }
+  try {
+    const response = await fetchImpl(`${session.hub}/cli/hedera/account`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    if (response.status === 404) return { kind: "none" };
+    if (response.status !== 200) return { kind: "unavailable" };
+    const created = (await response.json()) as { accountId?: unknown };
+    return typeof created.accountId === "string"
+      ? { kind: "account", accountId: created.accountId }
+      : { kind: "unavailable" };
+  } catch {
+    return { kind: "unavailable" };
+  }
 }
 
 const BALANCE_CHAINS = [

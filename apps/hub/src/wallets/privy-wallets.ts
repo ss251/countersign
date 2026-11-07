@@ -10,6 +10,8 @@ export interface WalletApi {
   findWallet(externalId: string): Promise<{ id: string; address: string } | null>;
   signTypedData(walletId: string, typed: TypedDataInput): Promise<string>;
   personalSign(walletId: string, message: string): Promise<string>;
+  /** Only the Hedera wallet ever raw-signs a hub-computed hash; wallet #1 never does. */
+  rawSign?(walletId: string, hash: `0x${string}`): Promise<`0x${string}`>;
 }
 
 export class WalletApiError extends Error {
@@ -88,6 +90,16 @@ export function privyWalletApi(
       const signature = (out.data as Record<string, unknown> | undefined)?.signature;
       if (typeof signature !== "string") throw new WalletApiError(502);
       return signature;
+    },
+    async rawSign(walletId, hash) {
+      if (!/^0x[0-9a-f]{64}$/.test(hash)) throw new Error("rawSign needs a 32-byte lowercase hex hash");
+      const out = await post(`/v1/wallets/${encodeURIComponent(walletId)}/rpc`, {
+        method: "secp256k1_sign",
+        params: { hash },
+      });
+      const signature = (out.data as Record<string, unknown> | undefined)?.signature;
+      if (typeof signature !== "string") throw new WalletApiError(502);
+      return signature as `0x${string}`;
     },
   };
 }
