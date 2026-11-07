@@ -7,6 +7,7 @@ import {
   CLIENTS,
   CURSOR_RULE,
   LIMITS,
+  LIMITS_NOTE,
   LOGIN,
   RULES,
   SERVER,
@@ -325,6 +326,20 @@ describe("Use it from your agent (STEER-0625)", () => {
     const signer = await file("../../../packages/buyer/src/remote-signer.ts").text();
     expect(signer).toContain(`"Not signed in. Run: ${LOGIN}"`);
     expect(RULES).toContain(`"Not signed in" means the user must run: ${LOGIN}`);
+  });
+
+  test("the limits note says who checks the limits: the CLI and the MCP server, then the hub's own cap per payment", async () => {
+    // Evidence (cs-w1 on 4358ba8): a login session's signer cannot sign the envelope mirror, so the hub signs up to
+    // HARD_CAP per payment whatever envelope set wrote; the local check is what bounds the agent.
+    const policy = await file("../../../apps/hub/src/cli-auth/policy.ts").text();
+    expect(policy).toMatch(/export const HARD_CAP = 1_000_000n;/);
+    const signer = await file("../../../packages/buyer/src/remote-signer.ts").text();
+    expect(signer).toMatch(/signMessage: unsupported/);
+    expect(LIMITS_NOTE).toContain("The CLI and the MCP server check them before they ask the hub to sign");
+    expect(LIMITS_NOTE).toContain("caps each payment at 1 USDC (1 USDT on Whitechain)");
+    expect(LIMITS_NOTE).not.toMatch(/signs nothing/);
+    expect(RULES).toContain("Never run envelope set, and never pass --approve.");
+    expect(RULES).toContain("If a buy fails, read journal before you try it again.");
   });
 
   test("Cursor's rule is an .mdc with valid frontmatter: a description and alwaysApply false, then the same rules", () => {
