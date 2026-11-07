@@ -38,7 +38,9 @@ describe("the Hedera account", () => {
     expect(await getHederaAccount(HUB, TOKEN)).toEqual({ accountId: "0.0.9185802", usdc: "0.50" });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.url).toBe(`${HUB}/me/hedera`);
-    expect(headersOf(sent[0]!).Authorization).toBe(`Bearer ${TOKEN}`);
+    const headers = headersOf(sent[0]!);
+    expect(headers["x-privy-token"]).toBe(TOKEN);
+    expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain("authorization");
     expect(sent[0]!.url).not.toContain(TOKEN);
   });
 
@@ -101,7 +103,8 @@ describe("paying on Hedera", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.url).toBe(`${HUB}/me/hedera/buy`);
     expect(sent[0]!.init.method).toBe("POST");
-    expect(headersOf(sent[0]!).Authorization).toBe(`Bearer ${TOKEN}`);
+    expect(headersOf(sent[0]!)["x-privy-token"]).toBe(TOKEN);
+    expect(Object.keys(headersOf(sent[0]!)).map((key) => key.toLowerCase())).not.toContain("authorization");
     expect(headersOf(sent[0]!)["content-type"]).toBe("application/json");
     expect(JSON.parse(String(sent[0]!.init.body))).toEqual({ offerHash: OFFER, input: { task: "transfer" } });
   });

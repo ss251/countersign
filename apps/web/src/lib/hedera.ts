@@ -115,7 +115,7 @@ export async function getHederaAccount(hub: string, token: string, options: Hede
     const res = await request(
       hub,
       "/me/hedera",
-      { headers: { accept: "application/json", Authorization: `Bearer ${token}` } },
+      { headers: { accept: "application/json", "x-privy-token": token } },
       ACCOUNT_TIMEOUT_MS,
     );
     const body = await jsonOf(res);
@@ -143,7 +143,7 @@ export async function buyOnHedera(
     "/me/hedera/buy",
     {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json", Authorization: `Bearer ${token}` },
+      headers: { "content-type": "application/json", accept: "application/json", "x-privy-token": token },
       body: JSON.stringify({ offerHash, input }),
     },
     BUY_TIMEOUT_MS,
