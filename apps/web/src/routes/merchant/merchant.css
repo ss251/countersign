@@ -1018,6 +1018,26 @@
   animation: mx-fade var(--d-2) var(--ease-out);
 }
 
+/*
+ * While a signature or a send is in flight the sheet is not modal, so the wallet's prompt (Privy, z-index 999999)
+ * takes clicks (cs-e2e 02:21:26Z). This veil stands in for the backdrop, above the console's own layers (100 at
+ * most) and below the wallet. A swap between modal and not replays no entrance.
+ */
+.mx-sheet__veil {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: color-mix(in oklab, var(--ink) 30%, transparent);
+}
+
+.mx-sheet[data-stepped] {
+  z-index: 201;
+}
+
+.mx-sheet[data-swapped]:not([data-closing]) {
+  animation: none;
+}
+
 /* Exits leave faster than they arrive, accelerating away. */
 .mx-sheet[data-closing] {
   animation: mx-sheet-down 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
