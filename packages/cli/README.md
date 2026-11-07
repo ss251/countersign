@@ -42,6 +42,8 @@ npx -y @countersign-hub/cli buy <offer hash> --input '{"question":"what is arc?"
 npx -y @countersign-hub/cli verify ~/.countersign/slips/<slip hash>.json --rpc https://rpc.testnet.arc.network
 ```
 
+If that RPC answers "rate limit exceeded", which can happen on a shared network, any Arc testnet RPC works the same, for example `https://5042002.rpc.thirdweb.com`.
+
 `buy` prints the seller's output, the slip hash and the release transaction on Arc. `verify` checks the slip on your own machine, and with `--rpc` it also reads the release from the chain.
 
 ## Sell
