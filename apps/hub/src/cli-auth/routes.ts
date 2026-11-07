@@ -1,5 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Context, Hono } from "hono";
+import { bytesToHex, hexToBytes, keccak256, recoverPublicKey, toBytes, type Hex } from "viem";
+import { publicKeyToAddress } from "viem/accounts";
+import {
+  HEDERA_TESTNET,
+  signPrivyTransfer,
+  validatePrivyTransfer,
+  type PrivyTransferTerms,
+} from "@countersign/rail/hedera";
+import type { PaymentRequirements } from "../deps.ts";
 import { personFrom, type PrivyVerifier } from "../privy.ts";
 import type { Store } from "../store.ts";
 import {
@@ -10,6 +19,22 @@ import {
 import { checkMessage, checkTypedData, HARD_CAP, type KnownEscrow } from "./policy.ts";
 import type { CliAuthStore, CliSessionRecord } from "./store.ts";
 
+export interface HederaSignTerms {
+  offerHash: string;
+  asset: string;
+  amount: bigint;
+  payTo: string;
+  feePayer: string;
+}
+
+export interface CliHederaDeps {
+  /** The live hedera rail's own challenge for a listed offer, or null when it has none. */
+  terms: (offerHash: string) => HederaSignTerms | null;
+  createAccount: (compressedPublicKey: string) => Promise<{ accountId: string }>;
+  /** How many accounts may be created across all users in an hour. Defaults to 20. */
+  hourlyCap?: number;
+}
+
 export interface CliAuthDeps {
   store: CliAuthStore;
   wallets: WalletApi;
@@ -18,6 +43,165 @@ export interface CliAuthDeps {
   escrows: () => KnownEscrow[];
   consoleUrl: string;
   now: () => number;
+  /** Present only while HEDERA_PRIVY is on and its operator and the hedera rail are ready. */
+  hedera?: CliHederaDeps;
+}
+
+/** Hedera's maximum validity window, and the window the hub asks for. */
+export const MAX_HEDERA_VALIDITY_SECONDS = 180;
+
+export interface HederaProvisionDeps {
+  store: CliAuthStore;
+  wallets: WalletApi;
+  now: () => number;
+  hedera: CliHederaDeps;
+}
+
+export type HederaProvisionOutcome =
+  | { ok: true; accountId: string; publicKey: string }
+  | { ok: false; status: 409 | 429 | 502; code: string; message: string };
+
+/** Create the user's one Hedera account, or answer the row already there. Shared by /cli and /me. */
+export async function provisionHederaAccount(
+  deps: HederaProvisionDeps,
+  userId: string,
+): Promise<HederaProvisionOutcome> {
+  const ready = deps.store.getHedera(userId);
+  if (ready?.state === "ready" && ready.accountId !== null && ready.publicKey !== null) {
+    return { ok: true, accountId: ready.accountId, publicKey: ready.publicKey };
+  }
+
+  const now = deps.now();
+  const cap = deps.hedera.hourlyCap ?? 20;
+  if (deps.store.hederaCreatedSince(now - 3600) >= cap) {
+    return {
+      ok: false,
+      status: 429,
+      code: "provisioning-capped",
+      message: "Refused. Too many Hedera accounts were created this hour.",
+    };
+  }
+
+  if (!deps.store.claimHedera(userId, now)) {
+    const row = deps.store.getHedera(userId);
+    if (row?.state === "ready" && row.accountId !== null && row.publicKey !== null) {
+      return { ok: true, accountId: row.accountId, publicKey: row.publicKey };
+    }
+    if (row?.state === "failed") return provisioningFailed();
+    return {
+      ok: false,
+      status: 409,
+      code: "provisioning",
+      message: "Refused. This Hedera account is already being provisioned.",
+    };
+  }
+
+  try {
+    const externalId = `csh_${hash(userId).slice(0, 40)}`;
+    const wallet =
+      (await deps.wallets.findWallet(externalId)) ?? (await deps.wallets.createWallet(externalId));
+    const rawSign = deps.wallets.rawSign;
+    if (!rawSign) throw new Error("raw signing is unavailable");
+    const keyHash = keccak256(toBytes(`countersign hedera key ${wallet.address}`));
+    const signature = await rawSign(wallet.id, keyHash);
+    const recovered = await recoverPublicKey({ hash: keyHash, signature });
+    if (publicKeyToAddress(recovered).toLowerCase() !== wallet.address.toLowerCase()) {
+      throw new Error("the wallet's key does not match its address");
+    }
+    const publicKey = compressPublicKey(recovered);
+    const created = await deps.hedera.createAccount(publicKey);
+    deps.store.readyHedera(userId, {
+      walletId: wallet.id,
+      evmAddress: wallet.address.toLowerCase(),
+      publicKey,
+      accountId: created.accountId,
+    });
+    return { ok: true, accountId: created.accountId, publicKey };
+  } catch {
+    deps.store.failHedera(userId);
+    return provisioningFailed();
+  }
+}
+
+export type HederaTermsRefusal =
+  | "unknown-offer"
+  | "hedera-not-offered"
+  | "hedera-unavailable"
+  | "envelope-closed";
+
+export type HederaExpectedTransfer =
+  | { ok: true; hash: string; expected: PrivyTransferTerms; accepted: PaymentRequirements }
+  | { ok: false; reason: HederaTermsRefusal };
+
+/** The hub's own 402 for a listed offer, as the terms a Hedera transfer must match. */
+export function expectedHederaTransfer(
+  hubStore: Store,
+  terms: (offerHash: string) => HederaSignTerms | null,
+  offerHash: string,
+  accountId: string,
+  envelopeCap: bigint | null,
+): HederaExpectedTransfer {
+  const hash = offerHash.toLowerCase();
+  const stored = hubStore.getOffer(hash);
+  if (stored === null || stored.delistedAt !== null) {
+    return { ok: false, reason: "unknown-offer" };
+  }
+  if (!Array.isArray(stored.offer.rails) || !stored.offer.rails.includes("hedera")) {
+    return { ok: false, reason: "hedera-not-offered" };
+  }
+  const hederaTerms = terms(hash);
+  if (hederaTerms === null) return { ok: false, reason: "hedera-unavailable" };
+  if (envelopeCap === null) return { ok: false, reason: "envelope-closed" };
+
+  const expected: PrivyTransferTerms = {
+    accountId,
+    asset: hederaTerms.asset,
+    amount: hederaTerms.amount,
+    payTo: hederaTerms.payTo,
+    feePayer: hederaTerms.feePayer,
+    offerHash: hash,
+    cap: envelopeCap < HARD_CAP ? envelopeCap : HARD_CAP,
+  };
+  const accepted: PaymentRequirements = {
+    scheme: "exact",
+    network: HEDERA_TESTNET,
+    amount: expected.amount.toString(),
+    asset: expected.asset,
+    payTo: expected.payTo,
+    maxTimeoutSeconds: MAX_HEDERA_VALIDITY_SECONDS,
+    extra: { feePayer: expected.feePayer, offerHash: hash },
+  };
+  return { ok: true, hash, expected, accepted };
+}
+
+export interface HederaSigningRow {
+  walletId: string;
+  publicKey: string;
+}
+
+/** Sign every node body with the user's Hedera wallet; returns the signed transfer, base64. */
+export async function signHederaPayment(
+  wallets: WalletApi,
+  row: HederaSigningRow,
+  tx: Parameters<typeof signPrivyTransfer>[0],
+): Promise<string> {
+  const rawSign = wallets.rawSign;
+  if (!rawSign) throw new Error("raw signing is unavailable");
+  const storedKey = row.publicKey.toLowerCase();
+  const signed = await signPrivyTransfer(tx, {
+    publicKey: row.publicKey,
+    sign: async (bodyBytes) => {
+      const hash = keccak256(bodyBytes);
+      const signature = await rawSign(row.walletId, hash);
+      if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error("unexpected signature shape");
+      const recovered = await recoverPublicKey({ hash, signature });
+      if (compressPublicKey(recovered).toLowerCase() !== storedKey) {
+        throw new Error("the signature does not match the stored key");
+      }
+      return hexToBytes(`0x${signature.slice(2, 130)}`);
+    },
+  });
+  return Buffer.from(signed.toBytes()).toString("base64");
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -33,6 +217,10 @@ export function registerCliAuth(app: Hono, deps: CliAuthDeps): void {
   app.get("/cli/session", (c) => readSession(c, deps));
   app.post("/cli/logout", (c) => logout(c, deps));
   app.post("/cli/sign", (c) => sign(c, deps));
+  if (deps.hedera) {
+    app.post("/cli/hedera/account", (c) => provisionHedera(c, deps));
+    app.post("/cli/sign/hedera", (c) => signHedera(c, deps));
+  }
 }
 
 function startLogin(c: Context, deps: CliAuthDeps): Response {
@@ -133,7 +321,12 @@ async function pollLogin(c: Context, deps: CliAuthDeps): Promise<Response> {
 function readSession(c: Context, deps: CliAuthDeps): Response {
   const session = activeSession(c, deps);
   if (session === null) return notSignedIn();
-  return json({ address: session.address, expiresAt: session.expiresAt });
+  const body: Record<string, unknown> = { address: session.address, expiresAt: session.expiresAt };
+  if (deps.hedera) {
+    const row = deps.store.getHedera(session.userId);
+    body.hedera = row?.state === "ready" && row.accountId !== null ? { accountId: row.accountId } : null;
+  }
+  return json(body);
 }
 
 function logout(c: Context, deps: CliAuthDeps): Response {
@@ -155,7 +348,7 @@ async function sign(c: Context, deps: CliAuthDeps): Promise<Response> {
   if (parsed.value.kind === "typed-data") {
     const typed = parseTypedData(parsed.value.typedData);
     if (typed === null) return badRequest();
-    const maxValue = capFor(deps, session.address);
+    const maxValue = capFor(deps.hubStore, deps.now, session.address);
     if (maxValue === null) {
       return fail(403, "envelope-closed", "Refused. The envelope is closed.");
     }
@@ -194,6 +387,79 @@ async function sign(c: Context, deps: CliAuthDeps): Promise<Response> {
   return badRequest();
 }
 
+async function provisionHedera(c: Context, deps: CliAuthDeps): Promise<Response> {
+  const hedera = deps.hedera;
+  if (!hedera) return notFound();
+  const session = activeSession(c, deps);
+  if (session === null) return notSignedIn();
+
+  const outcome = await provisionHederaAccount(
+    { store: deps.store, wallets: deps.wallets, now: deps.now, hedera },
+    session.userId,
+  );
+  if (!outcome.ok) return fail(outcome.status, outcome.code, outcome.message);
+  return json({ accountId: outcome.accountId, publicKey: outcome.publicKey });
+}
+
+async function signHedera(c: Context, deps: CliAuthDeps): Promise<Response> {
+  const hedera = deps.hedera;
+  if (!hedera) return notFound();
+  const session = activeSession(c, deps);
+  if (session === null) return notSignedIn();
+
+  const parsed = await readJsonLimited(c);
+  if (parsed.kind === "too-large") return tooLarge();
+  if (parsed.kind === "malformed") return badRequest();
+  if (!isRecord(parsed.value)) return badRequest();
+  const keys = Object.keys(parsed.value).sort();
+  if (keys.length !== 2 || keys[0] !== "offerHash" || keys[1] !== "transactionBytes") return badRequest();
+  const { offerHash, transactionBytes } = parsed.value;
+  if (typeof offerHash !== "string" || typeof transactionBytes !== "string") return badRequest();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(offerHash)) return badRequest();
+  const hash = offerHash.toLowerCase();
+
+  const row = deps.store.getHedera(session.userId);
+  if (
+    row?.state !== "ready" ||
+    row.accountId === null ||
+    row.publicKey === null ||
+    row.walletId === null ||
+    row.evmAddress === null
+  ) {
+    return fail(409, "no-hedera-account", "Refused. No Hedera account is ready for this login.");
+  }
+
+  const terms = expectedHederaTransfer(
+    deps.hubStore,
+    hedera.terms,
+    hash,
+    row.accountId,
+    capFor(deps.hubStore, deps.now, session.address),
+  );
+  if (!terms.ok) return termsRefused(terms.reason);
+
+  const verdict = validatePrivyTransfer(transactionBytes, terms.expected, deps.now());
+  if (!verdict.ok) return notAllowed(verdict.reason);
+
+  try {
+    const signed = await signHederaPayment(
+      deps.wallets,
+      { walletId: row.walletId, publicKey: row.publicKey },
+      verdict.tx,
+    );
+    return json({ transactionBytes: signed, accountId: row.accountId });
+  } catch {
+    return fail(502, "privy-failed", "Refused. The wallet service did not answer.");
+  }
+}
+
+function compressPublicKey(publicKey: Hex): string {
+  const bytes = hexToBytes(publicKey);
+  if (bytes.length !== 65 || bytes[0] !== 4) throw new Error("not an uncompressed public key");
+  const y = BigInt(bytesToHex(bytes.slice(33)));
+  return `0x${y % 2n === 0n ? "02" : "03"}${bytesToHex(bytes.slice(1, 33)).slice(2)}`;
+}
+
 function activeSession(c: Context, deps: CliAuthDeps): CliSessionRecord | null {
   const header = c.req.header("authorization") ?? "";
   const match = /^Bearer (.+)$/i.exec(header);
@@ -204,12 +470,12 @@ function activeSession(c: Context, deps: CliAuthDeps): CliSessionRecord | null {
   return session;
 }
 
-function capFor(deps: CliAuthDeps, address: string): bigint | null {
-  const mirror = deps.hubStore.getEnvelopeMirror(address);
+export function capFor(hubStore: Store, now: () => number, address: string): bigint | null {
+  const mirror = hubStore.getEnvelopeMirror(address);
   if (mirror === null) return HARD_CAP;
   const envelope = mirror.envelope;
   if (envelope.revoked) return null;
-  if (envelope.expiresAt !== undefined && envelope.expiresAt <= deps.now()) return null;
+  if (envelope.expiresAt !== undefined && envelope.expiresAt <= now()) return null;
   try {
     return BigInt(envelope.perMerchant);
   } catch {
@@ -290,6 +556,30 @@ function tooLarge(): Response {
 
 function notSignedIn(): Response {
   return fail(401, "not-signed-in", NOT_SIGNED_IN);
+}
+
+function notFound(): Response {
+  return fail(404, "not-found", "Refused. There is nothing at that path.");
+}
+
+function provisioningFailed(): Extract<HederaProvisionOutcome, { ok: false }> {
+  return {
+    ok: false,
+    status: 502,
+    code: "hedera-provision-failed",
+    message: "Refused. The Hedera account could not be created.",
+  };
+}
+
+function termsRefused(reason: HederaTermsRefusal): Response {
+  if (reason === "unknown-offer") return fail(404, "unknown-offer", "Refused. That offer is not listed.");
+  if (reason === "hedera-not-offered") {
+    return fail(400, "hedera-not-offered", "Refused. That offer does not take the hedera rail.");
+  }
+  if (reason === "hedera-unavailable") {
+    return fail(503, "hedera-unavailable", "Refused. The hedera rail cannot answer right now.");
+  }
+  return fail(403, "envelope-closed", "Refused. The envelope is closed.");
 }
 
 function notAllowed(reason: string): Response {

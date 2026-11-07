@@ -13,7 +13,7 @@ import { KNOWN_RAILS } from "./known-rails.ts";
 import { Journal } from "./journal.ts";
 import { publishEnvelope } from "./mirror.ts";
 import { startOpenAIServer } from "./openai/server.ts";
-import { hubHederaAccount, hubHederaSigner } from "./hedera/hub-signer.ts";
+import { hubHederaAccountReadOnly, hubHederaSigner } from "./hedera/hub-signer.ts";
 import { countersignPayer, eip3009Payer, gatewayPayer, hederaPayer } from "./payer.ts";
 import { priceLabel } from "./price-label.ts";
 import { NOT_SIGNED_IN, remoteAccount, sessionFromEnv, type RemoteSession } from "./remote-signer.ts";
@@ -69,14 +69,18 @@ async function resolveAccount(): Promise<LocalAccount> {
   throw new Error(NOT_SIGNED_IN);
 }
 
-/** The hedera payer for a session-backed agent, when its hub has an account to pay from. */
+/**
+ * The hedera payer for a session-backed agent. The account is looked up lazily,
+ * inside a hedera pay(), so no other rail's buy touches or provisions it.
+ */
 async function sessionHederaPayer() {
   if (process.env.CS_BUYER_KEY) return undefined;
   const session = await resolveSession();
   if (session === undefined) return undefined;
-  const account = await hubHederaAccount(session);
-  if (account === null) return undefined;
-  return hederaPayer({ accountId: account.accountId, key: hubHederaSigner(session) });
+  return hederaPayer({
+    accountId: () => hubHederaAccountReadOnly(session),
+    key: hubHederaSigner(session),
+  });
 }
 
 const usd = (atomic: string) => formatUnits(BigInt(atomic), 6);

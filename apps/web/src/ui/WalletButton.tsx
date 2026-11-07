@@ -9,7 +9,12 @@ import {
   useHashPack,
   type HashPackStatus,
 } from "../lib/hashpack.ts";
+import { getHederaAccount, HEDERA_BUY_EVENT, type HederaAccount } from "../lib/hedera.ts";
+import { isOwnHub } from "../lib/hub.ts";
 import { arcTestnet, chainName, shortAddress, whitechainTestnet } from "../lib/wallet.ts";
+import { CopyButton } from "./primitives.tsx";
+
+const HEDERA_FAUCET = "https://faucet.circle.com";
 
 function hasInjectedProvider(): boolean {
   return typeof window !== "undefined" && "ethereum" in window;
@@ -133,6 +138,8 @@ type WalletBodyProps = {
   kindOf?: (address: string | undefined) => "privy" | "injected";
   /** Privy has not reported ready yet, so its options wait. */
   starting?: boolean;
+  /** The signed-in person's Hedera account, when the hub has the feature on. */
+  hedera?: HederaAccount | null;
 };
 
 function WalletBody({
@@ -144,6 +151,7 @@ function WalletBody({
   cta,
   kindOf = () => "injected",
   starting = false,
+  hedera = null,
 }: WalletBodyProps) {
   const account = useAccount();
   const connect = useConnect();
@@ -210,6 +218,7 @@ function WalletBody({
           <span data-testid="wallet-chain" data-value={account.chainId}>
             {chainName(account.chainId)}
           </span>
+          <HederaAccountLine account={hedera} />
           {account.chainId !== arcTestnet.id && account.chainId !== whitechainTestnet.id ? (
             <button type="button" className="wallet__go" onClick={startSwitch}>
               Switch to Arc testnet
@@ -306,9 +315,73 @@ function WalletBody({
   );
 }
 
+/** One line in the signed-in menu: the Hedera account, a copy button, and the Testnet faucet. */
+export function HederaAccountLine({ account }: { account: HederaAccount | null }) {
+  if (!account) return null;
+  return (
+    <span className="wallet__why" data-testid="wallet-hedera" data-account-id={account.accountId}>
+      Hedera account <span className="mono">{account.accountId}</span> · {account.usdc} USDC
+      <CopyButton value={account.accountId} label="Hedera account" />
+      <a data-testid="wallet-hedera-faucet" href={HEDERA_FAUCET} target="_blank" rel="noopener noreferrer">
+        Fund on faucet.circle.com (Hedera Testnet)
+      </a>
+    </span>
+  );
+}
+
+/**
+ * The page-load read. Only this console's own hub may see the person's Privy token, so a ?hub= link
+ * never turns the sign-in menu into a request to another host.
+ */
+export async function loadHederaAccount(getAccessToken: () => Promise<string | null>): Promise<HederaAccount | null> {
+  if (!isOwnHub()) return null;
+  const token = await getAccessToken();
+  if (!token) return null;
+  return getHederaAccount(token);
+}
+
+/** The wallet line shows only on this console's own hub, whatever a page already read. */
+export function ownHubHederaAccount(account: HederaAccount | null): HederaAccount | null {
+  return isOwnHub() ? account : null;
+}
+
+/** Read the Hedera account once signed in, and again whenever a purchase on the card settles. */
+function useHederaAccount(ready: boolean, authenticated: boolean, getAccessToken: () => Promise<string | null>): HederaAccount | null {
+  const [account, setAccount] = useState<HederaAccount | null>(null);
+  const tokenOf = useRef(getAccessToken);
+  tokenOf.current = getAccessToken;
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      setAccount(null);
+      return;
+    }
+    let alive = true;
+    const load = async () => {
+      try {
+        const found = await loadHederaAccount(tokenOf.current);
+        if (alive) setAccount(found);
+      } catch {
+        // The line simply does not show: the hub is off, starting, or unreachable.
+        if (alive) setAccount(null);
+      }
+    };
+    void load();
+    const onBuy = () => void load();
+    window.addEventListener(HEDERA_BUY_EVENT, onBuy);
+    return () => {
+      alive = false;
+      window.removeEventListener(HEDERA_BUY_EVENT, onBuy);
+    };
+  }, [ready, authenticated]);
+
+  return account;
+}
+
 function PrivyWalletButton() {
-  const { ready, login, connectWallet, logout } = usePrivy();
+  const { ready, login, connectWallet, logout, authenticated, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const hedera = useHederaAccount(ready, authenticated, getAccessToken);
   // Privy's embedded wallet reports walletClientType "privy"; anything else came from the browser.
   const kindOf = (address: string | undefined) =>
     wallets.find((w) => w.address.toLowerCase() === address?.toLowerCase())?.walletClientType === "privy" ? "privy" : "injected";
@@ -322,6 +395,7 @@ function PrivyWalletButton() {
       cta="Sign in"
       kindOf={kindOf}
       starting={!ready}
+      hedera={ownHubHederaAccount(hedera)}
     />
   );
 }

@@ -172,9 +172,18 @@ export function eip3009Payer(account: LocalAccount, known: KnownDirect[] = KNOWN
   };
 }
 
+/**
+ * Where the payer's Hedera account comes from: a known id, or a lookup made only
+ * when it actually pays, so a buy on another rail never looks it up.
+ */
+export interface HederaAccountSource {
+  accountId: string | (() => Promise<string | null>);
+  key: HederaPayer["key"];
+}
+
 /** Pays an x402 `exact` requirement on Hedera testnet, but only from a hedera wallet this agent holds. */
 export function hederaPayer(
-  payer: HederaPayer,
+  payer: HederaAccountSource,
   opts: { trusted?: () => Promise<Set<string>> } = {},
 ): Payer {
   const trusted = opts.trusted ?? trustedHederaFeePayers;
@@ -187,14 +196,20 @@ export function hederaPayer(
       if (typeof feePayer !== "string" || !(await trusted()).has(feePayer)) {
         throw new Error("Refused. The hub named a fee payer this agent does not trust.");
       }
-      const { payment, transactionId } = await hederaPayment(payer, req, ctx.resource?.url);
+      const accountId = typeof payer.accountId === "string" ? payer.accountId : await payer.accountId();
+      if (accountId === null) throw new Error("No Hedera account yet. Run: countersign whoami");
+      const { payment, transactionId } = await hederaPayment(
+        { accountId, key: payer.key },
+        req,
+        ctx.resource?.url,
+      );
       // The hub keys a Hedera job by the transfer's transaction id.
       return { payment, jobId: keccak256(toBytes(transactionId)) };
     },
   };
 }
 
-export { hubHederaAccount, hubHederaSigner } from "./hedera/hub-signer.ts";
+export { hubHederaAccount, hubHederaAccountReadOnly, hubHederaSigner } from "./hedera/hub-signer.ts";
 export type { HederaAccount, HubSession } from "./hedera/hub-signer.ts";
 
 function randomNonce(): Hex {

@@ -1,6 +1,7 @@
 import { Fragment, type JSX, type ReactNode } from "react";
 import { CopyButton } from "../../ui/primitives.tsx";
 import { Integrate } from "../merchant/Integrate.tsx";
+import { AgentSetup } from "./AgentSetup.tsx";
 import { inline, section, type Block, type SectionId } from "./blocks.ts";
 
 /**
@@ -27,6 +28,8 @@ export function DevelopersView({ markdown }: { markdown: string | null }): JSX.E
           {KEY_NOTE}
         </p>
       </header>
+
+      <AgentSetup />
 
       {SECTIONS.map(({ id, title }) => {
         const blocks = section(markdown, id);
