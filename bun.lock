@@ -26,6 +26,9 @@
         "hono": "^4.13.16",
         "viem": "^2.57.16",
       },
+      "devDependencies": {
+        "@hiero-ledger/proto": "2.32.0",
+      },
     },
     "apps/phone": {
       "name": "@countersign/phone",
@@ -98,7 +101,7 @@
     },
     "packages/cli": {
       "name": "countersign",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "bin": {
         "countersign": "./src/bin.ts",
       },
@@ -121,7 +124,7 @@
     },
     "packages/mcp": {
       "name": "@countersign/mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@countersign/buyer": "workspace:*",
         "@countersign/core": "workspace:*",
@@ -152,7 +155,7 @@
     },
     "packages/relay": {
       "name": "@countersign/relay",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@countersign/core": "workspace:*",
         "@countersign/rail": "workspace:*",
